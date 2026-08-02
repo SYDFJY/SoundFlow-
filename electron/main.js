@@ -51,12 +51,26 @@ let ffprobePath = null
 function detectFFprobe() {
   try {
     const exeDir = path.dirname(process.execPath)
+    // 1. 打包后 exe 同目录
     const candidate = path.join(exeDir, 'ffprobe.exe')
     if (fs.existsSync(candidate)) { ffprobePath = candidate; return }
-    // 开发模式下从项目根目录找
+    // 2. 开发模式项目根目录
     const devCandidate = path.join(__dirname, '..', 'ffprobe.exe')
     if (fs.existsSync(devCandidate)) { ffprobePath = devCandidate; return }
-    // 系统 PATH
+    // 3. 常见 ffmpeg 安装路径(系统装了 ffmpeg 但未加入 PATH 的情况)
+    const commonDirs = [
+      'C:\\ffmpeg\\bin',
+      'C:\\Program Files\\ffmpeg\\bin',
+      'C:\\Program Files (x86)\\ffmpeg\\bin',
+      path.join(os.homedir(), 'ffmpeg', 'bin'),
+      path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin'),
+      path.join(os.homedir(), 'AppData', 'Local', 'ffmpeg', 'bin')
+    ]
+    for (const dir of commonDirs) {
+      const p = path.join(dir, 'ffprobe.exe')
+      if (fs.existsSync(p)) { ffprobePath = p; return }
+    }
+    // 4. 系统 PATH
     ffprobePath = 'ffprobe'
   } catch (_) {}
 }
