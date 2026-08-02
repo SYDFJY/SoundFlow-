@@ -586,6 +586,14 @@ function setupIPC() {
     shell.showItemInFolder(filePath)
   })
 
+  // 检查文件是否存在,返回不存在的路径列表(用于失效歌曲检测)
+  ipcMain.handle('check-files-exist', (event, filePaths) => {
+    if (!Array.isArray(filePaths)) return []
+    return filePaths.filter(p => {
+      try { return !fs.existsSync(p) } catch { return true }
+    })
+  })
+
   // 获取应用路径
   ipcMain.handle('get-app-path', () => app.getPath('userData'))
 

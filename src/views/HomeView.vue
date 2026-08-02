@@ -14,6 +14,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14v5a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h5"/></svg>
           <span>查重</span>
         </button>
+        <button v-if="musicStore.totalCount > 0" class="add-btn dup-btn" @click="openMissingCheck" title="检测已移动或删除的歌曲">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <span>清理失效</span>
+        </button>
       </div>
     </div>
 
@@ -103,6 +107,44 @@
             </div>
           </div>
         </div>
+
+        <!-- 失效歌曲检测弹窗 -->
+        <div v-if="showMissingDialog" class="dialog-overlay" @click.self="closeMissingDialog">
+          <div class="dup-dialog">
+            <div class="dialog-header">
+              <h3>失效歌曲检测</h3>
+              <span class="dup-summary" v-if="missingSongs.length > 0">发现 {{ missingSongs.length }} 首文件已丢失</span>
+              <button class="dialog-close" @click="closeMissingDialog">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div class="dup-list" v-if="missingSongs.length > 0">
+              <div v-for="song in missingSongs" :key="song.path" class="dup-item">
+                <div class="dup-item-cover" v-if="song.coverUrl">
+                  <img :src="song.coverUrl" />
+                </div>
+                <div class="dup-item-info">
+                  <div class="dup-item-title text-ellipsis">{{ song.title }}</div>
+                  <div class="dup-item-meta">
+                    <span>{{ song.artist }}</span>
+                    <span v-if="song.format" class="dup-format">{{ song.format }}</span>
+                  </div>
+                </div>
+                <div class="dup-item-path text-ellipsis" :title="song.path">{{ song.path }}</div>
+              </div>
+            </div>
+            <div v-else class="dup-empty">
+              <div class="dup-empty-icon">✅</div>
+              <div class="dup-empty-text">所有歌曲文件均存在</div>
+            </div>
+            <div class="dialog-footer" v-if="missingSongs.length > 0">
+              <button class="dialog-btn cancel" @click="closeMissingDialog">取消</button>
+              <button class="dialog-btn danger" @click="removeMissingSongs">
+                移除这 {{ missingSongs.length }} 首失效歌曲
+              </button>
+            </div>
+          </div>
+        </div>
       </transition>
     </teleport>
   </div>
@@ -124,6 +166,10 @@ const selectedSongs = ref([])
 const showDupDialog = ref(false)
 const dupGroups = ref([])
 const dupSelected = ref(new Set())
+
+// 失效歌曲检测状态
+const showMissingDialog = ref(false)
+const missingSongs = ref([])
 
 const dupTotalSongs = computed(() => dupGroups.value.reduce((sum, g) => sum + g.length, 0))
 
@@ -175,6 +221,24 @@ function closeDupDialog() {
   showDupDialog.value = false
   dupGroups.value = []
   dupSelected.value = new Set()
+}
+
+// 失效歌曲检测
+async function openMissingCheck() {
+  missingSongs.value = await musicStore.checkMissingSongs()
+  showMissingDialog.value = true
+}
+
+function closeMissingDialog() {
+  showMissingDialog.value = false
+  missingSongs.value = []
+}
+
+function removeMissingSongs() {
+  if (missingSongs.value.length === 0) return
+  const paths = missingSongs.value.map(s => s.path)
+  musicStore.removeSongs(paths)
+  closeMissingDialog()
 }
 
 function toggleDupSelect(path) {

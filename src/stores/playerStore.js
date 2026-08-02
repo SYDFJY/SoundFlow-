@@ -119,12 +119,37 @@ export const usePlayerStore = defineStore('player', () => {
     playQueue.value.splice(insertIdx, 0, { ...song })
   }
 
-  // 从队列中移除
+  // 停止播放并清空队列
+  function stopPlayback() {
+    if (audio.value) { audio.value.pause(); audio.value.src = '' }
+    currentSong.value = null
+    currentIndex.value = -1
+    playQueue.value = []
+    isPlaying.value = false
+    currentTime.value = 0
+    duration.value = 0
+    lyrics.value = []
+    currentLyricIndex.value = -1
+  }
+
+  // 从队列中移除(允许移除当前播放歌曲,移除后自动播放下一首)
   function removeFromQueue(index) {
     if (index < 0 || index >= playQueue.value.length) return
-    if (index === currentIndex.value) return // 不能移除当前播放
+    const wasCurrent = index === currentIndex.value
     playQueue.value.splice(index, 1)
-    if (index < currentIndex.value) currentIndex.value--
+
+    if (wasCurrent) {
+      if (playQueue.value.length === 0) {
+        // 队列空了,停止播放
+        stopPlayback()
+      } else {
+        // 播放原位置的下一首(若移除的是最后一首则回到队首)
+        const nextIndex = Math.min(index, playQueue.value.length - 1)
+        loadAndPlay(nextIndex)
+      }
+    } else if (index < currentIndex.value) {
+      currentIndex.value--
+    }
   }
 
   // 加载并播放
@@ -521,7 +546,7 @@ export const usePlayerStore = defineStore('player', () => {
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     showQueue, sleepTimerMinutes, sleepTimerRemaining, lyricSettings,
     initAudio, setPlayQueue, insertNext, removeFromQueue, loadAndPlay, togglePlay,
-    playIndex, playPrev, playNext, setVolume, toggleMute, seek,
+    playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     loadSettings, saveSettings, playSingle, toggleQueue,

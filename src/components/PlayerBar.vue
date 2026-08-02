@@ -120,7 +120,7 @@
               <div class="queue-name text-ellipsis">{{ song.title }}</div>
               <div class="queue-artist text-ellipsis">{{ song.artist }}</div>
             </div>
-            <button class="queue-remove" @click.stop="playerStore.removeFromQueue(idx)" title="移除" v-if="idx !== playerStore.currentIndex">
+            <button class="queue-remove" @click.stop="playerStore.removeFromQueue(idx)" title="移除" :class="{ 'queue-remove--current': idx === playerStore.currentIndex }">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -310,6 +310,8 @@ function toggleFloatingLyric() {
 .queue-artist { font-size: 11px; color: var(--text-tertiary); margin-top: 1px; }
 .queue-remove { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-tertiary); opacity: 0; transition: all var(--transition-fast); }
 .queue-item:hover .queue-remove { opacity: 1; }
+.queue-remove--current { opacity: 0.6; color: var(--color-danger); }
+.queue-item:hover .queue-remove--current { opacity: 1; }
 .queue-remove:hover { background: rgba(255,77,79,0.1); color: var(--color-danger); }
 .queue-remove svg { width: 14px; height: 14px; }
 

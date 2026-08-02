@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 
 export const useMusicStore = defineStore('music', () => {
   const songs = ref([])
@@ -14,26 +14,23 @@ export const useMusicStore = defineStore('music', () => {
   const isScanning = ref(false)
   const scanProgress = ref(0)
 
-  // favorites 用普通对象存储，用 _favVersion 触发响应式更新
-  const _favoritesMap = {}
-  const _favVersion = ref(0)
+  // favorites 用响应式 Set 存储(Vue 3 原生支持响应式 Set)
+  const _favoritesSet = reactive(new Set())
 
   function _syncFavorites(src) {
-    // 清空旧数据
-    for (const key of Object.keys(_favoritesMap)) delete _favoritesMap[key]
-    if (Array.isArray(src)) src.forEach(p => { _favoritesMap[p] = true })
-    else if (src instanceof Set) src.forEach(p => { _favoritesMap[p] = true })
-    else if (src && typeof src === 'object') Object.keys(src).forEach(p => { _favoritesMap[p] = true })
-    _favVersion.value++
+    _favoritesSet.clear()
+    if (Array.isArray(src)) src.forEach(p => _favoritesSet.add(p))
+    else if (src instanceof Set) src.forEach(p => _favoritesSet.add(p))
+    else if (src && typeof src === 'object') Object.keys(src).forEach(p => _favoritesSet.add(p))
   }
 
   const favorites = {
-    has(path) { return !!_favoritesMap[path] },
-    add(path) { if (!_favoritesMap[path]) { _favoritesMap[path] = true; _favVersion.value++ } },
-    delete(path) { if (_favoritesMap[path]) { delete _favoritesMap[path]; _favVersion.value++ } },
-    get size() { _favVersion.value; return Object.keys(_favoritesMap).length },
-    forEach(fn) { _favVersion.value; Object.keys(_favoritesMap).forEach(fn) },
-    toArray() { return Object.keys(_favoritesMap) }
+    has(path) { return _favoritesSet.has(path) },
+    add(path) { _favoritesSet.add(path) },
+    delete(path) { _favoritesSet.delete(path) },
+    get size() { return _favoritesSet.size },
+    forEach(fn) { _favoritesSet.forEach(fn) },
+    toArray() { return Array.from(_favoritesSet) }
   }
 
   // 从 localStorage 恢复
@@ -114,11 +111,10 @@ export const useMusicStore = defineStore('music', () => {
   })
 
   const totalCount = computed(() => songs.value.length)
-  const favoriteCount = computed(() => { _favVersion.value; return Object.keys(_favoritesMap).length })
+  const favoriteCount = computed(() => favorites.size)
 
   const favoriteSongs = computed(() => {
-    _favVersion.value
-    return songs.value.filter(s => !!_favoritesMap[s.path])
+    return songs.value.filter(s => favorites.has(s.path))
   })
 
   // 添加歌曲（去重）
@@ -311,6 +307,19 @@ export const useMusicStore = defineStore('music', () => {
     saveToStorage()
   }
 
+  // 检测失效歌曲(文件已被移动/删除),返回缺失的歌曲对象数组
+  async function checkMissingSongs() {
+    if (!window.electronAPI || songs.value.length === 0) return []
+    try {
+      const missingPaths = await window.electronAPI.checkFilesExist(songs.value.map(s => s.path))
+      const missingSet = new Set(missingPaths)
+      return songs.value.filter(s => missingSet.has(s.path))
+    } catch (e) {
+      console.error('[检测] 失效歌曲检测失败:', e)
+      return []
+    }
+  }
+
   // 更新单首歌曲
   function updateSong(path, updates) {
     songs.value = songs.value.map(s => s.path === path ? { ...s, ...updates } : s)
@@ -346,6 +355,7 @@ export const useMusicStore = defineStore('music', () => {
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles,
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, clearHistory,
+    checkMissingSongs,
     initPlayListener
   }
 })
