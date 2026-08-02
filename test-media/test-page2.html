@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>中文路径播放诊断</title></head>
+<body>
+<h3>中文路径 file:// 音频播放诊断</h3>
+<script>
+function log(m) { console.log('[page]', m) }
+log('页面加载: ' + location.href)
+
+function testAudio(label, src, playIt) {
+  return new Promise(resolve => {
+    const a = new Audio()
+    a.src = src
+    let settled = false
+    const done = (r) => { if (!settled) { settled = true; log(label + ' → ' + r); resolve() } }
+    a.addEventListener('playing', () => done('✓ PLAYING(在播)'))
+    a.addEventListener('canplaythrough', () => done('✓ CANPLAYTHROUGH'))
+    a.addEventListener('canplay', () => done('✓ CANPLAY(可解码)'))
+    a.addEventListener('loadedmetadata', () => log(label + ' metadata: duration=' + a.duration))
+    a.addEventListener('error', () => done('✗ ERROR code=' + a.error.code + ' (' + a.error.message + ')'))
+    a.addEventListener('stalled', () => log(label + ' STALLED'))
+    a.addEventListener('waiting', () => log(label + ' WAITING'))
+    if (playIt) {
+      a.play().then(() => log(label + ' play() 成功'), (e) => log(label + ' play() 拒绝: ' + e.name))
+    }
+    setTimeout(() => { if (!settled) done('? 超时(无事件,readyState=' + a.readyState + ')') }, 6000)
+  })
+}
+
+;(async () => {
+  const base = 'file:///E:/SoundFlow/test-media/'
+  // 1. 中文+空格 未编码
+  await testAudio('中文路径未编码', base + '测试歌曲 - 歌手名.wav', true)
+  // 2. 中文+空格 百分号编码
+  await testAudio('中文路径已编码', base + encodeURI('测试歌曲 - 歌手名.wav'), false)
+  // 3. 纯英文对照
+  await testAudio('英文路径对照', base + 'test.wav', false)
+  log('==== 测试完成 ====')
+})()
+</script>
+</body>
+</html>

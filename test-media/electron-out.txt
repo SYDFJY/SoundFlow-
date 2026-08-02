@@ -1,0 +1,69 @@
+
+[diag] ready, 播放 35 秒
+[page] 页面加载, location=file:///E:/SoundFlow/test-media/test-page.html
+[page] mediaSession 可用: true
+[page] MEDIASESSION-METADATA ✓ 已设置
+[page] MEDIASESSION-PLAYBACKSTATE ✓ 已设为 playing
+[page] MEDIASESSION-ACTIONS ✓ 已注册
+[page] MEDIASESSION-POSITION ✓ 已设置
+[page] AUDIO-DURATION=2
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-PLAY-PROMISE ✓ play() 成功
+[page] %cElectron Security Warning (Disabled webSecurity) font-weight: bold; This renderer process has "webSecurity" disabled. This
+  exposes users of this app to severe security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[page] %cElectron Security Warning (allowRunningInsecureContent) font-weight: bold; This renderer process has "allowRunningInsecureContent"
+  enabled. This exposes users of this app to severe security risks.
+
+  
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[page] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] ---- 3 秒后状态: isPlaying=true currentTime=0.461267 readyState=4
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[diag] 退出

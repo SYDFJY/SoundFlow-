@@ -1,0 +1,351 @@
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+
+export const useMusicStore = defineStore('music', () => {
+  const songs = ref([])
+  const playlists = ref([])
+  const playCounts = ref({})
+  const history = ref([])
+  const searchQuery = ref('')
+  const sortField = ref('title')
+  const sortOrder = ref('asc')
+  const scanFolders = ref([])
+  const lyricFolders = ref([])
+  const isScanning = ref(false)
+  const scanProgress = ref(0)
+
+  // favorites 用普通对象存储，用 _favVersion 触发响应式更新
+  const _favoritesMap = {}
+  const _favVersion = ref(0)
+
+  function _syncFavorites(src) {
+    // 清空旧数据
+    for (const key of Object.keys(_favoritesMap)) delete _favoritesMap[key]
+    if (Array.isArray(src)) src.forEach(p => { _favoritesMap[p] = true })
+    else if (src instanceof Set) src.forEach(p => { _favoritesMap[p] = true })
+    else if (src && typeof src === 'object') Object.keys(src).forEach(p => { _favoritesMap[p] = true })
+    _favVersion.value++
+  }
+
+  const favorites = {
+    has(path) { return !!_favoritesMap[path] },
+    add(path) { if (!_favoritesMap[path]) { _favoritesMap[path] = true; _favVersion.value++ } },
+    delete(path) { if (_favoritesMap[path]) { delete _favoritesMap[path]; _favVersion.value++ } },
+    get size() { _favVersion.value; return Object.keys(_favoritesMap).length },
+    forEach(fn) { _favVersion.value; Object.keys(_favoritesMap).forEach(fn) },
+    toArray() { return Object.keys(_favoritesMap) }
+  }
+
+  // 从 localStorage 恢复
+  function loadFromStorage() {
+    try {
+      const saved = localStorage.getItem('soundflow_library')
+      if (saved) songs.value = JSON.parse(saved)
+
+      const fav = localStorage.getItem('soundflow_favorites')
+      if (fav) _syncFavorites(JSON.parse(fav))
+
+      const pl = localStorage.getItem('soundflow_playlists')
+      if (pl) playlists.value = JSON.parse(pl)
+
+      const pc = localStorage.getItem('soundflow_play_counts')
+      if (pc) playCounts.value = JSON.parse(pc)
+
+      const h = localStorage.getItem('soundflow_history')
+      if (h) history.value = JSON.parse(h)
+
+      const sf = localStorage.getItem('soundflow_scan_folders')
+      if (sf) scanFolders.value = JSON.parse(sf)
+
+      const lf = localStorage.getItem('soundflow_lyric_folders')
+      if (lf) lyricFolders.value = JSON.parse(lf)
+    } catch (e) {
+      console.error('[存储] 恢复失败:', e)
+    }
+  }
+
+  function saveToStorage() {
+    try {
+      const safeSet = (key, value) => {
+        try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) { console.warn('[存储] localStorage 写入失败:', key, e.message) }
+      }
+      safeSet('soundflow_library', songs.value)
+      safeSet('soundflow_favorites', favorites.toArray())
+      safeSet('soundflow_playlists', playlists.value)
+      safeSet('soundflow_play_counts', playCounts.value)
+      safeSet('soundflow_history', history.value)
+      safeSet('soundflow_scan_folders', scanFolders.value)
+      safeSet('soundflow_lyric_folders', lyricFolders.value)
+      if (window.electronAPI) {
+        window.electronAPI.storeSet('library', songs.value)
+        window.electronAPI.storeSet('favorites', favorites.toArray())
+        window.electronAPI.storeSet('playlists', playlists.value)
+        window.electronAPI.storeSet('playCounts', playCounts.value)
+        window.electronAPI.storeSet('history', history.value)
+        window.electronAPI.storeSet('scanFolders', scanFolders.value)
+        window.electronAPI.storeSet('lyricFolders', lyricFolders.value)
+      }
+    } catch (e) {
+      console.error('[存储] 保存失败:', e)
+    }
+  }
+
+  // 过滤和排序后的歌曲列表
+  const filteredSongs = computed(() => {
+    let list = [...songs.value]
+    if (searchQuery.value) {
+      const q = searchQuery.value.toLowerCase()
+      list = list.filter(s =>
+        (s.title || '').toLowerCase().includes(q) ||
+        (s.artist || '').toLowerCase().includes(q) ||
+        (s.album || '').toLowerCase().includes(q)
+      )
+    }
+    list.sort((a, b) => {
+      let va = a[sortField.value] || ''
+      let vb = b[sortField.value] || ''
+      if (typeof va === 'string') va = va.toLowerCase()
+      if (typeof vb === 'string') vb = vb.toLowerCase()
+      if (va < vb) return sortOrder.value === 'asc' ? -1 : 1
+      if (va > vb) return sortOrder.value === 'asc' ? 1 : -1
+      return 0
+    })
+    return list
+  })
+
+  const totalCount = computed(() => songs.value.length)
+  const favoriteCount = computed(() => { _favVersion.value; return Object.keys(_favoritesMap).length })
+
+  const favoriteSongs = computed(() => {
+    _favVersion.value
+    return songs.value.filter(s => !!_favoritesMap[s.path])
+  })
+
+  // 添加歌曲（去重）
+  function addSongs(newSongs) {
+    const existingPaths = new Set(songs.value.map(s => s.path))
+    const toAdd = newSongs.filter(s => !existingPaths.has(s.path))
+    songs.value.push(...toAdd)
+    saveToStorage()
+  }
+
+  // 移除歌曲
+  function removeSongs(paths) {
+    const pathSet = new Set(paths)
+    songs.value = songs.value.filter(s => !pathSet.has(s.path))
+    paths.forEach(p => favorites.delete(p))
+    saveToStorage()
+  }
+
+  // 切换收藏
+  function toggleFavorite(path) {
+    if (favorites.has(path)) {
+      favorites.delete(path)
+    } else {
+      favorites.add(path)
+    }
+    saveToStorage()
+  }
+
+  function isFavorite(path) {
+    return favorites.has(path)
+  }
+
+  // 批量收藏
+  function toggleFavoriteBatch(paths, state) {
+    paths.forEach(p => {
+      if (state) favorites.add(p)
+      else favorites.delete(p)
+    })
+    saveToStorage()
+  }
+
+  // 播放计数
+  function incrementPlayCount(path) {
+    // 用展开运算符确保新增 key 也是响应式的
+    const current = playCounts.value[path] || 0
+    playCounts.value = { ...playCounts.value, [path]: current + 1 }
+    // 添加到历史
+    const song = songs.value.find(s => s.path === path)
+    if (song) {
+      history.value = [{ path, title: song.title, artist: song.artist, time: Date.now() }, ...history.value.slice(0, 499)]
+    }
+    saveToStorage()
+  }
+
+  // 歌单管理
+  function createPlaylist(name) {
+    const id = 'pl_' + Date.now()
+    playlists.value = [...playlists.value, { id, name, songs: [], createTime: Date.now() }]
+    saveToStorage()
+    return id
+  }
+
+  function deletePlaylist(id) {
+    playlists.value = playlists.value.filter(p => p.id !== id)
+    saveToStorage()
+  }
+
+  function renamePlaylist(id, newName) {
+    playlists.value = playlists.value.map(p => p.id === id ? { ...p, name: newName } : p)
+    saveToStorage()
+  }
+
+  function addSongToPlaylist(playlistId, songPath) {
+    playlists.value = playlists.value.map(p => {
+      if (p.id === playlistId && !p.songs.includes(songPath)) {
+        return { ...p, songs: [...p.songs, songPath] }
+      }
+      return p
+    })
+    saveToStorage()
+  }
+
+  function removeSongFromPlaylist(playlistId, songPath) {
+    playlists.value = playlists.value.map(p => {
+      if (p.id === playlistId) {
+        return { ...p, songs: p.songs.filter(s => s !== songPath) }
+      }
+      return p
+    })
+    saveToStorage()
+  }
+
+  function getPlaylistSongs(playlistId) {
+    const pl = playlists.value.find(p => p.id === playlistId)
+    if (!pl) return []
+    const songMap = new Map(songs.value.map(s => [s.path, s]))
+    return pl.songs.map(p => songMap.get(p)).filter(Boolean)
+  }
+
+  // 排序
+  function setSortField(field) {
+    if (sortField.value === field) {
+      sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
+    } else {
+      sortField.value = field
+      sortOrder.value = 'asc'
+    }
+  }
+
+  function setSearchQuery(q) {
+    searchQuery.value = q
+  }
+
+  // 扫描文件夹
+  async function scanFolder(folderPath) {
+    if (!window.electronAPI) return
+    isScanning.value = true
+    scanProgress.value = 0
+    try {
+      const results = await window.electronAPI.scanFolder(folderPath)
+      addSongs(results)
+      if (!scanFolders.value.includes(folderPath)) {
+        scanFolders.value = [...scanFolders.value, folderPath]
+        saveToStorage()
+      }
+    } catch (e) {
+      console.error('[扫描] 失败:', e)
+    } finally {
+      isScanning.value = false
+    }
+  }
+
+  // 扫描文件
+  async function scanFiles(filePaths) {
+    if (!window.electronAPI) return
+    try {
+      const results = await window.electronAPI.scanFiles(filePaths)
+      addSongs(results)
+    } catch (e) {
+      console.error('[扫描] 失败:', e)
+    }
+  }
+
+  // 添加文件夹
+  async function addFolder() {
+    if (!window.electronAPI) return
+    const folder = await window.electronAPI.selectFolder()
+    if (folder) await scanFolder(folder)
+  }
+
+  // 添加文件
+  async function addFiles() {
+    if (!window.electronAPI) return
+    const files = await window.electronAPI.selectFiles()
+    if (files && files.length) await scanFiles(files)
+  }
+
+  // 添加歌词文件夹
+  async function addLyricFolder() {
+    if (!window.electronAPI) return
+    const folder = await window.electronAPI.selectFolder()
+    if (folder && !lyricFolders.value.includes(folder)) {
+      lyricFolders.value = [...lyricFolders.value, folder]
+      saveToStorage()
+    }
+    return folder
+  }
+
+  // 移除歌词文件夹
+  function removeLyricFolder(folder) {
+    lyricFolders.value = lyricFolders.value.filter(f => f !== folder)
+    saveToStorage()
+  }
+
+  // 查找重复
+  function findDuplicates() {
+    const groups = {}
+    songs.value.forEach(s => {
+      const key = `${s.title || ''}|${s.artist || ''}`.toLowerCase()
+      if (!groups[key]) groups[key] = []
+      groups[key].push(s)
+    })
+    return Object.values(groups).filter(g => g.length > 1)
+  }
+
+  // 批量更新元数据
+  function batchUpdateMeta(paths, updates) {
+    const pathSet = new Set(paths)
+    songs.value = songs.value.map(s => pathSet.has(s.path) ? { ...s, ...updates } : s)
+    saveToStorage()
+  }
+
+  // 更新单首歌曲
+  function updateSong(path, updates) {
+    songs.value = songs.value.map(s => s.path === path ? { ...s, ...updates } : s)
+    saveToStorage()
+  }
+
+  // 清空历史
+  function clearHistory() {
+    history.value = []
+    saveToStorage()
+  }
+
+  // 监听播放事件（从 playerStore 发出，避免循环依赖）
+  let _playListenerAttached = false
+  function initPlayListener() {
+    if (_playListenerAttached) return
+    _playListenerAttached = true
+    window.addEventListener('soundflow:play', (e) => {
+      if (e.detail && e.detail.path) {
+        incrementPlayCount(e.detail.path)
+      }
+    })
+  }
+
+  return {
+    songs, favorites, playlists, playCounts, history, searchQuery,
+    sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
+    filteredSongs, totalCount, favoriteCount, favoriteSongs,
+    loadFromStorage, saveToStorage, addSongs, removeSongs,
+    toggleFavorite, isFavorite, toggleFavoriteBatch,
+    incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist,
+    addSongToPlaylist, removeSongFromPlaylist, getPlaylistSongs,
+    setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles,
+    addLyricFolder, removeLyricFolder,
+    findDuplicates, batchUpdateMeta, updateSong, clearHistory,
+    initPlayListener
+  }
+})

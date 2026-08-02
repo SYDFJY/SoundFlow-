@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>SMTC 诊断</title></head>
+<body>
+<h3>SMTC / MediaSession 诊断</h3>
+<script>
+function log(msg) { console.log(msg) }
+
+log('页面加载, location=' + location.href)
+log('mediaSession 可用: ' + ('mediaSession' in navigator))
+
+// 1. 测试 file:// 音频能否播放
+const audio = new Audio(); audio.loop = true
+const wavPath = 'file:///E:/SoundFlow/test-media/test.wav'
+audio.src = wavPath
+
+audio.addEventListener('playing', () => log('AUDIO-PLAYING ✓ 音频正在播放, currentTime=' + audio.currentTime))
+audio.addEventListener('canplay', () => log('AUDIO-CANPLAY ✓ 可以播放'))
+audio.addEventListener('durationchange', () => log('AUDIO-DURATION=' + audio.duration))
+audio.addEventListener('error', (e) => log('AUDIO-ERROR ✗ src=' + wavPath + ' error=' + (audio.error && audio.error.code + ':' + audio.error.message)))
+audio.addEventListener('stalled', () => log('AUDIO-STALLED (媒体流中断)'))
+
+// 2. 测试 MediaSession
+if ('mediaSession' in navigator) {
+  try {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: '测试歌曲',
+      artist: '测试歌手',
+      album: '测试专辑'
+    })
+    log('MEDIASESSION-METADATA ✓ 已设置')
+    navigator.mediaSession.playbackState = 'playing'
+    log('MEDIASESSION-PLAYBACKSTATE ✓ 已设为 playing')
+    navigator.mediaSession.setActionHandler('play', () => log('ACTION play'))
+    navigator.mediaSession.setActionHandler('pause', () => log('ACTION pause'))
+    navigator.mediaSession.setActionHandler('previoustrack', () => log('ACTION prev'))
+    navigator.mediaSession.setActionHandler('nexttrack', () => log('ACTION next'))
+    log('MEDIASESSION-ACTIONS ✓ 已注册')
+    if (navigator.mediaSession.setPositionState) {
+      try {
+        navigator.mediaSession.setPositionState({ duration: 2, playbackRate: 1, position: 0 })
+        log('MEDIASESSION-POSITION ✓ 已设置')
+      } catch (e) { log('MEDIASESSION-POSITION ✗ ' + e.message) }
+    }
+  } catch (e) {
+    log('MEDIASESSION-ERROR ✗ ' + e.message)
+  }
+}
+
+audio.play().then(
+  () => log('AUDIO-PLAY-PROMISE ✓ play() 成功'),
+  (e) => log('AUDIO-PLAY-PROMISE ✗ play() 被拒绝: ' + e.name + ' ' + e.message)
+)
+
+setTimeout(() => log('---- 3 秒后状态: isPlaying=' + !audio.paused + ' currentTime=' + audio.currentTime + ' readyState=' + audio.readyState), 3000)
+</script>
+</body>
+</html>

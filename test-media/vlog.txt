@@ -1,0 +1,106 @@
+
+[diag] ready, 播放 35 秒
+[page] 页面加载, location=file:///E:/SoundFlow/test-media/test-page.html
+[30800:0803/072530.968:INFO:CONSOLE(7)] "页面加载, location=file:///E:/SoundFlow/test-media/test-page.html", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] mediaSession 可用: true
+[page] MEDIASESSION-METADATA ✓ 已设置
+[page] MEDIASESSION-PLAYBACKSTATE ✓ 已设为 playing
+[30800:0803/072530.969:INFO:CONSOLE(7)] "mediaSession 可用: true", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[30800:0803/072530.969:INFO:CONSOLE(7)] "MEDIASESSION-METADATA ✓ 已设置", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[30800:0803/072530.969:INFO:CONSOLE(7)] "MEDIASESSION-PLAYBACKSTATE ✓ 已设为 playing", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] MEDIASESSION-ACTIONS ✓ 已注册
+[30800:0803/072530.969:INFO:CONSOLE(7)] "MEDIASESSION-ACTIONS ✓ 已注册", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] MEDIASESSION-POSITION ✓ 已设置
+[30800:0803/072530.969:INFO:CONSOLE(7)] "MEDIASESSION-POSITION ✓ 已设置", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-DURATION=2
+[30800:0803/072530.989:INFO:CONSOLE(7)] "AUDIO-DURATION=2", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072531.152:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072531.152:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAY-PROMISE ✓ play() 成功
+[30800:0803/072531.152:INFO:CONSOLE(7)] "AUDIO-PLAY-PROMISE ✓ play() 成功", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] %cElectron Security Warning (Disabled webSecurity) font-weight: bold; This renderer process has "webSecurity" disabled. This
+  exposes users of this app to severe security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[30800:0803/072531.152:INFO:CONSOLE(2)] "%cElectron Security Warning (Disabled webSecurity) font-weight: bold; This renderer process has "webSecurity" disabled. This
+  exposes users of this app to severe security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.", source: node:electron/js2c/sandbox_bundle (2)
+[page] %cElectron Security Warning (allowRunningInsecureContent) font-weight: bold; This renderer process has "allowRunningInsecureContent"
+  enabled. This exposes users of this app to severe security risks.
+
+  
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[page] %cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+[30800:0803/072531.152:INFO:CONSOLE(2)] "%cElectron Security Warning (allowRunningInsecureContent) font-weight: bold; This renderer process has "allowRunningInsecureContent"
+  enabled. This exposes users of this app to severe security risks.
+
+  
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.", source: node:electron/js2c/sandbox_bundle (2)
+[30800:0803/072531.152:INFO:CONSOLE(2)] "%cElectron Security Warning (Insecure Content-Security-Policy) font-weight: bold; This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.", source: node:electron/js2c/sandbox_bundle (2)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072533.301:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072533.301:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] ---- 3 秒后状态: isPlaying=true currentTime=0.612553 readyState=4
+[30800:0803/072533.974:INFO:CONSOLE(7)] "---- 3 秒后状态: isPlaying=true currentTime=0.612553 readyState=4", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072535.360:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072535.360:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072537.420:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072537.420:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072539.481:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072539.481:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072541.540:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072541.541:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072543.601:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072543.601:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072545.661:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[30800:0803/072545.661:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072547.721:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[30800:0803/072547.721:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0
+[page] AUDIO-CANPLAY ✓ 可以播放
+[30800:0803/072549.781:INFO:CONSOLE(7)] "AUDIO-CANPLAY ✓ 可以播放", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[30800:0803/072549.781:INFO:CONSOLE(7)] "AUDIO-PLAYING ✓ 音频正在播放, currentTime=0", source: file:///E:/SoundFlow/test-media/test-page.html (7)
+[page] AUDIO-PLAYING ✓ 音频正在播放, currentTime=0

@@ -1,0 +1,58 @@
+{
+  "name": "soundflow",
+  "version": "1.0.0",
+  "description": "SoundFlow 声流音乐播放器 — 纯本地音乐播放器",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "vite build",
+    "build:electron": "vite build && electron-builder",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "music-metadata": "^11.12.3",
+    "pinia": "^2.1.7",
+    "vue": "^3.4.0",
+    "vue-router": "^4.2.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.5.0",
+    "concurrently": "^8.2.2",
+    "electron": "^28.3.3",
+    "electron-builder": "^24.9.0",
+    "vite": "^5.0.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.soundflow.music",
+    "productName": "SoundFlow 声流音乐",
+    "copyright": "Copyright © 2025",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "build/thumb/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "SoundFlow 声流音乐"
+    }
+  }
+}
