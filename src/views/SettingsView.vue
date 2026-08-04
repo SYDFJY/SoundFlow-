@@ -169,6 +169,42 @@
         </div>
       </div>
 
+      <!-- 音效 -->
+      <div class="settings-section">
+        <h3 class="section-title">音效</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">均衡器 / 音效</span>
+            <span class="label-desc">10 段 EQ + 预设 + 重低音 + 空间声场(Web Audio 实时处理)</span>
+          </div>
+          <button class="setting-btn" :class="{ active: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
+            {{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}
+          </button>
+        </div>
+        <div v-if="playerStore.eqSettings.enabled" class="eq-area">
+          <div class="eq-presets">
+            <button v-for="(p, key) in playerStore.EQ_PRESETS" :key="key" class="source-btn eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ p.name }}</button>
+          </div>
+          <div class="eq-sliders">
+            <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
+              <span class="eq-gain">{{ playerStore.eqSettings.gains[i] > 0 ? '+' : '' }}{{ playerStore.eqSettings.gains[i] }}</span>
+              <input type="range" min="-12" max="12" step="1" :value="playerStore.eqSettings.gains[i]" @input="playerStore.setEqGain(i, parseInt($event.target.value))" />
+              <span class="eq-freq">{{ f >= 1000 ? (f / 1000) + 'k' : f }}</span>
+            </div>
+          </div>
+          <div class="eq-extra">
+            <div class="eq-extra-item">
+              <span class="label-text">重低音</span>
+              <input type="range" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
+            </div>
+            <div class="eq-extra-item">
+              <span class="label-text">空间声场</span>
+              <input type="range" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- 字体 -->
       <div class="settings-section">
         <h3 class="section-title">字体</h3>
@@ -597,6 +633,20 @@ select {
 .font-remove { padding: 3px 10px; font-size: var(--font-size-xs); }
 .font-size-row { display: flex; align-items: center; gap: 10px; }
 .font-size-row input[type="range"] { width: 180px; }
+
+/* 音效 */
+.eq-area { width: 100%; display: flex; flex-direction: column; gap: 14px; }
+.eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; }
+.eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
+.eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 90px; }
+.eq-gain { font-size: 10px; color: var(--text-tertiary); }
+.eq-freq { font-size: 10px; color: var(--text-tertiary); }
+.eq-extra { display: flex; gap: 20px; }
+.eq-extra-item { display: flex; align-items: center; gap: 8px; }
+.eq-extra-item span { min-width: 48px; }
+.eq-extra-item input[type="range"] { width: 120px; }
 
 .batch-progress-track { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
 .batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }

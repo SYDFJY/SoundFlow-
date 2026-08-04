@@ -101,6 +101,161 @@ export const usePlayerStore = defineStore('player', () => {
     })
   }
 
+  // ===== 调音 / 音效(Web Audio:EQ + 预设 + 重低音 + 声场) =====
+  const EQ_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+  const EQ_PRESETS = {
+    flat: { name: '自定义', gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    pop: { name: '流行', gains: [3, 3, 1, 0, -1, 1, 2, 2, 1, 0] },
+    rock: { name: '摇滚', gains: [5, 4, 2, -1, -2, 0, 2, 3, 4, 4] },
+    jazz: { name: '爵士', gains: [3, 2, 1, 1, 0, 1, 2, 1, 0, -1] },
+    classical: { name: '古典', gains: [3, 2, 1, 0, 0, 0, 0, -1, -2, -3] },
+    vocal: { name: '人声', gains: [-2, -1, 0, 2, 4, 4, 2, 1, 0, -1] },
+    bass: { name: '低音增强', gains: [6, 5, 4, 2, 0, -1, -2, -2, -1, 0] }
+  }
+  const eqSettings = ref(loadEqSettings())
+
+  function loadEqSettings() {
+    const def = { enabled: false, preset: 'flat', gains: [...EQ_PRESETS.flat.gains], bass: 0, reverb: 0 }
+    try {
+      const s = JSON.parse(localStorage.getItem('soundflow_eq') || 'null')
+      if (s) return { ...def, ...s, gains: s.gains || [...def.gains] }
+    } catch {}
+    return def
+  }
+  function saveEqSettings() {
+    try { localStorage.setItem('soundflow_eq', JSON.stringify(eqSettings.value)) } catch {}
+  }
+
+  // Web Audio 节点
+  let _audioCtx = null
+  let _mediaSourceNode = null
+  let _eqFilters = []
+  let _bassFilter = null
+  let _reverbConvolver = null
+  let _reverbGain = null
+
+  // 确保音频图存在(音效开启时创建 AudioContext 处理链)
+  function ensureAudioGraph() {
+    try {
+      if (!audio.value) return
+      const AC = window.AudioContext || window.webkitAudioContext
+      if (!AC) return
+      if (!_audioCtx) _audioCtx = new AC()
+      if (_audioCtx.state === 'suspended') _audioCtx.resume()
+      if (!_mediaSourceNode) {
+        _mediaSourceNode = _audioCtx.createMediaElementSource(audio.value)
+      }
+      rebuildAudioChain()
+    } catch (e) {
+      console.error('[音效] 初始化失败:', e.message)
+    }
+  }
+
+  // 根据当前设置重建节点链(无音效时直通)
+  function rebuildAudioChain() {
+    if (!_audioCtx || !_mediaSourceNode) return
+    try {
+      // 断开旧连接
+      _mediaSourceNode.disconnect()
+      _eqFilters.forEach(f => { try { f.disconnect() } catch {} })
+      _eqFilters = []
+      if (_bassFilter) { try { _bassFilter.disconnect() } catch {}; _bassFilter = null }
+      if (_reverbConvolver) { try { _reverbConvolver.disconnect() } catch {}; _reverbConvolver = null }
+      if (_reverbGain) { try { _reverbGain.disconnect() } catch {}; _reverbGain = null }
+
+      const s = eqSettings.value
+      let prev = _mediaSourceNode
+      if (s.enabled) {
+        // 10 段 EQ
+        s.gains.forEach((g, i) => {
+          const f = _audioCtx.createBiquadFilter()
+          f.type = 'peaking'
+          f.frequency.value = EQ_FREQS[i]
+          f.Q.value = 1
+          f.gain.value = g
+          prev.connect(f)
+          prev = f
+          _eqFilters.push(f)
+        })
+        // 重低音
+        _bassFilter = _audioCtx.createBiquadFilter()
+        _bassFilter.type = 'lowshelf'
+        _bassFilter.frequency.value = 120
+        _bassFilter.gain.value = s.bass
+        prev.connect(_bassFilter)
+        prev = _bassFilter
+        // 声场(轻量混响,强度 0-1)
+        if (s.reverb > 0) {
+          const dryGain = _audioCtx.createGain()
+          dryGain.gain.value = 1
+          const wetGain = _audioCtx.createGain()
+          wetGain.gain.value = s.reverb * 0.5
+          _reverbConvolver = _audioCtx.createConvolver()
+          _reverbConvolver.buffer = createImpulseResponse(_audioCtx, 0.5, 2)
+          prev.connect(dryGain)
+          prev.connect(_reverbConvolver)
+          _reverbConvolver.connect(wetGain)
+          dryGain.connect(_audioCtx.destination)
+          wetGain.connect(_audioCtx.destination)
+        } else {
+          prev.connect(_audioCtx.destination)
+        }
+      } else {
+        // 未开启:直通(仍走 AudioContext,保持路由一致)
+        _mediaSourceNode.connect(_audioCtx.destination)
+      }
+    } catch (e) {
+      console.error('[音效] 重建链失败:', e.message)
+    }
+  }
+
+  // 生成短混响脉冲(噪声指数衰减)
+  function createImpulseResponse(ctx, seconds, decay) {
+    const rate = ctx.sampleRate
+    const len = Math.floor(rate * seconds)
+    const buf = ctx.createBuffer(2, len, rate)
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buf.getChannelData(ch)
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay)
+      }
+    }
+    return buf
+  }
+
+  // 更新音效设置
+  function setEqEnabled(v) {
+    eqSettings.value.enabled = !!v
+    saveEqSettings()
+    if (v) ensureAudioGraph()
+    else rebuildAudioChain()
+  }
+  function setEqPreset(key) {
+    const p = EQ_PRESETS[key]
+    if (p) {
+      eqSettings.value.preset = key
+      eqSettings.value.gains = [...p.gains]
+      saveEqSettings()
+      rebuildAudioChain()
+    }
+  }
+  function setEqGain(index, value) {
+    eqSettings.value.gains[index] = value
+    if (eqSettings.value.preset !== 'flat') eqSettings.value.preset = 'flat'
+    saveEqSettings()
+    rebuildAudioChain()
+  }
+  function setBass(v) {
+    eqSettings.value.bass = v
+    saveEqSettings()
+    rebuildAudioChain()
+  }
+  function setReverb(v) {
+    eqSettings.value.reverb = v
+    saveEqSettings()
+    rebuildAudioChain()
+  }
+
   // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
   // 同时记录原始顺序,供随机/顺序切换时恢复
   function setPlayQueue(songs, startIndex = 0) {
@@ -712,6 +867,7 @@ export const usePlayerStore = defineStore('player', () => {
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     loadSettings, saveSettings, playSingle, toggleQueue,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
+    eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     initMediaSession
   }
 })
