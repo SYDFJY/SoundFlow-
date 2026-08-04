@@ -2,46 +2,46 @@
   <aside class="sidebar">
     <div class="sidebar-menu">
       <div class="menu-section">
-        <div class="menu-label">发现</div>
+        <div class="menu-label">{{ t('nav.library') }}</div>
         <router-link to="/home" class="menu-item" :class="{ active: $route.path === '/home' }">
           <Home :size="16" />
-          <span>全部音乐</span>
+          <span>{{ t('nav.home') }}</span>
         </router-link>
         <router-link to="/favorites" class="menu-item" :class="{ active: $route.path === '/favorites' }">
           <Heart :size="16" />
-          <span>我的收藏</span>
+          <span>{{ t('nav.favorites') }}</span>
           <span v-if="musicStore.favoriteCount > 0" class="menu-badge">{{ musicStore.favoriteCount }}</span>
         </router-link>
         <router-link to="/history" class="menu-item" :class="{ active: $route.path === '/history' }">
           <History :size="16" />
-          <span>播放历史</span>
+          <span>{{ t('nav.history') }}</span>
         </router-link>
       </div>
 
       <div class="menu-section">
-        <div class="menu-label">浏览</div>
+        <div class="menu-label">{{ t('common.all') }}</div>
         <router-link to="/artist" class="menu-item" :class="{ active: $route.path === '/artist' }">
           <Users :size="16" />
-          <span>歌手</span>
+          <span>{{ t('nav.artists') }}</span>
         </router-link>
         <router-link to="/album" class="menu-item" :class="{ active: $route.path === '/album' }">
           <Disc3 :size="16" />
-          <span>专辑</span>
+          <span>{{ t('nav.albums') }}</span>
         </router-link>
         <router-link to="/folder" class="menu-item" :class="{ active: $route.path === '/folder' }">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
-          <span>文件夹</span>
+          <span>{{ t('nav.folders') }}</span>
         </router-link>
       </div>
 
       <div class="menu-section">
         <div class="menu-label">
-          歌单
-          <button class="add-playlist-btn" @click="openCreateModal" title="新建歌单">
+          {{ t('nav.playlists') }}
+          <button class="add-playlist-btn" @click="openCreateModal" :title="t('pl.create')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
-        <div v-if="musicStore.playlists.length === 0" class="menu-empty">暂无歌单</div>
+        <div v-if="musicStore.playlists.length === 0" class="menu-empty">{{ t('pl.empty') }}</div>
         <div ref="playlistListEl" class="playlist-drag-list">
           <router-link
           v-for="(pl, plIdx) in musicStore.playlists"
@@ -65,15 +65,15 @@
     <div class="sidebar-footer">
       <button class="add-folder-btn" @click="addFolder">
         <FolderPlus :size="16" />
-        <span>添加文件夹</span>
+        <span>{{ t('common.add') }}</span>
       </button>
     </div>
 
     <!-- 歌单右键菜单 -->
     <transition name="fade">
       <div v-if="contextMenu.show" class="context-menu" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
-        <button @click="renamePlaylist">重命名</button>
-        <button @click="deletePlaylist" class="danger">删除歌单</button>
+        <button @click="renamePlaylist">{{ t('common.rename') }}</button>
+        <button @click="deletePlaylist" class="danger">{{ t('common.delete') }}</button>
       </div>
     </transition>
 
@@ -92,8 +92,8 @@
             @keydown.escape="modal.show = false"
           />
           <div class="modal-actions">
-            <button class="modal-btn cancel" @click="modal.show = false">取消</button>
-            <button class="modal-btn confirm" @click="confirmModal" :disabled="!modal.value.trim()">确定</button>
+            <button class="modal-btn cancel" @click="modal.show = false">{{ t('common.cancel') }}</button>
+            <button class="modal-btn confirm" @click="confirmModal" :disabled="!modal.value.trim()">{{ t('common.confirm') }}</button>
           </div>
         </div>
       </div>
@@ -108,6 +108,7 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import Sortable from 'sortablejs'
 import { Home, Heart, History, Users, Disc3, ListMusic, FolderPlus } from '@lucide/vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { t } from '@/i18n'
 
 const musicStore = useMusicStore()
 const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
@@ -137,7 +138,7 @@ async function addFolder() {
 }
 
 function openCreateModal() {
-  modal.value = { show: true, title: '新建歌单', value: '', placeholder: '请输入歌单名称', mode: 'create', playlistId: null }
+  modal.value = { show: true, title: t('pl.create'), value: '', placeholder: t('pl.name'), mode: 'create', playlistId: null }
   nextTick(() => modalInput.value?.focus())
 }
 

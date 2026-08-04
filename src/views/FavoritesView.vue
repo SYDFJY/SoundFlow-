@@ -2,7 +2,7 @@
   <div class="favorites-view">
     <div class="view-header">
       <div class="header-left">
-        <h1 class="header-title">我的收藏</h1>
+        <h1 class="header-title">{{ t('fav.title') }}</h1>
         <span class="header-count">{{ musicStore.favoriteCount }} 首</span>
       </div>
       <div class="header-right">
@@ -26,6 +26,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 

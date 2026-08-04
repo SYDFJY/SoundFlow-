@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
+import { setLang } from '../i18n'
 
 export const useAppStore = defineStore('app', () => {
   const theme = ref('light') // light, dark, blue
@@ -298,6 +299,11 @@ export const useAppStore = defineStore('app', () => {
 
       const cl = localStorage.getItem('soundflow_close_action')
       if (cl) closeAction.value = cl
+
+      // 界面语言
+      const lang = localStorage.getItem('soundflow_language') || 'zh'
+      if (lang === 'en') setLang('en')
+      else setLang('zh')
     } catch {}
   }
 

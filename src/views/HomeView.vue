@@ -2,23 +2,30 @@
   <div class="home-view">
     <div class="view-header">
       <div class="header-left">
-        <h1 class="header-title">全部音乐</h1>
-        <span class="header-count">{{ musicStore.totalCount }} 首</span>
+        <h1 class="header-title">{{ t('nav.home') }}</h1>
+        <span class="header-count">{{ t('home.count', { n: musicStore.totalCount }) }}</span>
       </div>
       <div class="header-right">
         <button class="add-btn" @click="addFiles" title="添加文件">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>添加文件</span>
+          <span>{{ t('home.addFiles') }}</span>
         </button>
         <button v-if="musicStore.totalCount > 0" class="add-btn dup-btn" @click="openDuplicates" title="查重">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14v5a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h5"/></svg>
-          <span>查重</span>
+          <span>{{ t('home.dup') }}</span>
         </button>
         <button v-if="musicStore.totalCount > 0" class="add-btn dup-btn" @click="openMissingCheck" title="检测已移动或删除的歌曲">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
-          <span>清理失效</span>
+          <span>{{ t('home.missing') }}</span>
         </button>
       </div>
+    </div>
+
+    <!-- 启动检测到失效歌曲:横幅提示 -->
+    <div v-if="musicStore.startupMissing.length > 0" class="missing-banner" @click="openMissingCheck">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+      <span>{{ t('home.missingBanner', { n: musicStore.startupMissing.length }) }}</span>
+      <span class="missing-banner-action">{{ t('home.missingAction') }}</span>
     </div>
 
     <!-- 拖拽上传区 -->
@@ -31,8 +38,8 @@
     <!-- 搜索结果提示 -->
     <div v-if="musicStore.searchQuery" class="search-indicator">
       <svg class="indicator-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-      <span>搜索 "{{ musicStore.searchQuery }}" - 找到 {{ musicStore.filteredSongs.length }} 首</span>
-      <button class="indicator-clear" @click="musicStore.setSearchQuery('')">清除</button>
+      <span>{{ t('home.searchResult', { q: musicStore.searchQuery, n: musicStore.filteredSongs.length }) }}</span>
+      <button class="indicator-clear" @click="musicStore.setSearchQuery('')">{{ t('common.close') }}</button>
     </div>
 
     <!-- 歌曲列表 -->
@@ -153,6 +160,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 
@@ -164,9 +172,9 @@ const selectedSongs = ref([])
 
 // 列表空状态文案:区分搜索无结果/曲库为空
 const listEmptyText = computed(() => {
-  if (musicStore.searchQuery) return `未找到与「${musicStore.searchQuery}」匹配的歌曲`
-  if (musicStore.totalCount > 0) return '当前列表为空'
-  return '曲库为空，点击左侧「添加文件夹」或上方「添加文件」来导入音乐'
+  if (musicStore.searchQuery) return t('home.searchEmpty', { q: musicStore.searchQuery })
+  if (musicStore.totalCount > 0) return t('home.listEmpty')
+  return t('home.emptyTip')
 })
 
 // 查重状态
@@ -283,6 +291,26 @@ function removeSelected() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.missing-banner {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 0 10px; padding: 9px 14px;
+  background: var(--bg-hover, rgba(255,255,255,0.06));
+  border: 1px solid rgba(255, 170, 60, 0.35);
+  border-radius: 8px;
+  color: var(--text-primary, #e8a54a);
+  font-size: var(--font-size-sm, 13px);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.missing-banner:hover { background: rgba(255, 170, 60, 0.12); }
+.missing-banner svg { width: 16px; height: 16px; flex-shrink: 0; }
+.missing-banner-action {
+  margin-left: auto;
+  color: var(--color-primary, #4096ff);
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .view-header {

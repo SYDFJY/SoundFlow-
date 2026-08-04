@@ -5,11 +5,11 @@
       <div class="player-topbar">
         <button class="back-btn" @click="$router.back()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
-          <span>返回</span>
+          <span>{{ t('playerView.back') }}</span>
         </button>
         <div class="tab-switcher">
-          <button class="tab-btn" :class="{ active: activeTab === 'cover' }" @click="activeTab = 'cover'">封面</button>
-          <button class="tab-btn" :class="{ active: activeTab === 'lyric' }" @click="activeTab = 'lyric'">歌词</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'cover' }" @click="activeTab = 'cover'">{{ t('playerView.cover') }}</button>
+          <button class="tab-btn" :class="{ active: activeTab === 'lyric' }" @click="activeTab = 'lyric'">{{ t('playerView.lyrics') }}</button>
         </div>
         <div class="topbar-right">
           <button class="icon-btn" @click="showBgPanel = !showBgPanel" title="播放页背景设置">
@@ -21,7 +21,7 @@
           <div class="panel-title">播放页背景</div>
           <div class="bg-mode-btns">
             <button :class="{ active: bgMode === 'theme' }" @click="setBgMode('theme')">主题</button>
-            <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">封面</button>
+            <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">{{ t('playerView.cover') }}</button>
             <button :class="{ active: bgMode === 'color' }" @click="setBgMode('color')">纯色</button>
             <button :class="{ active: bgMode === 'gradient' }" @click="setBgMode('gradient')">渐变</button>
             <button :class="{ active: bgMode === 'image' }" @click="setBgMode('image')">图片</button>
@@ -93,7 +93,7 @@
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">{{ playerStore.lyricOrigin }}歌词</div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
               <div class="empty-icon">📝</div>
-              <div>暂无歌词</div>
+              <div>{{ t('playerView.noLyrics') }}</div>
               <div class="empty-hint">右键歌曲可导入 .lrc 文件<br/>或在设置中添加歌词文件夹</div>
               <button class="search-lyric-btn" :disabled="searchingLyric" @click="searchLyric">
                 {{ searchingLyric ? '正在搜索…' : '🔍 在线搜索歌词并下载' }}
@@ -140,7 +140,7 @@
         <div class="controls-row">
           <!-- 播放控制组(居中:播放模式/上一曲/播放/下一曲/倍速,与播放栏一致) -->
           <div class="controls-group">
-            <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="playModeLabel">
+            <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="t(playModeLabelKey)">
               <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
               <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
               <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
@@ -156,9 +156,29 @@
             <button class="ctrl-btn" @click="playerStore.playNext()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
             </button>
-            <button class="ctrl-btn ctrl-btn--small" @click="playerStore.cyclePlaybackRate()" :title="'倍速 ' + playerStore.playbackRate + 'x'">
+            <button class="ctrl-btn ctrl-btn--small" @click="playerStore.cyclePlaybackRate()" :title="t('player.rate', { x: playerStore.playbackRate })">
               {{ playerStore.playbackRate }}x
             </button>
+
+            <!-- 变调(升降调) -->
+            <div class="pitch-control">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>
+                <span v-if="playerStore.pitch !== 0" class="pitch-badge">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }}</span>
+              </button>
+              <transition name="vol-fade">
+                <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
+                  <div class="pitch-header">
+                    <span>{{ t('playerView.pitch') }}</span>
+                    <span class="pitch-value">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
+                  </div>
+                  <input type="range" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
+                  <div class="pitch-actions">
+                    <button class="pitch-reset" @click="playerStore.setPitch(0)">{{ t('playerView.pitchReset') }}</button>
+                  </div>
+                </div>
+              </transition>
+            </div>
           </div>
 
           <!-- 右侧工具组(音量 / 音效 / 播放列表) -->
@@ -166,7 +186,7 @@
 
             <!-- 音量(默认收起,点击图标展开滑块) -->
             <div class="volume-control" :class="{ expanded: volExpanded }">
-              <button class="vol-btn" @click="volExpanded = !volExpanded" title="音量">
+              <button class="vol-btn" @click="volExpanded = !volExpanded" :title="t('player.volume')">
                 <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
                 <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
               </button>
@@ -176,12 +196,12 @@
             </div>
 
             <!-- 音效 -->
-            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" title="音效">
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
             </button>
 
             <!-- 播放列表 -->
-            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" title="播放列表">
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" :title="t('player.queue')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             </button>
           </div>
@@ -267,6 +287,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import Sortable from 'sortablejs'
 import { usePlayerStore } from '@/stores/playerStore'
+import { t } from '@/i18n'
 
 const playerStore = usePlayerStore()
 const progressBar = ref(null)
@@ -433,10 +454,11 @@ const bgStyle = computed(() => {
   return { backgroundColor: '#14161c' }
 })
 
-const playModeLabel = computed(() => {
-  const labels = { list: '列表播放', repeat: '列表循环', repeatOne: '单曲循环', random: '随机播放' }
-  return labels[playerStore.playMode] || ''
+const playModeLabelKey = computed(() => {
+  const keys = { list: 'player.mode.list', repeat: 'player.mode.repeat', repeatOne: 'player.mode.repeatOne', random: 'player.mode.random' }
+  return keys[playerStore.playMode] || ''
 })
+const playModeLabel = computed(() => t(playModeLabelKey.value))
 
 // 切歌时自动滚动歌词
 watch(() => playerStore.currentLyricIndex, () => {
@@ -532,6 +554,7 @@ function setLyricColor(v) {
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const volExpanded = ref(false) // 音量滑块默认收起
+const showPitchPanel = ref(false) // 变调面板默认收起
 
 // 频响曲线可视化:随 EQ 滑块实时绘制
 const eqCurveCanvas = ref(null)
@@ -1227,4 +1250,36 @@ async function searchLyric() {
   -webkit-appearance: none; width: 12px; height: 12px;
   background: white; border-radius: 50%; cursor: pointer;
 }
+
+/* 变调控件 */
+.pitch-control { position: relative; display: flex; align-items: center; }
+.pitch-badge {
+  position: absolute; top: -4px; right: -6px;
+  font-size: 9px; font-weight: 700;
+  background: var(--color-primary, #4096ff); color: #fff;
+  border-radius: 8px; padding: 0 4px; line-height: 14px;
+}
+.pitch-panel {
+  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  border-radius: 10px; padding: 10px 14px; width: 200px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
+}
+.pitch-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
+.pitch-value { color: var(--color-primary, #4096ff); font-weight: 700; }
+.pitch-panel input[type="range"] {
+  width: 100%; -webkit-appearance: none; appearance: none; height: 4px;
+  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+}
+.pitch-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
+}
+.pitch-actions { display: flex; justify-content: center; margin-top: 8px; }
+.pitch-reset {
+  font-size: var(--font-size-sm, 12px); padding: 3px 14px;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 6px;
+  background: transparent; color: var(--text-primary, #fff); cursor: pointer;
+}
+.pitch-reset:hover { background: rgba(255,255,255,0.1); }
 </style>

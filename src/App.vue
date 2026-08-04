@@ -106,6 +106,8 @@ onMounted(() => {
   appStore.loadSettings()
   musicStore.restoreLibrary()
   musicStore.initPlayListener()
+  // 启动自动检测失效歌曲(延迟等 toast 就绪)
+  setTimeout(() => musicStore.startupMissingCheck(), 2500)
   playerStore.loadSettings()
   playerStore.restoreQueue()
   playerStore.initAudio()

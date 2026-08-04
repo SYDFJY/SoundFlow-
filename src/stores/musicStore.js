@@ -6,6 +6,8 @@ export const useMusicStore = defineStore('music', () => {
   const playlists = ref([])
   const playCounts = ref({})
   const history = ref([])
+  // 启动时自动检测出的失效歌曲(文件被移动/删除),用于首页横幅提示
+  const startupMissing = ref([])
   const searchQuery = ref('')
   const sortField = ref('title')
   const sortOrder = ref('asc')
@@ -395,6 +397,22 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  // 启动自动检测失效歌曲:只提示不自动删,首页横幅引导清理
+  async function startupMissingCheck() {
+    try {
+      const missing = await checkMissingSongs()
+      startupMissing.value = missing
+      if (missing.length > 0) {
+        console.warn(`[检测] 启动检测到 ${missing.length} 首歌曲文件已失效,可在首页清理`)
+        if (window.$toast) {
+          window.$toast.warning(`检测到 ${missing.length} 首歌曲文件已失效,可在首页一键清理`)
+        }
+      }
+    } catch (e) {
+      console.error('[检测] 启动失效检测失败:', e)
+    }
+  }
+
   // 更新单首歌曲
   function updateSong(path, updates) {
     songs.value = songs.value.map(s => s.path === path ? { ...s, ...updates } : s)
@@ -420,7 +438,7 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   return {
-    songs, favorites, playlists, playCounts, history, searchQuery,
+    songs, favorites, playlists, playCounts, history, searchQuery, startupMissing,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
     sortSongs,
@@ -431,7 +449,7 @@ export const useMusicStore = defineStore('music', () => {
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles,
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, clearHistory,
-    checkMissingSongs,
+    checkMissingSongs, startupMissingCheck,
     initPlayListener
   }
 })

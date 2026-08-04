@@ -1,13 +1,13 @@
 <template>
   <div class="album-view">
     <div class="view-header">
-      <h1 class="header-title">专辑</h1>
+      <h1 class="header-title">{{ t('album.title') }}</h1>
       <span class="header-count">{{ albums.length }} 张</span>
     </div>
     <div class="view-content">
       <div v-if="albums.length === 0" class="empty-state">
         <div class="empty-icon">💿</div>
-        <div class="empty-text">暂无专辑信息</div>
+        <div class="empty-text">{{ t('common.empty') }}</div>
       </div>
       <div v-else class="album-grid">
         <div v-for="album in albums" :key="album.name" class="album-card" @click="selectAlbum(album)">
@@ -55,6 +55,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 

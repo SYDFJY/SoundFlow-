@@ -2,13 +2,13 @@
   <div class="folder-view">
     <div class="view-header">
       <div class="header-left">
-        <h1 class="header-title">文件夹</h1>
+        <h1 class="header-title">{{ t('folder.title') }}</h1>
         <span class="header-count">{{ musicStore.scanFolders.length }} 个扫描目录</span>
       </div>
       <div class="header-right">
         <button class="add-btn" @click="addFolder">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-          <span>添加文件夹</span>
+          <span>{{ t('common.add') }}</span>
         </button>
       </div>
     </div>
@@ -16,7 +16,7 @@
       <div v-if="musicStore.scanFolders.length === 0" class="empty-state">
         <div class="empty-icon">📁</div>
         <div class="empty-text">还没有添加扫描目录</div>
-        <button class="add-btn" @click="addFolder">添加文件夹</button>
+        <button class="add-btn" @click="addFolder">{{ t('common.add') }}</button>
       </div>
       <div v-else class="folder-list">
         <div v-for="folder in musicStore.scanFolders" :key="folder" class="folder-item">
@@ -38,6 +38,7 @@
 
 <script setup>
 import { useMusicStore } from '@/stores/musicStore'
+import { t } from '@/i18n'
 
 const musicStore = useMusicStore()
 

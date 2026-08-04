@@ -431,6 +431,7 @@ function createMainWindow() {
 function createMiniWindow() {
   if (miniWindow) { miniWindow.focus(); return }
 
+  const pos = storageData.miniPos || null
   miniWindow = new BrowserWindow({
     width: 320,
     height: 80,
@@ -439,6 +440,7 @@ function createMiniWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
+    ...(pos ? { x: pos.x, y: pos.y } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -451,6 +453,40 @@ function createMiniWindow() {
   } else {
     miniWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: '/mini' })
   }
+
+  // 位置记忆(拖动后保存,重启恢复)
+  let posSaveTimer = null
+  miniWindow.on('moved', () => {
+    if (posSaveTimer) return
+    posSaveTimer = setTimeout(() => {
+      posSaveTimer = null
+      try {
+        const [x, y] = miniWindow.getPosition()
+        storageData.miniPos = { x, y }
+        saveStorage(true)
+      } catch {}
+    }, 400)
+  })
+
+  // 右键菜单:恢复主窗口 / 退出应用
+  miniWindow.on('context-menu', () => {
+    const menu = Menu.buildFromTemplate([
+      {
+        label: '恢复主窗口',
+        click: () => {
+          if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore()
+            mainWindow.show()
+            mainWindow.focus()
+          }
+          if (miniWindow) { miniWindow.close(); miniWindow = null }
+        }
+      },
+      { type: 'separator' },
+      { label: '退出应用', click: () => { app.quit() } }
+    ])
+    menu.popup({ window: miniWindow })
+  })
 
   miniWindow.on('closed', () => { miniWindow = null })
 }

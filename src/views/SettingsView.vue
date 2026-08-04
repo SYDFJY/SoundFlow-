@@ -10,10 +10,10 @@
     <div class="settings-content">
       <!-- 主题设置 -->
       <div class="settings-section">
-        <h3 class="section-title">外观</h3>
+        <h3 class="section-title">{{ t('settings.appearance') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">主题</span>
+            <span class="label-text">{{ t('settings.theme') }}</span>
             <span class="label-desc">选择应用主题颜色</span>
           </div>
           <div class="theme-options">
@@ -29,11 +29,21 @@
             </button>
           </div>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">{{ t('settings.language') }}</span>
+            <span class="label-desc">Language / 界面语言</span>
+          </div>
+          <div class="lang-options">
+            <button class="theme-btn" :class="{ active: currentLang === 'zh' }" @click="switchLang('zh')">简体中文</button>
+            <button class="theme-btn" :class="{ active: currentLang === 'en' }" @click="switchLang('en')">English</button>
+          </div>
+        </div>
       </div>
 
       <!-- 播放设置 -->
       <div class="settings-section">
-        <h3 class="section-title">播放</h3>
+        <h3 class="section-title">{{ t('settings.playback') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">默认音量</span>
@@ -66,7 +76,7 @@
 
       <!-- 扫描设置 -->
       <div class="settings-section">
-        <h3 class="section-title">曲库</h3>
+        <h3 class="section-title">{{ t('settings.library') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">扫描目录</span>
@@ -82,7 +92,7 @@
 
       <!-- 歌词文件夹 -->
       <div class="settings-section">
-        <h3 class="section-title">歌词</h3>
+        <h3 class="section-title">{{ t('settings.lyrics') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">在线歌词</span>
@@ -171,7 +181,7 @@
 
       <!-- 音效 -->
       <div class="settings-section">
-        <h3 class="section-title">音效</h3>
+        <h3 class="section-title">{{ t('settings.eq') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">均衡器 / 音效</span>
@@ -207,7 +217,7 @@
 
       <!-- 字体 -->
       <div class="settings-section">
-        <h3 class="section-title">字体</h3>
+        <h3 class="section-title">{{ t('settings.font') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">界面字体</span>
@@ -241,7 +251,7 @@
 
       <!-- 快捷键 -->
       <div class="settings-section">
-        <h3 class="section-title">快捷键</h3>
+        <h3 class="section-title">{{ t('settings.shortcuts') }}</h3>
         <div class="setting-item" v-for="d in shortcutDefs" :key="d.key">
           <div class="setting-label">
             <span class="label-text">{{ d.label }}</span>
@@ -261,7 +271,7 @@
 
       <!-- 关闭行为 -->
       <div class="settings-section">
-        <h3 class="section-title">系统</h3>
+        <h3 class="section-title">{{ t('settings.system') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">关闭窗口时</span>
@@ -275,7 +285,7 @@
 
       <!-- 关于 -->
       <div class="settings-section">
-        <h3 class="section-title">关于</h3>
+        <h3 class="section-title">{{ t('settings.about') }}</h3>
         <div class="about-card">
           <div class="about-logo">
             <img src="/icon.jpg" alt="logo" style="width:48px;height:48px;border-radius:12px;object-fit:cover;" />
@@ -290,7 +300,7 @@
 
       <!-- 数据 -->
       <div class="settings-section">
-        <h3 class="section-title">数据</h3>
+        <h3 class="section-title">{{ t('settings.data') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">备份数据</span>
@@ -316,10 +326,13 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
+import { t, i18n, setLang } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const appStore = useAppStore()
+const currentLang = computed(() => i18n.lang)
+function switchLang(l) { setLang(l); appStore.saveSettings() }
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
 

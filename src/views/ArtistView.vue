@@ -1,13 +1,13 @@
 <template>
   <div class="artist-view">
     <div class="view-header">
-      <h1 class="header-title">歌手</h1>
+      <h1 class="header-title">{{ t('artist.title') }}</h1>
       <span class="header-count">{{ artists.length }} 位</span>
     </div>
     <div class="view-content">
       <div v-if="artists.length === 0" class="empty-state">
         <div class="empty-icon">👤</div>
-        <div class="empty-text">暂无歌手信息</div>
+        <div class="empty-text">{{ t('common.empty') }}</div>
       </div>
       <div v-else class="artist-grid">
         <div v-for="artist in artists" :key="artist.name" class="artist-card" @click="selectArtist(artist)">
@@ -51,6 +51,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 
