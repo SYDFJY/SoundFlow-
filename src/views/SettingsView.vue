@@ -169,6 +169,31 @@
         </div>
       </div>
 
+      <!-- 字体 -->
+      <div class="settings-section">
+        <h3 class="section-title">字体</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">界面字体</span>
+            <span class="label-desc">可导入 .ttf / .otf / .woff2 字体文件</span>
+          </div>
+        </div>
+        <div class="setting-item font-row">
+          <select class="font-select" :value="currentFont" @change="selectFont($event.target.value)">
+            <option v-for="f in systemFonts" :key="f.value" :value="f.value">{{ f.label }}</option>
+            <option v-for="f in customFonts" :key="f.url" :value="'&quot;' + f.name + '&quot;'">{{ f.name }}（自定义）</option>
+          </select>
+          <button class="setting-btn" @click="importFont">导入字体</button>
+        </div>
+        <div class="setting-item" v-if="customFonts.length">
+          <div class="setting-label"><span class="label-text">已导入字体</span></div>
+          <div v-for="(f, i) in customFonts" :key="f.url" class="custom-font-row">
+            <span class="font-name">{{ f.name }}</span>
+            <button class="setting-btn font-remove" @click="removeCustomFont(i)">删除</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 快捷键 -->
       <div class="settings-section">
         <h3 class="section-title">快捷键</h3>
@@ -338,6 +363,47 @@ function resetShortcuts() {
   const defaults = { playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft', volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown' }
   shortcuts.value = { ...defaults }
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(defaults))
+}
+
+// 字体设置:系统字体 + 自定义导入
+const systemFonts = [
+  { label: '系统默认', value: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif' },
+  { label: '微软雅黑', value: '"Microsoft YaHei", sans-serif' },
+  { label: '宋体', value: '"SimSun", serif' },
+  { label: '黑体', value: '"SimHei", sans-serif' },
+  { label: '楷体', value: '"KaiTi", serif' },
+  { label: 'Arial', value: 'Arial, sans-serif' },
+  { label: 'Georgia', value: 'Georgia, serif' },
+  { label: 'Courier New', value: '"Courier New", monospace' }
+]
+const currentFont = ref(localStorage.getItem('soundflow_font_family') || systemFonts[0].value)
+const customFonts = ref(JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]'))
+
+function selectFont(family) {
+  currentFont.value = family
+  localStorage.setItem('soundflow_font_family', family)
+  document.documentElement.style.setProperty('--font-family', family)
+}
+
+async function importFont() {
+  if (!window.electronAPI) return
+  const res = await window.electronAPI.selectFontFile()
+  if (!res) return
+  try {
+    const f = new FontFace(res.name, `url('${res.url}')`)
+    await f.load()
+    document.fonts.add(f)
+  } catch {}
+  customFonts.value.push(res)
+  localStorage.setItem('soundflow_custom_fonts', JSON.stringify(customFonts.value))
+  selectFont(`"${res.name}"`)
+}
+
+function removeCustomFont(i) {
+  const name = customFonts.value[i].name
+  customFonts.value.splice(i, 1)
+  localStorage.setItem('soundflow_custom_fonts', JSON.stringify(customFonts.value))
+  if (currentFont.value.includes(name)) selectFont(systemFonts[0].value)
 }
 
 // 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)
@@ -511,6 +577,15 @@ select {
 .source-btn:hover { color: var(--text-primary); }
 .source-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
 .deepseek-key-input { width: 100%; margin-top: 8px; }
+.font-row { display: flex; align-items: center; gap: 10px; }
+.font-select {
+  flex: 1; padding: 7px 10px; font-size: 13px;
+  background: var(--bg-card); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.custom-font-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
+.font-name { font-size: 13px; color: var(--text-primary); }
+.font-remove { padding: 3px 10px; font-size: 12px; }
 
 .batch-progress-track { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
 .batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }

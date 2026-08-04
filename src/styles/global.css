@@ -44,6 +44,7 @@
   --player-bg: #d8e8f4;
   --player-bg-dark: #142230;
   --player-shadow: 0 -2px 12px rgba(18,34,48,0.45);
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: var(--font-size-base);
 }
 

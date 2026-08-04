@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
+  selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
 
   // 窗口控制

@@ -96,6 +96,8 @@
         </div>
       </div>
     </transition>
+    <!-- 拖拽调整侧边栏宽度 -->
+    <div class="sidebar-resizer" @mousedown="startResize" title="拖动调整宽度"></div>
   </aside>
 </template>
 
@@ -119,6 +121,24 @@ function openCreateModal() {
 
 function showPlaylistMenu(e, pl) {
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, playlist: pl }
+}
+
+// 侧边栏宽度拖拽调整(记忆)
+function startResize(e) {
+  e.preventDefault()
+  const startX = e.clientX
+  const startW = document.documentElement.style.getPropertyValue('--sidebar-width').replace('px', '') || 220
+  function onMove(ev) {
+    const w = Math.min(380, Math.max(160, parseInt(startW) + ev.clientX - startX))
+    document.documentElement.style.setProperty('--sidebar-width', w + 'px')
+  }
+  function onUp() {
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+    localStorage.setItem('soundflow_sidebar_width', document.documentElement.style.getPropertyValue('--sidebar-width'))
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
 }
 
 // 歌单封面:取歌单第一首歌的封面
@@ -173,7 +193,12 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 </script>
 
 <style scoped>
-.sidebar { width: var(--sidebar-width); background: var(--bg-sidebar); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+.sidebar { width: var(--sidebar-width); background: var(--bg-sidebar); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; position: relative; }
+.sidebar-resizer {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
+  cursor: col-resize; z-index: 5;
+}
+.sidebar-resizer:hover { background: var(--color-primary-alpha); }
 .sidebar-menu { flex: 1; overflow-y: auto; padding: 12px 0; }
 .menu-section { margin-bottom: 8px; }
 .menu-label { display: flex; align-items: center; justify-content: space-between; padding: 8px 20px; font-size: 11px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }

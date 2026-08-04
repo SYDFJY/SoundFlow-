@@ -98,6 +98,21 @@ onMounted(() => {
   playerStore.restoreQueue()
   playerStore.initAudio()
   playerStore.initMediaSession()
+  // 恢复自定义侧边栏宽度
+  const sw = localStorage.getItem('soundflow_sidebar_width')
+  if (sw) document.documentElement.style.setProperty('--sidebar-width', sw)
+  // 应用字体设置 + 加载导入字体
+  try {
+    const fam = localStorage.getItem('soundflow_font_family')
+    if (fam) document.documentElement.style.setProperty('--font-family', fam)
+    const cfs = JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]')
+    for (const cf of cfs) {
+      try {
+        const f = new FontFace(cf.name, `url('${cf.url}')`)
+        f.load().then(() => document.fonts.add(f)).catch(() => {})
+      } catch {}
+    }
+  } catch {}
 
   if (window.electronAPI) {
     window.electronAPI.on('menu-add-folder', () => { try { musicStore.addFolder() } catch (e) { console.error(e) } })

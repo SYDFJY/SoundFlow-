@@ -935,6 +935,27 @@ function setupIPC() {
     } catch { return false }
   })
 
+  // 选择自定义字体文件:复制到 userData/fonts/,返回 {name, url}
+  ipcMain.handle('select-font-file', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: '字体', extensions: ['ttf', 'otf', 'woff', 'woff2'] }]
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    const src = result.filePaths[0]
+    try {
+      const dir = path.join(app.getPath('userData'), 'fonts')
+      fs.mkdirSync(dir, { recursive: true })
+      const dest = path.join(dir, path.basename(src))
+      fs.copyFileSync(src, dest)
+      const name = path.basename(src, path.extname(src))
+      const url = 'file:///' + dest.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
+      return { name, url }
+    } catch (e) {
+      return null
+    }
+  })
+
   // 选择自定义背景图片:复制到 userData/background/ 持久保存,返回 file:// URL
   ipcMain.handle('select-bg-image', async () => {
     const result = await dialog.showOpenDialog({
