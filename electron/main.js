@@ -386,11 +386,12 @@ function createMainWindow() {
     // 先阻止默认关闭,根据用户设置决定:exit 真退出 / minimize 隐藏到托盘
     e.preventDefault()
     try { mainWindow.webContents.send('app:before-close') } catch (_) {}
-    // 直接读取渲染进程的关闭行为设置(实时准确,避免异步同步延迟)
-    let action = 'minimize'
+    // 读取渲染进程的关闭行为设置(实时准确)
+    let action = storageData.closeAction === 'exit' ? 'exit' : 'minimize'
     try {
       const v = await mainWindow.webContents.executeJavaScript("localStorage.getItem('soundflow_close_action') || 'minimize'")
       if (v === 'exit') action = 'exit'
+      else if (v === 'minimize') action = 'minimize'
     } catch {}
     if (action === 'exit') {
       app.isQuitting = true
