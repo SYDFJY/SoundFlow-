@@ -619,7 +619,7 @@ async function searchLyric() {
 }
 .lyric-line.left { text-align: left; }
 .lyric-trans {
-  font-size: 0.62em;
+  font-size: 0.82em;
   font-weight: 400;
   opacity: 0.6;
   white-space: nowrap;
