@@ -28,7 +28,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/appStore'
 import { useMusicStore } from '@/stores/musicStore'
