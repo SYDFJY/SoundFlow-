@@ -101,6 +101,23 @@
           <button class="ctrl-btn" @click="playerStore.playNext()">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
           </button>
+          <button class="ctrl-btn" @click="playerStore.cyclePlaybackRate()" :title="'倍速 ' + playerStore.playbackRate + 'x'">
+            {{ playerStore.playbackRate }}x
+          </button>
+
+          <!-- 音量(与播放按钮同一行) -->
+          <div class="volume-control">
+            <button class="vol-btn" @click="playerStore.toggleMute()">
+              <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+            </button>
+            <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+          </div>
+
+          <!-- 播放列表 -->
+          <button class="ctrl-btn" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" title="播放列表">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          </button>
         </div>
         <div class="progress-row">
           <span class="time">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
@@ -112,13 +129,31 @@
           </div>
           <span class="time">{{ playerStore.formatTime(playerStore.duration) }}</span>
         </div>
-        <div class="volume-row">
-          <button class="vol-btn" @click="playerStore.toggleMute()">
-            <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-          </button>
-          <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
-        </div>
+
+        <!-- 播放列表面板(打开自动定位当前歌曲) -->
+        <transition name="queue-slide">
+          <div v-if="showQueuePanel" class="queue-panel">
+            <div class="queue-header">
+              <span class="queue-title">播放列表</span>
+              <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
+              <button class="queue-close" @click="showQueuePanel = false">✕</button>
+            </div>
+            <div class="queue-list" ref="queueListEl">
+              <div v-if="playerStore.playQueue.length === 0" class="queue-empty">队列为空</div>
+              <div v-for="(song, idx) in playerStore.playQueue" :key="song.path + '-' + idx"
+                class="queue-item" :class="{ active: idx === playerStore.currentIndex }"
+                :ref="el => { if (idx === playerStore.currentIndex) activeQueueEl = el }"
+                @click="playerStore.playIndex(idx)">
+                <span class="queue-idx">{{ idx + 1 }}</span>
+                <div class="queue-info">
+                  <div class="queue-name text-ellipsis">{{ song.title }}</div>
+                  <div class="queue-artist text-ellipsis">{{ song.artist }}</div>
+                </div>
+                <button class="queue-remove" @click.stop="playerStore.removeFromQueue(idx)" title="移除">✕</button>
+              </div>
+            </div>
+          </div>
+        </transition>
       </div>
     </div>
   </div>
@@ -132,6 +167,28 @@ const playerStore = usePlayerStore()
 const progressBar = ref(null)
 const lyricsPanel = ref(null)
 const activeLyricEl = ref(null)
+
+// 播放列表面板
+const showQueuePanel = ref(false)
+const queueListEl = ref(null)
+const activeQueueEl = ref(null)
+
+function toggleQueuePanel() {
+  showQueuePanel.value = !showQueuePanel.value
+  if (showQueuePanel.value) {
+    nextTick(() => scrollToActiveQueue())
+  }
+}
+
+// 打开/切换歌曲时,自动定位当前播放项
+function scrollToActiveQueue() {
+  if (activeQueueEl.value) {
+    activeQueueEl.value.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+}
+watch(() => playerStore.currentIndex, () => {
+  if (showQueuePanel.value) nextTick(() => scrollToActiveQueue())
+})
 const activeTab = ref('cover')
 
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
@@ -446,7 +503,72 @@ async function searchLyric() {
 
 .controls-row {
   display: flex; align-items: center; justify-content: center; gap: 24px;
+  position: relative;
 }
+.ctrl-btn.active { color: var(--color-primary); }
+.volume-control {
+  display: flex; align-items: center; gap: 8px;
+  margin-left: 16px;
+}
+.vol-btn {
+  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; color: rgba(255,255,255,0.5);
+}
+.vol-btn:hover { color: white; }
+.vol-btn svg { width: 18px; height: 18px; }
+.vol-slider {
+  width: 100px; height: 4px; -webkit-appearance: none; appearance: none;
+  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  background: white; border-radius: 50%; cursor: pointer;
+}
+
+/* 播放列表面板 */
+.queue-panel {
+  position: absolute;
+  bottom: 76px;
+  right: 20px;
+  width: 320px;
+  max-height: 380px;
+  display: flex;
+  flex-direction: column;
+  background: rgba(18, 20, 28, 0.94);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px;
+  box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+  overflow: hidden;
+  z-index: 30;
+}
+.queue-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.queue-title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.9); flex: 1; }
+.queue-count { font-size: 12px; color: rgba(255,255,255,0.4); }
+.queue-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.5); font-size: 13px; }
+.queue-close:hover { background: rgba(255,255,255,0.1); color: white; }
+.queue-list { flex: 1; overflow-y: auto; padding: 6px; max-height: 320px; }
+.queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: 13px; padding: 30px 0; }
+.queue-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  transition: background 0.15s;
+}
+.queue-item:hover { background: rgba(255,255,255,0.07); }
+.queue-item.active { background: var(--color-primary-alpha); }
+.queue-idx { width: 20px; font-size: 12px; color: rgba(255,255,255,0.3); text-align: center; flex-shrink: 0; }
+.queue-item.active .queue-idx { color: var(--color-primary); }
+.queue-info { flex: 1; min-width: 0; }
+.queue-name { font-size: 13px; color: rgba(255,255,255,0.85); }
+.queue-item.active .queue-name { color: var(--color-primary); font-weight: 500; }
+.queue-artist { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 1px; }
+.queue-remove { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.4); font-size: 11px; opacity: 0; transition: all 0.15s; flex-shrink: 0; }
+.queue-item:hover .queue-remove { opacity: 1; }
+.queue-remove:hover { background: rgba(255,77,79,0.2); color: #ff6b6b; }
+.queue-slide-enter-active, .queue-slide-leave-active { transition: opacity 0.22s, transform 0.22s; }
+.queue-slide-enter-from, .queue-slide-leave-to { opacity: 0; transform: translateY(12px); }
 
 .ctrl-btn {
   width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
