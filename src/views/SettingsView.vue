@@ -241,11 +241,11 @@ function toggleOnlineLyric() {
   localStorage.setItem('soundflow_online_lyric', onlineLyric.value ? '1' : '0')
 }
 
-// 歌词来源:lrclib(默认)/ netease / auto
+// 歌词来源:local(本地,不联网)/ netease / lrclib(默认)
 const lyricSources = [
-  { value: 'lrclib', label: 'LRCLIB' },
+  { value: 'local', label: '本地' },
   { value: 'netease', label: '网易云' },
-  { value: 'auto', label: '自动' }
+  { value: 'lrclib', label: 'LRCLIB' }
 ]
 const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrclib')
 

@@ -213,13 +213,13 @@ export const usePlayerStore = defineStore('player', () => {
         lyrics.value = parseLRC(lrcText)
         return
       }
-      // 2. 在线歌词(设置开启时):先查缓存,再按用户选择来源获取
+      // 2. 在线歌词:来源为 local 时不联网;否则本地缺失时按所选来源(网易云/LRCLIB)获取
+      let source = 'lrclib'
+      try { source = localStorage.getItem('soundflow_lyric_source') || 'lrclib' } catch {}
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
-      if (onlineEnabled && song.title) {
-        // 歌词来源:lrclib(默认)/ netease / auto —— 缓存按来源隔离,切换来源后重新获取
-        let source = 'lrclib'
-        try { source = localStorage.getItem('soundflow_lyric_source') || 'lrclib' } catch {}
+      if (source !== 'local' && onlineEnabled && song.title) {
+        // 缓存按来源隔离,切换来源后重新获取
         const cacheKey = `${source}|${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
         if (!onlineText) {

@@ -48,6 +48,10 @@
         </div>
         <div class="lyric-right">
           <div class="lyrics-scroll" ref="lyricsPanel">
+            <!-- 歌词来源切换:本地 / 网易云 / LRCLIB -->
+            <div class="lyric-source-switch">
+              <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
+            </div>
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">{{ playerStore.lyricOrigin }}歌词</div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
               <div class="empty-icon">📝</div>
@@ -201,6 +205,22 @@ async function importLocalLyric() {
   } catch (e) {
     searchLyricMsg.value = '导入出错'
   }
+}
+
+// 歌词来源切换(本地 / 网易云 / LRCLIB),右上角三选一
+const lyricSourceOptions = [
+  { value: 'local', label: '本地' },
+  { value: 'netease', label: '网易云' },
+  { value: 'lrclib', label: 'LRCLIB' }
+]
+const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrclib')
+
+function switchLyricSource(v) {
+  if (lyricSource.value === v) return
+  lyricSource.value = v
+  localStorage.setItem('soundflow_lyric_source', v)
+  const cur = playerStore.currentSong
+  if (cur) playerStore.loadLyrics(cur)
 }
 
 // 在线搜索并下载歌词到本地(LRCLIB → 网易云)
@@ -389,6 +409,27 @@ async function searchLyric() {
   padding: 2px 8px;
   border-radius: 10px;
 }
+.lyric-source-switch {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  background: rgba(0,0,0,0.35);
+  border-radius: 14px;
+  padding: 2px;
+}
+.ls-btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.5);
+  border-radius: 12px;
+  transition: all 0.2s;
+}
+.ls-btn:hover { color: #fff; }
+.ls-btn.active { background: var(--color-primary); color: #fff; }
 .lyric-line.active {
   color: white; font-size: 22px; font-weight: 600;
   text-shadow: 0 0 20px rgba(22,119,230,0.5);
