@@ -292,7 +292,6 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 600,
     frame: false,
-    titleBarStyle: 'hidden',
     backgroundColor: '#f5f7fa',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -310,11 +309,15 @@ function createMainWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
+  // 多时机绑定任务栏缩略图按钮,确保窗口显示后一定生效
+  const bindThumb = () => updateThumbarButtons(lastThumbState)
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
-    // 窗口就绪后立即绑定任务栏缩略图按钮(启动时未播放也显示,状态为暂停)
-    updateThumbarButtons(lastThumbState)
+    bindThumb()
   })
+  mainWindow.on('show', bindThumb)
+  mainWindow.webContents.on('did-finish-load', bindThumb)
+  setTimeout(bindThumb, 1500)
 
   mainWindow.on('close', () => {
     // 通知渲染进程保存数据
@@ -418,7 +421,11 @@ function updateThumbarButtons(state) {
     { tooltip: isPlaying ? '暂停' : '播放', icon: getThumbIcon(isPlaying ? 'pause.png' : 'play.png'), click: () => send('toggle-play') },
     { tooltip: '下一曲', icon: getThumbIcon('next.png'), click: () => send('next') }
   ]
-  try { mainWindow.setThumbarButtons(buttons) } catch (e) { console.error('[任务栏] 设置缩略图按钮失败:', e.message) }
+  // 诊断日志:确认调用与按钮状态
+  const logLine = `[${new Date().toISOString()}] state=${lastThumbState} winVisible=${mainWindow.isVisible()} minimized=${mainWindow.isMinimized()} icons=[${buttons.map(b => b.icon.isEmpty() ? 'EMPTY' : 'ok').join(',')}]`
+  try { fs.appendFileSync(path.join(app.getPath('temp'), 'soundflow-thumb.log'), logLine + '\n') } catch (_) {}
+  try { mainWindow.setThumbarButtons(buttons); console.log('[任务栏] 缩略图按钮已设置:', logLine) }
+  catch (e) { console.error('[任务栏] 设置缩略图按钮失败:', e.message, logLine) }
 }
 
 // ========== IPC 处理 ==========
