@@ -504,34 +504,68 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const volExpanded = ref(false) // 音量滑块默认收起
 
-// 频谱可视化(canvas + rAF,常驻绘制:播放跳动/暂停低矮基线)
+// 频谱可视化(华丽版:左右对称镜像 + 圆头渐变条 + 峰值保持亮点 + 平滑动画)
 const spectrumCanvas = ref(null)
 let spectrumRAF = null
 let spectrumCtx = null
+const BAR_COUNT = 56
+const barVals = new Array(BAR_COUNT).fill(0)    // 当前平滑高度
+const barPeaks = new Array(BAR_COUNT).fill(0)   // 峰值保持
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '')
+  return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null
+}
 function drawSpectrum() {
   const canvas = spectrumCanvas.value
   if (!canvas) return
   if (!spectrumCtx) spectrumCtx = canvas.getContext('2d')
-  const data = playerStore.getSpectrumData()
+  const ctx = spectrumCtx
   const { width, height } = canvas
-  spectrumCtx.clearRect(0, 0, width, height)
-  const bars = 48
-  const barW = width / bars
-  const step = Math.max(1, Math.floor((data ? data.length : 0) / bars))
+  ctx.clearRect(0, 0, width, height)
+  const data = playerStore.getSpectrumData()
+  const playing = playerStore.isPlaying
+  const half = BAR_COUNT / 2
+  const barW = (width - (BAR_COUNT - 1) * 3) / BAR_COUNT
+  const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff'
-  const grad = spectrumCtx.createLinearGradient(0, height, 0, 0)
-  grad.addColorStop(0, accent + '33')
-  grad.addColorStop(1, accent)
-  spectrumCtx.fillStyle = grad
-  for (let i = 0; i < bars; i++) {
-    let v = 0
-    if (data && playerStore.isPlaying) {
-      for (let j = 0; j < step; j++) v += data[i * step + j]
+  const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
+
+  for (let i = 0; i < BAR_COUNT; i++) {
+    let target = 0
+    if (data && playing) {
+      // 左右对称:左半正序、右半镜像(呈现中间高两侧低的对称柱)
+      const src = i < half ? i : BAR_COUNT - 1 - i
+      let v = 0
+      for (let j = 0; j < step; j++) v += data[src * step + j]
       v = v / step / 255
+      target = Math.pow(v, 0.75) * (height - 6) // 提亮低能量段
     }
-    // 暂停时显示低矮基线(3px),让频谱区始终可见
-    const h = Math.max(3, Math.round(v * height))
-    spectrumCtx.fillRect(i * barW + 1, height - h, barW - 2, h)
+    // 平滑追高,回落稍快
+    const diff = target - barVals[i]
+    barVals[i] += diff * (diff > 0 ? 0.45 : 0.28)
+    // 峰值保持:高于峰值则顶起,否则缓慢下落
+    if (barVals[i] > barPeaks[i]) barPeaks[i] = barVals[i]
+    else barPeaks[i] = Math.max(0, barPeaks[i] - 1.1)
+
+    const barH = Math.max(3, barVals[i])
+    const x = i * (barW + 3) + 1
+    const y = height - barH
+    // 条:底部半透明、顶部亮(圆头)
+    const g = ctx.createLinearGradient(0, height, 0, y)
+    g.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.18)`)
+    g.addColorStop(0.7, `rgba(${c.r},${c.g},${c.b},0.85)`)
+    g.addColorStop(1, `rgba(${Math.min(255, c.r + 80)},${Math.min(255, c.g + 80)},${Math.min(255, c.b + 80)},1)`)
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.roundRect(x, y, barW, barH, [barW / 2, barW / 2, 0, 0])
+    ctx.fill()
+    // 峰值亮点(白色小圆点)
+    if (barPeaks[i] > 2 && playing) {
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'
+      ctx.beginPath()
+      ctx.roundRect(x + 1, height - barPeaks[i] - 2.5, barW - 2, 2.5, 1.2)
+      ctx.fill()
+    }
   }
   spectrumRAF = requestAnimationFrame(drawSpectrum)
 }
