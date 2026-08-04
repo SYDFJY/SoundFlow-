@@ -1,6 +1,6 @@
 <template>
   <div class="player-view" :style="bgStyle">
-    <div class="player-overlay">
+    <div class="player-overlay" :class="{ 'overlay-theme': bgMode === 'theme' }">
       <!-- 顶部栏 -->
       <div class="player-topbar">
         <button class="back-btn" @click="$router.back()">
@@ -20,6 +20,7 @@
         <div v-if="showBgPanel" class="bg-panel" @click.stop>
           <div class="panel-title">播放页背景</div>
           <div class="bg-mode-btns">
+            <button :class="{ active: bgMode === 'theme' }" @click="setBgMode('theme')">主题</button>
             <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">封面</button>
             <button :class="{ active: bgMode === 'color' }" @click="setBgMode('color')">纯色</button>
             <button :class="{ active: bgMode === 'gradient' }" @click="setBgMode('gradient')">渐变</button>
@@ -127,10 +128,9 @@
           <!-- 播放控制组(居中) -->
           <div class="controls-group">
             <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="playModeLabel">
-              <span v-if="playerStore.playMode === 'list'">≡</span>
-              <span v-else-if="playerStore.playMode === 'repeat'">🔁</span>
-              <span v-else-if="playerStore.playMode === 'repeatOne'">🔂</span>
-              <span v-else>🔀</span>
+              <svg v-if="playerStore.playMode === 'list' || playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+              <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
             </button>
             <button class="ctrl-btn" @click="playerStore.playPrev()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
@@ -306,7 +306,17 @@ function clearBgImage() {
   setBgMode('cover')
 }
 
+// 播放页背景(跟随当前主题的深色沉浸色 --player-bg-dark)
+function getThemeDarkBg() {
+  try {
+    return getComputedStyle(document.documentElement).getPropertyValue('--player-bg-dark').trim() || '#14161c'
+  } catch { return '#14161c' }
+}
+
 const bgStyle = computed(() => {
+  if (bgMode.value === 'theme') {
+    return { backgroundColor: getThemeDarkBg() }
+  }
   if (bgMode.value === 'color') {
     return { backgroundColor: bgColor.value }
   }
@@ -490,6 +500,7 @@ async function searchLyric() {
   background: rgba(0,0,0,0.68);
   display: flex; flex-direction: column;
 }
+.player-overlay.overlay-theme { background: rgba(0,0,0,0.15); }
 
 /* 顶部栏 */
 .player-topbar {

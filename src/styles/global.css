@@ -1,25 +1,25 @@
 /* SoundFlow 声流音乐 — 全局样式 */
 :root {
-  --bg-primary: #f5f7fa;
-  --bg-secondary: #ffffff;
-  --bg-sidebar: #ffffff;
-  --bg-card: #ffffff;
-  --bg-hover: #f0f2f5;
-  --bg-active: #e8f0fe;
-  --text-primary: #1a1a2e;
-  --text-secondary: #666666;
-  --text-tertiary: #999999;
-  --border-color: #e8e8e8;
-  --color-primary: #1677E6;
-  --color-primary-light: #4096ff;
-  --color-primary-dark: #0958d9;
-  --color-primary-alpha: rgba(22, 119, 230, 0.1);
+  --bg-primary: #edf4fa;
+  --bg-secondary: #d8e8f4;
+  --bg-sidebar: #d8e8f4;
+  --bg-card: #d8e8f4;
+  --bg-hover: #e1eef9;
+  --bg-active: rgba(43,134,216,0.13);
+  --text-primary: #1c2c3b;
+  --text-secondary: #627e99;
+  --text-tertiary: #627e99;
+  --border-color: #e1eef9;
+  --color-primary: #2b86d8;
+  --color-primary-light: #2b86d8;
+  --color-primary-dark: #2b86d8;
+  --color-primary-alpha: rgba(43,134,216,0.13);
   --color-danger: #ff4d4f;
   --color-success: #52c41a;
   --color-warning: #faad14;
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+  --shadow-sm: 0 1px 3px rgba(18,34,48,0.45);
+  --shadow-md: 0 4px 12px rgba(18,34,48,0.45);
+  --shadow-lg: 0 8px 24px rgba(18,34,48,0.45);
   --radius-sm: 4px;
   --radius-md: 8px;
   --radius-lg: 12px;
@@ -41,8 +41,9 @@
   --sidebar-width: 220px;
   --topbar-height: 48px;
   --player-height: 72px;
-  --player-bg: #ffffff;
-  --player-shadow: 0 -2px 12px rgba(0,0,0,0.06);
+  --player-bg: #d8e8f4;
+  --player-bg-dark: #142230;
+  --player-shadow: 0 -2px 12px rgba(18,34,48,0.45);
   font-size: var(--font-size-base);
 }
 

@@ -237,14 +237,14 @@ const closeAction = computed({
 const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
 
 const themeOptions = [
-  { value: 'light', label: '浅色', color: '#f5f7fa' },
-  { value: 'dark', label: '深色', color: '#0d1117' },
-  { value: 'blue', label: '藏青', color: '#0a1628' },
-  { value: 'green', label: '青绿', color: '#f0f7f0' },
-  { value: 'purple', label: '梦幻紫', color: '#f5f0ff' },
-  { value: 'pink', label: '樱花粉', color: '#fff0f5' },
-  { value: 'orange', label: '暖橘', color: '#fff8f0' },
-  { value: 'red', label: '中国红', color: '#fff5f5' }
+  { value: 'light', label: '海盐蓝', color: '#edf4fa' },
+  { value: 'green', label: '薄荷清绿', color: '#edf7f2' },
+  { value: 'orange', label: '奶油橘', color: '#fcf3eb' },
+  { value: 'pink', label: '烟粉蔷薇', color: '#faf0f4' },
+  { value: 'dark', label: '暗夜绿', color: '#1a2b24' },
+  { value: 'blue', label: '深海蓝', color: '#172330' },
+  { value: 'red', label: '极夜红', color: '#2a171a' },
+  { value: 'purple', label: '暗玫紫', color: '#272036' }
 ]
 
 async function addFolder() {

@@ -937,7 +937,7 @@ function setupIPC() {
 
   // 选择自定义背景图片:复制到 userData/background/ 持久保存,返回 file:// URL
   ipcMain.handle('select-bg-image', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
+    const result = await dialog.showOpenDialog({
       properties: ['openFile'],
       filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }]
     })
@@ -948,9 +948,10 @@ function setupIPC() {
       fs.mkdirSync(dir, { recursive: true })
       const dest = path.join(dir, 'custom' + (path.extname(src) || '.jpg'))
       fs.copyFileSync(src, dest)
-      return `file:///${dest.replace(/\\/g, '/')}`
+      // 路径需 encodeURI:含空格/中文的路径在 CSS url() 中会解析失败
+      return 'file:///' + dest.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
     } catch (e) {
-      return `file:///${src.replace(/\\/g, '/')}`
+      return 'file:///' + src.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
     }
   })
 
