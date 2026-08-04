@@ -112,7 +112,7 @@ export const useMusicStore = defineStore('music', () => {
     try {
       const safeSet = (key, value) => {
         try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) { console.warn('[存储] localStorage 写入失败:', key, e.message) }
-      }
+      } 
       safeSet('soundflow_library', songs.value)
       safeSet('soundflow_favorites', favorites.toArray())
       safeSet('soundflow_playlists', playlists.value)
@@ -234,6 +234,16 @@ export const useMusicStore = defineStore('music', () => {
 
   function renamePlaylist(id, newName) {
     playlists.value = playlists.value.map(p => p.id === id ? { ...p, name: newName } : p)
+    saveToStorage()
+  }
+
+  // 歌单拖拽排序(useDraggable 已改序,这里只持久化)
+  function reorderPlaylists(oldIndex, newIndex) {
+    if (oldIndex === newIndex) return
+    const list = playlists.value
+    if (oldIndex < 0 || newIndex < 0 || oldIndex >= list.length || newIndex >= list.length) return
+    const moved = list.splice(oldIndex, 1)[0]
+    list.splice(newIndex, 0, moved)
     saveToStorage()
   }
 
@@ -416,7 +426,7 @@ export const useMusicStore = defineStore('music', () => {
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
-    incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist,
+    incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, getPlaylistSongs,
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles,
     addLyricFolder, removeLyricFolder,

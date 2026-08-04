@@ -258,6 +258,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useDraggable } from 'vue-draggable-plus'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const playerStore = usePlayerStore()
@@ -268,6 +269,16 @@ const activeLyricEl = ref(null)
 // 播放列表面板
 const showQueuePanel = ref(false)
 const queueListEl = ref(null)
+// 队列拖拽排序(拖动整行,结束回调修正索引并持久化)
+useDraggable(queueListEl, playerStore.playQueue, {
+  animation: 150,
+  ghostClass: 'queue-ghost',
+  onEnd: (evt) => {
+    if (evt.oldIndex !== undefined && evt.newIndex !== undefined) {
+      playerStore.fixQueueIndex(evt.oldIndex, evt.newIndex)
+    }
+  }
+})
 const activeQueueEl = ref(null)
 
 // 音效面板
@@ -986,6 +997,9 @@ async function searchLyric() {
 }
 .queue-item:hover { background: rgba(255,255,255,0.07); }
 .queue-item.active { background: var(--color-primary-alpha); }
+.queue-item.queue-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
+.queue-item { cursor: grab; }
+.queue-item:active { cursor: grabbing; }
 .queue-idx { width: 20px; font-size: var(--font-size-xs); color: rgba(255,255,255,0.3); text-align: center; flex-shrink: 0; }
 .queue-item.active .queue-idx { color: var(--color-primary); }
 .queue-info { flex: 1; min-width: 0; }

@@ -17,6 +17,7 @@
     "music-metadata": "^11.12.3",
     "pinia": "^2.1.7",
     "vue": "^3.4.0",
+    "vue-draggable-plus": "^0.6.1",
     "vue-router": "^4.2.5"
   },
   "devDependencies": {

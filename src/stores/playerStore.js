@@ -409,6 +409,19 @@ export const usePlayerStore = defineStore('player', () => {
     saveQueueState()
   }
 
+  // 拖拽排序后修正当前索引(playQueue 已由拖拽库改序)
+  function fixQueueIndex(oldIndex, newIndex) {
+    if (oldIndex === newIndex) return
+    const q = playQueue.value
+    if (oldIndex < 0 || newIndex < 0 || oldIndex >= q.length || newIndex >= q.length) return
+    let ci = currentIndex.value
+    if (ci === oldIndex) ci = newIndex
+    else if (oldIndex < ci && ci <= newIndex) ci--
+    else if (newIndex <= ci && ci < oldIndex) ci++
+    currentIndex.value = ci
+    saveQueueState()
+  }
+
   // 播放列表持久化:保存队列与当前索引(重启后恢复)
   function saveQueueState() {
     try {
@@ -952,7 +965,7 @@ export const usePlayerStore = defineStore('player', () => {
     showTranslation, translating, translations, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
-    initAudio, setPlayQueue, insertNext, removeFromQueue, loadAndPlay, togglePlay,
+    initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,

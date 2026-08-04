@@ -42,7 +42,8 @@
           </button>
         </div>
         <div v-if="musicStore.playlists.length === 0" class="menu-empty">暂无歌单</div>
-        <router-link
+        <div ref="playlistListEl" class="playlist-drag-list">
+          <router-link
           v-for="(pl, plIdx) in musicStore.playlists"
           :key="pl.id"
           :to="`/playlist/${pl.id}`"
@@ -57,6 +58,7 @@
           <span class="pl-order" @click.stop.prevent="movePlaylist(plIdx, -1)" title="上移">⇧</span>
           <span class="pl-order" @click.stop.prevent="movePlaylist(plIdx, 1)" title="下移">⇩</span>
         </router-link>
+        </div>
       </div>
     </div>
 
@@ -103,12 +105,25 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { useDraggable } from 'vue-draggable-plus'
 import { useMusicStore } from '@/stores/musicStore'
 
 const musicStore = useMusicStore()
 const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
 const modal = ref({ show: false, title: '', value: '', placeholder: '', mode: '', playlistId: null })
 const modalInput = ref(null)
+const playlistListEl = ref(null)
+// 歌单拖拽排序(按住行身拖动;拖拽结束持久化顺序)
+useDraggable(playlistListEl, musicStore.playlists, {
+  animation: 150,
+  ghostClass: 'menu-ghost',
+  handle: '.menu-item',
+  onEnd: (evt) => {
+    if (evt.oldIndex !== undefined && evt.newIndex !== undefined) {
+      musicStore.reorderPlaylists(evt.oldIndex, evt.newIndex)
+    }
+  }
+})
 
 async function addFolder() {
   await musicStore.addFolder()
@@ -208,6 +223,7 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 20px; color: var(--text-secondary); text-decoration: none; transition: all var(--transition-fast); cursor: pointer; position: relative; }
 .menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .menu-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 500; }
+.menu-item.menu-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
 .menu-item.active::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; background: var(--color-primary); border-radius: 0 3px 3px 0; }
 .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 .menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-base); }
