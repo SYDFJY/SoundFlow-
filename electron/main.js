@@ -974,7 +974,13 @@ function setupIPC() {
     try {
       const dir = path.join(app.getPath('userData'), 'background')
       fs.mkdirSync(dir, { recursive: true })
-      const dest = path.join(dir, 'custom' + (path.extname(src) || '.jpg'))
+      // 清理旧的 custom-* 图片(避免堆积;每次导入用唯一文件名,强制重新加载)
+      try {
+        for (const f of fs.readdirSync(dir)) {
+          if (f.startsWith('custom-')) { try { fs.unlinkSync(path.join(dir, f)) } catch {} }
+        }
+      } catch {}
+      const dest = path.join(dir, 'custom-' + Date.now() + (path.extname(src) || '.jpg'))
       fs.copyFileSync(src, dest)
       // 路径需 encodeURI:含空格/中文的路径在 CSS url() 中会解析失败
       return 'file:///' + dest.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
