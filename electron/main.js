@@ -671,19 +671,45 @@ function setupIPC() {
   // LRCLIB:按 歌名/歌手/时长 精确匹配同步歌词
   async function fetchLRCLIB(info) {
     const base = 'https://lrclib.net/api'
+    const headers = {
+      'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)',
+      'Accept': 'application/json'
+    }
+    // 标题/歌手归一化:去空格标点括号、统一大小写,用于宽松匹配
+    const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？'"'']/g, '')
+    const targetTitle = norm(info?.title)
+    const targetArtist = norm(info?.artist)
     try {
-      const params = new URLSearchParams({ track_name: info?.title || '', artist_name: info?.artist || '' })
-      if (info?.duration && info.duration > 0) params.set('duration', Math.round(info.duration))
-      const res = await fetch(`${base}/get?${params.toString()}`, {
-        headers: {
-          'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)',
-          'Accept': 'application/json'
-        },
-        signal: AbortSignal.timeout(8000)
-      })
+      // 1. 精确接口 /api/get(不带 duration,避免时长差异导致匹配失败)
+      const exactParams = new URLSearchParams({ track_name: info?.title || '', artist_name: info?.artist || '' })
+      const exactRes = await fetch(`${base}/get?${exactParams.toString()}`, { headers, signal: AbortSignal.timeout(8000) })
+      if (exactRes.ok) {
+        const d = await exactRes.json()
+        if (d && d.syncedLyrics) return { lyrics: d.syncedLyrics, source: 'lrclib' }
+      }
+      // 2. 模糊搜索 /api/search(精确匹配失败时,提高命中率)
+      const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
+      if (!q) return null
+      const res = await fetch(`${base}/search?${new URLSearchParams({ q })}`, { headers, signal: AbortSignal.timeout(8000) })
       if (!res.ok) return null
-      const data = await res.json()
-      if (data && data.syncedLyrics) return { lyrics: data.syncedLyrics, source: 'lrclib' }
+      const list = await res.json()
+      if (!Array.isArray(list) || list.length === 0) return null
+      // 从候选中挑选最匹配且有同步歌词的
+      const candidates = list.filter(x => x && x.syncedLyrics)
+      if (candidates.length === 0) return null
+      let best = null
+      let bestScore = -1
+      for (const x of candidates) {
+        let score = 0
+        const nTrack = norm(x.trackName)
+        const nArtist = norm(x.artistName)
+        if (nTrack === targetTitle) score += 100
+        else if (nTrack.includes(targetTitle) || targetTitle.includes(nTrack)) score += 60
+        if (targetArtist && (nArtist.includes(targetArtist) || targetArtist.includes(nArtist))) score += 40
+        if (info?.duration && x.duration && Math.abs(x.duration - info.duration) < 3) score += 20
+        if (score > bestScore) { bestScore = score; best = x }
+      }
+      if (best) return { lyrics: best.syncedLyrics, source: 'lrclib' }
       return null
     } catch (e) {
       console.error('[在线歌词] LRCLIB 请求失败:', e.message)
