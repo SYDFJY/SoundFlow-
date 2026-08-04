@@ -54,6 +54,7 @@ onMounted(() => {
   musicStore.restoreLibrary()
   musicStore.initPlayListener()
   playerStore.loadSettings()
+  playerStore.restoreQueue()
   playerStore.initAudio()
   playerStore.initMediaSession()
 

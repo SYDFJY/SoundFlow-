@@ -57,7 +57,7 @@
         </div>
         <div class="col-title">
           <div class="song-cover">
-            <img v-if="song.coverUrl" :src="song.coverUrl" decoding="async" />
+            <img v-if="song.coverUrl" :src="song.coverUrl" decoding="async" @error="onCoverError(song)" />
           </div>
           <div class="song-info">
             <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
@@ -134,6 +134,15 @@ async function ensureCover(song) {
   } catch {} finally {
     pendingCovers.delete(song.path)
   }
+}
+
+// 封面容灾:封面文件丢失/加载失败时,从主进程重新生成封面文件
+function onCoverError(song) {
+  if (!song || song._coverRetried || !window.electronAPI) return
+  song._coverRetried = true
+  window.electronAPI.getCover(song.path)
+    .then(url => { if (url) song.coverUrl = url })
+    .catch(() => {})
 }
 
 const allChecked = computed(() => {

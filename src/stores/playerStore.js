@@ -88,6 +88,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (songs.length > 0 && startIndex >= 0 && startIndex < songs.length) {
       loadAndPlay(startIndex, true)
     }
+    saveQueueState()
   }
 
   // 插入到下一首
@@ -107,6 +108,7 @@ export const usePlayerStore = defineStore('player', () => {
     duration.value = 0
     lyrics.value = []
     currentLyricIndex.value = -1
+    saveQueueState()
   }
 
   // 从队列中移除(允许移除当前播放歌曲,移除后自动播放下一首)
@@ -127,6 +129,33 @@ export const usePlayerStore = defineStore('player', () => {
     } else if (index < currentIndex.value) {
       currentIndex.value--
     }
+    saveQueueState()
+  }
+
+  // 播放列表持久化:保存队列与当前索引(重启后恢复)
+  function saveQueueState() {
+    try {
+      const state = { queue: playQueue.value, index: currentIndex.value }
+      localStorage.setItem('soundflow_queue', JSON.stringify(state))
+      if (window.electronAPI) window.electronAPI.storeSet('queue', state)
+    } catch {}
+  }
+
+  // 恢复上次播放列表(不自动播放,当前歌曲显示,用户点播放开始)
+  async function restoreQueue() {
+    try {
+      let state = null
+      try {
+        const v = localStorage.getItem('soundflow_queue')
+        if (v) state = JSON.parse(v)
+      } catch {}
+      if (!state && window.electronAPI) state = await window.electronAPI.storeGet('queue')
+      if (!state || !Array.isArray(state.queue) || state.queue.length === 0) return
+      playQueue.value = state.queue.filter(s => s && s.path)
+      if (playQueue.value.length === 0) return
+      currentIndex.value = (state.index >= 0 && state.index < playQueue.value.length) ? state.index : 0
+      currentSong.value = playQueue.value[currentIndex.value]
+    } catch {}
   }
 
   // 加载并播放
@@ -172,6 +201,7 @@ export const usePlayerStore = defineStore('player', () => {
 
     // 通过事件通知 musicStore 记录播放（避免循环依赖）
     window.dispatchEvent(new CustomEvent('soundflow:play', { detail: { path: song.path } }))
+    saveQueueState()
   }
 
   // 在线歌词缓存(主进程 JSON,键=标题|歌手)
@@ -234,10 +264,12 @@ export const usePlayerStore = defineStore('player', () => {
             lyricOrigin.value = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : '自动')
             await _setCachedOnlineLyric(cacheKey, onlineText)
           } else {
-            lyricOrigin.value = ''
+            lyricOrigin.value = '未找到' // 在线获取失败/无匹配,界面提示
           }
         }
         if (onlineText) lyrics.value = parseLRC(onlineText)
+      } else if (source === 'local') {
+        lyricOrigin.value = lyrics.value.length ? '本地' : ''
       }
     } catch {}
   }
@@ -551,6 +583,7 @@ export const usePlayerStore = defineStore('player', () => {
       localStorage.setItem('soundflow_play_mode', playMode.value)
       localStorage.setItem('soundflow_playback_rate', String(playbackRate.value))
       localStorage.setItem('soundflow_progress', JSON.stringify(progressHistory.value))
+      saveQueueState()
       if (window.electronAPI) {
         // 深拷贝为纯对象(Vue Proxy 无法 IPC 序列化)
         window.electronAPI.storeSet('progress', JSON.parse(JSON.stringify(progressHistory.value)))
@@ -573,7 +606,7 @@ export const usePlayerStore = defineStore('player', () => {
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     loadSettings, saveSettings, playSingle, toggleQueue,
-    setSleepTimer, clearSleepTimer, saveCurrentProgress,
+    setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     initMediaSession
   }
 })

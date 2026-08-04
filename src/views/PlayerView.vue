@@ -20,7 +20,7 @@
         <div class="disc-area">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover">
-              <img v-if="coverUrl" :src="coverUrl" />
+              <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
               <div v-else class="cover-placeholder">🎵</div>
             </div>
           </div>
@@ -37,7 +37,7 @@
         <div class="lyric-left">
           <div class="disc-small" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover-small">
-              <img v-if="coverUrl" :src="coverUrl" />
+              <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
               <div v-else class="cover-placeholder">🎵</div>
             </div>
           </div>
@@ -192,6 +192,16 @@ watch(() => playerStore.currentIndex, () => {
 const activeTab = ref('cover')
 
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
+
+// 封面容灾:封面文件丢失时重新生成
+function onCoverError() {
+  const song = playerStore.currentSong
+  if (!song || song._coverRetried || !window.electronAPI) return
+  song._coverRetried = true
+  window.electronAPI.getCover(song.path)
+    .then(url => { if (url) song.coverUrl = url })
+    .catch(() => {})
+}
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
 
 const bgStyle = computed(() => {
