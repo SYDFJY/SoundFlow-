@@ -861,6 +861,25 @@ function setupIPC() {
     } catch { return false }
   })
 
+  // 选择自定义背景图片:复制到 userData/background/ 持久保存,返回 file:// URL
+  ipcMain.handle('select-bg-image', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif'] }]
+    })
+    if (result.canceled || !result.filePaths.length) return null
+    const src = result.filePaths[0]
+    try {
+      const dir = path.join(app.getPath('userData'), 'background')
+      fs.mkdirSync(dir, { recursive: true })
+      const dest = path.join(dir, 'custom' + (path.extname(src) || '.jpg'))
+      fs.copyFileSync(src, dest)
+      return `file:///${dest.replace(/\\/g, '/')}`
+    } catch (e) {
+      return `file:///${src.replace(/\\/g, '/')}`
+    }
+  })
+
   // 检查文件是否存在,返回不存在的路径列表(用于失效歌曲检测)
   ipcMain.handle('check-files-exist', (event, filePaths) => {
     if (!Array.isArray(filePaths)) return []

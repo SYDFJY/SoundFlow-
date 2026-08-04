@@ -23,12 +23,18 @@
             <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">封面</button>
             <button :class="{ active: bgMode === 'color' }" @click="setBgMode('color')">纯色</button>
             <button :class="{ active: bgMode === 'gradient' }" @click="setBgMode('gradient')">渐变</button>
+            <button :class="{ active: bgMode === 'image' }" @click="setBgMode('image')">图片</button>
           </div>
           <div v-if="bgMode === 'color'" class="color-row">
             <button v-for="c in bgPresets.color" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: bgColor === c.value }" :title="c.name" @click="setBgColor(c.value)"></button>
           </div>
           <div v-else-if="bgMode === 'gradient'" class="gradient-list">
             <button v-for="g in bgPresets.gradient" :key="g.name" class="gradient-item" :style="{ background: g.value }" :class="{ active: bgGradient === g.value }" @click="setBgGradient(g.value)">{{ g.name }}</button>
+          </div>
+          <div v-else-if="bgMode === 'image'" class="bg-image-actions">
+            <button class="bg-import-btn" @click="importBgImage">🖼 导入自定义图片</button>
+            <button v-if="bgImageUrl" class="bg-clear-btn" @click="clearBgImage">清除(恢复封面)</button>
+            <div v-if="bgImageUrl" class="bg-image-preview" :style="{ backgroundImage: `url(${bgImageUrl})` }"></div>
           </div>
         </div>
       </div>
@@ -255,6 +261,7 @@ const bgPresets = {
 const bgMode = ref(localStorage.getItem('soundflow_player_bg_mode') || 'cover')
 const bgColor = ref(localStorage.getItem('soundflow_player_bg_color') || '#14161c')
 const bgGradient = ref(localStorage.getItem('soundflow_player_bg_gradient') || bgPresets.gradient[0].value)
+const bgImageUrl = ref(localStorage.getItem('soundflow_player_bg_image') || '')
 
 function setBgMode(mode) {
   bgMode.value = mode
@@ -271,12 +278,35 @@ function setBgGradient(v) {
   localStorage.setItem('soundflow_player_bg_gradient', v)
 }
 
+// 导入自定义背景图片
+async function importBgImage() {
+  if (!window.electronAPI) return
+  const url = await window.electronAPI.selectBgImage()
+  if (url) {
+    bgImageUrl.value = url
+    localStorage.setItem('soundflow_player_bg_image', url)
+    setBgMode('image')
+  }
+}
+function clearBgImage() {
+  bgImageUrl.value = ''
+  localStorage.removeItem('soundflow_player_bg_image')
+  setBgMode('cover')
+}
+
 const bgStyle = computed(() => {
   if (bgMode.value === 'color') {
     return { backgroundColor: bgColor.value }
   }
   if (bgMode.value === 'gradient') {
     return { backgroundImage: bgGradient.value }
+  }
+  if (bgMode.value === 'image' && bgImageUrl.value) {
+    return {
+      backgroundImage: `url(${bgImageUrl.value})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center'
+    }
   }
   // 封面模式:封面铺底 + 深色遮罩压暗(避免 filter/backdrop-filter 叠加触发 Electron 渲染异常)
   if (coverUrl.value) {
@@ -656,6 +686,12 @@ async function searchLyric() {
   border: 2px solid transparent; transition: all 0.15s; flex-shrink: 0;
 }
 .color-dot.active { border-color: #fff; transform: scale(1.15); }
+.bg-image-actions { display: flex; flex-direction: column; gap: 8px; }
+.bg-import-btn { padding: 8px 0; font-size: 12px; color: #fff; background: var(--color-primary); border-radius: 6px; transition: all 0.15s; }
+.bg-import-btn:hover { background: var(--color-primary-light); }
+.bg-clear-btn { padding: 6px 0; font-size: 12px; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.08); border-radius: 6px; }
+.bg-clear-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
+.bg-image-preview { height: 80px; border-radius: 8px; background-size: cover; background-position: center; border: 1px solid rgba(255,255,255,0.1); }
 .lyric-line.active {
   color: white; font-size: 22px; font-weight: 600;
   text-shadow: 0 0 20px rgba(22,119,230,0.5);
