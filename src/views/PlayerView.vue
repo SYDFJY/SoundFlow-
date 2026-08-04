@@ -60,6 +60,8 @@
                 :key="idx"
                 class="lyric-line"
                 :class="{ active: idx === playerStore.currentLyricIndex }"
+                :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
+                @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
               >
                 {{ line.text }}
@@ -167,6 +169,13 @@ function onProgressMouseDown(e) {
 }
 
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
+
+// 点击歌词跳转到对应播放进度
+function seekToLine(line) {
+  if (line && Number.isFinite(line.time)) {
+    playerStore.seek(line.time)
+  }
+}
 </script>
 
 <style scoped>
@@ -297,6 +306,12 @@ function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
   color: rgba(255,255,255,0.3);
   transition: all 0.4s ease;
   line-height: 1.6;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.lyric-line:hover {
+  color: rgba(255,255,255,0.75);
+  background: rgba(255,255,255,0.06);
 }
 .lyric-line.active {
   color: white; font-size: 22px; font-weight: 600;
