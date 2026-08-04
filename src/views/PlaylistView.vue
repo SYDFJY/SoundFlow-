@@ -48,7 +48,7 @@
                 :class="{ selected: addSelected.has(song.path) }"
                 @click="toggleAddSelect(song.path)"
               >
-                <input type="checkbox" :checked="addSelected.has(song.path)" @click.stop />
+                <input type="checkbox" :checked="addSelected.has(song.path)" @click.stop @change="toggleAddSelect(song.path)" />
                 <div class="dialog-item-cover" v-if="song.coverUrl">
                   <img :src="song.coverUrl" />
                 </div>
