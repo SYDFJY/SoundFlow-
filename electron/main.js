@@ -27,6 +27,7 @@ let tray = null
 // ========== 存储 ==========
 let storageData = {}
 let storagePath
+let saveStorageTimer = null
 
 function initStorage() {
   try {
@@ -41,14 +42,41 @@ function initStorage() {
   } catch (_) {}
 }
 
-function saveStorage() {
+function saveStorage(immediate = false) {
+  clearTimeout(saveStorageTimer)
+  const doWrite = () => {
+    try {
+      // 写前自动备份上一份,防止数据被覆盖后无法找回
+      if (fs.existsSync(storagePath)) {
+        try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
+      }
+      fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2))
+    } catch (e) { console.error('[存储] 写入失败:', e.message) }
+  }
+  if (immediate) doWrite()
+  else saveStorageTimer = setTimeout(doWrite, 500) // 防抖:合并频繁写入,避免大文件反复写盘卡顿
+}
+
+// 迁移历史 data URL 封面 → 256px JPEG 文件(一次性,迁移后 JSON 大幅瘦身)
+async function migrateCovers() {
   try {
-    // 写前自动备份上一份,防止数据被覆盖后无法找回
-    if (fs.existsSync(storagePath)) {
-      try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
+    const lib = storageData.library || []
+    let changed = false
+    for (const s of lib) {
+      if (s && typeof s.coverUrl === 'string' && s.coverUrl.startsWith('data:')) {
+        try {
+          const comma = s.coverUrl.indexOf(',')
+          s.coverUrl = comma > 0 ? saveCoverFile(s.path, Buffer.from(s.coverUrl.slice(comma + 1), 'base64')) : null
+        } catch {
+          s.coverUrl = null
+        }
+        changed = true
+      }
     }
-    fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2))
-  } catch (e) { console.error('[存储] 写入失败:', e.message) }
+    if (changed) saveStorage(true) // 立即写:瘦身后的 JSON 落盘
+  } catch (e) {
+    console.error('[封面] 迁移失败:', e.message)
+  }
 }
 
 // ========== FFprobe ==========
@@ -175,6 +203,35 @@ async function ensureParseFile() {
   }
 }
 
+// ========== 封面文件缓存 ==========
+// 封面与曲库分离:base64 封面不再进 JSON(曾导致 113MB 存储/每次保存卡死),
+// 改为按歌曲路径 hash 存成 256px JPEG 文件,曲库只存 file:// 引用
+const coverUrlCache = new Map()
+function coverDir() { return path.join(app.getPath('userData'), 'covers') }
+function coverPathFor(songPath) {
+  const hash = crypto.createHash('md5').update(songPath).digest('hex').slice(0, 16)
+  return path.join(coverDir(), hash + '.jpg')
+}
+
+// 把封面字节写为文件,返回 file:// URL;失败返回 null
+function saveCoverFile(songPath, buffer) {
+  try {
+    if (!buffer || buffer.length === 0) return null
+    const fp = coverPathFor(songPath)
+    if (fs.existsSync(fp)) return `file:///${fp.replace(/\\/g, '/')}`
+    fs.mkdirSync(coverDir(), { recursive: true })
+    let img = nativeImage.createFromBuffer(buffer)
+    if (img.isEmpty()) return null
+    const size = img.getSize()
+    if (size.width > 256) img = img.resize({ width: 256 })
+    fs.writeFileSync(fp, img.toJPEG(85))
+    return `file:///${fp.replace(/\\/g, '/')}`
+  } catch (e) {
+    console.error('[封面] 保存封面文件失败:', e.message)
+    return null
+  }
+}
+
 // ========== 封面提取 ==========
 function findCoverInDir(filePath) {
   const dir = path.dirname(filePath)
@@ -190,8 +247,9 @@ function findCoverInDir(filePath) {
         try {
           const full = path.join(dir, f)
           const picData = fs.readFileSync(full)
-          const mime = path.extname(f).toLowerCase().replace('.', '') === 'png' ? 'image/png' : 'image/jpeg'
-          return `data:${mime};base64,${picData.toString('base64')}`
+          // 目录封面同样转为 256px JPEG 文件,避免 data URL 膨胀曲库
+          const url = saveCoverFile(filePath, picData)
+          if (url) return url
         } catch {}
       }
     }
@@ -247,8 +305,8 @@ async function parseMetadata(filePath) {
       if (fmt.sampleRate) sampleRate = fmt.sampleRate
       if (cm.picture && cm.picture.length > 0) {
         const pic = cm.picture[0]
-        const mime = pic.format || 'image/jpeg'
-        coverUrl = `data:${mime};base64,${Buffer.from(pic.data).toString('base64')}`
+        // 封面存为 256px JPEG 文件,避免超大 base64 进入曲库数据
+        coverUrl = saveCoverFile(filePath, Buffer.from(pic.data))
       }
     } catch {}
   }
@@ -502,6 +560,34 @@ function setupIPC() {
       } catch {}
     }
     return findCoverInDir(filePath)
+  })
+
+  // 懒获取封面文件 URL(历史数据/缺失封面时按需生成,带缓存)
+  ipcMain.handle('get-cover', async (event, songPath) => {
+    try {
+      if (typeof songPath !== 'string' || !songPath) return null
+      if (coverUrlCache.has(songPath)) return coverUrlCache.get(songPath)
+      const fp = coverPathFor(songPath)
+      let url = null
+      if (fs.existsSync(fp)) {
+        url = `file:///${fp.replace(/\\/g, '/')}`
+      } else {
+        if (!parseFile) await ensureParseFile()
+        if (parseFile) {
+          try {
+            const metadata = await parseFile(songPath, { skipCovers: false })
+            const pic = metadata.common.picture?.[0]
+            if (pic) url = saveCoverFile(songPath, Buffer.from(pic.data))
+          } catch {}
+        }
+        if (!url) url = findCoverInDir(songPath)
+      }
+      coverUrlCache.set(songPath, url)
+      return url
+    } catch (e) {
+      console.error('[封面] 获取失败:', e.message)
+      return null
+    }
   })
 
   // 标准化文件名用于匹配（去空格、标点、统一大小写）
@@ -850,6 +936,7 @@ app.whenReady().then(async () => {
   await ensureParseFile()
   detectFFprobe()
   initStorage()
+  await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
   createMenu()
   createMainWindow()
   createTray()
@@ -870,7 +957,7 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll() } catch (_) {}
-  try { saveStorage() } catch (_) {}
+  try { saveStorage(true) } catch (_) {}
 })
 
 // 阻止多实例

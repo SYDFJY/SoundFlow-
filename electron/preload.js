@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 元数据
   parseMetadata: (filePath) => ipcRenderer.invoke('parse-metadata', filePath),
   extractCover: (filePath) => ipcRenderer.invoke('extract-cover', filePath),
+  getCover: (songPath) => ipcRenderer.invoke('get-cover', songPath),
   prepareAudio: (filePath) => ipcRenderer.invoke('prepare-audio', filePath),
 
   // 歌词

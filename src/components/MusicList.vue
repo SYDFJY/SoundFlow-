@@ -44,6 +44,7 @@
             :key="row.song.path"
             class="list-row"
             :class="{ active: isCurrentSong(row.song), selected: selectedSet.has(row.song.path) }"
+            :ref="el => { if (el) ensureCover(row.song) }"
             @dblclick="playSong(row.idx)"
             @contextmenu.prevent="showContextMenu($event, row.song)"
           >
@@ -164,6 +165,19 @@ function onScroll() {
 
 function updateViewport() {
   if (listBody.value) viewportH.value = listBody.value.clientHeight
+}
+
+// 懒补封面:曲库中 coverUrl 为空(历史数据)时,可见行按需从主进程获取封面文件
+const pendingCovers = new Set()
+async function ensureCover(song) {
+  if (!song || song.coverUrl || pendingCovers.has(song.path) || !window.electronAPI) return
+  pendingCovers.add(song.path)
+  try {
+    const url = await window.electronAPI.getCover(song.path)
+    if (url) song.coverUrl = url
+  } catch {} finally {
+    pendingCovers.delete(song.path)
+  }
 }
 
 const allChecked = computed(() => {
