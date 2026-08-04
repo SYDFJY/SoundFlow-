@@ -209,13 +209,11 @@ const progressPercent = computed(() => playerStore.duration ? (playerStore.curre
 
 const bgStyle = computed(() => {
   if (coverUrl.value) {
-    // 封面模糊铺底 + 压暗,营造沉浸式背景
+    // 封面铺底 + 深色遮罩压暗(避免 filter/backdrop-filter 叠加触发 Electron 渲染异常)
     return {
       backgroundImage: `url(${coverUrl.value})`,
       backgroundSize: 'cover',
-      backgroundPosition: 'center',
-      filter: 'blur(48px) brightness(0.55) saturate(1.2)',
-      transform: 'scale(1.15)'
+      backgroundPosition: 'center'
     }
   }
   return {}
@@ -350,8 +348,7 @@ async function searchLyric() {
 
 .player-overlay {
   position: absolute; inset: 0;
-  background: rgba(0,0,0,0.65);
-  backdrop-filter: blur(60px);
+  background: rgba(0,0,0,0.68);
   display: flex; flex-direction: column;
 }
 
