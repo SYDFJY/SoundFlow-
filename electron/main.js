@@ -385,8 +385,21 @@ function createTray() {
 // ========== 任务栏缩略图按钮 (SMTC 的一部分) ==========
 let lastThumbState = 'paused'
 
+// 内嵌 base64 图标(createFromDataURL 不依赖 asar 文件系统,nativeImage.createFromPath 读不到 asar 内文件)
+const THUMB_ICONS = {
+  'play.png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAATUlEQVR42u3WwQ0AIAhDUfZful68mhhBq7Zvgh8TwAgzux06egAtBAP0gGMRmEAP2BqCBfSA0hAUoAekQp5+Ab0p0NuEmtdQ70dk9r0GIb3pMz61xe0AAAAASUVORK5CYII=',
+  'pause.png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAK0lEQVR42u3OoQEAAAjDsP3/NCgkCoNIdEUT4LtaXFsDBgwYMGDAgAEDwGj7Z4ye5T3nMQAAAABJRU5ErkJggg==',
+  'prev.png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAT0lEQVR42u3WiwkAIAxDwe6/dJxAkX4MmNwEj4K2EWa2gQN6wJMQXKIHjIUggR7QGoIiekA5BI3oAakQDNGcgOYr0PwJNbeh5kXki9m+sgCazbOFuz5ipgAAAABJRU5ErkJggg==',
+  'next.png': 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAW0lEQVR42u3WiwkAIAxDQfdfOm4gflryhNwCCaK2Y0REMS3YgtsLaJMtuKWALtiCywrokS34qYAK2YKPC6jJPyeAuAOYV4D4BzA/IWIWYKYhYh/AbESInTDi1gSWfrOFM2oVIgAAAABJRU5ErkJggg=='
+}
+
 function getThumbIcon(name) {
   try {
+    if (THUMB_ICONS[name]) {
+      const img = nativeImage.createFromDataURL(THUMB_ICONS[name])
+      if (!img.isEmpty()) return img
+    }
+    // 兜底:asar 外/开发目录
     const p = path.join(__dirname, '..', 'build', 'thumb', name)
     if (fs.existsSync(p)) return nativeImage.createFromPath(p)
   } catch {}
