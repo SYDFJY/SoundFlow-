@@ -49,7 +49,30 @@ const isFullscreen = computed(() => {
 
 let _autoSaveTimer = null
 
+// 全局快捷键:空格=播放/暂停,Ctrl+←/→=上一曲/下一曲,Ctrl+↑/↓=音量
+function onGlobalKey(e) {
+  const tag = (e.target.tagName || '').toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return
+  if (e.code === 'Space') {
+    e.preventDefault()
+    playerStore.togglePlay()
+  } else if (e.ctrlKey && e.key === 'ArrowRight') {
+    e.preventDefault()
+    playerStore.playNext()
+  } else if (e.ctrlKey && e.key === 'ArrowLeft') {
+    e.preventDefault()
+    playerStore.playPrev()
+  } else if (e.ctrlKey && e.key === 'ArrowUp') {
+    e.preventDefault()
+    playerStore.setVolume(Math.min(1, playerStore.volume + 0.05))
+  } else if (e.ctrlKey && e.key === 'ArrowDown') {
+    e.preventDefault()
+    playerStore.setVolume(Math.max(0, playerStore.volume - 0.05))
+  }
+}
+
 onMounted(() => {
+  window.addEventListener('keydown', onGlobalKey)
   appStore.loadSettings()
   musicStore.restoreLibrary()
   musicStore.initPlayListener()
@@ -96,6 +119,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onGlobalKey)
   if (_autoSaveTimer) { clearInterval(_autoSaveTimer); _autoSaveTimer = null }
   playerStore.saveSettings()
   musicStore.saveToStorage()

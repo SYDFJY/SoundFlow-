@@ -51,6 +51,8 @@
             <!-- 歌词来源切换:本地 / 网易云 / LRCLIB -->
             <div class="lyric-source-switch">
               <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
+              <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
+              <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
             </div>
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">{{ playerStore.lyricOrigin }}歌词</div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
@@ -70,6 +72,7 @@
                 :key="idx"
                 class="lyric-line"
                 :class="{ active: idx === playerStore.currentLyricIndex }"
+                :style="{ fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px' }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
@@ -206,7 +209,14 @@ const progressPercent = computed(() => playerStore.duration ? (playerStore.curre
 
 const bgStyle = computed(() => {
   if (coverUrl.value) {
-    return { backgroundImage: `url(${coverUrl.value})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+    // 封面模糊铺底 + 压暗,营造沉浸式背景
+    return {
+      backgroundImage: `url(${coverUrl.value})`,
+      backgroundSize: 'cover',
+      backgroundPosition: 'center',
+      filter: 'blur(48px) brightness(0.55) saturate(1.2)',
+      transform: 'scale(1.15)'
+    }
   }
   return {}
 })
@@ -281,6 +291,13 @@ const lyricSourceOptions = [
   { value: 'lrclib', label: 'LRCLIB' }
 ]
 const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrclib')
+
+// 歌词字号(可调,localStorage 持久化)
+const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_size')) || 18)
+function changeLyricFont(delta) {
+  lyricFontSize.value = Math.max(12, Math.min(36, lyricFontSize.value + delta))
+  localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
+}
 
 function switchLyricSource(v) {
   if (lyricSource.value === v) return
