@@ -382,14 +382,16 @@ function createMainWindow() {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
   })
 
-  mainWindow.on('close', async (e) => {
+  mainWindow.on('close', (e) => {
+    // 退出流程中直接放行
+    if (app.isQuitting) return
     // 先阻止默认关闭,根据用户设置决定:exit 真退出 / minimize 隐藏到托盘
     e.preventDefault()
     try { mainWindow.webContents.send('app:before-close') } catch (_) {}
-    // 读取渲染进程的关闭行为设置(实时准确)
+    // 同步读取渲染进程的关闭行为设置(实时准确,可靠)
     let action = storageData.closeAction === 'exit' ? 'exit' : 'minimize'
     try {
-      const v = await mainWindow.webContents.executeJavaScript("localStorage.getItem('soundflow_close_action') || 'minimize'")
+      const v = mainWindow.webContents.sendSync('get-close-action')
       if (v === 'exit') action = 'exit'
       else if (v === 'minimize') action = 'minimize'
     } catch {}

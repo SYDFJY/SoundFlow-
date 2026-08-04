@@ -80,6 +80,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   },
 
+  // 主进程同步查询关闭行为(关闭窗口时 sendSync 回复)
+  _registerCloseActionListener() {
+    ipcRenderer.on('get-close-action', (event) => {
+      try {
+        event.returnValue = localStorage.getItem('soundflow_close_action') || 'minimize'
+      } catch {
+        event.returnValue = 'minimize'
+      }
+    })
+  },
+
   // 单向发送
   send: (channel, ...args) => {
     const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore']
@@ -88,3 +99,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }
   }
 })
+
+// 注册同步查询(必须在 exposeInMainWorld 后立即执行)
+window.electronAPI._registerCloseActionListener()
