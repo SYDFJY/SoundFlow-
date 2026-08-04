@@ -309,15 +309,14 @@ function createMainWindow() {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
 
-  // 多时机绑定任务栏缩略图按钮,确保窗口显示后一定生效
-  const bindThumb = () => updateThumbarButtons(lastThumbState)
+  // 窗口显示完成后才设置缩略图按钮
+  // 注意:Electron bug(issue #28319)——在隐藏状态下调用 setThumbarButtons 会导致按钮永久不显示
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
-    bindThumb()
   })
-  mainWindow.on('show', bindThumb)
-  mainWindow.webContents.on('did-finish-load', bindThumb)
-  setTimeout(bindThumb, 1500)
+  mainWindow.on('show', () => {
+    setTimeout(() => updateThumbarButtons(lastThumbState), 300)
+  })
 
   mainWindow.on('close', () => {
     // 通知渲染进程保存数据
@@ -412,6 +411,8 @@ function getThumbIcon(name) {
 function updateThumbarButtons(state) {
   if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
   lastThumbState = state === 'playing' ? 'playing' : 'paused'
+  // 窗口不可见时设置会触发 Electron bug(#28319),按钮会永久不显示,必须等窗口显示后再设
+  if (!mainWindow.isVisible()) return
   const send = (cmd) => {
     try { mainWindow.webContents.send('tray-command', cmd) } catch (_) {}
   }
