@@ -270,7 +270,14 @@ function highlight(text) {
 }
 
 function showContextMenu(e, song) {
-  ctxMenu.value = { show: true, x: e.clientX, y: e.clientY, song }
+  // 菜单限制在视口内:右/下溢出时自动左移/上移,避免被截断遮挡
+  const menuW = 200
+  const menuH = 320
+  let x = e.clientX
+  let y = e.clientY
+  if (x + menuW > window.innerWidth - 8) x = Math.max(4, window.innerWidth - menuW - 8)
+  if (y + menuH > window.innerHeight - 8) y = Math.max(4, window.innerHeight - menuH - 8)
+  ctxMenu.value = { show: true, x, y, song }
 }
 
 function ctxPlay() {
