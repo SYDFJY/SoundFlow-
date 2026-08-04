@@ -6,10 +6,13 @@ const path = require('path')
 const fs = require('fs')
 const { readdir, stat, readFile, writeFile, mkdir } = require('fs/promises')
 const os = require('os')
+const crypto = require('crypto')
 const { execFile } = require('child_process')
 
 // ========== 常量 ==========
 const AUDIO_EXTS = new Set(['.mp3','.flac','.wav','.ape','.m4a','.ogg','.wma','.aac','.aiff','.alac','.opus','.wv'])
+// Chromium <audio> 原生支持的扩展名(其余格式需 ffmpeg 转码)
+const NATIVE_AUDIO_EXTS = new Set(['.mp3','.flac','.wav','.m4a','.ogg','.opus','.webm'])
 const COVER_NAMES = ['cover.jpg','cover.png','folder.jpg','folder.png','Cover.jpg','Cover.png','Front.jpg','front.png']
 const APP_NAME = 'SoundFlow 声流音乐'
 // 检测是否有本地 dist 目录（优先使用本地文件，而非 dev server）
@@ -104,6 +107,57 @@ function getFFprobeMetadata(filePath) {
       } catch { resolve(null) }
     })
   })
+}
+
+// ========== 音频转码(播放 Chromium 不支持的格式,如 APE/WMA/AIFF/ALAC/WV) ==========
+// 与 ffprobe 同目录的 ffmpeg;找不到则尝试 PATH
+function getFfmpegPath() {
+  try {
+    if (ffprobePath && ffprobePath !== 'ffprobe' && fs.existsSync(ffprobePath)) {
+      const p = path.join(path.dirname(ffprobePath), 'ffmpeg.exe')
+      if (fs.existsSync(p)) return p
+    }
+  } catch {}
+  return 'ffmpeg'
+}
+
+// 判断是否需要转码:非原生扩展名,或 m4a/mp4 容器内是 alac 编码
+async function needsTranscode(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+  if (!NATIVE_AUDIO_EXTS.has(ext)) return true
+  // m4a/mp4 容器内可能是 alac(Chromium 不支持),用 ffprobe 检测 codec
+  if (ext === '.m4a' || ext === '.mp4') {
+    const meta = await getFFprobeMetadata(filePath)
+    const codec = meta?.streams?.find(s => s.codec_type === 'audio')?.codec_name
+    if (codec === 'alac') return true
+  }
+  return false
+}
+
+// 转码为 FLAC(无损、体积小、Chromium 原生支持),带缓存
+async function transcodeAudio(filePath) {
+  const ffmpeg = getFfmpegPath()
+  const dir = path.join(app.getPath('temp'), 'soundflow-transcode')
+  await mkdir(dir, { recursive: true })
+  const st = await stat(filePath)
+  const hash = crypto.createHash('md5')
+    .update(`${filePath}|${st.size}|${st.mtimeMs}`)
+    .digest('hex').slice(0, 16)
+  const outPath = path.join(dir, `${hash}.flac`)
+  if (fs.existsSync(outPath)) return outPath
+
+  await new Promise((resolve, reject) => {
+    execFile(ffmpeg, [
+      '-y', '-hide_banner', '-loglevel', 'error',
+      '-i', filePath,
+      '-vn', '-c:a', 'flac',
+      '-f', 'flac', outPath
+    ], { timeout: 180000, windowsHide: true }, (err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+  return outPath
 }
 
 // ========== music-metadata ==========
@@ -637,6 +691,20 @@ function setupIPC() {
     return filePaths.filter(p => {
       try { return !fs.existsSync(p) } catch { return true }
     })
+  })
+
+  // 准备可播放的音频源:原生支持直接返回原路径,不支持的格式转码为 FLAC 临时文件
+  ipcMain.handle('prepare-audio', async (event, filePath) => {
+    const fallback = { url: `file:///${filePath.replace(/\\/g, '/')}`, transcoded: false }
+    if (typeof filePath !== 'string' || !filePath) return fallback
+    try {
+      if (!(await needsTranscode(filePath))) return fallback
+      const outPath = await transcodeAudio(filePath)
+      return { url: `file:///${outPath.replace(/\\/g, '/')}`, transcoded: true }
+    } catch (e) {
+      console.error('[转码] 失败,回退原文件:', filePath, e.message)
+      return fallback
+    }
   })
 
   // 获取应用路径

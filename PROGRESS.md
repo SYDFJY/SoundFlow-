@@ -47,6 +47,13 @@
 - **ffprobe 探测增强**:扫描常见 ffmpeg 安装路径(`C:\ffmpeg\bin` 等),使用系统 ffprobe
 - 修复歌手/专辑详情弹窗歌曲列表无法滚动(`min-height: 0`)
 
+### 4. 特殊音频格式支持(APE/WMA/AIFF/ALAC/WV)
+- Chromium `<audio>` 原生只支持 MP3/FLAC/WAV/M4A(AAC)/OGG/OPUS/WebM
+- 新增 `prepare-audio` IPC:不支持的格式用**系统 ffmpeg 转码为 FLAC 临时文件**后播放(无损)
+- 转码带缓存(按 路径+大小+mtime,存在 `%TEMP%\soundflow-transcode\`),同文件不重复转码
+- m4a/mp4 容器内的 ALAC 编码也通过 ffprobe 检测并转码
+- 依赖:目标机器需安装 ffmpeg(与 ffprobe 同目录或 PATH)
+
 ## 三、技术栈与架构
 
 ```
@@ -68,10 +75,9 @@ src/
 
 | 问题 | 说明 | 建议 |
 |---|---|---|
-| APE/WMA/AIFF/ALAC/WV 格式实际无法播放 | Chromium `<audio>` 只支持 MP3/FLAC/WAV/M4A(AAC)/OGG/OPUS/WebM,README 声称支持 12 种格式名不副实 | 需自研解码(ffmpeg 转码)或修正 README |
+| APE/WMA/AIFF/ALAC/WV 等格式依赖系统 ffmpeg | 已支持转码播放,但目标机器需装 ffmpeg(与 ffprobe 同目录或 PATH) | 可在设置页提示;后续可考虑内置 ffmpeg |
 | 歌曲文件移动/删除后曲库无自动清理 | 已有手动"清理失效"按钮 | 可选:启动时自动检测 + 提示 |
 | 安装包未代码签名 | SmartScreen 提示"未知发布者" | 需要代码签名证书 |
-| ffprobe 依赖用户系统安装 | 若目标机器无 ffmpeg,特殊格式时长解析缺失(music-metadata 仍可用) | 可改为内置或文档说明 |
 | 无自动更新 | 需手动下载新安装包 | 后续可接入 electron-updater |
 | 无测试 | 无单元/集成测试 | 后续可补 |
 | 播放队列在 app 重启后不保留 | 进度有记忆,队列本身不保存 | 后续可加 |

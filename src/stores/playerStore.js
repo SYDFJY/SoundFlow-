@@ -153,7 +153,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 加载并播放
-  function loadAndPlay(index) {
+  async function loadAndPlay(index) {
     initAudio()
     if (index < 0 || index >= playQueue.value.length) return
 
@@ -165,15 +165,27 @@ export const usePlayerStore = defineStore('player', () => {
     currentIndex.value = index
     const song = playQueue.value[index]
     currentSong.value = song
+    isBuffering.value = true
 
+    // 准备音频源:原生格式直通,不支持的格式(APE/WMA 等)主进程转码后播放
+    let src
     if (window.electronAPI && !song.path.startsWith('blob:')) {
-      audio.value.src = `file:///${song.path.replace(/\\/g, '/')}`
+      try {
+        const res = await window.electronAPI.prepareAudio(song.path)
+        src = res?.url || `file:///${song.path.replace(/\\/g, '/')}`
+      } catch {
+        src = `file:///${song.path.replace(/\\/g, '/')}`
+      }
     } else {
-      audio.value.src = song.path
+      src = song.path
     }
 
+    // 异步期间可能已切歌
+    if (currentIndex.value !== index || currentSong.value !== song) return
+    audio.value.src = src
     audio.value.playbackRate = playbackRate.value
     audio.value.play().catch(e => console.warn('[播放器] 播放失败:', e))
+    isBuffering.value = false
     loadLyrics(song)
 
     // 通过事件通知 musicStore 记录播放（避免循环依赖）
