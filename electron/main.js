@@ -312,6 +312,8 @@ function createMainWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
+    // 窗口就绪后立即绑定任务栏缩略图按钮(启动时未播放也显示,状态为暂停)
+    updateThumbarButtons(lastThumbState)
   })
 
   mainWindow.on('close', () => {
@@ -381,6 +383,8 @@ function createTray() {
 }
 
 // ========== 任务栏缩略图按钮 (SMTC 的一部分) ==========
+let lastThumbState = 'paused'
+
 function getThumbIcon(name) {
   try {
     const p = path.join(__dirname, '..', 'build', 'thumb', name)
@@ -391,6 +395,7 @@ function getThumbIcon(name) {
 
 function updateThumbarButtons(state) {
   if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
+  lastThumbState = state === 'playing' ? 'playing' : 'paused'
   const send = (cmd) => {
     try { mainWindow.webContents.send('tray-command', cmd) } catch (_) {}
   }
