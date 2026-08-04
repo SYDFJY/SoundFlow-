@@ -49,13 +49,13 @@
               <div v-else class="cover-placeholder">🎵</div>
             </div>
           </div>
+          <!-- 音频频谱(常驻:播放跳动/暂停低矮基线) -->
+          <canvas ref="spectrumCanvas" class="spectrum-bar" width="520" height="80"></canvas>
         </div>
         <div class="song-meta">
           <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
-          <!-- 音频频谱(播放时跳动) -->
-          <canvas ref="spectrumCanvas" class="spectrum-bar" width="520" height="80"></canvas>
         </div>
       </div>
 
@@ -251,7 +251,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const playerStore = usePlayerStore()
@@ -310,6 +310,12 @@ function onCoverError() {
     .catch(() => {})
 }
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
+
+// 频谱常驻绘制生命周期
+onMounted(startSpectrum)
+onUnmounted(() => {
+  if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
+})
 
 // ===== 播放页背景设置(封面 / 纯色 / 渐变,持久化) =====
 const bgPresets = {
@@ -498,7 +504,7 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const volExpanded = ref(false) // 音量滑块默认收起
 
-// 频谱可视化(canvas + rAF,播放时绘制)
+// 频谱可视化(canvas + rAF,常驻绘制:播放跳动/暂停低矮基线)
 const spectrumCanvas = ref(null)
 let spectrumRAF = null
 let spectrumCtx = null
@@ -519,24 +525,22 @@ function drawSpectrum() {
   spectrumCtx.fillStyle = grad
   for (let i = 0; i < bars; i++) {
     let v = 0
-    if (data) {
+    if (data && playerStore.isPlaying) {
       for (let j = 0; j < step; j++) v += data[i * step + j]
       v = v / step / 255
     }
-    const h = Math.max(2, Math.round(v * height))
+    // 暂停时显示低矮基线(3px),让频谱区始终可见
+    const h = Math.max(3, Math.round(v * height))
     spectrumCtx.fillRect(i * barW + 1, height - h, barW - 2, h)
   }
   spectrumRAF = requestAnimationFrame(drawSpectrum)
 }
-watch(() => playerStore.isPlaying, (v) => {
-  if (v && !spectrumRAF) drawSpectrum()
-  else if (!v && spectrumRAF) {
-    cancelAnimationFrame(spectrumRAF)
-    spectrumRAF = null
-    const canvas = spectrumCanvas.value
-    if (canvas && spectrumCtx) spectrumCtx.clearRect(0, 0, canvas.width, canvas.height)
-  }
-})
+// 组件挂载后启动常驻绘制
+function startSpectrum() {
+  if (!spectrumRAF && spectrumCanvas.value) drawSpectrum()
+}
+// 切回封面模式时启动(歌词模式无 canvas)
+watch(activeTab, (v) => { if (v === 'cover') startSpectrum() })
 
 // 歌词对齐(居中/左,持久化)
 const lyricAlign = ref(localStorage.getItem('soundflow_lyric_align') || 'center')
