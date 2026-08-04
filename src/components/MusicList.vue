@@ -57,8 +57,8 @@
               </button>
             </div>
             <div class="col-title">
-              <div class="song-cover" v-if="row.song.coverUrl">
-                <img :src="row.song.coverUrl" loading="lazy" />
+              <div class="song-cover">
+                <img v-if="row.song.coverUrl && !isScrolling" :src="row.song.coverUrl" loading="lazy" decoding="async" />
               </div>
               <div class="song-info">
                 <span class="song-name text-ellipsis" v-html="highlight(row.song.title)"></span>
@@ -129,13 +129,17 @@ const playlists = computed(() => musicStore.playlists)
 // ===== 虚拟滚动(295+ 首歌只渲染可视行,滚动流畅) =====
 const ROW_H = 56 // 必须与 .list-row 高度一致
 const listBody = ref(null)
-const scrollTop = ref(0)
+// scrollTopPx:实时滚动像素(只驱动 transform,不重渲染);scrollTopRow:行号(跨行才触发重渲染)
+const scrollTopPx = ref(0)
+const scrollTopRow = ref(0)
 const viewportH = ref(300)
+const isScrolling = ref(false) // 滚动中暂停封面加载,避免 base64 解码卡顿
+let scrollTimer = null
 let ro = null
 
 const virtualTotal = computed(() => props.songs.length * ROW_H)
-const virtualStart = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H) - 5))
-const virtualEnd = computed(() => Math.min(props.songs.length, Math.ceil((scrollTop.value + viewportH.value) / ROW_H) + 5))
+const virtualStart = computed(() => Math.max(0, scrollTopRow.value - 5))
+const virtualEnd = computed(() => Math.min(props.songs.length, Math.ceil((scrollTopRow.value + viewportH.value / ROW_H)) + 5))
 const virtualRows = computed(() => {
   const rows = []
   for (let i = virtualStart.value; i < virtualEnd.value; i++) {
@@ -143,10 +147,19 @@ const virtualRows = computed(() => {
   }
   return rows
 })
-const virtualOffset = computed(() => virtualStart.value * ROW_H)
+// 行位置随滚动精确平移(连续不跳动),只在跨行时重渲染行
+const virtualOffset = computed(() => scrollTopRow.value * ROW_H - scrollTopPx.value)
 
 function onScroll() {
-  if (listBody.value) scrollTop.value = listBody.value.scrollTop
+  const el = listBody.value
+  if (!el) return
+  scrollTopPx.value = el.scrollTop
+  const row = Math.floor(el.scrollTop / ROW_H)
+  if (row !== scrollTopRow.value) scrollTopRow.value = row
+  // 滚动中暂停封面渲染
+  if (!isScrolling.value) isScrolling.value = true
+  clearTimeout(scrollTimer)
+  scrollTimer = setTimeout(() => { isScrolling.value = false }, 200)
 }
 
 function updateViewport() {
@@ -386,7 +399,7 @@ onUnmounted(() => {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 10px;
 }
-.song-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
+.song-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; background: var(--bg-hover); }
 .song-cover img { width: 100%; height: 100%; object-fit: cover; }
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .song-name { font-size: 14px; color: var(--text-primary); }
