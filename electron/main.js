@@ -784,6 +784,7 @@ function setupIPC() {
   // 保存歌词到指定歌词文件夹(<音频文件名>.lrc,供批量下载使用)
   ipcMain.handle('save-lyric-to-folder', (event, audioPath, lrcText, folderPath) => {
     try {
+      fs.mkdirSync(folderPath, { recursive: true }) // 文件夹不存在时自动创建
       const base = path.basename(audioPath, path.extname(audioPath))
       const target = path.join(folderPath, base + '.lrc')
       fs.writeFileSync(target, lrcText, 'utf8')
