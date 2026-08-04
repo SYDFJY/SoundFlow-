@@ -180,6 +180,13 @@
             {{ recordingKey === d.key ? '按新快捷键…' : (shortcuts[d.key] || '未设置') }}
           </button>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">恢复默认快捷键</span>
+            <span class="label-desc">空格播放/暂停、Ctrl+←/→ 切歌、Ctrl+↑/↓ 音量</span>
+          </div>
+          <button class="setting-btn" @click="resetShortcuts">恢复默认</button>
+        </div>
       </div>
 
       <!-- 关闭行为 -->
@@ -316,6 +323,13 @@ function onRecordKey(e) {
   shortcuts.value[recordingKey.value] = combo
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(shortcuts.value))
   recordingKey.value = ''
+}
+
+// 恢复默认快捷键
+function resetShortcuts() {
+  const defaults = { playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft', volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown' }
+  shortcuts.value = { ...defaults }
+  localStorage.setItem('soundflow_shortcuts', JSON.stringify(defaults))
 }
 
 // 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)
