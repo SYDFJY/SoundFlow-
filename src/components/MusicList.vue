@@ -36,7 +36,7 @@
     </div>
 
     <!-- 列表(全量渲染 + content-visibility 自动跳过视口外行,性能与滚动条语义兼得) -->
-    <div class="list-body" v-if="songs.length > 0" @scroll.passive="onListScroll">
+    <div class="list-body" v-if="songs.length > 0">
       <div
         v-for="(song, idx) in songs"
         :key="song.path"
@@ -57,7 +57,7 @@
         </div>
         <div class="col-title">
           <div class="song-cover">
-            <img v-if="song.coverUrl && !isScrolling" :src="song.coverUrl" loading="lazy" decoding="async" />
+            <img v-if="song.coverUrl" :src="song.coverUrl" decoding="async" />
           </div>
           <div class="song-info">
             <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
@@ -123,10 +123,6 @@ const selectedSet = ref(new Set())
 const ctxMenu = ref({ show: false, x: 0, y: 0, song: null })
 const playlists = computed(() => musicStore.playlists)
 
-// 滚动中暂停封面渲染(避免滚动时反复解码图片),停止 200ms 后恢复
-const isScrolling = ref(false)
-let scrollTimer = null
-
 // 懒补封面:曲库中 coverUrl 为空(历史数据)时,可见行按需从主进程获取封面文件
 const pendingCovers = new Set()
 async function ensureCover(song) {
@@ -138,12 +134,6 @@ async function ensureCover(song) {
   } catch {} finally {
     pendingCovers.delete(song.path)
   }
-}
-
-function onListScroll() {
-  if (!isScrolling.value) isScrolling.value = true
-  clearTimeout(scrollTimer)
-  scrollTimer = setTimeout(() => { isScrolling.value = false }, 200)
 }
 
 const allChecked = computed(() => {
@@ -277,7 +267,6 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
-  clearTimeout(scrollTimer)
 })
 </script>
 
