@@ -149,7 +149,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/appStore'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
