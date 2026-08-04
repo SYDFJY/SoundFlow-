@@ -250,6 +250,16 @@ input[type="text"]:focus, input[type="search"]:focus {
   -webkit-backdrop-filter: none !important;
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  /* 液态玻璃下禁用 fade 过渡:过渡动画偶发卡在 opacity:0 残留,导致下拉框透明不可见 */
+  opacity: 1 !important;
+}
+.theme-liquid .fade-enter-active,
+.theme-liquid .fade-leave-active {
+  transition: none !important;
+}
+.theme-liquid .fade-enter-from,
+.theme-liquid .fade-leave-to {
+  opacity: 1 !important;
 }
 .theme-liquid .theme-option { color: #dbe6f5; }
 .theme-liquid .theme-option:hover { background: rgba(255, 255, 255, 0.1); }
