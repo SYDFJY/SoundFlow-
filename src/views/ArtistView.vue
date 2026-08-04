@@ -13,6 +13,9 @@
         <div v-for="artist in artists" :key="artist.name" class="artist-card" @click="selectArtist(artist)">
           <div class="artist-avatar">
             <div class="avatar-placeholder">{{ artist.name[0] }}</div>
+            <button class="artist-play" title="播放全部" @click.stop="playArtistDirect(artist.name)">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+            </button>
           </div>
           <div class="artist-name text-ellipsis">{{ artist.name }}</div>
           <div class="artist-count">{{ artist.count }} 首</div>
@@ -74,6 +77,12 @@ function selectArtist(artist) { selectedArtist.value = artist }
 function playArtist() {
   if (selectedArtistSongs.value.length) playerStore.setPlayQueue(selectedArtistSongs.value.map(s => ({ ...s })), 0)
 }
+
+// 封面墙悬停直接播放该歌手全部
+function playArtistDirect(name) {
+  const songs = musicStore.songs.filter(s => (s.artist || '未知艺术家') === name)
+  if (songs.length) playerStore.setPlayQueue(songs.map(s => ({ ...s })), 0)
+}
 </script>
 
 <style scoped>
@@ -91,7 +100,17 @@ function playArtist() {
 }
 .artist-card:hover { background: var(--bg-card); box-shadow: var(--shadow-md); transform: translateY(-2px); }
 
-.artist-avatar { width: 80px; height: 80px; border-radius: 50%; overflow: hidden; }
+.artist-avatar { position: relative; width: 80px; height: 80px; border-radius: 50%; overflow: visible; }
+.artist-play {
+  position: absolute; right: -2px; bottom: -2px;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: rgba(22,119,230,0.92); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transform: scale(0.8); transition: all 0.2s;
+}
+.artist-card:hover .artist-play { opacity: 1; transform: scale(1); }
+.artist-play:hover { background: var(--color-primary-light); transform: scale(1.1) !important; }
+.artist-play svg { width: 15px; height: 15px; }
 .avatar-placeholder {
   width: 100%; height: 100%;
   background: linear-gradient(135deg, var(--color-primary-alpha), var(--color-primary));

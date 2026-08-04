@@ -256,6 +256,42 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 当前歌词来源(供界面显示:本地 / LRCLIB / 网易云 / 自动)
   const lyricOrigin = ref('')
+  // 歌词翻译
+  const showTranslation = ref(false)
+  const translating = ref(false)
+  const translations = ref([])
+  let _translationCache = new Map() // 歌曲路径 -> 译文数组(会话内缓存)
+
+  // 翻译当前歌词:自动判断目标语言(原文含中文→英文,否则→中文)
+  async function translateCurrentLyrics() {
+    if (!window.electronAPI || lyrics.value.length === 0) return
+    const song = currentSong.value
+    if (!song) return
+    if (_translationCache.has(song.path)) {
+      translations.value = _translationCache.get(song.path)
+      return
+    }
+    const texts = lyrics.value.map(l => l.text)
+    const hasChinese = texts.some(t => /[\u4e00-\u9fff]/.test(t))
+    translating.value = true
+    try {
+      const result = await window.electronAPI.translateLyrics({
+        lines: texts,
+        targetLang: hasChinese ? 'en' : 'zh'
+      })
+      translations.value = Array.isArray(result) ? result : []
+      _translationCache.set(song.path, translations.value)
+    } catch {
+      translations.value = []
+    } finally {
+      translating.value = false
+    }
+  }
+
+  function toggleTranslation() {
+    showTranslation.value = !showTranslation.value
+    if (showTranslation.value) translateCurrentLyrics()
+  }
 
   // 加载歌词:本地 .lrc → 在线歌词缓存 → 在线来源
   async function loadLyrics(song) {
@@ -273,6 +309,7 @@ export const usePlayerStore = defineStore('player', () => {
       if (lrcText) {
         lyricOrigin.value = '本地'
         lyrics.value = parseLRC(lrcText)
+        if (showTranslation.value) translateCurrentLyrics()
         return
       }
       // 2. 在线歌词:来源为 local 时不联网;否则本地缺失时按所选来源(网易云/LRCLIB)获取
@@ -299,7 +336,10 @@ export const usePlayerStore = defineStore('player', () => {
             lyricOrigin.value = '未找到' // 在线获取失败/无匹配,界面提示
           }
         }
-        if (onlineText) lyrics.value = parseLRC(onlineText)
+        if (onlineText) {
+          lyrics.value = parseLRC(onlineText)
+          if (showTranslation.value) translateCurrentLyrics()
+        }
       } else if (source === 'local') {
         lyricOrigin.value = lyrics.value.length ? '本地' : ''
       }
@@ -658,6 +698,7 @@ export const usePlayerStore = defineStore('player', () => {
   return {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
+    showTranslation, translating, translations, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, loadAndPlay, togglePlay,

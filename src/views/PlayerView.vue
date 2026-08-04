@@ -76,6 +76,8 @@
             <div class="lyric-source-switch">
               <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
               <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
+              <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
+              <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" title="歌词对齐(居中/左)" @click="toggleLyricAlign">对齐</button>
               <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
               <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
             </div>
@@ -100,7 +102,7 @@
                 v-for="(line, idx) in playerStore.lyrics"
                 :key="idx"
                 class="lyric-line"
-                :class="{ active: idx === playerStore.currentLyricIndex }"
+                :class="{ active: idx === playerStore.currentLyricIndex, left: lyricAlign === 'left' }"
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px',
                   color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99',
@@ -111,6 +113,7 @@
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
               >
                 {{ line.text }}
+                <div v-if="playerStore.showTranslation && playerStore.translations[idx]" class="lyric-trans">{{ playerStore.translations[idx] }}</div>
               </div>
               <div style="height:40%"></div>
             </div>
@@ -426,6 +429,13 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const volExpanded = ref(false) // 音量滑块默认收起
 
+// 歌词对齐(居中/左,持久化)
+const lyricAlign = ref(localStorage.getItem('soundflow_lyric_align') || 'center')
+function toggleLyricAlign() {
+  lyricAlign.value = lyricAlign.value === 'center' ? 'left' : 'center'
+  localStorage.setItem('soundflow_lyric_align', lyricAlign.value)
+}
+
 function switchLyricSource(v) {
   if (lyricSource.value === v) return
   lyricSource.value = v
@@ -605,6 +615,17 @@ async function searchLyric() {
   line-height: 1.6;
   cursor: pointer;
   border-radius: 6px;
+  text-align: center;
+}
+.lyric-line.left { text-align: left; }
+.lyric-trans {
+  font-size: 0.62em;
+  font-weight: 400;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
 }
 .lyric-line:hover {
   color: rgba(255,255,255,0.75);

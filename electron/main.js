@@ -766,12 +766,36 @@ function setupIPC() {
     }
   }
 
-  // 自动获取(播放时):按用户选择的来源
+  // 在线歌词:按用户选择的来源
   ipcMain.handle('fetch-online-lyric', async (event, info) => {
     const src = info?.source || 'lrclib' // 默认 LRCLIB
     if (src === 'netease') return await fetchNetEaseLyric(info)
     if (src === 'auto') return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
     return await fetchLRCLIB(info)
+  })
+
+  // 歌词翻译(MyMemory 免费接口,无需 key):逐行翻译,返回与输入等长的译文数组
+  ipcMain.handle('translate-lyrics', async (event, { lines, targetLang }) => {
+    if (!Array.isArray(lines) || !lines.length) return []
+    // 自动判断:原文含中文→译成英文,否则→译成中文
+    const hasChinese = lines.some(t => /[\u4e00-\u9fff]/.test(t || ''))
+    const pair = hasChinese ? 'zh-CN|en' : 'en|zh-CN'
+    const results = []
+    const headers = { 'User-Agent': 'Mozilla/5.0' }
+    // 逐行翻译(串行,避免限流)
+    for (const text of lines) {
+      if (!text || !text.trim()) { results.push(''); continue }
+      try {
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`
+        const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
+        if (!res.ok) { results.push(''); continue }
+        const data = await res.json()
+        results.push((data?.responseData?.translatedText || '').trim())
+      } catch {
+        results.push('')
+      }
+    }
+    return results
   })
 
   // 手动搜索下载(用户点击):同样 LRCLIB → 网易云
