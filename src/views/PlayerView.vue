@@ -571,9 +571,9 @@ function drawSpectrum() {
 }
 // 组件挂载后启动常驻绘制
 function startSpectrum() {
-  if (!spectrumRAF && spectrumCanvas.value) drawSpectrum()
+  if (spectrumCanvas.value) drawSpectrum()
 }
-// 切回封面模式时启动(歌词模式无 canvas)
+// 切回封面模式时启动(歌词模式无 canvas);canvas 卸载会中断 rAF,回来必须重启
 watch(activeTab, (v) => { if (v === 'cover') startSpectrum() })
 
 // 歌词对齐(居中/左,持久化)
