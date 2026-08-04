@@ -244,7 +244,15 @@ const themeOptions = [
   { value: 'dark', label: '暗夜绿', color: '#1a2b24' },
   { value: 'blue', label: '深海蓝', color: '#172330' },
   { value: 'red', label: '极夜红', color: '#2a171a' },
-  { value: 'purple', label: '暗玫紫', color: '#272036' }
+  { value: 'purple', label: '暗玫紫', color: '#272036' },
+  { value: 'c_light', label: '经典浅色', color: '#f5f7fa' },
+  { value: 'c_dark', label: '经典深色', color: '#0d1117' },
+  { value: 'c_blue', label: '经典藏青', color: '#0a1628' },
+  { value: 'c_green', label: '经典青绿', color: '#f0f7f0' },
+  { value: 'c_purple', label: '经典梦幻紫', color: '#f5f0ff' },
+  { value: 'c_pink', label: '经典樱花粉', color: '#fff0f5' },
+  { value: 'c_orange', label: '经典暖橘', color: '#fff8f0' },
+  { value: 'c_red', label: '经典中国红', color: '#fff5f5' }
 ]
 
 async function addFolder() {
