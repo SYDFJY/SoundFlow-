@@ -641,7 +641,7 @@ async function searchLyric() {
   align-items: center; justify-content: center; gap: 32px;
 }
 
-.disc-area { }
+.disc-area { display: flex; flex-direction: column; align-items: center; }
 
 .disc-ring {
   width: 300px; height: 300px; border-radius: 50%;
