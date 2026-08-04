@@ -17,7 +17,7 @@
       </div>
     </div>
     <div class="view-content">
-      <MusicList :songs="songs" empty-text="歌单为空，点击上方「添加歌曲」按钮" />
+      <MusicList :songs="sortedSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" empty-text="歌单为空，点击上方「添加歌曲」按钮" />
     </div>
 
     <!-- 添加歌曲弹窗 -->
@@ -87,6 +87,8 @@ const playerStore = usePlayerStore()
 
 const playlist = computed(() => musicStore.playlists.find(p => p.id === route.params.id))
 const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
+
+const sortedSongs = computed(() => musicStore.sortSongs(songs.value))
 
 // 添加歌曲弹窗状态
 const showAddDialog = ref(false)

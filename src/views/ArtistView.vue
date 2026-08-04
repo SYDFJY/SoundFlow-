@@ -40,7 +40,7 @@
             <button class="close-btn" @click="selectedArtist = null">✕</button>
           </div>
           <div class="detail-content">
-            <MusicList :songs="selectedArtistSongs" />
+            <MusicList :songs="sortedArtistSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" />
           </div>
         </div>
       </div>
@@ -72,6 +72,8 @@ const selectedArtistSongs = computed(() => {
   if (!selectedArtist.value) return []
   return musicStore.songs.filter(s => (s.artist || '未知艺术家') === selectedArtist.value.name)
 })
+
+const sortedArtistSongs = computed(() => musicStore.sortSongs(selectedArtistSongs.value))
 
 function selectArtist(artist) { selectedArtist.value = artist }
 function playArtist() {

@@ -265,6 +265,21 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 排序
+  // 通用排序:供各视图列表使用(歌手/专辑/歌单/收藏)
+  function sortSongs(list) {
+    const f = sortField.value
+    const o = sortOrder.value
+    return [...list].sort((a, b) => {
+      let va = a[f] || ''
+      let vb = b[f] || ''
+      if (typeof va === 'string') va = va.toLowerCase()
+      if (typeof vb === 'string') vb = vb.toLowerCase()
+      if (va < vb) return o === 'asc' ? -1 : 1
+      if (va > vb) return o === 'asc' ? 1 : -1
+      return 0
+    })
+  }
+
   function setSortField(field) {
     if (sortField.value === field) {
       sortOrder.value = sortOrder.value === 'asc' ? 'desc' : 'asc'
@@ -398,6 +413,7 @@ export const useMusicStore = defineStore('music', () => {
     songs, favorites, playlists, playCounts, history, searchQuery,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
+    sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist,

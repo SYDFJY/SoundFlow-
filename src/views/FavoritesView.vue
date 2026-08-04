@@ -14,8 +14,9 @@
     </div>
     <div class="view-content">
       <MusicList
-        :songs="musicStore.favoriteSongs"
-        sort-field="title"
+        :songs="sortedFavorites"
+        :sort-field="musicStore.sortField"
+        @sort="musicStore.setSortField"
         empty-text="还没有收藏歌曲，在歌曲列表中点击 ♡ 收藏"
       />
     </div>
@@ -29,6 +30,8 @@ import MusicList from '@/components/MusicList.vue'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
+
+const sortedFavorites = computed(() => musicStore.sortSongs(musicStore.favoriteSongs))
 
 function playAll() {
   const songs = musicStore.favoriteSongs
