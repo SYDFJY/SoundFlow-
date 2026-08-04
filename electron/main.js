@@ -786,21 +786,29 @@ function setupIPC() {
     // 目标语言:源是中文→英文,否则→中文(可显式指定)
     const target = (targetLang && /^[a-z-]+$/i.test(targetLang)) ? targetLang : (src === 'zh-CN' ? 'en' : 'zh-CN')
     const pair = `${src}|${target}`
-    const results = []
+    const results = new Array(lines.length).fill('')
     const headers = { 'User-Agent': 'Mozilla/5.0' }
-    // 逐行翻译(串行,避免限流)
-    for (const line of lines) {
-      if (!line || !line.trim()) { results.push(''); continue }
-      try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(line)}&langpair=${pair}`
-        const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
-        if (!res.ok) { results.push(''); continue }
-        const data = await res.json()
-        results.push((data?.responseData?.translatedText || '').trim())
-      } catch {
-        results.push('')
+    // 并发翻译(每批 5 行并行),显著快于串行
+    const CONCURRENCY = 5
+    let nextIdx = 0
+    async function worker() {
+      while (true) {
+        const i = nextIdx++
+        if (i >= lines.length) break
+        const line = lines[i]
+        if (!line || !line.trim()) continue
+        try {
+          const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(line)}&langpair=${pair}`
+          const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
+          if (!res.ok) continue
+          const data = await res.json()
+          results[i] = (data?.responseData?.translatedText || '').trim()
+        } catch {
+          // 单行失败留空,不影响其他行
+        }
       }
     }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, lines.length) }, worker))
     return results
   })
 
