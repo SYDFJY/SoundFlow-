@@ -227,26 +227,6 @@ function confirmRemoveSelected() {
   toggleBatch()
 }
 
-// 批量操作:加入歌单
-function openAddToPlaylist() {
-  if (selectedSet.value.size === 0) return
-  showPlaylistPicker.value = true
-}
-function addSelectedToPlaylist(plId) {
-  const paths = [...selectedSet.value]
-  const pl = musicStore.playlists.find(p => p.id === plId)
-  if (pl) {
-    for (const p of paths) {
-      if (!pl.songs.includes(p)) pl.songs.push(p)
-    }
-    musicStore.saveToStorage()
-  }
-  showPlaylistPicker.value = false
-  selectedSet.value = new Set()
-  emit('selection-change', [])
-  toggleBatch()
-}
-
 function formatDuration(sec) {
   if (!sec || !isFinite(sec)) return '--:--'
   const m = Math.floor(sec / 60)
@@ -298,15 +278,38 @@ function ctxToggleFav() {
   closeCtx()
 }
 
+// 添加到歌单:打开歌单选择弹窗(单首,来自右键菜单)
+let pendingAddPaths = []
 function ctxAddToPlaylist() {
-  if (ctxMenu.value.song && playlists.value.length > 0) {
-    const name = playlists.value.length === 1 ? playlists.value[0].name : prompt('添加到歌单：\n' + playlists.value.map((p, i) => `${i + 1}. ${p.name}`).join('\n'))
-    if (name) {
-      const pl = playlists.value.find(p => p.name === name) || playlists.value[parseInt(name) - 1]
-      if (pl) musicStore.addSongToPlaylist(pl.id, ctxMenu.value.song.path)
-    }
+  if (ctxMenu.value.song) {
+    pendingAddPaths = [ctxMenu.value.song.path]
+    showPlaylistPicker.value = true
+    closeCtx()
   }
-  closeCtx()
+}
+
+// 批量加入歌单(来自批量操作栏)
+function openAddToPlaylist() {
+  if (selectedSet.value.size === 0) return
+  pendingAddPaths = [...selectedSet.value]
+  showPlaylistPicker.value = true
+}
+
+// 歌单选择弹窗确认:把待添加歌曲加入所选歌单
+function addSelectedToPlaylist(plId) {
+  const paths = pendingAddPaths
+  const pl = musicStore.playlists.find(p => p.id === plId)
+  if (pl) {
+    for (const p of paths) {
+      if (!pl.songs.includes(p)) pl.songs.push(p)
+    }
+    musicStore.saveToStorage()
+  }
+  showPlaylistPicker.value = false
+  pendingAddPaths = []
+  selectedSet.value = new Set()
+  emit('selection-change', [])
+  toggleBatch()
 }
 
 function ctxOpenFile() {
