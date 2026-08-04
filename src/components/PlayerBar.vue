@@ -79,11 +79,6 @@
         </transition>
       </div>
 
-      <!-- 悬浮歌词(三态:打开/锁定/解锁) -->
-      <button class="right-btn" :class="{ active: lyricOpen, 'lyric-locked': lyricLocked }" @click="toggleFloatingLyric" :title="lyricLocked ? '悬浮歌词已锁定(点击穿透),点击解锁' : (lyricOpen ? '悬浮歌词已打开,点击锁定(点击穿透)' : '打开悬浮歌词')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-      </button>
-
       <!-- 音量 -->
       <div class="volume-control">
         <button class="right-btn" @click="playerStore.toggleMute()" title="音量">
@@ -131,7 +126,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useMusicStore } from '@/stores/musicStore'
@@ -142,10 +137,6 @@ const musicStore = useMusicStore()
 const progressBar = ref(null)
 const showTimer = ref(false)
 const customMinutes = ref(30)
-
-// 悬浮歌词状态(打开/锁定)
-const lyricOpen = ref(false)
-const lyricLocked = ref(false)
 
 const timerOptions = [
   { value: 15, label: '15 分钟后' },
@@ -201,31 +192,6 @@ function setCustomTimer() {
     showTimer.value = false
   }
 }
-
-function toggleFloatingLyric() {
-  if (!window.electronAPI) return
-  if (!lyricOpen.value) {
-    // 未打开 → 打开
-    window.electronAPI.toggleLyricWindow()
-  } else if (lyricLocked.value) {
-    // 已锁定 → 解锁
-    window.electronAPI.sendLyricLock(false)
-  } else {
-    // 已打开未锁定 → 锁定(点击穿透)
-    window.electronAPI.sendLyricLock(true)
-  }
-}
-
-onMounted(() => {
-  if (window.electronAPI) {
-    window.electronAPI.on('lyric:state', (state) => {
-      lyricOpen.value = !!state?.open
-      lyricLocked.value = !!state?.locked
-    })
-  }
-})
-
-onUnmounted(() => {})
 </script>
 
 <style scoped>
@@ -283,7 +249,6 @@ onUnmounted(() => {})
 .right-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); transition: all var(--transition-fast); position: relative; }
 .right-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .right-btn.active { color: var(--color-primary); }
-.right-btn.lyric-locked { color: var(--color-danger); }
 .right-btn svg { width: 18px; height: 18px; }
 .timer-badge { position: absolute; bottom: 2px; right: 2px; font-size: 9px; background: var(--color-primary); color: white; padding: 0 3px; border-radius: 4px; line-height: 1.4; }
 

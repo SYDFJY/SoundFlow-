@@ -44,14 +44,14 @@ const playerStore = usePlayerStore()
 
 // 播放器页面和歌词悬浮窗全屏显示
 const isFullscreen = computed(() => {
-  return route.path === '/player' || route.path === '/lyric' || route.path === '/mini'
+  return route.path === '/player' || route.path === '/mini'
 })
 
 let _autoSaveTimer = null
 
 onMounted(() => {
   appStore.loadSettings()
-  musicStore.loadFromStorage()
+  musicStore.restoreLibrary()
   musicStore.initPlayListener()
   playerStore.loadSettings()
   playerStore.initAudio()

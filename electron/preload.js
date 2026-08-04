@@ -53,15 +53,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   maximizeWindow: () => ipcRenderer.send('maximize-window'),
   closeWindow: () => ipcRenderer.send('close-window'),
 
-  // 悬浮歌词
-  toggleLyricWindow: () => ipcRenderer.send('lyric:toggle'),
-  sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
-  sendLyricSettings: (settings) => ipcRenderer.send('lyric:settings', settings),
-  sendLyricLock: (locked) => ipcRenderer.send('lyric:lock', locked),
-  sendLyricPin: (pinned) => ipcRenderer.send('lyric:pin', pinned),
-  moveLyricWindow: (dx, dy) => ipcRenderer.send('lyric:move', dx, dy),
-  resizeLyricWindow: (dw, dh) => ipcRenderer.send('lyric:resize', dw, dh),
-
   // 迷你播放器
   toggleMiniWindow: () => ipcRenderer.send('mini:toggle'),
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
@@ -72,7 +63,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'lyric:update', 'lyric:settings', 'lyric:state', 'mini:update', 'app:before-close']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'app:before-close']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

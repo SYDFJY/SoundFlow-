@@ -11,7 +11,6 @@ export const useAppStore = defineStore('app', () => {
   const language = ref('zh-CN')
   const autoPlay = ref(true)
   const closeAction = ref('minimize') // minimize, exit
-  const showLyricOnPlay = ref(false)
 
   // 主题色
   const themes = {
@@ -253,7 +252,7 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     theme, fontSize, showSidebar, sidebarWidth, currentView,
-    showSettings, language, autoPlay, closeAction, showLyricOnPlay,
+    showSettings, language, autoPlay, closeAction,
     themes, applyTheme, loadSettings, saveSettings
   }
 })

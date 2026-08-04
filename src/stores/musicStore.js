@@ -61,6 +61,32 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
+  // 启动时恢复曲库:localStorage → 主进程 JSON(无大小限制)→ 自动重新扫描已保存的目录
+  async function restoreLibrary() {
+    // 1. localStorage(preload 启动时已从主进程填充)
+    loadFromStorage()
+    // 2. localStorage 为空(例如歌曲带封面超 5MB 写失败)时,从主进程 JSON 文件恢复
+    if (songs.value.length === 0 && window.electronAPI) {
+      try {
+        const lib = await window.electronAPI.storeGet('library')
+        if (Array.isArray(lib) && lib.length > 0) {
+          songs.value = lib
+          saveToStorage()
+          return
+        }
+      } catch (e) {
+        console.error('[存储] 从主进程恢复失败:', e)
+      }
+    }
+    // 3. 曲库仍为空且配置过扫描目录 → 自动重新扫描,无需手动重新导入
+    if (songs.value.length === 0 && scanFolders.value.length > 0) {
+      console.log('[存储] 曲库为空,自动重新扫描已保存的目录:', scanFolders.value)
+      for (const folder of scanFolders.value) {
+        await scanFolder(folder)
+      }
+    }
+  }
+
   function saveToStorage() {
     try {
       const safeSet = (key, value) => {
@@ -348,7 +374,7 @@ export const useMusicStore = defineStore('music', () => {
     songs, favorites, playlists, playCounts, history, searchQuery,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
-    loadFromStorage, saveToStorage, addSongs, removeSongs,
+    loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist,
     addSongToPlaylist, removeSongFromPlaylist, getPlaylistSongs,

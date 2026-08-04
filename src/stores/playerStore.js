@@ -28,21 +28,11 @@ export const usePlayerStore = defineStore('player', () => {
   const sleepTimerRemaining = ref(0) // 剩余秒数
   let sleepTimerInterval = null
 
-  // 悬浮歌词设置
-  const lyricSettings = ref({
-    fontSize: 28,
-    color: '#ffffff',
-    opacity: 0.95,
-    locked: false
-  })
-
   // 错误计数器，防止无限循环
   let _consecutiveErrors = 0
   const MAX_CONSECUTIVE_ERRORS = 3
-
-  // 歌词 IPC 节流
-  let _lastLyricIpcTime = 0
-  const LYRIC_IPC_INTERVAL = 500 // ms
+  // 本次加载是否允许恢复播放记忆(随机模式/用户手动选择时为 false)
+  let _pendingRestore = false
 
   // 系统媒体控制 (MediaSession / SMTC)
   let _mediaSessionInited = false
@@ -57,32 +47,19 @@ export const usePlayerStore = defineStore('player', () => {
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
-      // 节流：每 500ms 最多发送一次 IPC
-      const now = Date.now()
-      if (window.electronAPI && now - _lastLyricIpcTime > LYRIC_IPC_INTERVAL) {
-        _lastLyricIpcTime = now
-        const plainLyrics = lyrics.value.map(l => ({ time: l.time, text: l.text }))
-        window.electronAPI.sendLyricUpdate({
-          currentTime: currentTime.value,
-          duration: duration.value,
-          title: currentSong.value?.title || '',
-          artist: currentSong.value?.artist || '',
-          lyrics: plainLyrics,
-          currentLyricIndex: currentLyricIndex.value
-        })
-      }
     })
 
     audio.value.addEventListener('loadedmetadata', () => {
       duration.value = audio.value.duration
       isBuffering.value = false
       _consecutiveErrors = 0 // 成功加载，重置错误计数
-      if (currentSong.value) {
+      if (_pendingRestore && currentSong.value) {
         const saved = progressHistory.value[currentSong.value.path]
         if (saved && saved > 5 && saved < duration.value - 5) {
           audio.value.currentTime = saved
         }
       }
+      _pendingRestore = false
     })
 
     audio.value.addEventListener('ended', () => onSongEnd())
@@ -104,12 +81,12 @@ export const usePlayerStore = defineStore('player', () => {
     })
   }
 
-  // 设置播放队列
+  // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
   function setPlayQueue(songs, startIndex = 0) {
     playQueue.value = songs.map(s => ({ ...s }))
     currentIndex.value = startIndex
     if (songs.length > 0 && startIndex >= 0 && startIndex < songs.length) {
-      loadAndPlay(startIndex)
+      loadAndPlay(startIndex, true)
     }
   }
 
@@ -153,19 +130,24 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 加载并播放
-  async function loadAndPlay(index) {
+  // fromBeginning=true:用户手动选择,从头播放;false:自动切歌,顺序模式恢复记忆、随机模式从头
+  async function loadAndPlay(index, fromBeginning = false) {
     initAudio()
     if (index < 0 || index >= playQueue.value.length) return
 
     // 保存当前歌曲进度
-    if (currentSong.value && audio.value && audio.value.currentTime > 0) {
-      progressHistory.value = { ...progressHistory.value, [currentSong.value.path]: audio.value.currentTime }
-    }
+    saveCurrentProgress()
 
     currentIndex.value = index
     const song = playQueue.value[index]
     currentSong.value = song
     isBuffering.value = true
+
+    // 是否允许恢复记忆:非手动选择 且 非随机模式 且 该歌有记忆记录
+    _pendingRestore = !fromBeginning && playMode.value !== 'random'
+    if (!_pendingRestore || !progressHistory.value[song.path]) {
+      _pendingRestore = false
+    }
 
     // 准备音频源:原生格式直通,不支持的格式(APE/WMA 等)主进程转码后播放
     let src
@@ -243,23 +225,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentLyricIndex.value = idx
   }
 
-  // 歌词加载完成后发送到悬浮窗
-  function sendLyricsToWindow() {
-    if (window.electronAPI) {
-      const plainLyrics = lyrics.value.map(l => ({ time: l.time, text: l.text }))
-      window.electronAPI.sendLyricUpdate({
-        currentTime: currentTime.value,
-        duration: duration.value,
-        title: currentSong.value?.title || '',
-        artist: currentSong.value?.artist || '',
-        lyrics: plainLyrics,
-        currentLyricIndex: currentLyricIndex.value
-      })
-    }
-  }
-
   watch(currentTime, () => updateLyricIndex())
-  watch(lyrics, (val) => { if (val.length > 0) sendLyricsToWindow() })
 
   // ========== 系统媒体控制 (MediaSession / SMTC) ==========
   // Windows 通知栏 / 音量浮层 / 锁屏上的播放控件,相当于 Android 的 MediaSession
@@ -364,7 +330,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function playIndex(index) {
-    if (index >= 0 && index < playQueue.value.length) loadAndPlay(index)
+    if (index >= 0 && index < playQueue.value.length) loadAndPlay(index, true)
   }
 
   function playPrev() {
@@ -455,10 +421,21 @@ export const usePlayerStore = defineStore('player', () => {
     if (audio.value) audio.value.currentTime = Math.max(audio.value.currentTime - seconds, 0)
   }
 
-  // 保存当前播放进度（供 App.vue 定时调用）
+  // 保存当前播放进度(仅记住播放超过 10s 且未播完的歌曲;播完自动清除记忆)
+  // 供 App.vue 定时调用与切歌时保存
   function saveCurrentProgress() {
-    if (currentSong.value && audio.value && audio.value.currentTime > 0) {
-      progressHistory.value = { ...progressHistory.value, [currentSong.value.path]: audio.value.currentTime }
+    if (!currentSong.value || !audio.value) return
+    const t = audio.value.currentTime
+    const path = currentSong.value.path
+    if (t <= 10) return
+    if (duration.value > 0 && t >= duration.value - 5) {
+      // 已接近播完:清除记忆,下次从头
+      if (progressHistory.value[path]) {
+        const { [path]: _drop, ...rest } = progressHistory.value
+        progressHistory.value = rest
+      }
+    } else {
+      progressHistory.value = { ...progressHistory.value, [path]: t }
     }
   }
 
@@ -490,22 +467,6 @@ export const usePlayerStore = defineStore('player', () => {
     sleepTimerRemaining.value = 0
   }
 
-  // 悬浮歌词设置
-  function updateLyricSettings(settings) {
-    lyricSettings.value = { ...lyricSettings.value, ...settings }
-    localStorage.setItem('soundflow_lyric_settings', JSON.stringify(lyricSettings.value))
-    if (window.electronAPI) {
-      window.electronAPI.sendLyricSettings(lyricSettings.value)
-    }
-  }
-
-  function loadLyricSettings() {
-    try {
-      const saved = localStorage.getItem('soundflow_lyric_settings')
-      if (saved) lyricSettings.value = JSON.parse(saved)
-    } catch {}
-  }
-
   function formatTime(seconds) {
     if (!seconds || !isFinite(seconds)) return '00:00'
     const m = Math.floor(seconds / 60)
@@ -531,7 +492,6 @@ export const usePlayerStore = defineStore('player', () => {
       const ph = localStorage.getItem('soundflow_progress')
       if (ph) progressHistory.value = JSON.parse(ph)
     } catch {}
-    loadLyricSettings()
   }
 
   function saveSettings() {
@@ -556,13 +516,13 @@ export const usePlayerStore = defineStore('player', () => {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
-    showQueue, sleepTimerMinutes, sleepTimerRemaining, lyricSettings,
+    showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     loadSettings, saveSettings, playSingle, toggleQueue,
-    setSleepTimer, clearSleepTimer, updateLyricSettings, saveCurrentProgress,
+    setSleepTimer, clearSleepTimer, saveCurrentProgress,
     initMediaSession
   }
 })

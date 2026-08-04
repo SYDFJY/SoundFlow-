@@ -12,9 +12,6 @@
           <button class="tab-btn" :class="{ active: activeTab === 'lyric' }" @click="activeTab = 'lyric'">歌词</button>
         </div>
         <div class="topbar-right">
-          <button class="icon-btn" @click="toggleDesktopLyric" title="悬浮歌词">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-          </button>
         </div>
       </div>
 
@@ -91,9 +88,6 @@
           </button>
           <button class="ctrl-btn" @click="playerStore.playNext()">
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
-          </button>
-          <button class="ctrl-btn" @click="toggleDesktopLyric" title="悬浮歌词">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           </button>
         </div>
         <div class="progress-row">
@@ -173,7 +167,6 @@ function onProgressMouseDown(e) {
 }
 
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
-function toggleDesktopLyric() { if (window.electronAPI) window.electronAPI.toggleLyricWindow() }
 </script>
 
 <style scoped>
