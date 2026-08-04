@@ -106,6 +106,20 @@
           </div>
           <button class="setting-btn" @click="addLyricFolder">添加文件夹</button>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">批量下载歌词</span>
+            <span class="label-desc">遍历曲库所有歌曲，将没有本地 .lrc 的歌从在线来源（LRCLIB/网易云）下载到歌词文件夹</span>
+          </div>
+          <button class="setting-btn" :disabled="batchLyric.running" @click="batchDownloadLyrics">
+            {{ batchLyric.running ? `下载中 ${batchLyric.done}/${batchLyric.total}…` : '开始批量下载' }}
+          </button>
+        </div>
+        <div v-if="batchLyric.running || batchLyric.msg" class="setting-item">
+          <div class="setting-label">
+            <span class="label-text" style="color:var(--text-secondary);">{{ batchLyric.msg || '正在获取歌词…' }}</span>
+          </div>
+        </div>
         <div v-if="musicStore.lyricFolders.length === 0" class="folder-item" style="color:var(--text-tertiary);font-size:13px;">
           暂未设置歌词文件夹（歌词也可放在歌曲同目录同名 .lrc 自动识别）
         </div>
@@ -210,6 +224,51 @@ const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrcli
 function setLyricSource(v) {
   lyricSource.value = v
   localStorage.setItem('soundflow_lyric_source', v)
+}
+
+// 批量下载歌词到歌词文件夹
+const batchLyric = ref({ running: false, total: 0, done: 0, success: 0, msg: '' })
+
+async function batchDownloadLyrics() {
+  if (batchLyric.value.running || !window.electronAPI) return
+  const songs = musicStore.songs
+  if (songs.length === 0) { batchLyric.value.msg = '曲库为空,请先导入歌曲'; return }
+  const folder = musicStore.lyricFolders[0]
+  if (!folder) {
+    batchLyric.value.msg = '请先在上方添加一个歌词文件夹,歌词将下载到那里'
+    return
+  }
+  batchLyric.value = { running: true, total: songs.length, done: 0, success: 0, msg: '' }
+  let success = 0
+  let skipped = 0
+  let failed = 0
+  try {
+    for (let i = 0; i < songs.length; i++) {
+      const s = songs[i]
+      try {
+        // 已有本地 .lrc 则跳过
+        const hasLocal = await window.electronAPI.readLyricFile(s.path, musicStore.lyricFolders)
+        if (hasLocal) { skipped++; continue }
+        const res = await window.electronAPI.searchOnlineLyric({
+          title: s.title, artist: s.artist || '', duration: s.duration || 0
+        })
+        if (res && res.lyrics) {
+          const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
+          if (saved && saved.ok) success++
+          else failed++
+        } else {
+          failed++
+        }
+      } catch { failed++ }
+      batchLyric.value.done = i + 1
+      batchLyric.value.success = success
+      // 每 20 首让出事件循环,刷新 UI
+      if ((i + 1) % 20 === 0) await new Promise(r => setTimeout(r, 0))
+    }
+  } finally {
+    batchLyric.value.running = false
+    batchLyric.value.msg = `完成:下载 ${success} 首,已有 ${skipped} 首,失败 ${failed} 首`
+  }
 }
 </script>
 

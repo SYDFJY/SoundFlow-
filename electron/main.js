@@ -781,6 +781,19 @@ function setupIPC() {
     }
   })
 
+  // 保存歌词到指定歌词文件夹(<音频文件名>.lrc,供批量下载使用)
+  ipcMain.handle('save-lyric-to-folder', (event, audioPath, lrcText, folderPath) => {
+    try {
+      const base = path.basename(audioPath, path.extname(audioPath))
+      const target = path.join(folderPath, base + '.lrc')
+      fs.writeFileSync(target, lrcText, 'utf8')
+      return { ok: true, path: target }
+    } catch (e) {
+      console.error('[歌词] 保存到歌词文件夹失败:', e.message)
+      return { ok: false, error: e.message }
+    }
+  })
+
   // 扫描歌词文件夹，返回所有 .lrc 文件列表
   ipcMain.handle('scan-lyric-folder', async (event, folderPath) => {
     try {
