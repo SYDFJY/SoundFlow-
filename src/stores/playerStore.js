@@ -683,14 +683,34 @@ export const usePlayerStore = defineStore('player', () => {
     const song = currentSong.value
 
     if (song) {
-      // 封面:data URL → blob → objectURL(SMTC 需要可访问的 URL)
+      // 封面:data: / file:// → blob → objectURL(SMTC 需要可访问的 URL)
+      // file:// 封面(封面文件化后)此前未处理 → SMTC 无封面
       if (_artworkObjectUrl) { try { URL.revokeObjectURL(_artworkObjectUrl) } catch {} _artworkObjectUrl = null }
       let artwork = []
       if (song.coverUrl) {
-        const blob = dataUrlToBlob(song.coverUrl)
-        if (blob) {
+        const setArtwork = (blob) => {
+          if (!blob) return
+          if (_artworkObjectUrl) { try { URL.revokeObjectURL(_artworkObjectUrl) } catch {} }
           _artworkObjectUrl = URL.createObjectURL(blob)
-          artwork = [{ src: _artworkObjectUrl, sizes: '512x512', type: blob.type }]
+          artwork = [{ src: _artworkObjectUrl, sizes: '512x512', type: blob.type || 'image/jpeg' }]
+        }
+        if (song.coverUrl.startsWith('data:')) {
+          setArtwork(dataUrlToBlob(song.coverUrl))
+        } else if (song.coverUrl.startsWith('file:')) {
+          // file:// 封面:异步 fetch → blob(渲染进程可访问 file://,已验证)
+          fetch(song.coverUrl).then((res) => res.ok ? res.blob() : null).then((blob) => {
+            // 防竞态:期间歌曲已切换则丢弃
+            if (currentSong.value !== song) return
+            setArtwork(blob)
+            ms.metadata = new MediaMetadata({
+              title: song.title || '未知歌曲',
+              artist: song.artist || '未知艺术家',
+              album: song.album || '',
+              artwork
+            })
+            ms.playbackState = isPlaying.value ? 'playing' : 'paused'
+            syncPositionState()
+          }).catch(() => {})
         }
       }
       ms.metadata = new MediaMetadata({
