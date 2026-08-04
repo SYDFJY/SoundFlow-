@@ -43,6 +43,10 @@ function initStorage() {
 
 function saveStorage() {
   try {
+    // 写前自动备份上一份,防止数据被覆盖后无法找回
+    if (fs.existsSync(storagePath)) {
+      try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
+    }
     fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2))
   } catch (e) { console.error('[存储] 写入失败:', e.message) }
 }

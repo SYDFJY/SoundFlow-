@@ -61,12 +61,31 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
-  // 启动时恢复曲库:localStorage → 主进程 JSON(无大小限制)→ 自动重新扫描已保存的目录
+  // 启动时恢复曲库与数据:localStorage → 主进程 JSON(无大小限制)互相兜底,避免任一侧为空覆盖另一侧
   async function restoreLibrary() {
     // 1. localStorage(preload 启动时已从主进程填充)
     loadFromStorage()
-    // 2. localStorage 为空(例如歌曲带封面超 5MB 写失败)时,从主进程 JSON 文件恢复
-    if (songs.value.length === 0 && window.electronAPI) {
+    if (!window.electronAPI) return
+
+    // 2. 对每个数据集:localStorage 为空时,从主进程 JSON 兜底恢复(防 localStorage 超限/写失败)
+    const fill = async (isEmpty, storeKey, setter) => {
+      if (isEmpty()) return
+      try {
+        const v = await window.electronAPI.storeGet(storeKey)
+        if (v && (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0)) {
+          setter(v)
+        }
+      } catch (e) { console.error('[存储] 从主进程恢复失败:', storeKey, e) }
+    }
+    await fill(() => favorites.size > 0, 'favorites', v => _syncFavorites(v))
+    await fill(() => playlists.value.length > 0, 'playlists', v => { playlists.value = v })
+    await fill(() => history.value.length > 0, 'history', v => { history.value = v })
+    await fill(() => Object.keys(playCounts.value).length > 0, 'playCounts', v => { playCounts.value = v })
+    await fill(() => scanFolders.value.length > 0, 'scanFolders', v => { scanFolders.value = v })
+    await fill(() => lyricFolders.value.length > 0, 'lyricFolders', v => { lyricFolders.value = v })
+
+    // 3. 曲库:localStorage 为空且主进程有 → 恢复并同步回 localStorage
+    if (songs.value.length === 0) {
       try {
         const lib = await window.electronAPI.storeGet('library')
         if (Array.isArray(lib) && lib.length > 0) {
@@ -75,10 +94,10 @@ export const useMusicStore = defineStore('music', () => {
           return
         }
       } catch (e) {
-        console.error('[存储] 从主进程恢复失败:', e)
+        console.error('[存储] 从主进程恢复曲库失败:', e)
       }
     }
-    // 3. 曲库仍为空且配置过扫描目录 → 自动重新扫描,无需手动重新导入
+    // 4. 曲库仍为空且配置过扫描目录 → 自动重新扫描,无需手动重新导入
     if (songs.value.length === 0 && scanFolders.value.length > 0) {
       console.log('[存储] 曲库为空,自动重新扫描已保存的目录:', scanFolders.value)
       for (const folder of scanFolders.value) {
