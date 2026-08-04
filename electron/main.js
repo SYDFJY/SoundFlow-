@@ -8,6 +8,8 @@ const { readdir, stat, readFile, writeFile, mkdir } = require('fs/promises')
 const os = require('os')
 const crypto = require('crypto')
 const { execFile } = require('child_process')
+let autoUpdater = null
+try { autoUpdater = require('electron-updater').autoUpdater } catch (_) { autoUpdater = null }
 
 // ========== 常量 ==========
 const AUDIO_EXTS = new Set(['.mp3','.flac','.wav','.ape','.m4a','.ogg','.wma','.aac','.aiff','.alac','.opus','.wv'])
@@ -992,6 +994,24 @@ function createMenu() {
 // Windows SMTC(系统媒体控制)需要 AppUserModelID 才能正确关联应用,需在 ready 前设置
 try { app.setAppUserModelId('com.soundflow.music') } catch (_) {}
 
+// ========== 自动更新(骨架) ==========
+// 说明:需在 electron-builder 配置 publish 发布源(如 GitHub Releases / 私有服务器)并生成 latest.yml 后生效;
+// 未配置发布源时 checkForUpdates 会失败并静默忽略,不影响正常使用。
+function setupAutoUpdater() {
+  if (!autoUpdater || !app.isPackaged) return
+  try {
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.on('update-available', () => {
+      try { mainWindow?.webContents.send('update-available') } catch (_) {}
+    })
+    // 启动 15 秒后检查,避免拖慢启动
+    setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}) }, 15000)
+  } catch (e) {
+    console.error('[更新] 自动更新不可用:', e.message)
+  }
+}
+
 app.whenReady().then(async () => {
   await ensureParseFile()
   detectFFprobe()
@@ -1001,6 +1021,7 @@ app.whenReady().then(async () => {
   createMainWindow()
   createTray()
   setupIPC()
+  setupAutoUpdater()
   // 注意:不再用 globalShortcut 注册系统媒体键(MediaPlayPause 等)。
   // 这些键会被 globalShortcut 抢占,导致 Chromium 不注册 Windows SMTC(系统媒体控制),
   // 从而控制中心/锁屏不显示播放卡片。播放控制改由 navigator.mediaSession 的
