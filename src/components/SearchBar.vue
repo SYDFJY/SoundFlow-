@@ -121,7 +121,7 @@ watch(() => musicStore.searchQuery, (v) => { if (v !== query.value) query.value 
   background: var(--bg-hover);
   border: 1px solid transparent;
   border-radius: 18px;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   transition: all var(--transition-fast);
 }
@@ -174,8 +174,8 @@ watch(() => musicStore.searchQuery, (v) => { if (v !== query.value) query.value 
 
 .suggest-icon { font-size: 18px; color: var(--color-primary); }
 .suggest-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.suggest-title { font-size: 14px; color: var(--text-primary); }
-.suggest-artist { font-size: 12px; color: var(--text-secondary); }
+.suggest-title { font-size: var(--font-size-base); color: var(--text-primary); }
+.suggest-artist { font-size: var(--font-size-xs); color: var(--text-secondary); }
 .suggest-format { font-size: 11px; color: var(--text-tertiary); background: var(--bg-hover); padding: 2px 6px; border-radius: 4px; }
 
 .suggest-fade-enter-active, .suggest-fade-leave-active { transition: all 0.2s ease; }

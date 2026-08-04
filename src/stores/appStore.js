@@ -310,14 +310,21 @@ export const useAppStore = defineStore('app', () => {
     } catch {}
   }
 
-  // 全局字体大小:通过 zoom 缩放整体界面(Chromium 支持,px 同步缩放)
+  // 全局字体大小:只调整字号变量,不缩放布局(避免界面不完整/错位)
   function applyFontSize() {
     try {
-      document.documentElement.style.zoom = String(fontSize.value / 14)
+      const s = fontSize.value
+      const root = document.documentElement.style
+      root.setProperty('--font-size-xs', Math.round(s * 0.857) + 'px')
+      root.setProperty('--font-size-sm', Math.round(s * 0.928) + 'px')
+      root.setProperty('--font-size-base', s + 'px')
+      root.setProperty('--font-size-lg', Math.round(s * 1.142) + 'px')
+      root.setProperty('--font-size-xl', Math.round(s * 1.428) + 'px')
+      root.setProperty('--font-size-xxl', Math.round(s * 2) + 'px')
     } catch {}
   }
   function setFontSize(v) {
-    fontSize.value = Math.max(10, Math.min(24, v))
+    fontSize.value = Math.max(10, Math.min(20, v))
     applyFontSize()
     saveSettings()
   }

@@ -130,7 +130,7 @@
           <div class="batch-progress-track">
             <div class="batch-progress-fill" :style="{ width: (batchLyric.total ? (batchLyric.done / batchLyric.total * 100) : 0) + '%' }"></div>
           </div>
-          <span class="label-text" style="color:var(--text-secondary);font-size:12px;margin-top:6px;">
+          <span class="label-text" style="color:var(--text-secondary);font-size: var(--font-size-xs);margin-top:6px;">
             成功 {{ batchLyric.success }} · 已有 {{ batchLyric.skipped }} · 失败 {{ batchLyric.failed }}
           </span>
         </div>
@@ -159,7 +159,7 @@
             </div>
           </transition>
         </teleport>
-        <div v-if="musicStore.lyricFolders.length === 0" class="folder-item" style="color:var(--text-tertiary);font-size:13px;">
+        <div v-if="musicStore.lyricFolders.length === 0" class="folder-item" style="color:var(--text-tertiary);font-size: var(--font-size-sm);">
           暂未设置歌词文件夹（歌词也可放在歌曲同目录同名 .lrc 自动识别）
         </div>
         <div v-for="folder in musicStore.lyricFolders" :key="folder" class="folder-item">
@@ -513,7 +513,7 @@ async function batchDownloadLyrics() {
 .settings-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
 
 .settings-section { margin-bottom: 24px; }
-.section-title { font-size: 13px; font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.section-title { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
 
 .setting-item {
   display: flex; align-items: center; justify-content: space-between;
@@ -525,19 +525,19 @@ async function batchDownloadLyrics() {
 }
 
 .setting-label { flex: 1; }
-.label-text { font-size: 14px; color: var(--text-primary); font-weight: 500; }
-.label-desc { font-size: 12px; color: var(--text-tertiary); margin-left: 8px; }
+.label-text { font-size: var(--font-size-base); color: var(--text-primary); font-weight: 500; }
+.label-desc { font-size: var(--font-size-xs); color: var(--text-tertiary); margin-left: 8px; }
 
 .setting-control { display: flex; align-items: center; gap: 12px; }
 .setting-control input[type="range"] { width: 120px; accent-color: var(--color-primary); }
-.volume-val { font-size: 13px; color: var(--text-secondary); min-width: 36px; }
+.volume-val { font-size: var(--font-size-sm); color: var(--text-secondary); min-width: 36px; }
 
 select {
   padding: 6px 12px;
   background: var(--bg-hover);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
 }
 
@@ -552,12 +552,12 @@ select {
 .theme-btn:hover { border-color: var(--color-primary-light); }
 .theme-btn.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-alpha); }
 .theme-preview { width: 36px; height: 24px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
-.theme-btn span { font-size: 12px; color: var(--text-secondary); }
+.theme-btn span { font-size: var(--font-size-xs); color: var(--text-secondary); }
 
 .rate-options { display: flex; gap: 4px; }
 .rate-btn {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
@@ -571,7 +571,7 @@ select {
   background: var(--color-primary);
   color: white;
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
 }
 .lyric-source-group { display: flex; gap: 6px; }
 .source-btn {
@@ -580,7 +580,7 @@ select {
   border: 1px solid var(--border-color);
   color: var(--text-secondary);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   transition: all var(--transition-fast);
 }
 .source-btn:hover { color: var(--text-primary); }
@@ -588,13 +588,13 @@ select {
 .deepseek-key-input { width: 100%; margin-top: 8px; }
 .font-row { display: flex; align-items: center; gap: 10px; }
 .font-select {
-  flex: 1; padding: 7px 10px; font-size: 13px;
+  flex: 1; padding: 7px 10px; font-size: var(--font-size-sm);
   background: var(--bg-card); color: var(--text-primary);
   border: 1px solid var(--border-color); border-radius: var(--radius-md);
 }
 .custom-font-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
-.font-name { font-size: 13px; color: var(--text-primary); }
-.font-remove { padding: 3px 10px; font-size: 12px; }
+.font-name { font-size: var(--font-size-sm); color: var(--text-primary); }
+.font-remove { padding: 3px 10px; font-size: var(--font-size-xs); }
 .font-size-row { display: flex; align-items: center; gap: 10px; }
 .font-size-row input[type="range"] { width: 180px; }
 
@@ -612,15 +612,15 @@ select {
 }
 .done-icon { font-size: 40px; margin-bottom: 8px; }
 .batch-done-card h3 { font-size: 17px; color: var(--text-primary); margin-bottom: 14px; }
-.done-row { font-size: 13px; color: var(--text-primary); line-height: 1.9; }
-.done-row.muted { font-size: 12px; color: var(--text-tertiary); }
+.done-row { font-size: var(--font-size-sm); color: var(--text-primary); line-height: 1.9; }
+.done-row.muted { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .done-folder {
   margin: 10px 0 16px; padding: 8px 10px; border-radius: var(--radius-md);
-  background: var(--bg-hover); font-size: 12px; color: var(--text-secondary);
+  background: var(--bg-hover); font-size: var(--font-size-xs); color: var(--text-secondary);
   word-break: break-all; text-align: left;
 }
 .done-btns { display: flex; justify-content: center; gap: 10px; }
-.done-close { padding: 6px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 13px; }
+.done-close { padding: 6px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); font-size: var(--font-size-sm); }
 .done-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .folder-item {
@@ -631,8 +631,8 @@ select {
   border-radius: var(--radius-md);
   margin-bottom: 4px;
 }
-.folder-path { flex: 1; font-size: 13px; color: var(--text-secondary); font-family: 'Cascadia Code', 'Consolas', monospace; }
-.remove-btn { font-size: 12px; color: var(--color-danger); padding: 4px 8px; border-radius: var(--radius-sm); }
+.folder-path { flex: 1; font-size: var(--font-size-sm); color: var(--text-secondary); font-family: 'Cascadia Code', 'Consolas', monospace; }
+.remove-btn { font-size: var(--font-size-xs); color: var(--color-danger); padding: 4px 8px; border-radius: var(--radius-sm); }
 .remove-btn:hover { background: rgba(255,77,79,0.1); }
 
 .about-card {
@@ -643,7 +643,7 @@ select {
   border-radius: var(--radius-lg);
 }
 .about-logo svg { width: 48px; height: 48px; }
-.about-info h4 { font-size: 16px; color: var(--text-primary); font-weight: 600; }
-.about-info span { font-size: 12px; color: var(--text-tertiary); }
-.about-info p { font-size: 13px; color: var(--text-secondary); margin-top: 4px; }
+.about-info h4 { font-size: var(--font-size-lg); color: var(--text-primary); font-weight: 600; }
+.about-info span { font-size: var(--font-size-xs); color: var(--text-tertiary); }
+.about-info p { font-size: var(--font-size-sm); color: var(--text-secondary); margin-top: 4px; }
 </style>

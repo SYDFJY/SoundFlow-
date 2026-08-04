@@ -62,8 +62,8 @@ function removeFolder(folder) {
 .view-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; flex-shrink: 0; }
 .header-left { display: flex; align-items: baseline; gap: 12px; }
 .header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
-.header-count { font-size: 14px; color: var(--text-secondary); }
-.add-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; }
+.header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
+.add-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; }
 .add-btn:hover { background: var(--color-primary-light); }
 .add-btn svg { width: 16px; height: 16px; }
 
@@ -71,7 +71,7 @@ function removeFolder(folder) {
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; gap: 16px; color: var(--text-tertiary); }
 .empty-icon { font-size: 48px; }
-.empty-text { font-size: 14px; }
+.empty-text { font-size: var(--font-size-base); }
 
 .folder-list { display: flex; flex-direction: column; gap: 8px; }
 .folder-item {
@@ -84,7 +84,7 @@ function removeFolder(folder) {
 }
 .folder-item:hover { border-color: var(--color-primary-light); box-shadow: var(--shadow-sm); }
 .folder-icon { width: 20px; height: 20px; color: var(--color-primary); flex-shrink: 0; }
-.folder-path { flex: 1; font-size: 14px; color: var(--text-primary); font-family: 'Cascadia Code', 'Consolas', monospace; }
+.folder-path { flex: 1; font-size: var(--font-size-base); color: var(--text-primary); font-family: 'Cascadia Code', 'Consolas', monospace; }
 .folder-actions { display: flex; gap: 4px; }
 .folder-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); transition: all var(--transition-fast); }
 .folder-btn:hover { background: var(--bg-hover); color: var(--text-primary); }

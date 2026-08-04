@@ -358,7 +358,7 @@ onUnmounted(() => {
   background: var(--color-primary);
   color: white;
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   transition: all var(--transition-fast);
 }
@@ -370,7 +370,7 @@ onUnmounted(() => {
 .sort-group { display: flex; gap: 2px; }
 .sort-btn {
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
@@ -383,7 +383,7 @@ onUnmounted(() => {
   align-items: center;
   padding: 6px 16px;
   border-bottom: 1px solid var(--border-color);
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-weight: 500;
   flex-shrink: 0;
@@ -398,10 +398,10 @@ onUnmounted(() => {
   border-top: 1px solid var(--border-color);
   background: var(--bg-card);
 }
-.batch-count { font-size: 12px; color: var(--text-secondary); flex: 1; }
+.batch-count { font-size: var(--font-size-xs); color: var(--text-secondary); flex: 1; }
 .batch-btn {
   padding: 5px 14px;
-  font-size: 12px;
+  font-size: var(--font-size-xs);
   color: var(--color-primary);
   background: var(--color-primary-alpha);
   border-radius: var(--radius-md);
@@ -421,13 +421,13 @@ onUnmounted(() => {
   box-shadow: var(--shadow-lg);
 }
 .pl-picker-card h3 { font-size: 15px; color: var(--text-primary); margin-bottom: 12px; }
-.pl-picker-empty { font-size: 13px; color: var(--text-tertiary); padding: 16px 0; text-align: center; }
+.pl-picker-empty { font-size: var(--font-size-sm); color: var(--text-tertiary); padding: 16px 0; text-align: center; }
 .pl-picker-item {
-  padding: 9px 12px; font-size: 13px; color: var(--text-primary);
+  padding: 9px 12px; font-size: var(--font-size-sm); color: var(--text-primary);
   border-radius: var(--radius-md); cursor: pointer;
 }
 .pl-picker-item:hover { background: var(--bg-hover); }
-.pl-picker-close { margin-top: 12px; width: 100%; padding: 8px; font-size: 13px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.pl-picker-close { margin-top: 12px; width: 100%; padding: 8px; font-size: var(--font-size-sm); color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
 .pl-picker-close:hover { background: var(--bg-hover); }
 
 .list-row {
@@ -452,7 +452,7 @@ onUnmounted(() => {
 .col-index {
   width: 48px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  font-size: 13px; color: var(--text-tertiary);
+  font-size: var(--font-size-sm); color: var(--text-tertiary);
   position: relative;
 }
 .index-num { display: block; }
@@ -475,13 +475,13 @@ onUnmounted(() => {
 .song-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; background: var(--bg-hover); }
 .song-cover img { width: 100%; height: 100%; object-fit: cover; }
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.song-name { font-size: 14px; color: var(--text-primary); }
+.song-name { font-size: var(--font-size-base); color: var(--text-primary); }
 .song-format { font-size: 10px; color: var(--text-tertiary); background: var(--bg-hover); padding: 1px 4px; border-radius: 3px; align-self: flex-start; }
 .list-row.active .song-name { color: var(--color-primary); font-weight: 500; }
 
-.col-artist { width: 160px; flex-shrink: 0; font-size: 13px; color: var(--text-secondary); padding: 0 8px; }
-.col-album { width: 160px; flex-shrink: 0; font-size: 13px; color: var(--text-secondary); padding: 0 8px; }
-.col-duration { width: 60px; flex-shrink: 0; font-size: 13px; color: var(--text-tertiary); text-align: center; font-variant-numeric: tabular-nums; }
+.col-artist { width: 160px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-secondary); padding: 0 8px; }
+.col-album { width: 160px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-secondary); padding: 0 8px; }
+.col-duration { width: 60px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-tertiary); text-align: center; font-variant-numeric: tabular-nums; }
 
 .col-actions {
   width: 70px; flex-shrink: 0;
@@ -512,7 +512,7 @@ onUnmounted(() => {
   color: var(--text-tertiary);
 }
 .empty-icon { font-size: 48px; }
-.empty-text { font-size: 14px; }
+.empty-text { font-size: var(--font-size-base); }
 
 :deep(mark) {
   background: rgba(22, 119, 230, 0.2);
@@ -537,7 +537,7 @@ onUnmounted(() => {
   width: 100%;
   padding: 8px 12px;
   text-align: left;
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   border-radius: var(--radius-sm);
   transition: background var(--transition-fast);

@@ -164,10 +164,10 @@ function playAll() {
 .view-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; flex-shrink: 0; }
 .header-left { display: flex; align-items: baseline; gap: 12px; }
 .header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
-.header-count { font-size: 14px; color: var(--text-secondary); }
+.header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
 .header-right { display: flex; align-items: center; gap: 8px; }
 
-.add-songs-btn, .play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; transition: all var(--transition-fast); }
+.add-songs-btn, .play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .add-songs-btn { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); }
 .add-songs-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .add-songs-btn svg { width: 16px; height: 16px; }
@@ -198,19 +198,19 @@ function playAll() {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);
 }
-.dialog-header h3 { font-size: 16px; color: var(--text-primary); font-weight: 600; }
+.dialog-header h3 { font-size: var(--font-size-lg); color: var(--text-primary); font-weight: 600; }
 .dialog-close { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); }
 .dialog-close:hover { background: var(--bg-hover); }
 .dialog-close svg { width: 18px; height: 18px; }
 
 .dialog-search { padding: 12px 20px 8px; }
-.search-input { width: 100%; padding: 8px 12px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 13px; color: var(--text-primary); }
+.search-input { width: 100%; padding: 8px 12px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: var(--font-size-sm); color: var(--text-primary); }
 .search-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-alpha); }
 
 .dialog-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 4px 20px 8px; }
-.select-all-btn { font-size: 13px; color: var(--color-primary); padding: 4px 8px; border-radius: var(--radius-sm); }
+.select-all-btn { font-size: var(--font-size-sm); color: var(--color-primary); padding: 4px 8px; border-radius: var(--radius-sm); }
 .select-all-btn:hover { background: var(--color-primary-alpha); }
-.selected-count { font-size: 12px; color: var(--text-tertiary); }
+.selected-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 
 .dialog-list { flex: 1; overflow-y: auto; padding: 0 12px; min-height: 200px; max-height: 400px; }
 .dialog-item {
@@ -226,17 +226,17 @@ function playAll() {
 .dialog-item-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
 .dialog-item-cover img { width: 100%; height: 100%; object-fit: cover; }
 .dialog-item-info { flex: 1; min-width: 0; }
-.dialog-item-title { font-size: 13px; color: var(--text-primary); }
+.dialog-item-title { font-size: var(--font-size-sm); color: var(--text-primary); }
 .dialog-item-artist { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 .in-playlist-tag { font-size: 11px; color: var(--text-tertiary); background: var(--bg-hover); padding: 2px 6px; border-radius: var(--radius-sm); flex-shrink: 0; }
-.dialog-empty { text-align: center; padding: 40px 0; color: var(--text-tertiary); font-size: 13px; }
+.dialog-empty { text-align: center; padding: 40px 0; color: var(--text-tertiary); font-size: var(--font-size-sm); }
 
 .dialog-footer {
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   padding: 12px 20px;
   border-top: 1px solid var(--border-color);
 }
-.dialog-btn { padding: 8px 20px; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; transition: all var(--transition-fast); }
+.dialog-btn { padding: 8px 20px; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .dialog-btn.cancel { background: var(--bg-hover); color: var(--text-secondary); }
 .dialog-btn.cancel:hover { background: var(--bg-active); }
 .dialog-btn.confirm { background: var(--color-primary); color: white; }

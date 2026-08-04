@@ -110,7 +110,7 @@ function restoreMain() {
 .cover-placeholder { width: 100%; height: 100%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 20px; }
 
 .mini-info { flex: 1; min-width: 0; }
-.mini-title { font-size: 13px; font-weight: 600; color: white; }
+.mini-title { font-size: var(--font-size-sm); font-weight: 600; color: white; }
 .mini-artist { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 2px; }
 
 .mini-right { display: flex; align-items: center; gap: 4px; -webkit-app-region: no-drag; }

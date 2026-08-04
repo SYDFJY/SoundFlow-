@@ -515,14 +515,14 @@ async function searchLyric() {
 
 .back-btn {
   display: flex; align-items: center; gap: 6px;
-  color: rgba(255,255,255,0.7); font-size: 14px;
+  color: rgba(255,255,255,0.7); font-size: var(--font-size-base);
 }
 .back-btn:hover { color: white; }
 .back-btn svg { width: 20px; height: 20px; }
 
 .tab-switcher { display: flex; gap: 4px; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 3px; }
 .tab-btn {
-  padding: 6px 20px; border-radius: 6px; font-size: 13px;
+  padding: 6px 20px; border-radius: 6px; font-size: var(--font-size-sm);
   color: rgba(255,255,255,0.6); transition: all 0.2s;
 }
 .tab-btn.active { background: rgba(255,255,255,0.2); color: white; font-weight: 600; }
@@ -564,8 +564,8 @@ async function searchLyric() {
 
 .song-meta { text-align: center; }
 .song-title { font-size: 26px; font-weight: 700; color: white; margin-bottom: 8px; }
-.song-artist { font-size: 16px; color: rgba(255,255,255,0.6); }
-.song-album { font-size: 14px; color: rgba(255,255,255,0.4); margin-top: 4px; }
+.song-artist { font-size: var(--font-size-lg); color: rgba(255,255,255,0.6); }
+.song-album { font-size: var(--font-size-base); color: rgba(255,255,255,0.4); margin-top: 4px; }
 
 /* ===== 歌词模式 ===== */
 .lyric-mode {
@@ -594,7 +594,7 @@ async function searchLyric() {
 
 .song-meta-small { text-align: center; }
 .song-title-sm { font-size: 18px; font-weight: 600; color: white; margin-bottom: 4px; }
-.song-artist-sm { font-size: 14px; color: rgba(255,255,255,0.5); }
+.song-artist-sm { font-size: var(--font-size-base); color: rgba(255,255,255,0.5); }
 
 .lyric-right {
   flex: 1; display: flex; align-items: center; overflow: hidden;
@@ -615,13 +615,13 @@ async function searchLyric() {
   color: rgba(255,255,255,0.35); font-size: 18px;
 }
 .empty-icon { font-size: 48px; }
-.empty-hint { font-size: 13px; color: rgba(255,255,255,0.25); line-height: 1.6; }
-.search-lyric-btn { margin-top: 4px; padding: 8px 18px; background: var(--color-primary); color: #fff; border-radius: 20px; font-size: 13px; transition: all 0.2s; }
+.empty-hint { font-size: var(--font-size-sm); color: rgba(255,255,255,0.25); line-height: 1.6; }
+.search-lyric-btn { margin-top: 4px; padding: 8px 18px; background: var(--color-primary); color: #fff; border-radius: 20px; font-size: var(--font-size-sm); transition: all 0.2s; }
 .search-lyric-btn.local { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); }
 .search-lyric-btn.local:hover { background: rgba(255,255,255,0.2); }
 .search-lyric-btn:hover { background: var(--color-primary-light); transform: scale(1.03); }
 .search-lyric-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
-.search-lyric-msg { font-size: 12px; color: rgba(255,255,255,0.5); }
+.search-lyric-msg { font-size: var(--font-size-xs); color: rgba(255,255,255,0.5); }
 
 .lyric-line {
   padding: 10px 0; font-size: 18px;
@@ -695,10 +695,10 @@ async function searchLyric() {
   border-radius: 12px;
   box-shadow: 0 12px 36px rgba(0,0,0,0.5);
 }
-.panel-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.9); margin-bottom: 10px; }
+.panel-title { font-size: var(--font-size-sm); font-weight: 600; color: rgba(255,255,255,0.9); margin-bottom: 10px; }
 .bg-mode-btns { display: flex; gap: 6px; margin-bottom: 10px; }
 .bg-mode-btns button {
-  flex: 1; padding: 5px 0; font-size: 12px; color: rgba(255,255,255,0.55);
+  flex: 1; padding: 5px 0; font-size: var(--font-size-xs); color: rgba(255,255,255,0.55);
   background: rgba(255,255,255,0.07); border-radius: 6px; transition: all 0.15s;
 }
 .bg-mode-btns button:hover { color: #fff; }
@@ -706,7 +706,7 @@ async function searchLyric() {
 .color-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
 .gradient-list { display: flex; flex-direction: column; gap: 6px; }
 .gradient-item {
-  padding: 10px 12px; border-radius: 8px; font-size: 12px; color: #fff;
+  padding: 10px 12px; border-radius: 8px; font-size: var(--font-size-xs); color: #fff;
   text-align: left; border: 2px solid transparent; transition: all 0.15s;
 }
 .gradient-item.active { border-color: #fff; }
@@ -733,9 +733,9 @@ async function searchLyric() {
 }
 .color-dot.active { border-color: #fff; transform: scale(1.15); }
 .bg-image-actions { display: flex; flex-direction: column; gap: 8px; }
-.bg-import-btn { padding: 8px 0; font-size: 12px; color: #fff; background: var(--color-primary); border-radius: 6px; transition: all 0.15s; }
+.bg-import-btn { padding: 8px 0; font-size: var(--font-size-xs); color: #fff; background: var(--color-primary); border-radius: 6px; transition: all 0.15s; }
 .bg-import-btn:hover { background: var(--color-primary-light); }
-.bg-clear-btn { padding: 6px 0; font-size: 12px; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.08); border-radius: 6px; }
+.bg-clear-btn { padding: 6px 0; font-size: var(--font-size-xs); color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.08); border-radius: 6px; }
 .bg-clear-btn:hover { color: #fff; background: rgba(255,255,255,0.15); }
 .bg-image-preview { height: 80px; border-radius: 8px; background-size: cover; background-position: center; border: 1px solid rgba(255,255,255,0.1); }
 .lyric-line.active {
@@ -765,7 +765,7 @@ async function searchLyric() {
   display: flex; align-items: center; gap: 12px;
 }
 .ctrl-btn.active { color: var(--color-primary); }
-.ctrl-btn--small { width: 34px; height: 34px; font-size: 13px; }
+.ctrl-btn--small { width: 34px; height: 34px; font-size: var(--font-size-sm); }
 .ctrl-btn--small svg { width: 20px; height: 20px; }
 .volume-control {
   display: flex; align-items: center; gap: 8px;
@@ -793,12 +793,12 @@ async function searchLyric() {
   display: flex; align-items: center; gap: 8px;
   padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);
 }
-.queue-title { font-size: 14px; font-weight: 600; color: rgba(255,255,255,0.9); flex: 1; }
-.queue-count { font-size: 12px; color: rgba(255,255,255,0.4); }
-.queue-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.5); font-size: 13px; }
+.queue-title { font-size: var(--font-size-base); font-weight: 600; color: rgba(255,255,255,0.9); flex: 1; }
+.queue-count { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
+.queue-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.5); font-size: var(--font-size-sm); }
 .queue-close:hover { background: rgba(255,255,255,0.1); color: white; }
 .queue-list { flex: 1; overflow-y: auto; padding: 6px; max-height: 320px; }
-.queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: 13px; padding: 30px 0; }
+.queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: var(--font-size-sm); padding: 30px 0; }
 .queue-item {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
@@ -806,10 +806,10 @@ async function searchLyric() {
 }
 .queue-item:hover { background: rgba(255,255,255,0.07); }
 .queue-item.active { background: var(--color-primary-alpha); }
-.queue-idx { width: 20px; font-size: 12px; color: rgba(255,255,255,0.3); text-align: center; flex-shrink: 0; }
+.queue-idx { width: 20px; font-size: var(--font-size-xs); color: rgba(255,255,255,0.3); text-align: center; flex-shrink: 0; }
 .queue-item.active .queue-idx { color: var(--color-primary); }
 .queue-info { flex: 1; min-width: 0; }
-.queue-name { font-size: 13px; color: rgba(255,255,255,0.85); }
+.queue-name { font-size: var(--font-size-sm); color: rgba(255,255,255,0.85); }
 .queue-item.active .queue-name { color: var(--color-primary); font-weight: 500; }
 .queue-artist { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 1px; }
 .queue-remove { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.4); font-size: 11px; opacity: 0; transition: all 0.15s; flex-shrink: 0; }
@@ -835,7 +835,7 @@ async function searchLyric() {
 
 .progress-row { display: flex; align-items: center; gap: 12px; }
 .time {
-  font-size: 12px; color: rgba(255,255,255,0.45);
+  font-size: var(--font-size-xs); color: rgba(255,255,255,0.45);
   min-width: 42px; text-align: center; font-variant-numeric: tabular-nums;
 }
 

@@ -147,7 +147,7 @@ function closeWindow() { window.electronAPI?.closeWindow() }
 }
 .logo:hover { background: var(--bg-hover); }
 .logo-icon { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; }
-.logo-text { font-size: 16px; font-weight: 700; color: var(--color-primary); letter-spacing: -0.5px; }
+.logo-text { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-primary); letter-spacing: -0.5px; }
 
 .nav-buttons { display: flex; gap: 4px; }
 .nav-btn {
@@ -193,7 +193,7 @@ function closeWindow() { window.electronAPI?.closeWindow() }
   width: 100%;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
-  font-size: 13px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   transition: background var(--transition-fast);
   text-align: left;

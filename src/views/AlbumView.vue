@@ -101,7 +101,7 @@ function playAlbumDirect(album) {
 .album-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .view-header { display: flex; align-items: baseline; gap: 12px; padding: 20px 24px 12px; flex-shrink: 0; }
 .header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
-.header-count { font-size: 14px; color: var(--text-secondary); }
+.header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
 .view-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
 
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
@@ -123,13 +123,13 @@ function playAlbumDirect(album) {
 .cover-placeholder { width: 100%; height: 100%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; }
 .cover-placeholder-lg { width: 100px; height: 100px; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; border-radius: var(--radius-md); }
 
-.album-name { font-size: 14px; font-weight: 600; color: var(--text-primary); }
-.album-artist { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+.album-name { font-size: var(--font-size-base); font-weight: 600; color: var(--text-primary); }
+.album-artist { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
 .album-count { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: var(--text-tertiary); }
 .empty-icon { font-size: 48px; margin-bottom: 12px; }
-.empty-text { font-size: 14px; }
+.empty-text { font-size: var(--font-size-base); }
 
 .detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .detail-card { background: var(--bg-secondary); border-radius: var(--radius-xl); width: 700px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
@@ -138,10 +138,10 @@ function playAlbumDirect(album) {
 .detail-cover img { width: 100%; height: 100%; object-fit: cover; }
 .detail-info { flex: 1; }
 .detail-info h2 { font-size: 20px; color: var(--text-primary); }
-.detail-info span { font-size: 13px; color: var(--text-secondary); }
-.play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: 13px; }
+.detail-info span { font-size: var(--font-size-sm); color: var(--text-secondary); }
+.play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: var(--font-size-sm); }
 .play-all-btn svg { width: 14px; height: 14px; }
-.close-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-secondary); font-size: 16px; }
+.close-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-secondary); font-size: var(--font-size-lg); }
 .close-btn:hover { background: var(--bg-hover); }
 .detail-content { flex: 1; min-height: 0; overflow-y: auto; }
 </style>

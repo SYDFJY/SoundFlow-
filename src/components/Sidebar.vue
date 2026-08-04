@@ -210,21 +210,21 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .menu-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 500; }
 .menu-item.active::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; background: var(--color-primary); border-radius: 0 3px 3px 0; }
 .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
-.menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-base); }
 .menu-badge { font-size: 11px; background: var(--color-primary); color: white; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
 .menu-count { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
 .pl-cover { width: 20px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; margin-right: 2px; }
-.pl-order { display: none; font-size: 12px; color: var(--text-tertiary); padding: 0 2px; cursor: pointer; }
+.pl-order { display: none; font-size: var(--font-size-xs); color: var(--text-tertiary); padding: 0 2px; cursor: pointer; }
 .menu-item:hover .pl-order { display: inline; }
 .pl-order:hover { color: var(--color-primary); }
-.menu-empty { padding: 8px 20px; font-size: 12px; color: var(--text-tertiary); }
+.menu-empty { padding: 8px 20px; font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border-color); }
-.add-folder-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; background: var(--color-primary-alpha); color: var(--color-primary); border-radius: var(--radius-md); font-size: 13px; font-weight: 500; transition: all var(--transition-fast); }
+.add-folder-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; background: var(--color-primary-alpha); color: var(--color-primary); border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .add-folder-btn:hover { background: var(--color-primary); color: white; }
 .add-folder-btn svg { width: 16px; height: 16px; }
 
 .context-menu { position: fixed; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); box-shadow: var(--shadow-lg); z-index: 200; overflow: hidden; min-width: 140px; }
-.context-menu button { display: block; width: 100%; padding: 8px 16px; text-align: left; font-size: 13px; color: var(--text-primary); transition: background var(--transition-fast); }
+.context-menu button { display: block; width: 100%; padding: 8px 16px; text-align: left; font-size: var(--font-size-sm); color: var(--text-primary); transition: background var(--transition-fast); }
 .context-menu button:hover { background: var(--bg-hover); }
 .context-menu button.danger { color: var(--color-danger); }
 .context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
@@ -232,10 +232,10 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 300; }
 .modal-card { background: var(--bg-secondary); border-radius: var(--radius-xl); padding: 24px; width: 360px; box-shadow: var(--shadow-lg); }
 .modal-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 16px; }
-.modal-input { width: 100%; padding: 10px 14px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: 14px; color: var(--text-primary); outline: none; transition: border-color var(--transition-fast); }
+.modal-input { width: 100%; padding: 10px 14px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: var(--font-size-base); color: var(--text-primary); outline: none; transition: border-color var(--transition-fast); }
 .modal-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-alpha); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-.modal-btn { padding: 8px 20px; border-radius: var(--radius-md); font-size: 14px; font-weight: 500; transition: all var(--transition-fast); }
+.modal-btn { padding: 8px 20px; border-radius: var(--radius-md); font-size: var(--font-size-base); font-weight: 500; transition: all var(--transition-fast); }
 .modal-btn.cancel { background: var(--bg-hover); color: var(--text-secondary); }
 .modal-btn.cancel:hover { background: var(--border-color); }
 .modal-btn.confirm { background: var(--color-primary); color: white; }

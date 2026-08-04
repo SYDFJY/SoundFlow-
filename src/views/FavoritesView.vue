@@ -45,8 +45,8 @@ function playAll() {
 .view-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; flex-shrink: 0; }
 .header-left { display: flex; align-items: baseline; gap: 12px; }
 .header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
-.header-count { font-size: 14px; color: var(--text-secondary); }
-.play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: 13px; font-weight: 500; transition: all var(--transition-fast); }
+.header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
+.play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .play-all-btn:hover { background: var(--color-primary-light); }
 .play-all-btn svg { width: 16px; height: 16px; }
 .view-content { flex: 1; overflow: hidden; }
