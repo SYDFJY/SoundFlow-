@@ -382,15 +382,21 @@ function createMainWindow() {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
   })
 
-  mainWindow.on('close', (e) => {
-    // 通知渲染进程保存数据
+  mainWindow.on('close', async (e) => {
+    // 先阻止默认关闭,根据用户设置决定:exit 真退出 / minimize 隐藏到托盘
+    e.preventDefault()
     try { mainWindow.webContents.send('app:before-close') } catch (_) {}
-    // 关闭行为:minimize(最小化到托盘,隐藏窗口)/ exit(真正退出应用)
-    if (!app.isQuitting && storageData.closeAction !== 'exit') {
-      e.preventDefault()
-      mainWindow.hide()
-    } else {
+    // 直接读取渲染进程的关闭行为设置(实时准确,避免异步同步延迟)
+    let action = 'minimize'
+    try {
+      const v = await mainWindow.webContents.executeJavaScript("localStorage.getItem('soundflow_close_action') || 'minimize'")
+      if (v === 'exit') action = 'exit'
+    } catch {}
+    if (action === 'exit') {
       app.isQuitting = true
+      mainWindow.destroy()
+    } else {
+      mainWindow.hide()
     }
   })
 
