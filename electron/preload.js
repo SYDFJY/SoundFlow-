@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 应用
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
   openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
+  openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
 
   // 窗口控制

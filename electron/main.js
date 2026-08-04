@@ -841,6 +841,14 @@ function setupIPC() {
     shell.showItemInFolder(filePath)
   })
 
+  // 打开文件夹(用于歌词下载完成后跳转)
+  ipcMain.handle('open-folder', (event, folderPath) => {
+    try {
+      shell.openPath(folderPath)
+      return true
+    } catch { return false }
+  })
+
   // 检查文件是否存在,返回不存在的路径列表(用于失效歌曲检测)
   ipcMain.handle('check-files-exist', (event, filePaths) => {
     if (!Array.isArray(filePaths)) return []

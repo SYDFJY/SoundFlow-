@@ -112,14 +112,41 @@
             <span class="label-desc">遍历曲库所有歌曲，将没有本地 .lrc 的歌从在线来源（LRCLIB/网易云）下载到歌词文件夹</span>
           </div>
           <button class="setting-btn" :disabled="batchLyric.running" @click="batchDownloadLyrics">
-            {{ batchLyric.running ? `下载中 ${batchLyric.done}/${batchLyric.total}…` : '开始批量下载' }}
+            {{ batchLyric.running ? `下载中 ${batchLyric.done}/${batchLyric.total}` : '开始批量下载' }}
           </button>
         </div>
-        <div v-if="batchLyric.running || batchLyric.msg" class="setting-item">
+        <div v-if="batchLyric.running" class="setting-item">
+          <div class="batch-progress-track">
+            <div class="batch-progress-fill" :style="{ width: (batchLyric.total ? (batchLyric.done / batchLyric.total * 100) : 0) + '%' }"></div>
+          </div>
+          <span class="label-text" style="color:var(--text-secondary);font-size:12px;margin-top:6px;">
+            成功 {{ batchLyric.success }} · 已有 {{ batchLyric.skipped }} · 失败 {{ batchLyric.failed }}
+          </span>
+        </div>
+        <div v-if="!batchLyric.running && batchLyric.msg" class="setting-item">
           <div class="setting-label">
-            <span class="label-text" style="color:var(--text-secondary);">{{ batchLyric.msg || '正在获取歌词…' }}</span>
+            <span class="label-text" style="color:var(--text-secondary);">{{ batchLyric.msg }}</span>
           </div>
         </div>
+
+        <!-- 下载完成弹窗 -->
+        <teleport to="body">
+          <transition name="fade">
+            <div v-if="batchLyric.showResult" class="batch-done-overlay" @click.self="batchLyric.showResult = false">
+              <div class="batch-done-card">
+                <div class="done-icon">✅</div>
+                <h3>歌词下载完成</h3>
+                <div class="done-row">成功下载 <b>{{ batchLyric.success }}</b> 首 &nbsp;·&nbsp; 已有 <b>{{ batchLyric.skipped }}</b> 首 &nbsp;·&nbsp; 失败 <b>{{ batchLyric.failed }}</b> 首</div>
+                <div class="done-row muted">用时 {{ batchLyric.elapsed }} · 完成时间 {{ batchLyric.finishedAt }}</div>
+                <div class="done-folder" :title="batchLyric.folder">下载到：{{ batchLyric.folder }}</div>
+                <div class="done-btns">
+                  <button class="setting-btn" @click="openLyricFolder">📂 打开歌词文件夹</button>
+                  <button class="done-close" @click="batchLyric.showResult = false">关闭</button>
+                </div>
+              </div>
+            </div>
+          </transition>
+        </teleport>
         <div v-if="musicStore.lyricFolders.length === 0" class="folder-item" style="color:var(--text-tertiary);font-size:13px;">
           暂未设置歌词文件夹（歌词也可放在歌曲同目录同名 .lrc 自动识别）
         </div>
@@ -226,8 +253,23 @@ function setLyricSource(v) {
   localStorage.setItem('soundflow_lyric_source', v)
 }
 
-// 批量下载歌词到歌词文件夹
-const batchLyric = ref({ running: false, total: 0, done: 0, success: 0, msg: '' })
+// 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)
+const batchLyric = ref({
+  running: false, total: 0, done: 0, success: 0, skipped: 0, failed: 0,
+  msg: '', showResult: false, elapsed: '', finishedAt: '', folder: ''
+})
+
+function fmtElapsed(ms) {
+  const s = Math.floor(ms / 1000)
+  const m = Math.floor(s / 60)
+  return `${m} 分 ${(s % 60).toString().padStart(2, '0')} 秒`
+}
+
+function openLyricFolder() {
+  if (batchLyric.value.folder && window.electronAPI) {
+    window.electronAPI.openFolder(batchLyric.value.folder)
+  }
+}
 
 async function batchDownloadLyrics() {
   if (batchLyric.value.running || !window.electronAPI) return
@@ -238,36 +280,58 @@ async function batchDownloadLyrics() {
     batchLyric.value.msg = '请先在上方添加一个歌词文件夹,歌词将下载到那里'
     return
   }
-  batchLyric.value = { running: true, total: songs.length, done: 0, success: 0, msg: '' }
-  let success = 0
-  let skipped = 0
-  let failed = 0
-  try {
-    for (let i = 0; i < songs.length; i++) {
+  const startTime = Date.now()
+  batchLyric.value = {
+    running: true, total: songs.length, done: 0, success: 0, skipped: 0, failed: 0,
+    msg: '正在下载…', showResult: false, elapsed: '', finishedAt: '', folder
+  }
+
+  const CONCURRENCY = 5 // 并发数,避免单首慢导致进度停滞
+  let idx = 0
+  let doneCount = 0
+  let success = 0, skipped = 0, failed = 0
+
+  async function worker() {
+    while (true) {
+      const i = idx++
+      if (i >= songs.length) break
       const s = songs[i]
       try {
-        // 已有本地 .lrc 则跳过
         const hasLocal = await window.electronAPI.readLyricFile(s.path, musicStore.lyricFolders)
-        if (hasLocal) { skipped++; continue }
-        const res = await window.electronAPI.searchOnlineLyric({
-          title: s.title, artist: s.artist || '', duration: s.duration || 0
-        })
-        if (res && res.lyrics) {
-          const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
-          if (saved && saved.ok) success++
-          else failed++
+        if (hasLocal) {
+          skipped++
         } else {
-          failed++
+          const res = await window.electronAPI.searchOnlineLyric({
+            title: s.title, artist: s.artist || '', duration: s.duration || 0
+          })
+          if (res && res.lyrics) {
+            const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
+            if (saved && saved.ok) success++
+            else failed++
+          } else {
+            failed++
+          }
         }
       } catch { failed++ }
-      batchLyric.value.done = i + 1
+      doneCount++
+      // 实时更新进度
+      batchLyric.value.done = doneCount
       batchLyric.value.success = success
-      // 每 20 首让出事件循环,刷新 UI
-      if ((i + 1) % 20 === 0) await new Promise(r => setTimeout(r, 0))
+      batchLyric.value.skipped = skipped
+      batchLyric.value.failed = failed
     }
+  }
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, songs.length) }, () => worker()))
+    const elapsedMs = Date.now() - startTime
+    const now = new Date()
+    batchLyric.value.elapsed = fmtElapsed(elapsedMs)
+    batchLyric.value.finishedAt = now.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    batchLyric.value.msg = ''
+    batchLyric.value.showResult = true
   } finally {
     batchLyric.value.running = false
-    batchLyric.value.msg = `完成:下载 ${success} 首,已有 ${skipped} 首,失败 ${failed} 首`
   }
 }
 </script>
@@ -355,6 +419,31 @@ select {
 }
 .source-btn:hover { color: var(--text-primary); }
 .source-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
+
+.batch-progress-track { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
+.batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }
+
+.batch-done-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 200;
+}
+.batch-done-card {
+  width: 360px; max-width: 90vw; padding: 24px;
+  background: var(--bg-secondary); border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg); text-align: center;
+}
+.done-icon { font-size: 40px; margin-bottom: 8px; }
+.batch-done-card h3 { font-size: 17px; color: var(--text-primary); margin-bottom: 14px; }
+.done-row { font-size: 13px; color: var(--text-primary); line-height: 1.9; }
+.done-row.muted { font-size: 12px; color: var(--text-tertiary); }
+.done-folder {
+  margin: 10px 0 16px; padding: 8px 10px; border-radius: var(--radius-md);
+  background: var(--bg-hover); font-size: 12px; color: var(--text-secondary);
+  word-break: break-all; text-align: left;
+}
+.done-btns { display: flex; justify-content: center; gap: 10px; }
+.done-close { padding: 6px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); font-size: 13px; }
+.done-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 
 .folder-item {
   display: flex; align-items: center; gap: 12px;
