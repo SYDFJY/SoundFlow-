@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
+  getWaveform: (songPath) => ipcRenderer.invoke('get-waveform', songPath),
 
   // 窗口控制
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
@@ -81,15 +82,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // 主进程同步查询关闭行为(关闭窗口时 sendSync 回复)
-  _registerCloseActionListener() {
-    ipcRenderer.on('get-close-action', (event) => {
-      try {
-        event.returnValue = localStorage.getItem('soundflow_close_action') || 'minimize'
-      } catch {
-        event.returnValue = 'minimize'
-      }
-    })
-  },
+  _getCloseAction: null,
 
   // 单向发送
   send: (channel, ...args) => {
@@ -100,5 +93,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }
 })
 
-// 注册同步查询(必须在 exposeInMainWorld 后立即执行)
-window.electronAPI._registerCloseActionListener()
+// 关闭行为同步查询:在 preload 顶层注册(隔离环境下 window.electronAPI 不可直接访问)
+// 渲染进程设置存于 localStorage(隔离环境可直接读,与页面共享存储)
+ipcRenderer.on('get-close-action', (event) => {
+  try {
+    event.returnValue = localStorage.getItem('soundflow_close_action') || 'minimize'
+  } catch {
+    event.returnValue = 'minimize'
+  }
+})

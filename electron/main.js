@@ -8,6 +8,11 @@ const { readdir, stat, readFile, writeFile, mkdir } = require('fs/promises')
 const os = require('os')
 const crypto = require('crypto')
 const { execFile } = require('child_process')
+const log = require('electron-log')
+// 日志配置:默认写入 userData/logs/main.log(上限 5MB)
+log.transports.file.maxSize = 5 * 1024 * 1024
+log.errorHandler.startCatching({ showDialog: false })
+process.on('uncaughtException', (err) => log.error('[uncaught]', err))
 let autoUpdater = null
 try { autoUpdater = require('electron-updater').autoUpdater } catch (_) { autoUpdater = null }
 
@@ -53,7 +58,7 @@ function saveStorage(immediate = false) {
         try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
       }
       fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2))
-    } catch (e) { console.error('[存储] 写入失败:', e.message) }
+    } catch (e) { console.error('[存储] 写入失败:', e.message); log.error('[存储] 写入失败:', e.message) }
   }
   if (immediate) doWrite()
   else saveStorageTimer = setTimeout(doWrite, 500) // 防抖:合并频繁写入,避免大文件反复写盘卡顿
@@ -109,6 +114,54 @@ function detectFFprobe() {
     // 4. 系统 PATH
     ffprobePath = 'ffprobe'
   } catch (_) {}
+}
+
+// ffmpeg 探测(与 ffprobe 同目录,用于波形生成)
+let ffmpegPath = null
+function detectFFmpeg() {
+  try {
+    const dirs = [
+      path.dirname(process.execPath),
+      path.join(__dirname, '..'),
+      'C:\\ffmpeg\\bin',
+      'C:\\Program Files\\ffmpeg\\bin',
+      'C:\\Program Files (x86)\\ffmpeg\\bin',
+      path.join(os.homedir(), 'ffmpeg', 'bin'),
+      path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin')
+    ]
+    for (const dir of dirs) {
+      const p = path.join(dir, 'ffmpeg.exe')
+      if (fs.existsSync(p)) { ffmpegPath = p; return }
+    }
+    ffmpegPath = 'ffmpeg'
+  } catch (_) {}
+}
+
+// 波形图缓存目录
+const waveCacheDir = () => path.join(app.getPath('userData'), 'waves')
+
+// 生成/获取歌曲波形 PNG(ffmpeg showwaves → 1000×64 峰值图,缓存)
+function getWaveformFile(songPath) {
+  return new Promise(async (resolve) => {
+    try {
+      if (!ffmpegPath) detectFFmpeg()
+      const cacheDir = waveCacheDir()
+      await mkdir(cacheDir, { recursive: true })
+      const hash = crypto.createHash('md5').update(songPath).digest('hex')
+      const cacheFile = path.join(cacheDir, hash + '.png')
+      if (fs.existsSync(cacheFile)) { resolve('file:///' + cacheFile.replace(/\\/g, '/')); return }
+      execFile(ffmpegPath, [
+        '-hide_banner', '-loglevel', 'error',
+        '-i', songPath,
+        '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1000x64',
+        '-frames:v', '1',
+        '-y', cacheFile
+      ], { timeout: 30000 }, (err) => {
+        if (err || !fs.existsSync(cacheFile)) { resolve(null); return }
+        resolve('file:///' + cacheFile.replace(/\\/g, '/'))
+      })
+    } catch (_) { resolve(null) }
+  })
 }
 
 function getFFprobeDuration(filePath) {
@@ -372,6 +425,14 @@ function createMainWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
+
+  // 渲染进程控制台错误写入主进程日志
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level >= 2) log.info(`[render:${level}] ${message} (${sourceId || ''}:${line})`)
+  })
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    log.error('[render-gone]', details.reason, details.exitCode)
+  })
 
   // 窗口显示完成后才设置缩略图按钮
   // 注意:Electron bug(issue #28319)——在隐藏状态下调用 setThumbarButtons 会导致按钮永久不显示
@@ -1011,6 +1072,12 @@ function setupIPC() {
     return filePaths.filter(p => {
       try { return !fs.existsSync(p) } catch { return true }
     })
+  })
+
+  // 波形图:ffmpeg 生成峰值 PNG(缓存),失败返回 null
+  ipcMain.handle('get-waveform', (event, songPath) => {
+    if (typeof songPath !== 'string' || !songPath) return null
+    return getWaveformFile(songPath)
   })
 
   // 准备可播放的音频源:原生支持直接返回原路径,不支持的格式转码为 FLAC 临时文件
