@@ -490,8 +490,11 @@ function updateThumbarButtons(state) {
     { tooltip: isPlaying ? '暂停' : '播放', icon: getThumbIcon(isPlaying ? 'pause.png' : 'play.png'), click: () => send('toggle-play') },
     { tooltip: '下一曲', icon: getThumbIcon('next.png'), click: () => send('next') }
   ]
-  try { mainWindow.setThumbarButtons(buttons) }
-  catch (e) { console.error('[任务栏] 设置缩略图按钮失败:', e.message) }
+  try {
+    // 先清空再设置:强制 Windows 刷新按钮图标(避免重复 setThumbarButtons 图标不更新的已知问题)
+    mainWindow.setThumbarButtons([])
+    mainWindow.setThumbarButtons(buttons)
+  } catch (e) { console.error('[任务栏] 设置缩略图按钮失败:', e.message) }
 }
 
 // ========== IPC 处理 ==========
