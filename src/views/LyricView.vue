@@ -200,11 +200,10 @@ const windowStyle = computed(() => {
   const s = { opacity: settings.value.opacity, borderRadius: '12px' }
   if (settings.value.bgStyle === 'none') return s
   if (settings.value.bgStyle === 'blur') {
-    s.background = 'rgba(10,10,18,0.28)'
-    s.backdropFilter = 'blur(18px) saturate(1.4)'
-    s.WebkitBackdropFilter = 'blur(18px) saturate(1.4)'
+    // 注意:Electron 透明窗口上 backdrop-filter 会导致整窗渲染异常,改为半透明渐变模拟毛玻璃
+    s.background = 'linear-gradient(180deg, rgba(12,12,22,0.58), rgba(12,12,22,0.34))'
   } else {
-    s.background = 'rgba(8,8,12,0.48)'
+    s.background = 'rgba(8,8,12,0.5)'
   }
   return s
 })
@@ -312,10 +311,10 @@ function updateLyric() {
 let ro = null
 function watchStageSize() {
   if (!stage.value) return
-  stageHeight.value = stage.value.clientHeight
+  stageHeight.value = stage.value.clientHeight || window.innerHeight || 200
   if (ro) ro.disconnect()
   ro = new ResizeObserver(() => {
-    stageHeight.value = stage.value.clientHeight
+    stageHeight.value = stage.value.clientHeight || window.innerHeight || 200
   })
   ro.observe(stage.value)
 }
@@ -483,9 +482,7 @@ watch(() => settings.value.fontSize, () => nextTick(watchStageSize))
   z-index: 30;
   width: 250px;
   padding: 14px;
-  background: rgba(18, 18, 26, 0.92);
-  backdrop-filter: blur(24px) saturate(1.3);
-  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  background: rgba(18, 18, 26, 0.97);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 14px;
   box-shadow: 0 18px 48px rgba(0,0,0,0.55);
