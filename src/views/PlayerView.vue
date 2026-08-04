@@ -121,39 +121,48 @@
       <!-- 底部控制栏 -->
       <div class="player-controls">
         <div class="controls-row">
-          <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="playModeLabel">
-            <span v-if="playerStore.playMode === 'list'">≡</span>
-            <span v-else-if="playerStore.playMode === 'repeat'">🔁</span>
-            <span v-else-if="playerStore.playMode === 'repeatOne'">🔂</span>
-            <span v-else>🔀</span>
-          </button>
-          <button class="ctrl-btn" @click="playerStore.playPrev()">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-          </button>
-          <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
-            <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-            <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
-          </button>
-          <button class="ctrl-btn" @click="playerStore.playNext()">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
-          </button>
-          <button class="ctrl-btn" @click="playerStore.cyclePlaybackRate()" :title="'倍速 ' + playerStore.playbackRate + 'x'">
-            {{ playerStore.playbackRate }}x
-          </button>
-
-          <!-- 音量(与播放按钮同一行) -->
-          <div class="volume-control">
-            <button class="vol-btn" @click="playerStore.toggleMute()">
-              <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+          <!-- 播放控制组(居中) -->
+          <div class="controls-group">
+            <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="playModeLabel">
+              <span v-if="playerStore.playMode === 'list'">≡</span>
+              <span v-else-if="playerStore.playMode === 'repeat'">🔁</span>
+              <span v-else-if="playerStore.playMode === 'repeatOne'">🔂</span>
+              <span v-else>🔀</span>
             </button>
-            <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+            <button class="ctrl-btn" @click="playerStore.playPrev()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
+              <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+            </button>
+            <button class="ctrl-btn" @click="playerStore.playNext()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+            </button>
           </div>
 
-          <!-- 播放列表 -->
-          <button class="ctrl-btn" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" title="播放列表">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          </button>
+          <!-- 右侧工具组(倍速 / 收起式音量 / 播放列表) -->
+          <div class="tools-group">
+            <button class="ctrl-btn ctrl-btn--small" @click="playerStore.cyclePlaybackRate()" :title="'倍速 ' + playerStore.playbackRate + 'x'">
+              {{ playerStore.playbackRate }}x
+            </button>
+
+            <!-- 音量(默认收起,点击图标展开滑块) -->
+            <div class="volume-control" :class="{ expanded: volExpanded }">
+              <button class="vol-btn" @click="volExpanded = !volExpanded" title="音量">
+                <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+              </button>
+              <transition name="vol-fade">
+                <input v-if="volExpanded" type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+              </transition>
+            </div>
+
+            <!-- 播放列表 -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" title="播放列表">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            </button>
+          </div>
         </div>
         <div class="progress-row">
           <span class="time">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
@@ -415,6 +424,7 @@ function setLyricColor(v) {
 }
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
+const volExpanded = ref(false) // 音量滑块默认收起
 
 function switchLyricSource(v) {
   if (lyricSource.value === v) return
@@ -704,28 +714,28 @@ async function searchLyric() {
 }
 
 .controls-row {
-  display: flex; align-items: center; justify-content: center; gap: 24px;
   position: relative;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 56px;
+}
+.controls-group {
+  display: flex; align-items: center; gap: 24px;
+}
+.tools-group {
+  position: absolute;
+  right: 32px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex; align-items: center; gap: 12px;
 }
 .ctrl-btn.active { color: var(--color-primary); }
+.ctrl-btn--small { width: 34px; height: 34px; font-size: 13px; }
+.ctrl-btn--small svg { width: 20px; height: 20px; }
 .volume-control {
   display: flex; align-items: center; gap: 8px;
-  margin-left: 16px;
 }
-.vol-btn {
-  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; color: rgba(255,255,255,0.5);
-}
-.vol-btn:hover { color: white; }
-.vol-btn svg { width: 18px; height: 18px; }
-.vol-slider {
-  width: 100px; height: 4px; -webkit-appearance: none; appearance: none;
-  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
-}
-.vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 12px;
-  background: white; border-radius: 50%; cursor: pointer;
-}
+.vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.2s, width 0.2s; }
+.vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; width: 0; }
 
 /* 播放列表面板 */
 .queue-panel {
