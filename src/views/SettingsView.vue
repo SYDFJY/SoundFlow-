@@ -287,6 +287,28 @@
           </div>
         </div>
       </div>
+
+      <!-- 数据 -->
+      <div class="settings-section">
+        <h3 class="section-title">数据</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">备份数据</span>
+            <span class="label-desc">导出曲库、歌单、收藏、播放历史与设置到 JSON 文件，重装/换机不丢数据</span>
+          </div>
+          <button class="setting-btn" :disabled="backupBusy" @click="exportBackup">{{ backupBusy ? '处理中…' : '导出备份' }}</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">导入备份</span>
+            <span class="label-desc">从备份 JSON 恢复全部数据（将覆盖当前数据，导入后自动重启应用）</span>
+          </div>
+          <button class="setting-btn" :disabled="backupBusy" @click="importBackup">{{ backupBusy ? '处理中…' : '导入备份' }}</button>
+        </div>
+        <div v-if="backupMsg" class="setting-item">
+          <span class="label-text" :style="{ color: backupOk ? 'var(--color-primary)' : 'var(--color-danger)' }">{{ backupMsg }}</span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -300,6 +322,51 @@ import { usePlayerStore } from '@/stores/playerStore'
 const appStore = useAppStore()
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
+
+// ===== 数据备份 / 导入 =====
+const backupBusy = ref(false)
+const backupMsg = ref('')
+const backupOk = ref(false)
+async function exportBackup() {
+  backupBusy.value = true
+  backupMsg.value = ''
+  try {
+    const filePath = await window.electronAPI.exportBackup()
+    if (filePath) {
+      backupOk.value = true
+      backupMsg.value = `已导出到 ${filePath}`
+    } else {
+      backupMsg.value = '已取消导出'
+    }
+  } catch (e) {
+    backupOk.value = false
+    backupMsg.value = '导出失败: ' + e.message
+  } finally {
+    backupBusy.value = false
+  }
+}
+async function importBackup() {
+  backupBusy.value = true
+  backupMsg.value = ''
+  try {
+    const res = await window.electronAPI.importBackup()
+    if (res && res.ok) {
+      backupOk.value = true
+      backupMsg.value = '导入成功，正在重启应用…'
+      setTimeout(() => window.electronAPI.restartApp(), 1200)
+    } else if (res && res.cancel) {
+      backupMsg.value = '已取消导入'
+    } else {
+      backupOk.value = false
+      backupMsg.value = '导入失败: 文件格式不正确或数据无效'
+    }
+  } catch (e) {
+    backupOk.value = false
+    backupMsg.value = '导入失败: ' + e.message
+  } finally {
+    backupBusy.value = false
+  }
+}
 const closeAction = computed({
   get: () => appStore.closeAction,
   set: (val) => { appStore.closeAction = val; appStore.saveSettings() }

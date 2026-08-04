@@ -41,10 +41,11 @@
       </div>
 
       <!-- 封面模式 -->
-      <div v-if="activeTab === 'cover'" class="cover-mode">
+      <transition name="mode-fade" mode="out-in">
+      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
-            <div class="disc-cover">
+            <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
               <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
               <div v-else class="cover-placeholder">🎵</div>
             </div>
@@ -52,7 +53,7 @@
           <!-- 音频频谱(常驻:播放跳动/暂停低矮基线) -->
           <canvas ref="spectrumCanvas" class="spectrum-bar" width="520" height="80"></canvas>
         </div>
-        <div class="song-meta">
+        <div class="song-meta" :key="'meta-' + (playerStore.currentSong?.path || 'none')">
           <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
@@ -81,6 +82,7 @@
               <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
               <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
               <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" title="歌词对齐(居中/左)" @click="toggleLyricAlign">对齐</button>
+              <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
               <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
               <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
             </div>
@@ -115,7 +117,15 @@
                 @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
               >
-                {{ line.text }}
+                <!-- 逐字高亮模式:当前行按字渲染,实时高亮当前字 -->
+                <template v-if="lyricMode === 'word' && idx === playerStore.currentLyricIndex && line.words">
+                  <span v-for="(w, wi) in lyricWordSegments(line)" :key="wi"
+                    class="lyric-word"
+                    :class="{ cur: wi === currentWordIdx }"
+                    :style="wi === currentWordIdx ? { color: lyricColor, textShadow: `0 0 24px ${lyricColor}aa` } : { color: lyricColor + '77' }"
+                  >{{ w.c }}</span>
+                </template>
+                <template v-else>{{ line.text }}</template>
                 <div v-if="playerStore.showTranslation && playerStore.translations[idx]" class="lyric-trans">{{ playerStore.translations[idx] }}</div>
               </div>
               <div style="height:40%"></div>
@@ -123,6 +133,7 @@
           </div>
         </div>
       </div>
+      </transition>
 
       <!-- 底部控制栏 -->
       <div class="player-controls">
@@ -187,6 +198,8 @@
               <button class="queue-close" @click="showEqPanel = false">✕</button>
             </div>
             <div v-if="playerStore.eqSettings.enabled" class="eq-body">
+              <!-- 频响曲线预览 -->
+              <canvas ref="eqCurveCanvas" class="eq-curve" width="360" height="130"></canvas>
               <div v-for="g in eqGroups" :key="g.name" class="eq-group">
                 <div class="eq-group-name">{{ g.name }}</div>
                 <div class="eq-presets">
@@ -509,6 +522,68 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const volExpanded = ref(false) // 音量滑块默认收起
 
+// 频响曲线可视化:随 EQ 滑块实时绘制
+const eqCurveCanvas = ref(null)
+function drawEqCurve() {
+  const canvas = eqCurveCanvas.value
+  if (!canvas) return
+  const ctx = canvas.getContext('2d')
+  const w = canvas.width, h = canvas.height
+  ctx.clearRect(0, 0, w, h)
+  const gains = playerStore.eqSettings.gains
+  const freqs = playerStore.EQ_FREQS
+  const padL = 22, padR = 8, padT = 10, padB = 22
+  const plotW = w - padL - padR, plotH = h - padT - padB
+  const minF = 20, maxF = 20000
+  const xOf = (f) => padL + Math.log10(f / minF) / Math.log10(maxF / minF) * plotW
+  const yOf = (g) => padT + (12 - g) / 24 * plotH
+  // 网格 + 0dB 参考线
+  ctx.strokeStyle = 'rgba(128,128,160,0.14)'
+  ctx.lineWidth = 1
+  for (let db = -12; db <= 12; db += 6) {
+    ctx.beginPath(); ctx.moveTo(padL, yOf(db)); ctx.lineTo(w - padR, yOf(db)); ctx.stroke()
+  }
+  ctx.strokeStyle = 'rgba(128,128,160,0.32)'
+  ctx.beginPath(); ctx.moveTo(padL, yOf(0)); ctx.lineTo(w - padR, yOf(0)); ctx.stroke()
+  // 频率刻度
+  ctx.fillStyle = 'rgba(200,200,220,0.45)'
+  ctx.font = '9px sans-serif'
+  ctx.textAlign = 'center'
+  freqs.forEach(f => { ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, xOf(f), h - 7) })
+  // 曲线(贝塞尔平滑)
+  const pts = freqs.map((f, i) => ({ x: xOf(f), y: yOf(gains[i]) }))
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff'
+  ctx.beginPath()
+  ctx.moveTo(pts[0].x, pts[0].y)
+  for (let i = 1; i < pts.length; i++) {
+    const mx = (pts[i - 1].x + pts[i].x) / 2
+    ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, mx, (pts[i - 1].y + pts[i].y) / 2)
+  }
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y)
+  ctx.strokeStyle = accent
+  ctx.lineWidth = 2.5
+  ctx.lineJoin = 'round'
+  ctx.stroke()
+  // 渐变填充
+  ctx.lineTo(pts[pts.length - 1].x, padT + plotH)
+  ctx.lineTo(pts[0].x, padT + plotH)
+  ctx.closePath()
+  const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH)
+  grad.addColorStop(0, accent + '44')
+  grad.addColorStop(1, accent + '05')
+  ctx.fillStyle = grad
+  ctx.fill()
+  // 频点圆点
+  pts.forEach(p => {
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
+    ctx.fillStyle = accent
+    ctx.fill()
+  })
+}
+watch(() => playerStore.eqSettings.gains, () => nextTick(drawEqCurve), { deep: true })
+watch(showEqPanel, (v) => { if (v) nextTick(drawEqCurve) })
+
 // 频谱可视化(华丽版:左右对称镜像 + 圆头渐变条 + 峰值保持亮点 + 平滑动画)
 const spectrumCanvas = ref(null)
 let spectrumRAF = null
@@ -593,6 +668,41 @@ const lyricAlign = ref(localStorage.getItem('soundflow_lyric_align') || 'center'
 function toggleLyricAlign() {
   lyricAlign.value = lyricAlign.value === 'center' ? 'left' : 'center'
   localStorage.setItem('soundflow_lyric_align', lyricAlign.value)
+}
+
+// 歌词模式:整行 / 逐字高亮(持久化)
+const lyricMode = ref(localStorage.getItem('soundflow_lyric_mode') || 'line')
+function toggleLyricMode() {
+  lyricMode.value = lyricMode.value === 'word' ? 'line' : 'word'
+  localStorage.setItem('soundflow_lyric_mode', lyricMode.value)
+}
+// 当前逐字索引(基于 currentTime 与行内时间戳)
+const currentWordIdx = computed(() => {
+  if (!playerStore.isPlaying) return -1
+  const line = playerStore.lyrics[playerStore.currentLyricIndex]
+  if (!line || !line.words || !line.words.length) return -1
+  const t = playerStore.currentTime
+  let idx = -1
+  for (let i = 0; i < line.words.length; i++) {
+    if (line.words[i].t <= t) idx = i
+    else break
+  }
+  return idx
+})
+// 逐字渲染段:有增强时间戳直接用;无则按整行时长均分(近似逐字)
+function lyricWordSegments(line) {
+  if (!line) return []
+  if (line.words && line.words.length) return line.words
+  // 近似:按字符均分当前行到下一行之间的时长
+  const cur = playerStore.lyrics[playerStore.currentLyricIndex]
+  const next = playerStore.lyrics[playerStore.currentLyricIndex + 1]
+  const start = cur ? cur.time : 0
+  const end = next ? next.time : start + 4
+  const dur = Math.max(0.5, end - start)
+  const chars = (line.text || '').split('')
+  if (!chars.length) return []
+  const per = dur / chars.length
+  return chars.map((c, i) => ({ t: start + i * per, c }))
 }
 
 function switchLyricSource(v) {
@@ -694,12 +804,26 @@ async function searchLyric() {
   border: 6px solid rgba(255,255,255,0.08);
   display: flex; align-items: center; justify-content: center;
 }
+@keyframes disc-in {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+.song-meta { animation: meta-in 0.4s ease; }
+@keyframes meta-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* tab 切换过渡 */
+.mode-fade-enter-active, .mode-fade-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
+.mode-fade-enter-from { opacity: 0; transform: translateY(10px); }
+.mode-fade-leave-to { opacity: 0; transform: translateY(-10px); }
 .disc-ring.spinning { animation: spin 20s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .disc-cover {
   width: 270px; height: 270px; border-radius: 50%; overflow: hidden;
   box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  animation: disc-in 0.5s ease;
 }
 .disc-cover img { width: 100%; height: 100%; object-fit: cover; }
 .cover-placeholder {
@@ -779,6 +903,7 @@ async function searchLyric() {
   text-align: center;
 }
 .lyric-line.left { text-align: left; }
+.lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; }
 .lyric-trans {
   font-size: 0.82em;
   font-weight: 400;
@@ -982,6 +1107,7 @@ async function searchLyric() {
 .eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
 .eq-toggle.on { background: var(--color-primary); color: #fff; }
 .eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.eq-curve { display: block; width: 100%; margin: 2px 0 6px; background: rgba(128,128,160,0.05); border-radius: 8px; flex-shrink: 0; }
 .eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: rgba(255,255,255,0.4); }
 .eq-group { display: flex; flex-direction: column; gap: 5px; }
 .eq-group-name { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }

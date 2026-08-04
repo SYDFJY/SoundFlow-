@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
+  exportBackup: () => ipcRenderer.invoke('export-backup'),
+  importBackup: () => ipcRenderer.invoke('import-backup'),
+  restartApp: () => ipcRenderer.send('restart-app'),
 
   // 窗口控制
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
