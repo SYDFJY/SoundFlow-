@@ -92,10 +92,45 @@
       </div>
 
       <!-- 播放队列 -->
+      <button class="right-btn" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" title="音效">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
+      </button>
       <button class="right-btn" :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" title="播放队列">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       </button>
     </div>
+
+    <!-- 音效面板 -->
+    <transition name="queue-slide">
+      <div v-if="showEqPanel" class="eq-panel" @click.stop>
+        <div class="queue-header">
+          <span class="queue-title">音效</span>
+          <button class="eq-toggle" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
+            {{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}
+          </button>
+          <button class="queue-close" @click="showEqPanel = false">✕</button>
+        </div>
+        <div v-if="playerStore.eqSettings.enabled" class="eq-body">
+          <div class="eq-presets">
+            <button v-for="(p, key) in playerStore.EQ_PRESETS" :key="key" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ p.name }}</button>
+          </div>
+          <div class="eq-sliders">
+            <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
+              <span class="eq-gain">{{ playerStore.eqSettings.gains[i] > 0 ? '+' : '' }}{{ playerStore.eqSettings.gains[i] }}</span>
+              <input type="range" min="-12" max="12" step="1" :value="playerStore.eqSettings.gains[i]" @input="playerStore.setEqGain(i, parseInt($event.target.value))" />
+              <span class="eq-freq">{{ f >= 1000 ? (f / 1000) + 'k' : f }}</span>
+            </div>
+          </div>
+          <div class="eq-extra">
+            <span class="label-text">重低音</span>
+            <input type="range" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
+            <span class="label-text">空间声场</span>
+            <input type="range" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
+          </div>
+        </div>
+        <div v-else class="eq-off">开启音效后,可调节均衡器、预设、重低音与空间声场</div>
+      </div>
+    </transition>
 
     <!-- 播放队列面板 -->
     <transition name="queue-slide">
@@ -138,6 +173,7 @@ const musicStore = useMusicStore()
 const progressBar = ref(null)
 const showTimer = ref(false)
 const customMinutes = ref(30)
+const showEqPanel = ref(false)
 
 // 播放队列面板:打开/切歌时自动定位当前歌曲
 const queueListEl = ref(null)
@@ -303,6 +339,29 @@ function setCustomTimer() {
 
 /* 播放队列面板 */
 .queue-panel { position: absolute; bottom: calc(var(--player-height) + 1px); right: 16px; width: 360px; max-height: 480px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 49; }
+/* 音效面板 */
+.eq-panel {
+  position: absolute; bottom: calc(var(--player-height) + 1px); right: 16px;
+  width: 640px; max-height: 500px;
+  background: var(--bg-secondary); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg);
+  display: flex; flex-direction: column; z-index: 49; overflow: hidden;
+}
+.eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: var(--bg-hover); color: var(--text-secondary); }
+.eq-toggle.on { background: var(--color-primary); color: #fff; }
+.eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+.eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: var(--text-tertiary); }
+.eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; border-radius: var(--radius-md); background: var(--bg-hover); color: var(--text-secondary); transition: all var(--transition-fast); }
+.eq-preset-btn.active { background: var(--color-primary); color: #fff; }
+.eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
+.eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 110px; }
+.eq-gain { font-size: 10px; color: var(--text-tertiary); }
+.eq-freq { font-size: 10px; color: var(--text-tertiary); }
+.eq-extra { display: flex; align-items: center; gap: 8px; }
+.eq-extra .label-text { min-width: 48px; }
+.eq-extra input[type="range"] { width: 100px; }
 .queue-header { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
 .queue-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .queue-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
