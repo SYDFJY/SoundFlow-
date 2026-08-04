@@ -502,7 +502,8 @@ export const usePlayerStore = defineStore('player', () => {
       localStorage.setItem('soundflow_playback_rate', String(playbackRate.value))
       localStorage.setItem('soundflow_progress', JSON.stringify(progressHistory.value))
       if (window.electronAPI) {
-        window.electronAPI.storeSet('progress', progressHistory.value)
+        // 深拷贝为纯对象(Vue Proxy 无法 IPC 序列化)
+        window.electronAPI.storeSet('progress', JSON.parse(JSON.stringify(progressHistory.value)))
       }
     } catch {}
   }

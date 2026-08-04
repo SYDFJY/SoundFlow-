@@ -121,13 +121,16 @@ export const useMusicStore = defineStore('music', () => {
       safeSet('soundflow_scan_folders', scanFolders.value)
       safeSet('soundflow_lyric_folders', lyricFolders.value)
       if (window.electronAPI) {
-        window.electronAPI.storeSet('library', songs.value)
-        window.electronAPI.storeSet('favorites', favorites.toArray())
-        window.electronAPI.storeSet('playlists', playlists.value)
-        window.electronAPI.storeSet('playCounts', playCounts.value)
-        window.electronAPI.storeSet('history', history.value)
-        window.electronAPI.storeSet('scanFolders', scanFolders.value)
-        window.electronAPI.storeSet('lyricFolders', lyricFolders.value)
+        // IPC 序列化前深拷贝为纯对象:Vue 响应式 Proxy 无法被结构化克隆,
+        // 否则 storeSet 报 "An object could not be cloned",主进程永远存不上数据
+        const toPlain = (v) => JSON.parse(JSON.stringify(v))
+        window.electronAPI.storeSet('library', toPlain(songs.value))
+        window.electronAPI.storeSet('favorites', toPlain(favorites.toArray()))
+        window.electronAPI.storeSet('playlists', toPlain(playlists.value))
+        window.electronAPI.storeSet('playCounts', toPlain(playCounts.value))
+        window.electronAPI.storeSet('history', toPlain(history.value))
+        window.electronAPI.storeSet('scanFolders', toPlain(scanFolders.value))
+        window.electronAPI.storeSet('lyricFolders', toPlain(lyricFolders.value))
       }
     } catch (e) {
       console.error('[存储] 保存失败:', e)
