@@ -757,24 +757,31 @@ function setupIPC() {
       const data = await res.json()
       const songs = data?.result?.songs || []
       if (!songs.length) return null
-      // 标题归一化,优先精确匹配标题+歌手,其次仅标题
+      // 标题归一化,候选排序:完全匹配标题+歌手 > 仅标题 > 其他
       const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？]/g, '')
       const targetTitle = norm(info?.title)
       const targetArtist = norm(info?.artist)
-      let song = null
-      for (const s of songs) {
+      const scored = songs.map(s => {
+        let score = 0
+        const nName = norm(s.name)
         const artistHit = (s.artists || []).some(a => targetArtist && (norm(a.name).includes(targetArtist) || targetArtist.includes(norm(a.name))))
-        if (norm(s.name) === targetTitle && artistHit) { song = s; break }
+        if (nName === targetTitle) score += 100
+        else if (nName.includes(targetTitle) || targetTitle.includes(nName)) score += 50
+        if (artistHit) score += 40
+        return { song: s, score }
+      }).sort((a, b) => b.score - a.score)
+      // 逐首获取歌词,返回第一个有同步时间戳的(跳过无时间戳/翻唱)
+      for (const { song } of scored.slice(0, 5)) {
+        try {
+          const lr = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
+            headers: UA, signal: AbortSignal.timeout(8000)
+          })
+          if (!lr.ok) continue
+          const ldata = await lr.json()
+          const lrc = ldata?.lrc?.lyric || ''
+          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, source: 'netease' }
+        } catch {}
       }
-      if (!song) song = songs.find(s => norm(s.name) === targetTitle) || songs[0]
-      const lr = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
-        headers: UA, signal: AbortSignal.timeout(8000)
-      })
-      if (!lr.ok) return null
-      const ldata = await lr.json()
-      const lrc = ldata?.lrc?.lyric || ''
-      // 至少包含一句带时间戳的歌词才接受
-      if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, source: 'netease' }
       return null
     } catch (e) {
       console.error('[在线歌词] 网易云请求失败:', e.message)

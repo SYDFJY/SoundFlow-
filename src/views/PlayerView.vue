@@ -484,7 +484,7 @@ async function searchLyric() {
         searchLyricMsg.value = '⚠️ 获取成功但保存失败'
       }
     } else {
-      searchLyricMsg.value = '未找到这首歌的歌词'
+      searchLyricMsg.value = '未找到歌词,可切换歌词来源(LRCLIB/网易云)或稍后重试'
     }
   } catch (e) {
     searchLyricMsg.value = '搜索失败,请检查网络'
