@@ -172,7 +172,7 @@ input[type="text"]:focus, input[type="search"]:focus {
 }
 /* 内容区整体毛玻璃:让列表/卡片区域也有玻璃质感 */
 .theme-liquid .main-content {
-  background: rgba(30, 42, 70, 0.28) !important;
+  background: rgba(255, 255, 255, 0.04) !important;
   backdrop-filter: blur(22px) saturate(1.5);
   -webkit-backdrop-filter: blur(22px) saturate(1.5);
 }
@@ -182,7 +182,7 @@ input[type="text"]:focus, input[type="search"]:focus {
 .theme-liquid .topbar,
 .theme-liquid .player-bar,
 .theme-liquid .mini-player {
-  background: rgba(30, 42, 70, 0.42) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
   backdrop-filter: blur(26px) saturate(1.6);
   -webkit-backdrop-filter: blur(26px) saturate(1.6);
   border-right: 1px solid rgba(255, 255, 255, 0.1);
@@ -208,7 +208,7 @@ input[type="text"]:focus, input[type="search"]:focus {
 .theme-liquid .batch-bar,
 .theme-liquid .modal-overlay .modal-card,
 .theme-liquid .add-songs-dialog {
-  background: rgba(28, 40, 66, 0.55) !important;
+  background: rgba(255, 255, 255, 0.09) !important;
   backdrop-filter: blur(22px) saturate(1.5);
   -webkit-backdrop-filter: blur(22px) saturate(1.5);
   border: 1px solid rgba(255, 255, 255, 0.12);
