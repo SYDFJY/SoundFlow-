@@ -185,6 +185,15 @@
           </select>
           <button class="setting-btn" @click="importFont">导入字体</button>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">字体大小</span>
+          </div>
+          <div class="font-size-row">
+            <input type="range" min="10" max="24" step="1" :value="appStore.fontSize" @input="appStore.setFontSize(parseInt($event.target.value))" />
+            <span class="volume-val">{{ appStore.fontSize }}px</span>
+          </div>
+        </div>
         <div class="setting-item" v-if="customFonts.length">
           <div class="setting-label"><span class="label-text">已导入字体</span></div>
           <div v-for="(f, i) in customFonts" :key="f.url" class="custom-font-row">
@@ -586,6 +595,8 @@ select {
 .custom-font-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
 .font-name { font-size: 13px; color: var(--text-primary); }
 .font-remove { padding: 3px 10px; font-size: 12px; }
+.font-size-row { display: flex; align-items: center; gap: 10px; }
+.font-size-row input[type="range"] { width: 180px; }
 
 .batch-progress-track { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
 .batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }

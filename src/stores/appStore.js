@@ -293,6 +293,7 @@ export const useAppStore = defineStore('app', () => {
 
       const fs = localStorage.getItem('soundflow_font_size')
       if (fs) fontSize.value = parseInt(fs)
+      applyFontSize()
 
       const cl = localStorage.getItem('soundflow_close_action')
       if (cl) closeAction.value = cl
@@ -303,12 +304,27 @@ export const useAppStore = defineStore('app', () => {
     try {
       localStorage.setItem('soundflow_font_size', String(fontSize.value))
       localStorage.setItem('soundflow_close_action', closeAction.value)
+      if (window.electronAPI) {
+        window.electronAPI.storeSet('closeAction', closeAction.value)
+      }
     } catch {}
+  }
+
+  // 全局字体大小:通过 zoom 缩放整体界面(Chromium 支持,px 同步缩放)
+  function applyFontSize() {
+    try {
+      document.documentElement.style.zoom = String(fontSize.value / 14)
+    } catch {}
+  }
+  function setFontSize(v) {
+    fontSize.value = Math.max(10, Math.min(24, v))
+    applyFontSize()
+    saveSettings()
   }
 
   return {
     theme, fontSize, showSidebar, sidebarWidth, currentView,
     showSettings, language, autoPlay, closeAction,
-    themes, applyTheme, loadSettings, saveSettings
+    themes, applyTheme, loadSettings, saveSettings, setFontSize
   }
 })

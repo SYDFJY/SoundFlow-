@@ -382,9 +382,16 @@ function createMainWindow() {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
   })
 
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (e) => {
     // 通知渲染进程保存数据
     try { mainWindow.webContents.send('app:before-close') } catch (_) {}
+    // 关闭行为:minimize(最小化到托盘,隐藏窗口)/ exit(真正退出应用)
+    if (!app.isQuitting && storageData.closeAction !== 'exit') {
+      e.preventDefault()
+      mainWindow.hide()
+    } else {
+      app.isQuitting = true
+    }
   })
 
   mainWindow.on('closed', () => {

@@ -24,6 +24,7 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'

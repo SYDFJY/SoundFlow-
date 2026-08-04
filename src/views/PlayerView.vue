@@ -231,9 +231,12 @@ function toggleQueuePanel() {
 
 // 打开/切换歌曲时,自动定位当前播放项
 function scrollToActiveQueue() {
-  if (activeQueueEl.value) {
-    activeQueueEl.value.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
+  const list = queueListEl.value
+  const el = activeQueueEl.value
+  if (!list || !el) return
+  // 手动计算滚动位置,避免 scrollIntoView 滚动到错误容器
+  const top = el.offsetTop - list.offsetTop - list.clientHeight / 2 + el.clientHeight / 2
+  list.scrollTop = Math.max(0, top)
 }
 watch(() => playerStore.currentIndex, () => {
   if (showQueuePanel.value) nextTick(() => scrollToActiveQueue())
