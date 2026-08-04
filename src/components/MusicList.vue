@@ -309,7 +309,8 @@ function addSelectedToPlaylist(plId) {
   pendingAddPaths = []
   selectedSet.value = new Set()
   emit('selection-change', [])
-  toggleBatch()
+  // 仅在批量模式下退出批量(右键单首添加不触发批量开关)
+  if (batchOn.value) toggleBatch()
 }
 
 function ctxOpenFile() {
