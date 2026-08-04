@@ -12,6 +12,24 @@
           <button class="tab-btn" :class="{ active: activeTab === 'lyric' }" @click="activeTab = 'lyric'">歌词</button>
         </div>
         <div class="topbar-right">
+          <button class="icon-btn" @click="showBgPanel = !showBgPanel" title="播放页背景设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+          </button>
+        </div>
+        <!-- 背景设置面板 -->
+        <div v-if="showBgPanel" class="bg-panel" @click.stop>
+          <div class="panel-title">播放页背景</div>
+          <div class="bg-mode-btns">
+            <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">封面</button>
+            <button :class="{ active: bgMode === 'color' }" @click="setBgMode('color')">纯色</button>
+            <button :class="{ active: bgMode === 'gradient' }" @click="setBgMode('gradient')">渐变</button>
+          </div>
+          <div v-if="bgMode === 'color'" class="color-row">
+            <button v-for="c in bgPresets.color" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: bgColor === c.value }" :title="c.name" @click="setBgColor(c.value)"></button>
+          </div>
+          <div v-else-if="bgMode === 'gradient'" class="gradient-list">
+            <button v-for="g in bgPresets.gradient" :key="g.name" class="gradient-item" :style="{ background: g.value }" :class="{ active: bgGradient === g.value }" @click="setBgGradient(g.value)">{{ g.name }}</button>
+          </div>
         </div>
       </div>
 
@@ -51,8 +69,13 @@
             <!-- 歌词来源切换:本地 / 网易云 / LRCLIB -->
             <div class="lyric-source-switch">
               <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
+              <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
               <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
               <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
+            </div>
+            <!-- 歌词颜色面板 -->
+            <div v-if="showColorPanel" class="color-panel" @click.stop>
+              <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
             </div>
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">{{ playerStore.lyricOrigin }}歌词</div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
@@ -72,7 +95,11 @@
                 :key="idx"
                 class="lyric-line"
                 :class="{ active: idx === playerStore.currentLyricIndex }"
-                :style="{ fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px' }"
+                :style="{
+                  fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px',
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99',
+                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : '0 1px 8px rgba(0,0,0,.55)'
+                }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
@@ -207,16 +234,59 @@ function onCoverError() {
 }
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
 
+// ===== 播放页背景设置(封面 / 纯色 / 渐变,持久化) =====
+const bgPresets = {
+  color: [
+    { name: '极夜黑', value: '#14161c' },
+    { name: '深蓝', value: '#0f2440' },
+    { name: '墨绿', value: '#12251c' },
+    { name: '酒红', value: '#3a1418' },
+    { name: '深紫', value: '#2a1745' },
+    { name: '深棕', value: '#2b1e16' }
+  ],
+  gradient: [
+    { name: '深蓝紫', value: 'linear-gradient(160deg, #1a1a3e 0%, #0d1b3a 50%, #1a1030 100%)' },
+    { name: '落日橙', value: 'linear-gradient(160deg, #3a1a10 0%, #2a1508 55%, #121212 100%)' },
+    { name: '森林绿', value: 'linear-gradient(160deg, #10241a 0%, #0d1a14 55%, #0a0f0c 100%)' },
+    { name: '极夜', value: 'linear-gradient(160deg, #101014 0%, #0a0a0e 55%, #050508 100%)' },
+    { name: '深海', value: 'linear-gradient(160deg, #0c2033 0%, #0a1724 55%, #070d14 100%)' }
+  ]
+}
+const bgMode = ref(localStorage.getItem('soundflow_player_bg_mode') || 'cover')
+const bgColor = ref(localStorage.getItem('soundflow_player_bg_color') || '#14161c')
+const bgGradient = ref(localStorage.getItem('soundflow_player_bg_gradient') || bgPresets.gradient[0].value)
+
+function setBgMode(mode) {
+  bgMode.value = mode
+  localStorage.setItem('soundflow_player_bg_mode', mode)
+}
+function setBgColor(v) {
+  bgColor.value = v
+  setBgMode('color')
+  localStorage.setItem('soundflow_player_bg_color', v)
+}
+function setBgGradient(v) {
+  bgGradient.value = v
+  setBgMode('gradient')
+  localStorage.setItem('soundflow_player_bg_gradient', v)
+}
+
 const bgStyle = computed(() => {
+  if (bgMode.value === 'color') {
+    return { backgroundColor: bgColor.value }
+  }
+  if (bgMode.value === 'gradient') {
+    return { backgroundImage: bgGradient.value }
+  }
+  // 封面模式:封面铺底 + 深色遮罩压暗(避免 filter/backdrop-filter 叠加触发 Electron 渲染异常)
   if (coverUrl.value) {
-    // 封面铺底 + 深色遮罩压暗(避免 filter/backdrop-filter 叠加触发 Electron 渲染异常)
     return {
       backgroundImage: `url(${coverUrl.value})`,
       backgroundSize: 'cover',
       backgroundPosition: 'center'
     }
   }
-  return {}
+  return { backgroundColor: '#14161c' }
 })
 
 const playModeLabel = computed(() => {
@@ -297,6 +367,25 @@ function changeLyricFont(delta) {
   localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
 }
 
+// 歌词颜色(8 色色板,持久化)
+const lyricColorOptions = [
+  { name: '白色', value: '#ffffff' },
+  { name: '蓝色', value: '#5aa8ff' },
+  { name: '粉色', value: '#ff8fb3' },
+  { name: '绿色', value: '#5dd87a' },
+  { name: '金色', value: '#f7c948' },
+  { name: '紫色', value: '#c29bff' },
+  { name: '青色', value: '#4fd8d8' },
+  { name: '红色', value: '#ff7a7a' }
+]
+const lyricColor = ref(localStorage.getItem('soundflow_lyric_color') || '#ffffff')
+function setLyricColor(v) {
+  lyricColor.value = v
+  localStorage.setItem('soundflow_lyric_color', v)
+}
+const showBgPanel = ref(false)
+const showColorPanel = ref(false)
+
 function switchLyricSource(v) {
   if (lyricSource.value === v) return
   lyricSource.value = v
@@ -354,6 +443,7 @@ async function searchLyric() {
 
 /* 顶部栏 */
 .player-topbar {
+  position: relative;
   display: flex; align-items: center; justify-content: space-between;
   padding: 16px 24px; flex-shrink: 0;
 }
@@ -446,6 +536,7 @@ async function searchLyric() {
 }
 
 .lyrics-scroll {
+  position: relative;
   width: 100%; height: 100%;
   overflow-y: auto; padding: 0 40px;
   scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
@@ -514,6 +605,57 @@ async function searchLyric() {
 }
 .ls-btn:hover { color: #fff; }
 .ls-btn.active { background: var(--color-primary); color: #fff; }
+
+/* 背景设置面板 */
+.bg-panel {
+  position: absolute;
+  top: 48px;
+  right: 12px;
+  z-index: 40;
+  width: 240px;
+  padding: 14px;
+  background: rgba(16, 18, 26, 0.95);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+}
+.panel-title { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.9); margin-bottom: 10px; }
+.bg-mode-btns { display: flex; gap: 6px; margin-bottom: 10px; }
+.bg-mode-btns button {
+  flex: 1; padding: 5px 0; font-size: 12px; color: rgba(255,255,255,0.55);
+  background: rgba(255,255,255,0.07); border-radius: 6px; transition: all 0.15s;
+}
+.bg-mode-btns button:hover { color: #fff; }
+.bg-mode-btns button.active { background: var(--color-primary); color: #fff; }
+.color-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
+.gradient-list { display: flex; flex-direction: column; gap: 6px; }
+.gradient-item {
+  padding: 10px 12px; border-radius: 8px; font-size: 12px; color: #fff;
+  text-align: left; border: 2px solid transparent; transition: all 0.15s;
+}
+.gradient-item.active { border-color: #fff; }
+
+/* 歌词颜色面板 */
+.color-panel {
+  position: absolute;
+  top: 50%;
+  right: 58px;
+  transform: translateY(-50%);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 8px;
+  background: rgba(16, 18, 26, 0.95);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+}
+.color-dot {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid transparent; transition: all 0.15s; flex-shrink: 0;
+}
+.color-dot.active { border-color: #fff; transform: scale(1.15); }
 .lyric-line.active {
   color: white; font-size: 22px; font-weight: 600;
   text-shadow: 0 0 20px rgba(22,119,230,0.5);
