@@ -1225,6 +1225,9 @@ try { app.setAppUserModelId('com.soundflow.music') } catch (_) {}
 function setupAutoUpdater() {
   if (!autoUpdater || !app.isPackaged) return
   try {
+    // 未配置发布源(无 app-update.yml)时直接跳过,避免启动时控制台报错
+    const updateYml = path.join(process.resourcesPath, 'app-update.yml')
+    if (!fs.existsSync(updateYml)) return
     autoUpdater.autoDownload = false
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.on('update-available', () => {
