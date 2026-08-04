@@ -212,13 +212,7 @@
         </transition>
         <div class="progress-row">
           <span class="time">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
-          <!-- 波形进度条(ffmpeg 生成;失败自动回退普通进度条) -->
-          <div v-if="waveReady" class="waveform-bar" :class="{ loading: waveLoading }" @mousedown="onWaveMouseDown">
-            <img v-if="waveUrl" :src="waveUrl" class="wave-img" draggable="false" alt="" />
-            <div v-else class="wave-placeholder"></div>
-            <div class="wave-progress" :style="{ width: progressPercent + '%' }"></div>
-          </div>
-          <div v-else class="progress-bar" @mousedown="onProgressMouseDown" @click="onProgressClick" ref="progressBar">
+          <div class="progress-bar" @mousedown="onProgressMouseDown" @click="onProgressClick" ref="progressBar">
             <div class="progress-track">
               <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
               <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
@@ -327,42 +321,6 @@ function onCoverError() {
     .catch(() => {})
 }
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
-
-// ===== 波形进度条(主进程 ffmpeg 生成峰值 PNG,渲染层显示 + 进度覆盖) =====
-const waveUrl = ref(null)
-const waveReady = ref(false)
-const waveLoading = ref(false)
-let waveReqToken = 0
-
-async function loadWaveform() {
-  const song = playerStore.currentSong
-  if (!song || !window.electronAPI) return
-  const token = ++waveReqToken
-  waveReady.value = true
-  waveLoading.value = true
-  waveUrl.value = null
-  try {
-    const url = await window.electronAPI.getWaveform(song.path)
-    if (token !== waveReqToken) return // 已切歌,丢弃过期结果
-    if (url) { waveUrl.value = url; waveLoading.value = false }
-    else { waveReady.value = false; waveLoading.value = false } // 生成失败 → 回退普通进度条
-  } catch (e) {
-    if (token === waveReqToken) { waveReady.value = false; waveLoading.value = false }
-  }
-}
-// 点击/拖动波形跳转进度
-function onWaveMouseDown(e) {
-  const el = e.currentTarget
-  const rect = el.getBoundingClientRect()
-  const ratio = (e.clientX - rect.left) / rect.width
-  if (playerStore.duration) playerStore.seek(ratio * playerStore.duration)
-}
-watch(() => playerStore.currentSong?.path, () => {
-  if (playerStore.currentSong) loadWaveform()
-})
-onMounted(() => {
-  if (playerStore.currentSong) loadWaveform()
-})
 
 // ===== 播放页背景设置(封面 / 纯色 / 渐变,持久化) =====
 const bgPresets = {
@@ -1055,23 +1013,6 @@ async function searchLyric() {
 .ctrl-btn--play svg { width: 28px; height: 28px; }
 
 .progress-row { display: flex; align-items: center; gap: 12px; padding: 0 32px; }
-.waveform-bar {
-  flex: 1; height: 44px; min-width: 0; position: relative;
-  cursor: pointer; overflow: hidden; border-radius: 6px;
-  background: rgba(120,120,140,0.08);
-  opacity: 1; transition: opacity 0.3s;
-}
-.waveform-bar.loading { opacity: 0.45; }
-.wave-img { width: 100%; height: 100%; object-fit: fill; display: block; }
-.wave-placeholder {
-  width: 100%; height: 100%;
-  background: linear-gradient(90deg, rgba(120,120,140,0.25), rgba(120,120,140,0.1));
-}
-.wave-progress {
-  position: absolute; left: 0; top: 0; bottom: 0;
-  background: linear-gradient(90deg, var(--color-primary), var(--color-primary-light));
-  opacity: 0.28; pointer-events: none;
-}
 .time {
   font-size: var(--font-size-xs); color: rgba(255,255,255,0.45);
   min-width: 42px; text-align: center; font-variant-numeric: tabular-nums;

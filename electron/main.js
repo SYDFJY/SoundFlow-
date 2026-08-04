@@ -116,54 +116,6 @@ function detectFFprobe() {
   } catch (_) {}
 }
 
-// ffmpeg 探测(与 ffprobe 同目录,用于波形生成)
-let ffmpegPath = null
-function detectFFmpeg() {
-  try {
-    const dirs = [
-      path.dirname(process.execPath),
-      path.join(__dirname, '..'),
-      'C:\\ffmpeg\\bin',
-      'C:\\Program Files\\ffmpeg\\bin',
-      'C:\\Program Files (x86)\\ffmpeg\\bin',
-      path.join(os.homedir(), 'ffmpeg', 'bin'),
-      path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin')
-    ]
-    for (const dir of dirs) {
-      const p = path.join(dir, 'ffmpeg.exe')
-      if (fs.existsSync(p)) { ffmpegPath = p; return }
-    }
-    ffmpegPath = 'ffmpeg'
-  } catch (_) {}
-}
-
-// 波形图缓存目录
-const waveCacheDir = () => path.join(app.getPath('userData'), 'waves')
-
-// 生成/获取歌曲波形 PNG(ffmpeg showwaves → 1000×64 峰值图,缓存)
-function getWaveformFile(songPath) {
-  return new Promise(async (resolve) => {
-    try {
-      if (!ffmpegPath) detectFFmpeg()
-      const cacheDir = waveCacheDir()
-      await mkdir(cacheDir, { recursive: true })
-      const hash = crypto.createHash('md5').update(songPath).digest('hex')
-      const cacheFile = path.join(cacheDir, hash + '.png')
-      if (fs.existsSync(cacheFile)) { resolve('file:///' + cacheFile.replace(/\\/g, '/')); return }
-      execFile(ffmpegPath, [
-        '-hide_banner', '-loglevel', 'error',
-        '-i', songPath,
-        '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=1000x64',
-        '-frames:v', '1',
-        '-y', cacheFile
-      ], { timeout: 30000 }, (err) => {
-        if (err || !fs.existsSync(cacheFile)) { resolve(null); return }
-        resolve('file:///' + cacheFile.replace(/\\/g, '/'))
-      })
-    } catch (_) { resolve(null) }
-  })
-}
-
 function getFFprobeDuration(filePath) {
   return new Promise((resolve) => {
     if (!ffprobePath) return resolve(0)
@@ -1072,12 +1024,6 @@ function setupIPC() {
     return filePaths.filter(p => {
       try { return !fs.existsSync(p) } catch { return true }
     })
-  })
-
-  // 波形图:ffmpeg 生成峰值 PNG(缓存),失败返回 null
-  ipcMain.handle('get-waveform', (event, songPath) => {
-    if (typeof songPath !== 'string' || !songPath) return null
-    return getWaveformFile(songPath)
   })
 
   // 准备可播放的音频源:原生支持直接返回原路径,不支持的格式转码为 FLAC 临时文件

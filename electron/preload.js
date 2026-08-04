@@ -56,7 +56,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
-  getWaveform: (songPath) => ipcRenderer.invoke('get-waveform', songPath),
 
   // 窗口控制
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
