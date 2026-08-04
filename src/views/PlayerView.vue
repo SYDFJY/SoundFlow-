@@ -55,6 +55,7 @@
               <button class="search-lyric-btn" :disabled="searchingLyric" @click="searchLyric">
                 {{ searchingLyric ? '正在搜索…' : '🔍 在线搜索歌词并下载' }}
               </button>
+              <button class="search-lyric-btn local" @click="importLocalLyric">📄 导入本地歌词文件</button>
               <div v-if="searchLyricMsg" class="search-lyric-msg">{{ searchLyricMsg }}</div>
             </div>
             <div v-else class="lyrics-content">
@@ -178,6 +179,26 @@ function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
 function seekToLine(line) {
   if (line && Number.isFinite(line.time)) {
     playerStore.seek(line.time)
+  }
+}
+
+// 导入本地歌词文件(复制 .lrc 到歌曲同目录)
+async function importLocalLyric() {
+  const song = playerStore.currentSong
+  if (!song || !window.electronAPI) return
+  searchLyricMsg.value = ''
+  try {
+    const lrcPath = await window.electronAPI.selectLyricFile()
+    if (!lrcPath) return
+    const ok = await window.electronAPI.bindLyricFile(song.path, lrcPath)
+    if (ok) {
+      searchLyricMsg.value = '✅ 已导入本地歌词'
+      await playerStore.loadLyrics(song)
+    } else {
+      searchLyricMsg.value = '⚠️ 歌词导入失败'
+    }
+  } catch (e) {
+    searchLyricMsg.value = '导入出错'
   }
 }
 
@@ -337,15 +358,9 @@ async function searchLyric() {
 }
 .empty-icon { font-size: 48px; }
 .empty-hint { font-size: 13px; color: rgba(255,255,255,0.25); line-height: 1.6; }
-.search-lyric-btn {
-  margin-top: 4px;
-  padding: 8px 18px;
-  background: var(--color-primary);
-  color: #fff;
-  border-radius: 20px;
-  font-size: 13px;
-  transition: all 0.2s;
-}
+.search-lyric-btn { margin-top: 4px; padding: 8px 18px; background: var(--color-primary); color: #fff; border-radius: 20px; font-size: 13px; transition: all 0.2s; }
+.search-lyric-btn.local { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); }
+.search-lyric-btn.local:hover { background: rgba(255,255,255,0.2); }
 .search-lyric-btn:hover { background: var(--color-primary-light); transform: scale(1.03); }
 .search-lyric-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
 .search-lyric-msg { font-size: 12px; color: rgba(255,255,255,0.5); }

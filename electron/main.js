@@ -755,9 +755,12 @@ function setupIPC() {
     }
   }
 
-  // 自动获取(播放时):LRCLIB → 网易云
+  // 自动获取(播放时):按用户选择的来源
   ipcMain.handle('fetch-online-lyric', async (event, info) => {
-    return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
+    const src = info?.source || 'lrclib' // 默认 LRCLIB
+    if (src === 'netease') return await fetchNetEaseLyric(info)
+    if (src === 'auto') return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
+    return await fetchLRCLIB(info)
   })
 
   // 手动搜索下载(用户点击):同样 LRCLIB → 网易云

@@ -86,9 +86,18 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">在线歌词</span>
-            <span class="label-desc">本地无 .lrc 时自动从 LRCLIB 获取同步歌词（需联网）</span>
+            <span class="label-desc">本地无 .lrc 时自动从所选来源获取同步歌词（需联网）</span>
           </div>
           <button class="setting-btn" @click="toggleOnlineLyric">{{ onlineLyric ? '已开启' : '已关闭' }}</button>
+        </div>
+        <div class="setting-item" v-if="onlineLyric">
+          <div class="setting-label">
+            <span class="label-text">歌词来源</span>
+            <span class="label-desc">LRCLIB 免费开放；网易云中文歌词较全；自动 = LRCLIB 优先，失败再网易云</span>
+          </div>
+          <div class="lyric-source-group">
+            <button v-for="opt in lyricSources" :key="opt.value" class="source-btn" :class="{ active: lyricSource === opt.value }" @click="setLyricSource(opt.value)">{{ opt.label }}</button>
+          </div>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -189,6 +198,19 @@ function toggleOnlineLyric() {
   onlineLyric.value = !onlineLyric.value
   localStorage.setItem('soundflow_online_lyric', onlineLyric.value ? '1' : '0')
 }
+
+// 歌词来源:lrclib(默认)/ netease / auto
+const lyricSources = [
+  { value: 'lrclib', label: 'LRCLIB' },
+  { value: 'netease', label: '网易云' },
+  { value: 'auto', label: '自动' }
+]
+const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrclib')
+
+function setLyricSource(v) {
+  lyricSource.value = v
+  localStorage.setItem('soundflow_lyric_source', v)
+}
 </script>
 
 <style scoped>
@@ -262,6 +284,18 @@ select {
   border-radius: var(--radius-md);
   font-size: 13px;
 }
+.lyric-source-group { display: flex; gap: 6px; }
+.source-btn {
+  padding: 6px 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+.source-btn:hover { color: var(--text-primary); }
+.source-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
 
 .folder-item {
   display: flex; align-items: center; gap: 12px;
