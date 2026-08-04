@@ -103,19 +103,33 @@ export const usePlayerStore = defineStore('player', () => {
 
   // ===== 调音 / 音效(Web Audio:EQ + 预设 + 重低音 + 声场) =====
   const EQ_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+  // 音效库:eq 10 段 + bass(重低音)/treble(高音)/mid(中音)/width(立体声展宽)/reverb(混响)/comp(压缩)
+  // 说明:DTS/大模型类为授权付费音效,这里用 Web Audio 技术近似还原同款听感
   const EQ_PRESETS = {
-    flat: { name: '自定义', gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
-    pop: { name: '流行', gains: [3, 3, 1, 0, -1, 1, 2, 2, 1, 0] },
-    rock: { name: '摇滚', gains: [5, 4, 2, -1, -2, 0, 2, 3, 4, 4] },
-    jazz: { name: '爵士', gains: [3, 2, 1, 1, 0, 1, 2, 1, 0, -1] },
-    classical: { name: '古典', gains: [3, 2, 1, 0, 0, 0, 0, -1, -2, -3] },
-    vocal: { name: '人声', gains: [-2, -1, 0, 2, 4, 4, 2, 1, 0, -1] },
-    bass: { name: '低音增强', gains: [6, 5, 4, 2, 0, -1, -2, -2, -1, 0] }
+    flat: { name: '自定义', gains: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], bass: 0, treble: 0, mid: 0, width: 1, reverb: 0, comp: 0 },
+    pop: { name: '流行', gains: [3, 3, 1, 0, -1, 1, 2, 2, 1, 0], bass: 0, treble: 1, mid: 0, width: 1, reverb: 0.1, comp: 0.1 },
+    rock: { name: '摇滚', gains: [5, 4, 2, -1, -2, 0, 2, 3, 4, 4], bass: 2, treble: 2, mid: 0, width: 1.1, reverb: 0.12, comp: 0.2 },
+    jazz: { name: '爵士', gains: [3, 2, 1, 1, 0, 1, 2, 1, 0, -1], bass: 1, treble: 0, mid: 0, width: 1.1, reverb: 0.15, comp: 0 },
+    classical: { name: '古典', gains: [3, 2, 1, 0, 0, 0, 0, -1, -2, -3], bass: 1, treble: 0, mid: 0, width: 1.05, reverb: 0.2, comp: 0 },
+    vocal: { name: '清澈人声', gains: [-3, -2, -1, 2, 4, 5, 3, 1, 0, -1], bass: -2, treble: 1, mid: 3, width: 1, reverb: 0.08, comp: 0.1 },
+    bass: { name: '超重低音', gains: [6, 6, 5, 3, 1, 0, -1, -1, 0, 0], bass: 9, treble: 0, mid: -1, width: 1, reverb: 0, comp: 0.15 },
+    dj: { name: '超嗨 DJ', gains: [4, 3, 2, 0, 0, 1, 2, 4, 5, 6], bass: 4, treble: 4, mid: 0, width: 1.2, reverb: 0.15, comp: 0.35 },
+    live: { name: '现场律动', gains: [3, 3, 2, 0, -1, 0, 1, 2, 3, 3], bass: 3, treble: 1, mid: 0, width: 1.15, reverb: 0.3, comp: 0.2 },
+    surround: { name: '全景环绕', gains: [2, 1, 0, -1, -1, 0, 1, 2, 3, 3], bass: 1, treble: 1, mid: 0, width: 1.6, reverb: 0.42, comp: 0 },
+    '5.1': { name: '5.1 立体环绕声', gains: [3, 2, 1, 0, 0, 0, 1, 2, 3, 3], bass: 2, treble: 1, mid: 0, width: 1.8, reverb: 0.5, comp: 0 },
+    open: { name: '外放环绕', gains: [2, 1, 0, 0, 0, 0, 1, 2, 3, 4], bass: 0, treble: 2, mid: 0, width: 1.3, reverb: 0.35, comp: 0.1 },
+    chinese: { name: '中国风', gains: [1, 1, 0, 0, 1, 2, 2, 1, 0, -1], bass: 1, treble: 0, mid: 1, width: 1.1, reverb: 0.2, comp: 0 },
+    auto: { name: '智能音效', gains: [2, 2, 1, 0, 0, 1, 1, 2, 2, 2], bass: 2, treble: 1, mid: 0, width: 1.1, reverb: 0.1, comp: 0.3 },
+    power: { name: '澎湃外放', gains: [3, 3, 2, 0, 0, 1, 2, 3, 4, 4], bass: 3, treble: 2, mid: 0, width: 1.25, reverb: 0.3, comp: 0.2 },
+    surroundHQ: { name: '臻享环绕', gains: [2, 1, 0, -1, -1, 0, 1, 2, 3, 4], bass: 1, treble: 1, mid: 0, width: 1.7, reverb: 0.5, comp: 0 },
+    stage: { name: '臻境声场', gains: [1, 0, 0, 0, 0, 0, 1, 2, 3, 3], bass: 0, treble: 1, mid: 0, width: 1.5, reverb: 0.6, comp: 0 },
+    aiVocal: { name: '大模型临境人声', gains: [-2, -1, 0, 2, 4, 5, 4, 2, 1, 0], bass: -1, treble: 1, mid: 3, width: 1.05, reverb: 0.12, comp: 0.15 }
   }
   const eqSettings = ref(loadEqSettings())
 
+
   function loadEqSettings() {
-    const def = { enabled: false, preset: 'flat', gains: [...EQ_PRESETS.flat.gains], bass: 0, reverb: 0 }
+    const def = { enabled: false, preset: 'flat', gains: [...EQ_PRESETS.flat.gains], bass: 0, treble: 0, mid: 0, width: 1, reverb: 0, comp: 0 }
     try {
       const s = JSON.parse(localStorage.getItem('soundflow_eq') || 'null')
       if (s) return { ...def, ...s, gains: s.gains || [...def.gains] }
@@ -131,8 +145,12 @@ export const usePlayerStore = defineStore('player', () => {
   let _mediaSourceNode = null
   let _eqFilters = []
   let _bassFilter = null
+  let _trebleFilter = null
+  let _midFilter = null
+  let _widthMerger = null
   let _reverbConvolver = null
   let _reverbGain = null
+  let _compressor = null
 
   // 确保音频图存在(音效开启时创建 AudioContext 处理链)
   function ensureAudioGraph() {
@@ -160,8 +178,12 @@ export const usePlayerStore = defineStore('player', () => {
       _eqFilters.forEach(f => { try { f.disconnect() } catch {} })
       _eqFilters = []
       if (_bassFilter) { try { _bassFilter.disconnect() } catch {}; _bassFilter = null }
+      if (_trebleFilter) { try { _trebleFilter.disconnect() } catch {}; _trebleFilter = null }
+      if (_midFilter) { try { _midFilter.disconnect() } catch {}; _midFilter = null }
+      if (_widthMerger) { try { _widthMerger.disconnect() } catch {}; _widthMerger = null }
       if (_reverbConvolver) { try { _reverbConvolver.disconnect() } catch {}; _reverbConvolver = null }
       if (_reverbGain) { try { _reverbGain.disconnect() } catch {}; _reverbGain = null }
+      if (_compressor) { try { _compressor.disconnect() } catch {}; _compressor = null }
 
       const s = eqSettings.value
       let prev = _mediaSourceNode
@@ -184,12 +206,45 @@ export const usePlayerStore = defineStore('player', () => {
         _bassFilter.gain.value = s.bass
         prev.connect(_bassFilter)
         prev = _bassFilter
-        // 声场(轻量混响,强度 0-1)
+        // 高音
+        _trebleFilter = _audioCtx.createBiquadFilter()
+        _trebleFilter.type = 'highshelf'
+        _trebleFilter.frequency.value = 8000
+        _trebleFilter.gain.value = s.treble
+        prev.connect(_trebleFilter)
+        prev = _trebleFilter
+        // 中音(人声)
+        _midFilter = _audioCtx.createBiquadFilter()
+        _midFilter.type = 'peaking'
+        _midFilter.frequency.value = 1200
+        _midFilter.Q.value = 0.8
+        _midFilter.gain.value = s.mid
+        prev.connect(_midFilter)
+        prev = _midFilter
+        // 立体声展宽(中-侧处理)
+        if (s.width !== 1) {
+          const splitter = _audioCtx.createChannelSplitter(2)
+          const merger = _audioCtx.createChannelMerger(2)
+          const midG = _audioCtx.createGain(); midG.gain.value = 0.5
+          const sideG = _audioCtx.createGain(); sideG.gain.value = 0.5
+          const sideNegG = _audioCtx.createGain(); sideNegG.gain.value = -0.5
+          const sideMix = _audioCtx.createGain(); sideMix.gain.value = 1
+          const widthG = _audioCtx.createGain(); widthG.gain.value = Math.max(0, s.width)
+          const widthInvG = _audioCtx.createGain(); widthInvG.gain.value = -Math.max(0, s.width)
+          prev.connect(splitter)
+          splitter.connect(midG, 0); splitter.connect(midG, 1)          // M = 0.5(L+R)
+          splitter.connect(sideG, 0); splitter.connect(sideNegG, 1)    // S = 0.5L - 0.5R
+          sideG.connect(sideMix); sideNegG.connect(sideMix)
+          sideMix.connect(widthG); sideMix.connect(widthInvG)
+          midG.connect(merger, 0, 0); widthG.connect(merger, 0, 0)     // L = M + S*w
+          midG.connect(merger, 0, 1); widthInvG.connect(merger, 0, 1)  // R = M - S*w
+          _widthMerger = merger
+          prev = merger
+        }
+        // 空间声场(轻量混响)
         if (s.reverb > 0) {
-          const dryGain = _audioCtx.createGain()
-          dryGain.gain.value = 1
-          const wetGain = _audioCtx.createGain()
-          wetGain.gain.value = s.reverb * 0.5
+          const dryGain = _audioCtx.createGain(); dryGain.gain.value = 1
+          const wetGain = _audioCtx.createGain(); wetGain.gain.value = s.reverb * 0.5
           _reverbConvolver = _audioCtx.createConvolver()
           _reverbConvolver.buffer = createImpulseResponse(_audioCtx, 0.5, 2)
           prev.connect(dryGain)
@@ -197,9 +252,21 @@ export const usePlayerStore = defineStore('player', () => {
           _reverbConvolver.connect(wetGain)
           dryGain.connect(_audioCtx.destination)
           wetGain.connect(_audioCtx.destination)
-        } else {
-          prev.connect(_audioCtx.destination)
+          _reverbGain = wetGain
+          prev = dryGain
         }
+        // 动态压缩(增强响度)
+        if (s.comp > 0) {
+          _compressor = _audioCtx.createDynamicsCompressor()
+          _compressor.threshold.value = -30
+          _compressor.knee.value = 20
+          _compressor.ratio.value = 1 + s.comp * 8
+          _compressor.attack.value = 0.003
+          _compressor.release.value = 0.25
+          prev.connect(_compressor)
+          prev = _compressor
+        }
+        prev.connect(_audioCtx.destination)
       } else {
         // 未开启:直通(仍走 AudioContext,保持路由一致)
         _mediaSourceNode.connect(_audioCtx.destination)
@@ -235,6 +302,12 @@ export const usePlayerStore = defineStore('player', () => {
     if (p) {
       eqSettings.value.preset = key
       eqSettings.value.gains = [...p.gains]
+      eqSettings.value.bass = p.bass
+      eqSettings.value.treble = p.treble
+      eqSettings.value.mid = p.mid
+      eqSettings.value.width = p.width
+      eqSettings.value.reverb = p.reverb
+      eqSettings.value.comp = p.comp
       saveEqSettings()
       rebuildAudioChain()
     }

@@ -111,8 +111,11 @@
           <button class="queue-close" @click="showEqPanel = false">✕</button>
         </div>
         <div v-if="playerStore.eqSettings.enabled" class="eq-body">
-          <div class="eq-presets">
-            <button v-for="(p, key) in playerStore.EQ_PRESETS" :key="key" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ p.name }}</button>
+          <div v-for="g in eqGroups" :key="g.name" class="eq-group">
+            <div class="eq-group-name">{{ g.name }}</div>
+            <div class="eq-presets">
+              <button v-for="key in g.keys" :key="key" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ playerStore.EQ_PRESETS[key].name }}</button>
+            </div>
           </div>
           <div class="eq-sliders">
             <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
@@ -174,6 +177,16 @@ const progressBar = ref(null)
 const showTimer = ref(false)
 const customMinutes = ref(30)
 const showEqPanel = ref(false)
+
+// 音效分组(参考主流音乐播放器)
+const eqGroups = [
+  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical'] },
+  { name: '低频', keys: ['bass'] },
+  { name: '人声', keys: ['vocal', 'aiVocal'] },
+  { name: '环绕', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
+  { name: '律动', keys: ['dj', 'live'] },
+  { name: '更多', keys: ['auto', 'chinese'] }
+]
 
 // 播放队列面板:打开/切歌时自动定位当前歌曲
 const queueListEl = ref(null)
@@ -352,6 +365,8 @@ function setCustomTimer() {
 .eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
 .eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: var(--text-tertiary); }
 .eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.eq-group { display: flex; flex-direction: column; gap: 5px; }
+.eq-group-name { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; border-radius: var(--radius-md); background: var(--bg-hover); color: var(--text-secondary); transition: all var(--transition-fast); }
 .eq-preset-btn.active { background: var(--color-primary); color: #fff; }
 .eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
