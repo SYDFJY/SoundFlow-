@@ -272,12 +272,17 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
     const texts = lyrics.value.map(l => l.text)
-    const hasChinese = texts.some(t => /[\u4e00-\u9fff]/.test(t))
+    // 翻译服务:deepseek(需 key)或 mymemory(免费);配置存 localStorage
+    let service = 'mymemory'
+    let deepseekKey = ''
+    try { service = localStorage.getItem('soundflow_translate_service') || 'mymemory' } catch {}
+    try { deepseekKey = localStorage.getItem('soundflow_deepseek_key') || '' } catch {}
     translating.value = true
     try {
       const result = await window.electronAPI.translateLyrics({
         lines: texts,
-        targetLang: hasChinese ? 'en' : 'zh'
+        service,
+        deepseekKey
       })
       translations.value = Array.isArray(result) ? result : []
       _translationCache.set(song.path, translations.value)

@@ -774,9 +774,45 @@ function setupIPC() {
     return await fetchLRCLIB(info)
   })
 
-  // 歌词翻译(MyMemory 免费接口,无需 key):自动检测源语言(中/日/韩/英),逐行翻译
-  ipcMain.handle('translate-lyrics', async (event, { lines, targetLang }) => {
+  // DeepSeek 翻译:一次请求翻译整首歌词,返回与输入等长的译文数组
+  async function translateWithDeepSeek(lines, apiKey) {
+    if (!apiKey) return null
+    // 源语言检测:中文→译英,否则→译中
+    const text = lines.join('\n')
+    const target = /[\u4e00-\u9fff]/.test(text) ? 'English' : 'Simplified Chinese'
+    try {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          messages: [
+            { role: 'system', content: `你是歌词翻译助手。请把用户提供的歌词逐行翻译成${target}。严格保持行数与原文一致,每行输出一条译文,只输出译文,不要序号、不要解释、不要空行。` },
+            { role: 'user', content: text }
+          ],
+          temperature: 0.3
+        }),
+        signal: AbortSignal.timeout(60000)
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      const content = data?.choices?.[0]?.message?.content || ''
+      const out = content.split('\n').map(s => s.trim())
+      return lines.map((_, i) => out[i] || '')
+    } catch (e) {
+      console.error('[翻译] DeepSeek 失败:', e.message)
+      return null
+    }
+  }
+
+  // 歌词翻译:MyMemory(免费,并发)或 DeepSeek(需 key,整首一次)
+  ipcMain.handle('translate-lyrics', async (event, { lines, targetLang, service, deepseekKey }) => {
     if (!Array.isArray(lines) || !lines.length) return []
+    if (service === 'deepseek' && deepseekKey) {
+      const r = await translateWithDeepSeek(lines, deepseekKey)
+      if (r) return r
+      // DeepSeek 失败回退 MyMemory
+    }
     const text = lines.join('\n')
     // 源语言检测:中文 / 日文 / 韩文 / 其他(英文)
     let src = 'en'

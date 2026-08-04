@@ -101,6 +101,17 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">歌词翻译服务</span>
+            <span class="label-desc">MyMemory 免费（并发，稍慢）；DeepSeek 整首一次翻译（快、质量好，需 API Key）</span>
+          </div>
+          <div class="lyric-source-group">
+            <button class="source-btn" :class="{ active: translateService === 'mymemory' }" @click="setTranslateService('mymemory')">MyMemory</button>
+            <button class="source-btn" :class="{ active: translateService === 'deepseek' }" @click="setTranslateService('deepseek')">DeepSeek</button>
+          </div>
+          <input v-if="translateService === 'deepseek'" v-model="deepseekKey" type="password" class="deepseek-key-input" placeholder="输入 DeepSeek API Key（仅保存在本地）" @blur="saveDeepseekKey" />
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">歌词文件夹</span>
             <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲</span>
           </div>
@@ -255,6 +266,18 @@ function setLyricSource(v) {
   // 切换来源后立即重新获取当前歌曲歌词(缓存按来源隔离,会走新来源)
   const cur = playerStore.currentSong
   if (cur) playerStore.loadLyrics(cur)
+}
+
+// 歌词翻译服务(MyMemory 免费 / DeepSeek 需 key)
+const translateService = ref(localStorage.getItem('soundflow_translate_service') || 'mymemory')
+const deepseekKey = ref(localStorage.getItem('soundflow_deepseek_key') || '')
+
+function setTranslateService(v) {
+  translateService.value = v
+  localStorage.setItem('soundflow_translate_service', v)
+}
+function saveDeepseekKey() {
+  localStorage.setItem('soundflow_deepseek_key', deepseekKey.value.trim())
 }
 
 // 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)
@@ -427,6 +450,7 @@ select {
 }
 .source-btn:hover { color: var(--text-primary); }
 .source-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
+.deepseek-key-input { width: 100%; margin-top: 8px; }
 
 .batch-progress-track { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
 .batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }
