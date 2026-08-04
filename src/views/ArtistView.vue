@@ -116,5 +116,5 @@ function playArtist() {
 .play-all-btn svg { width: 14px; height: 14px; }
 .close-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-secondary); font-size: 16px; }
 .close-btn:hover { background: var(--bg-hover); }
-.detail-content { flex: 1; overflow: hidden; }
+.detail-content { flex: 1; min-height: 0; overflow-y: auto; }
 </style>

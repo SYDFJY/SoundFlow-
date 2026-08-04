@@ -273,14 +273,29 @@ function createMainWindow() {
   })
 }
 
+// ========== 悬浮歌词窗口 ==========
+// 通知主窗口:歌词窗打开状态与锁定状态(供 PlayerBar 三态按钮使用)
+function sendLyricState() {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyric:state', {
+        open: !!lyricWindow && !lyricWindow.isDestroyed(),
+        locked: storageData.lyricLocked === true
+      })
+    }
+  } catch (_) {}
+}
+
 function createLyricWindow() {
   if (lyricWindow) { lyricWindow.focus(); return }
 
-  lyricWindow = new BrowserWindow({
-    width: 500,
-    height: 500,
-    minWidth: 300,
-    minHeight: 120,
+  // 恢复上次保存的位置和大小(窗口大小可自定义)
+  const saved = storageData.lyricBounds
+  const winOpts = {
+    width: saved && saved.width >= 240 ? saved.width : 560,
+    height: saved && saved.height >= 80 ? saved.height : 200,
+    minWidth: 240,
+    minHeight: 80,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -292,13 +307,38 @@ function createLyricWindow() {
       nodeIntegration: false,
       contextIsolation: true
     }
-  })
+  }
+  if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) {
+    winOpts.x = saved.x
+    winOpts.y = saved.y
+  }
+  lyricWindow = new BrowserWindow(winOpts)
 
-  // 初始位置：屏幕底部居中
-  const { screen } = require('electron')
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width, height } = primaryDisplay.workAreaSize
-  lyricWindow.setPosition(Math.round((width - 500) / 2), height - 540)
+  if (!saved) {
+    // 初始位置:屏幕底部居中(横条式)
+    const { screen } = require('electron')
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width, height } = primaryDisplay.workAreaSize
+    lyricWindow.setPosition(Math.round((width - 560) / 2), height - 260)
+  }
+
+  // 记住窗口位置/大小(用户可自定义)
+  const saveLyricBounds = () => {
+    try {
+      if (lyricWindow && !lyricWindow.isDestroyed()) {
+        storageData.lyricBounds = lyricWindow.getBounds()
+        saveStorage()
+      }
+    } catch (_) {}
+  }
+  lyricWindow.on('resize', saveLyricBounds)
+  lyricWindow.on('move', saveLyricBounds)
+
+  // 恢复锁定(点击穿透)状态
+  if (storageData.lyricLocked === true) {
+    lyricWindow.setIgnoreMouseEvents(true, { forward: true })
+    lyricWindow.setMovable(false)
+  }
 
   if (isDev) {
     lyricWindow.loadURL('http://localhost:5173/#/lyric')
@@ -306,7 +346,12 @@ function createLyricWindow() {
     lyricWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: '/lyric' })
   }
 
-  lyricWindow.on('closed', () => { lyricWindow = null })
+  lyricWindow.on('closed', () => {
+    lyricWindow = null
+    sendLyricState()
+  })
+
+  lyricWindow.once('ready-to-show', () => sendLyricState())
 }
 
 function createMiniWindow() {
@@ -354,7 +399,7 @@ function createTray() {
     { label: '上一曲', click: () => { if (mainWindow) mainWindow.webContents.send('tray-command', 'prev') } },
     { label: '下一曲', click: () => { if (mainWindow) mainWindow.webContents.send('tray-command', 'next') } },
     { type: 'separator' },
-    { label: '悬浮歌词', click: () => createLyricWindow() },
+    { label: '悬浮歌词', click: () => { createLyricWindow(); sendLyricState() } },
     { type: 'separator' },
     { label: '退出', click: () => { app.isQuitting = true; app.quit() } }
   ])
@@ -601,6 +646,7 @@ function setupIPC() {
   ipcMain.on('lyric:toggle', () => {
     if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
     else createLyricWindow()
+    sendLyricState()
   })
 
   ipcMain.on('lyric:update', (event, data) => {
@@ -611,11 +657,20 @@ function setupIPC() {
     if (lyricWindow) lyricWindow.webContents.send('lyric:settings', settings)
   })
 
+  // 锁定 = 点击穿透(鼠标事件穿透到桌面,不挡操作)
   ipcMain.on('lyric:lock', (event, locked) => {
+    storageData.lyricLocked = !!locked
+    saveStorage()
     if (lyricWindow) {
-      // 锁定时窗口不可穿透，解锁时可穿透（允许拖拽）
+      lyricWindow.setIgnoreMouseEvents(!!locked, { forward: true })
       lyricWindow.setMovable(!locked)
     }
+    sendLyricState()
+  })
+
+  // 置顶开关
+  ipcMain.on('lyric:pin', (event, pinned) => {
+    if (lyricWindow) lyricWindow.setAlwaysOnTop(!!pinned)
   })
 
   ipcMain.on('lyric:move', (event, dx, dy) => {
