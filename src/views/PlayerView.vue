@@ -117,12 +117,12 @@
                 @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
               >
-                <!-- 逐字高亮模式:当前行按字渲染,实时高亮当前字(标准LRC按整行时长均分近似) -->
+                <!-- 逐字高亮模式:当前行按字/词渲染,实时高亮当前字词(强调色区分) -->
                 <template v-if="lyricMode === 'word' && idx === playerStore.currentLyricIndex">
                   <span v-for="(w, wi) in lyricWordSegments(line)" :key="wi"
                     class="lyric-word"
                     :class="{ cur: wi === currentWordIdx }"
-                    :style="wi === currentWordIdx ? { color: lyricColor, textShadow: `0 0 24px ${lyricColor}aa` } : { color: lyricColor + '77' }"
+                    :style="wi !== currentWordIdx ? { color: lyricColor + '77' } : {}"
                   >{{ w.c }}</span>
                 </template>
                 <template v-else>{{ line.text }}</template>
@@ -709,20 +709,45 @@ const currentWordIdx = computed(() => {
   }
   return idx
 })
-// 逐字渲染段:有增强时间戳直接用;无则按整行时长均分(近似逐字)
+// 文本切分为高亮段:英文按单词(带尾空格),中文按字,其他符号单字符
+function splitLyricText(text) {
+  const s = (text || '').trim()
+  const out = []
+  let i = 0
+  while (i < s.length) {
+    const ch = s[i]
+    if (/[A-Za-z0-9]/.test(ch)) {
+      // 连续英文/数字视为一个单词
+      let j = i
+      while (j < s.length && /[A-Za-z0-9'’\-]/.test(s[j])) j++
+      out.push(s.slice(i, j) + ' ')
+      i = j
+    } else if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) {
+      out.push(ch)
+      i++
+    } else if (/\s/.test(ch)) {
+      i++ // 跳过空白
+    } else {
+      out.push(ch)
+      i++
+    }
+  }
+  return out
+}
+// 逐字渲染段:有增强时间戳直接用;无则按整行时长均分(英文逐词/中文逐字)
 function lyricWordSegments(line) {
   if (!line) return []
   if (line.words && line.words.length) return line.words
-  // 近似:按字符均分当前行到下一行之间的时长
+  // 近似:按均分当前行到下一行之间的时长
   const cur = playerStore.lyrics[playerStore.currentLyricIndex]
   const next = playerStore.lyrics[playerStore.currentLyricIndex + 1]
   const start = cur ? cur.time : 0
   const end = next ? next.time : start + 4
   const dur = Math.max(0.5, end - start)
-  const chars = (line.text || '').split('')
-  if (!chars.length) return []
-  const per = dur / chars.length
-  return chars.map((c, i) => ({ t: start + i * per, c }))
+  const tokens = splitLyricText(line.text)
+  if (!tokens.length) return []
+  const per = dur / tokens.length
+  return tokens.map((c, i) => ({ t: start + i * per, c }))
 }
 
 function switchLyricSource(v) {
@@ -924,7 +949,7 @@ async function searchLyric() {
 }
 .lyric-line.left { text-align: left; }
 .lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; }
-.lyric-word.cur { font-weight: 700; }
+.lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 18px var(--color-primary); }
 .lyric-trans {
   font-size: 0.82em;
   font-weight: 400;
