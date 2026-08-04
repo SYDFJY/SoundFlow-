@@ -105,7 +105,7 @@
 
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
-import { useDraggable } from 'vue-draggable-plus'
+import Sortable from 'sortablejs'
 import { Home, Heart, History, Users, Disc3, ListMusic, FolderPlus } from '@lucide/vue'
 import { useMusicStore } from '@/stores/musicStore'
 
@@ -114,17 +114,23 @@ const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
 const modal = ref({ show: false, title: '', value: '', placeholder: '', mode: '', playlistId: null })
 const modalInput = ref(null)
 const playlistListEl = ref(null)
-// 歌单拖拽排序(按住行身拖动;拖拽结束持久化顺序)
-useDraggable(playlistListEl, musicStore.playlists, {
-  animation: 150,
-  ghostClass: 'menu-ghost',
-  handle: '.menu-item',
-  onEnd: (evt) => {
-    if (evt.oldIndex !== undefined && evt.newIndex !== undefined) {
-      musicStore.reorderPlaylists(evt.oldIndex, evt.newIndex)
+let playlistSortable = null
+// 歌单拖拽排序(Sortable 直接绑定,挂载后创建;结束回调持久化顺序)
+function setupPlaylistSortable() {
+  if (!playlistListEl.value || playlistSortable) return
+  playlistSortable = Sortable.create(playlistListEl.value, {
+    animation: 150,
+    ghostClass: 'menu-ghost',
+    handle: '.menu-item',
+    onEnd: (evt) => {
+      if (evt.oldIndex !== undefined && evt.newIndex !== undefined) {
+        musicStore.reorderPlaylists(evt.oldIndex, evt.newIndex)
+      }
     }
-  }
-})
+  })
+}
+onMounted(setupPlaylistSortable)
+onUnmounted(() => { if (playlistSortable) { try { playlistSortable.destroy() } catch (_) {} } })
 
 async function addFolder() {
   await musicStore.addFolder()

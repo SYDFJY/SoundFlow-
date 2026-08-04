@@ -36,6 +36,10 @@ let storageData = {}
 let storagePath
 let saveStorageTimer = null
 
+// 立即初始化:app.getPath('userData') 在 ready 前可用;
+// 必须提前设置,否则单实例锁触发的 will-quit → saveStorage 时 storagePath 为 undefined
+initStorage()
+
 function initStorage() {
   try {
     storagePath = path.join(app.getPath('userData'), 'soundflow-data.json')
@@ -1264,7 +1268,6 @@ function setupAutoUpdater() {
 app.whenReady().then(async () => {
   await ensureParseFile()
   detectFFprobe()
-  initStorage()
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
   createMenu()
   createMainWindow()
@@ -1287,7 +1290,7 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll() } catch (_) {}
-  try { saveStorage(true) } catch (_) {}
+  if (storagePath) { try { saveStorage(true) } catch (_) {} }
 })
 
 // 阻止多实例

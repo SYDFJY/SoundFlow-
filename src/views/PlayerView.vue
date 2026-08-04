@@ -265,7 +265,7 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { useDraggable } from 'vue-draggable-plus'
+import Sortable from 'sortablejs'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const playerStore = usePlayerStore()
@@ -276,16 +276,25 @@ const activeLyricEl = ref(null)
 // 播放列表面板
 const showQueuePanel = ref(false)
 const queueListEl = ref(null)
-// 队列拖拽排序(拖动整行,结束回调修正索引并持久化)
-useDraggable(queueListEl, playerStore.playQueue, {
-  animation: 150,
-  ghostClass: 'queue-ghost',
-  onEnd: (evt) => {
-    if (evt.oldIndex !== undefined && evt.newIndex !== undefined) {
+let queueSortable = null
+// 队列拖拽排序(Sortable 直接绑定 DOM,元素渲染时才创建;结束回调重排+修正索引)
+function setupQueueSortable() {
+  if (!queueListEl.value) return
+  if (queueSortable) { try { queueSortable.destroy() } catch (_) {} }
+  queueSortable = Sortable.create(queueListEl.value, {
+    animation: 150,
+    ghostClass: 'queue-ghost',
+    onEnd: (evt) => {
+      if (evt.oldIndex === undefined || evt.newIndex === undefined || evt.oldIndex === evt.newIndex) return
+      const q = playerStore.playQueue
+      const moved = q.splice(evt.oldIndex, 1)[0]
+      q.splice(evt.newIndex, 0, moved)
       playerStore.fixQueueIndex(evt.oldIndex, evt.newIndex)
     }
-  }
-})
+  })
+}
+watch(showQueuePanel, (v) => { if (v) nextTick(setupQueueSortable) })
+onUnmounted(() => { if (queueSortable) { try { queueSortable.destroy() } catch (_) {} } })
 const activeQueueEl = ref(null)
 
 // 音效面板
