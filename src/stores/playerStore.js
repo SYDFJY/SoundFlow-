@@ -39,6 +39,10 @@ export const usePlayerStore = defineStore('player', () => {
   let _artworkObjectUrl = null
   let _lastPosSyncTime = 0
 
+  // 歌词 IPC 节流
+  let _lastMiniIpcTime = 0
+  const MINI_IPC_INTERVAL = 500 // ms
+
   // 初始化音频
   function initAudio() {
     if (audio.value) return
@@ -47,6 +51,19 @@ export const usePlayerStore = defineStore('player', () => {
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
+      // 节流同步迷你播放器
+      const now = Date.now()
+      if (window.electronAPI && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
+        _lastMiniIpcTime = now
+        window.electronAPI.sendMiniUpdate({
+          currentTime: currentTime.value,
+          duration: duration.value,
+          title: currentSong.value?.title || '',
+          artist: currentSong.value?.artist || '',
+          coverUrl: currentSong.value?.coverUrl || null,
+          isPlaying: isPlaying.value
+        })
+      }
     })
 
     audio.value.addEventListener('loadedmetadata', () => {

@@ -14,6 +14,9 @@
           <div class="album-cover">
             <img v-if="album.cover" :src="album.cover" />
             <div v-else class="cover-placeholder">💿</div>
+            <button class="album-play" title="播放全部" @click.stop="playAlbumDirect(album)">
+              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+            </button>
           </div>
           <div class="album-name text-ellipsis">{{ album.name }}</div>
           <div class="album-artist text-ellipsis">{{ album.artist }}</div>
@@ -82,6 +85,14 @@ function selectAlbum(album) { selectedAlbum.value = album }
 function playAlbum() {
   if (selectedAlbumSongs.value.length) playerStore.setPlayQueue(selectedAlbumSongs.value.map(s => ({ ...s })), 0)
 }
+
+// 封面墙悬停直接播放该专辑全部
+function playAlbumDirect(album) {
+  const songs = musicStore.songs.filter(s =>
+    (s.album || '未知专辑') === album.name && (s.artist || '') === (album.artist || '')
+  )
+  if (songs.length) playerStore.setPlayQueue(songs.map(s => ({ ...s })), 0)
+}
 </script>
 
 <style scoped>
@@ -94,8 +105,18 @@ function playAlbum() {
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
 .album-card { cursor: pointer; transition: all var(--transition-normal); border-radius: var(--radius-lg); padding: 12px; }
 .album-card:hover { background: var(--bg-card); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.album-play {
+  position: absolute; right: 8px; bottom: 8px;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(22,119,230,0.92); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; transform: translateY(6px); transition: all 0.2s;
+}
+.album-card:hover .album-play { opacity: 1; transform: translateY(0); }
+.album-play:hover { background: var(--color-primary-light); transform: scale(1.08); }
+.album-play svg { width: 18px; height: 18px; }
 
-.album-cover { width: 100%; aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 8px; box-shadow: var(--shadow-sm); }
+.album-cover { position: relative; width: 100%; aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 8px; box-shadow: var(--shadow-sm); }
 .album-cover img { width: 100%; height: 100%; object-fit: cover; }
 .cover-placeholder { width: 100%; height: 100%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; }
 .cover-placeholder-lg { width: 100px; height: 100px; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; border-radius: var(--radius-md); }

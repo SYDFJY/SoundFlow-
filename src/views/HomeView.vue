@@ -41,7 +41,7 @@
         :songs="musicStore.filteredSongs"
         :sort-field="musicStore.sortField"
         :batch-mode="batchMode"
-        empty-text="曲库为空，点击左侧「添加文件夹」或上方「添加文件」来导入音乐"
+        :empty-text="listEmptyText"
         @play="onPlay"
         @sort="musicStore.setSortField"
         @play-all="playAll"
@@ -161,6 +161,13 @@ const playerStore = usePlayerStore()
 const isElectron = computed(() => !!window.electronAPI)
 const batchMode = ref(false)
 const selectedSongs = ref([])
+
+// 列表空状态文案:区分搜索无结果/曲库为空
+const listEmptyText = computed(() => {
+  if (musicStore.searchQuery) return `未找到与「${musicStore.searchQuery}」匹配的歌曲`
+  if (musicStore.totalCount > 0) return '当前列表为空'
+  return '曲库为空，点击左侧「添加文件夹」或上方「添加文件」来导入音乐'
+})
 
 // 查重状态
 const showDupDialog = ref(false)

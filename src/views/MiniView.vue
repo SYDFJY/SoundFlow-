@@ -1,13 +1,14 @@
 <template>
   <div class="mini-player">
     <div class="mini-left">
-      <div class="mini-cover">
-        <img v-if="coverUrl" :src="coverUrl" />
+      <div class="mini-cover" :class="{ spinning: isPlaying }">
+        <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
         <div v-else class="cover-placeholder">🎵</div>
       </div>
       <div class="mini-info">
         <div class="mini-title text-ellipsis">{{ title || 'SoundFlow' }}</div>
         <div class="mini-artist text-ellipsis">{{ artist || '声流音乐' }}</div>
+        <div class="mini-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</div>
       </div>
     </div>
     <div class="mini-right">
@@ -39,6 +40,18 @@ const currentTime = ref(0)
 const duration = ref(0)
 
 const progressPercent = computed(() => duration.value ? (currentTime.value / duration.value) * 100 : 0)
+
+function formatTime(sec) {
+  if (!sec || !isFinite(sec)) return '00:00'
+  const m = Math.floor(sec / 60)
+  const s = Math.floor(sec % 60)
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+// 封面容灾
+function onCoverError() {
+  // 迷你窗无法访问歌曲路径,忽略(由主窗口重建)
+}
 
 onMounted(() => {
   if (window.electronAPI) {
@@ -84,8 +97,11 @@ function next() {
 }
 
 .mini-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.mini-cover { width: 48px; height: 48px; border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.mini-cover { width: 48px; height: 48px; border-radius: 50%; overflow: hidden; flex-shrink: 0; background: rgba(255,255,255,0.08); }
 .mini-cover img { width: 100%; height: 100%; object-fit: cover; }
+.mini-cover.spinning img { animation: mini-spin 12s linear infinite; }
+@keyframes mini-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.mini-time { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .cover-placeholder { width: 100%; height: 100%; background: rgba(255,255,255,0.1); display: flex; align-items: center; justify-content: center; font-size: 20px; }
 
 .mini-info { flex: 1; min-width: 0; }
