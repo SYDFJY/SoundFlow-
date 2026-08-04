@@ -84,25 +84,27 @@ export const useMusicStore = defineStore('music', () => {
     await fill(() => scanFolders.value.length > 0, 'scanFolders', v => { scanFolders.value = v })
     await fill(() => lyricFolders.value.length > 0, 'lyricFolders', v => { lyricFolders.value = v })
 
-    // 3. 曲库:localStorage 为空且主进程有 → 恢复并同步回 localStorage
+    // 3. 曲库:localStorage 空且主进程有 → 恢复并同步回 localStorage
     if (songs.value.length === 0) {
       try {
         const lib = await window.electronAPI.storeGet('library')
         if (Array.isArray(lib) && lib.length > 0) {
           songs.value = lib
           saveToStorage()
-          return
         }
       } catch (e) {
         console.error('[存储] 从主进程恢复曲库失败:', e)
       }
     }
-    // 4. 曲库仍为空且配置过扫描目录 → 自动重新扫描,无需手动重新导入
-    if (songs.value.length === 0 && scanFolders.value.length > 0) {
-      console.log('[存储] 曲库为空,自动重新扫描已保存的目录:', scanFolders.value)
+    // 4. 若收藏/歌单中的路径不在曲库,增量扫描已保存的目录补齐(否则收藏/歌单显示不全)
+    const known = new Set(songs.value.map(s => s.path))
+    const wanted = [...favorites.toArray(), ...playlists.value.flatMap(p => p.songs || [])]
+    if (wanted.some(p => !known.has(p)) && scanFolders.value.length > 0) {
+      console.log('[存储] 收藏/歌单中有路径不在曲库,增量扫描已保存的目录')
       for (const folder of scanFolders.value) {
-        await scanFolder(folder)
+        await scanFolder(folder) // addSongs 自动去重
       }
+      saveToStorage()
     }
   }
 
