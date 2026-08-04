@@ -105,10 +105,11 @@
           <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
           <button class="queue-close" @click="playerStore.showQueue = false">✕</button>
         </div>
-        <div class="queue-list">
+        <div class="queue-list" ref="queueListEl">
           <div v-if="playerStore.playQueue.length === 0" class="queue-empty">队列为空</div>
           <div v-for="(song, idx) in playerStore.playQueue" :key="song.path + '-' + idx"
             class="queue-item" :class="{ active: idx === playerStore.currentIndex }"
+            :ref="el => { if (idx === playerStore.currentIndex) activeQueueEl = el }"
             @click="playerStore.playIndex(idx)">
             <span class="queue-idx">{{ idx + 1 }}</span>
             <div class="queue-info">
@@ -126,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useMusicStore } from '@/stores/musicStore'
@@ -137,6 +138,25 @@ const musicStore = useMusicStore()
 const progressBar = ref(null)
 const showTimer = ref(false)
 const customMinutes = ref(30)
+
+// 播放队列面板:打开/切歌时自动定位当前歌曲
+const queueListEl = ref(null)
+const activeQueueEl = ref(null)
+function scrollToActiveQueue() {
+  const list = queueListEl.value
+  const el = activeQueueEl.value
+  if (!list || !el) return
+  const listRect = list.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const target = elRect.top - listRect.top + list.scrollTop - list.clientHeight / 2 + elRect.height / 2
+  list.scrollTop = Math.max(0, target)
+}
+watch(() => playerStore.showQueue, (v) => {
+  if (v) nextTick(scrollToActiveQueue)
+})
+watch(() => playerStore.currentIndex, () => {
+  if (playerStore.showQueue) nextTick(scrollToActiveQueue)
+})
 
 const timerOptions = [
   { value: 15, label: '15 分钟后' },
@@ -288,7 +308,7 @@ function setCustomTimer() {
 .queue-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .queue-close { margin-left: auto; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-tertiary); font-size: var(--font-size-base); }
 .queue-close:hover { background: var(--bg-hover); color: var(--text-primary); }
-.queue-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+.queue-list { position: relative;  flex: 1; overflow-y: auto; padding: 4px 0; }
 .queue-empty { text-align: center; padding: 40px; color: var(--text-tertiary); font-size: var(--font-size-sm); }
 .queue-item { display: flex; align-items: center; gap: 10px; padding: 8px 16px; cursor: pointer; transition: background var(--transition-fast); }
 .queue-item:hover { background: var(--bg-hover); }
