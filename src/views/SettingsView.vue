@@ -169,6 +169,19 @@
         </div>
       </div>
 
+      <!-- 快捷键 -->
+      <div class="settings-section">
+        <h3 class="section-title">快捷键</h3>
+        <div class="setting-item" v-for="d in shortcutDefs" :key="d.key">
+          <div class="setting-label">
+            <span class="label-text">{{ d.label }}</span>
+          </div>
+          <button class="setting-btn" :class="{ recording: recordingKey === d.key }" @click="startRecord(d.key)" @keydown="onRecordKey">
+            {{ recordingKey === d.key ? '按新快捷键…' : (shortcuts[d.key] || '未设置') }}
+          </button>
+        </div>
+      </div>
+
       <!-- 关闭行为 -->
       <div class="settings-section">
         <h3 class="section-title">系统</h3>
@@ -278,6 +291,31 @@ function setTranslateService(v) {
 }
 function saveDeepseekKey() {
   localStorage.setItem('soundflow_deepseek_key', deepseekKey.value.trim())
+}
+
+// 快捷键自定义
+const shortcutDefs = [
+  { key: 'playPause', label: '播放 / 暂停' },
+  { key: 'next', label: '下一曲' },
+  { key: 'prev', label: '上一曲' },
+  { key: 'volUp', label: '音量 +' },
+  { key: 'volDown', label: '音量 -' }
+]
+const shortcuts = ref(JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}'))
+const recordingKey = ref('')
+
+function startRecord(k) {
+  recordingKey.value = k
+}
+function onRecordKey(e) {
+  if (!recordingKey.value) return
+  e.preventDefault()
+  e.stopPropagation()
+  if (e.code === 'Escape') { recordingKey.value = ''; return }
+  const combo = (e.ctrlKey ? 'Control+' : '') + e.code
+  shortcuts.value[recordingKey.value] = combo
+  localStorage.setItem('soundflow_shortcuts', JSON.stringify(shortcuts.value))
+  recordingKey.value = ''
 }
 
 // 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)

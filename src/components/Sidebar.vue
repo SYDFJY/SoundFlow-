@@ -43,16 +43,19 @@
         </div>
         <div v-if="musicStore.playlists.length === 0" class="menu-empty">暂无歌单</div>
         <router-link
-          v-for="pl in musicStore.playlists"
+          v-for="(pl, plIdx) in musicStore.playlists"
           :key="pl.id"
           :to="`/playlist/${pl.id}`"
           class="menu-item"
           :class="{ active: $route.path === `/playlist/${pl.id}` }"
           @contextmenu.prevent="showPlaylistMenu($event, pl)"
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <img v-if="getPlaylistCover(pl)" :src="getPlaylistCover(pl)" class="pl-cover" />
+          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           <span class="text-ellipsis">{{ pl.name }}</span>
           <span class="menu-count">{{ pl.songs.length }}</span>
+          <span class="pl-order" @click.stop.prevent="movePlaylist(plIdx, -1)" title="上移">⇧</span>
+          <span class="pl-order" @click.stop.prevent="movePlaylist(plIdx, 1)" title="下移">⇩</span>
         </router-link>
       </div>
     </div>
@@ -118,6 +121,22 @@ function showPlaylistMenu(e, pl) {
   contextMenu.value = { show: true, x: e.clientX, y: e.clientY, playlist: pl }
 }
 
+// 歌单封面:取歌单第一首歌的封面
+function getPlaylistCover(pl) {
+  const songs = musicStore.getPlaylistSongs(pl.id)
+  return songs[0]?.coverUrl || ''
+}
+
+// 歌单自定义排序(上移/下移)
+function movePlaylist(idx, dir) {
+  const list = [...musicStore.playlists]
+  const target = idx + dir
+  if (target < 0 || target >= list.length) return
+  ;[list[idx], list[target]] = [list[target], list[idx]]
+  musicStore.playlists = list
+  musicStore.saveToStorage()
+}
+
 function renamePlaylist() {
   if (!contextMenu.value.playlist) return
   const pl = contextMenu.value.playlist
@@ -168,7 +187,11 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 .menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .menu-badge { font-size: 11px; background: var(--color-primary); color: white; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
-.menu-count { font-size: 11px; color: var(--text-tertiary); }
+.menu-count { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
+.pl-cover { width: 20px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; margin-right: 2px; }
+.pl-order { display: none; font-size: 12px; color: var(--text-tertiary); padding: 0 2px; cursor: pointer; }
+.menu-item:hover .pl-order { display: inline; }
+.pl-order:hover { color: var(--color-primary); }
 .menu-empty { padding: 8px 20px; font-size: 12px; color: var(--text-tertiary); }
 .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border-color); }
 .add-folder-btn { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px; background: var(--color-primary-alpha); color: var(--color-primary); border-radius: var(--radius-md); font-size: 13px; font-weight: 500; transition: all var(--transition-fast); }

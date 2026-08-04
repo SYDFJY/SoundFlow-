@@ -81,7 +81,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }

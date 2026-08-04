@@ -49,23 +49,41 @@ const isFullscreen = computed(() => {
 
 let _autoSaveTimer = null
 
+// 全局快捷键:默认配置,可在设置页自定义(格式: 修饰键+按键 e.code,如 Space / Control+ArrowRight)
+const defaultShortcuts = {
+  playPause: 'Space',
+  next: 'Control+ArrowRight',
+  prev: 'Control+ArrowLeft',
+  volUp: 'Control+ArrowUp',
+  volDown: 'Control+ArrowDown'
+}
+const shortcuts = ref({ ...defaultShortcuts, ...safeParse(localStorage.getItem('soundflow_shortcuts')) })
+
+function safeParse(s) {
+  try { return s ? JSON.parse(s) : {} } catch { return {} }
+}
+
+function matchShortcut(e, name) {
+  return shortcuts.value[name] === ((e.ctrlKey ? 'Control+' : '') + e.code)
+}
+
 // 全局快捷键:空格=播放/暂停,Ctrl+←/→=上一曲/下一曲,Ctrl+↑/↓=音量
 function onGlobalKey(e) {
   const tag = (e.target.tagName || '').toLowerCase()
   if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return
-  if (e.code === 'Space') {
+  if (matchShortcut(e, 'playPause')) {
     e.preventDefault()
     playerStore.togglePlay()
-  } else if (e.ctrlKey && e.key === 'ArrowRight') {
+  } else if (matchShortcut(e, 'next')) {
     e.preventDefault()
     playerStore.playNext()
-  } else if (e.ctrlKey && e.key === 'ArrowLeft') {
+  } else if (matchShortcut(e, 'prev')) {
     e.preventDefault()
     playerStore.playPrev()
-  } else if (e.ctrlKey && e.key === 'ArrowUp') {
+  } else if (matchShortcut(e, 'volUp')) {
     e.preventDefault()
     playerStore.setVolume(Math.min(1, playerStore.volume + 0.05))
-  } else if (e.ctrlKey && e.key === 'ArrowDown') {
+  } else if (matchShortcut(e, 'volDown')) {
     e.preventDefault()
     playerStore.setVolume(Math.max(0, playerStore.volume - 0.05))
   }

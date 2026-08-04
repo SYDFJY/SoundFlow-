@@ -999,6 +999,15 @@ function setupIPC() {
   ipcMain.on('mini:next', () => {
     if (mainWindow) mainWindow.webContents.send('tray-command', 'next')
   })
+  // 迷你播放器双击 → 恢复主窗口并关闭迷你窗
+  ipcMain.on('mini:restore', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+    if (miniWindow) { miniWindow.close(); miniWindow = null }
+  })
 
   // SMTC 播放状态 → 更新任务栏缩略图按钮
   ipcMain.on('smtc:playback-state', (event, state) => {

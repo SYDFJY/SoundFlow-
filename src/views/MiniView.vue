@@ -1,5 +1,5 @@
 <template>
-  <div class="mini-player">
+  <div class="mini-player" @dblclick="restoreMain" title="双击恢复主窗口">
     <div class="mini-left">
       <div class="mini-cover" :class="{ spinning: isPlaying }">
         <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
@@ -77,6 +77,11 @@ function prev() {
 
 function next() {
   if (window.electronAPI) window.electronAPI.send('mini:next')
+}
+
+// 双击恢复主窗口
+function restoreMain() {
+  if (window.electronAPI) window.electronAPI.send('mini:restore')
 }
 </script>
 
