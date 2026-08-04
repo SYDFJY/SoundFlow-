@@ -51,7 +51,7 @@
             </div>
           </div>
           <!-- 音频频谱(常驻:播放跳动/暂停低矮基线) -->
-          <canvas ref="spectrumCanvas" class="spectrum-bar" width="520" height="80"></canvas>
+          <canvas ref="spectrumCanvas" class="spectrum-bar"></canvas>
         </div>
         <div class="song-meta" :key="'meta-' + (playerStore.currentSong?.path || 'none')">
           <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
@@ -117,8 +117,8 @@
                 @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
               >
-                <!-- 逐字高亮模式:当前行按字渲染,实时高亮当前字 -->
-                <template v-if="lyricMode === 'word' && idx === playerStore.currentLyricIndex && line.words">
+                <!-- 逐字高亮模式:当前行按字渲染,实时高亮当前字(标准LRC按整行时长均分近似) -->
+                <template v-if="lyricMode === 'word' && idx === playerStore.currentLyricIndex">
                   <span v-for="(w, wi) in lyricWordSegments(line)" :key="wi"
                     class="lyric-word"
                     :class="{ cur: wi === currentWordIdx }"
@@ -199,7 +199,7 @@
             </div>
             <div v-if="playerStore.eqSettings.enabled" class="eq-body">
               <!-- 频响曲线预览 -->
-              <canvas ref="eqCurveCanvas" class="eq-curve" width="360" height="130"></canvas>
+              <canvas ref="eqCurveCanvas" class="eq-curve"></canvas>
               <div v-for="g in eqGroups" :key="g.name" class="eq-group">
                 <div class="eq-group-name">{{ g.name }}</div>
                 <div class="eq-presets">
@@ -527,6 +527,15 @@ const eqCurveCanvas = ref(null)
 function drawEqCurve() {
   const canvas = eqCurveCanvas.value
   if (!canvas) return
+  // DPR 适配:按实际显示尺寸 × 像素比设置画布,避免拉伸模糊
+  const dpr = window.devicePixelRatio || 1
+  const rect = canvas.getBoundingClientRect()
+  const fitW = Math.max(1, Math.round(rect.width * dpr))
+  const fitH = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== fitW || canvas.height !== fitH) {
+    canvas.width = fitW
+    canvas.height = fitH
+  }
   const ctx = canvas.getContext('2d')
   const w = canvas.width, h = canvas.height
   ctx.clearRect(0, 0, w, h)
@@ -597,6 +606,15 @@ function hexToRgb(hex) {
 function drawSpectrum() {
   const canvas = spectrumCanvas.value
   if (!canvas) return
+  // DPR 适配:按实际显示尺寸 × 像素比设置画布,避免拉伸模糊
+  const dpr = window.devicePixelRatio || 1
+  const rect = canvas.getBoundingClientRect()
+  const fitW = Math.max(1, Math.round(rect.width * dpr))
+  const fitH = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== fitW || canvas.height !== fitH) {
+    canvas.width = fitW
+    canvas.height = fitH
+  }
   // 每次取当前 canvas 的 context(切 tab 后 canvas 是新的,不能复用旧 context)
   const ctx = canvas.getContext('2d')
   const { width, height } = canvas
@@ -676,15 +694,17 @@ function toggleLyricMode() {
   lyricMode.value = lyricMode.value === 'word' ? 'line' : 'word'
   localStorage.setItem('soundflow_lyric_mode', lyricMode.value)
 }
-// 当前逐字索引(基于 currentTime 与行内时间戳)
+// 当前逐字索引(基于 currentTime 与行内时间戳;标准LRC按均分时间近似)
 const currentWordIdx = computed(() => {
   if (!playerStore.isPlaying) return -1
   const line = playerStore.lyrics[playerStore.currentLyricIndex]
-  if (!line || !line.words || !line.words.length) return -1
+  if (!line) return -1
+  const segs = lyricWordSegments(line)
+  if (!segs.length) return -1
   const t = playerStore.currentTime
   let idx = -1
-  for (let i = 0; i < line.words.length; i++) {
-    if (line.words[i].t <= t) idx = i
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i].t <= t) idx = i
     else break
   }
   return idx
@@ -904,6 +924,7 @@ async function searchLyric() {
 }
 .lyric-line.left { text-align: left; }
 .lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; }
+.lyric-word.cur { font-weight: 700; }
 .lyric-trans {
   font-size: 0.82em;
   font-weight: 400;
@@ -1107,7 +1128,7 @@ async function searchLyric() {
 .eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
 .eq-toggle.on { background: var(--color-primary); color: #fff; }
 .eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-.eq-curve { display: block; width: 100%; margin: 2px 0 6px; background: rgba(128,128,160,0.05); border-radius: 8px; flex-shrink: 0; }
+.eq-curve { display: block; width: 100%; height: 130px; margin: 2px 0 6px; background: rgba(128,128,160,0.05); border-radius: 8px; flex-shrink: 0; }
 .eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: rgba(255,255,255,0.4); }
 .eq-group { display: flex; flex-direction: column; gap: 5px; }
 .eq-group-name { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }

@@ -217,7 +217,8 @@ const coverUrlCache = new Map()
 function coverDir() { return path.join(app.getPath('userData'), 'covers') }
 function coverPathFor(songPath) {
   const hash = crypto.createHash('md5').update(songPath).digest('hex').slice(0, 16)
-  return path.join(coverDir(), hash + '.jpg')
+  // 文件名带尺寸标记:封面从 256px 升级到 512px 后旧缓存自动失效
+  return path.join(coverDir(), hash + '-512.jpg')
 }
 
 // 把封面字节写为文件,返回 file:// URL;失败返回 null
@@ -230,8 +231,9 @@ function saveCoverFile(songPath, buffer) {
     let img = nativeImage.createFromBuffer(buffer)
     if (img.isEmpty()) return null
     const size = img.getSize()
-    if (size.width > 256) img = img.resize({ width: 256 })
-    fs.writeFileSync(fp, img.toJPEG(85))
+    // 封面 512px:播放页大圆盘与背景清晰不糊
+    if (size.width > 512) img = img.resize({ width: 512 })
+    fs.writeFileSync(fp, img.toJPEG(88))
     return `file:///${fp.replace(/\\/g, '/')}`
   } catch (e) {
     console.error('[封面] 保存封面文件失败:', e.message)
