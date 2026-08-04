@@ -162,12 +162,52 @@
               </transition>
             </div>
 
+            <!-- 音效 -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" title="音效">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
+            </button>
+
             <!-- 播放列表 -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" title="播放列表">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             </button>
           </div>
         </div>
+
+        <!-- 音效面板 -->
+        <transition name="queue-slide">
+          <div v-if="showEqPanel" class="eq-panel" @click.stop>
+            <div class="queue-header">
+              <span class="queue-title">音效</span>
+              <button class="eq-toggle" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
+                {{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}
+              </button>
+              <button class="queue-close" @click="showEqPanel = false">✕</button>
+            </div>
+            <div v-if="playerStore.eqSettings.enabled" class="eq-body">
+              <div v-for="g in eqGroups" :key="g.name" class="eq-group">
+                <div class="eq-group-name">{{ g.name }}</div>
+                <div class="eq-presets">
+                  <button v-for="key in g.keys" :key="key" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ playerStore.EQ_PRESETS[key].name }}</button>
+                </div>
+              </div>
+              <div class="eq-sliders">
+                <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
+                  <span class="eq-gain">{{ playerStore.eqSettings.gains[i] > 0 ? '+' : '' }}{{ playerStore.eqSettings.gains[i] }}</span>
+                  <input type="range" min="-12" max="12" step="1" :value="playerStore.eqSettings.gains[i]" @input="playerStore.setEqGain(i, parseInt($event.target.value))" />
+                  <span class="eq-freq">{{ f >= 1000 ? (f / 1000) + 'k' : f }}</span>
+                </div>
+              </div>
+              <div class="eq-extra">
+                <span class="label-text">重低音</span>
+                <input type="range" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
+                <span class="label-text">声场</span>
+                <input type="range" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
+              </div>
+            </div>
+            <div v-else class="eq-off">开启音效后,可调节均衡器、预设、重低音与空间声场</div>
+          </div>
+        </transition>
         <div class="progress-row">
           <span class="time">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
           <div class="progress-bar" @mousedown="onProgressMouseDown" @click="onProgressClick" ref="progressBar">
@@ -221,6 +261,17 @@ const activeLyricEl = ref(null)
 const showQueuePanel = ref(false)
 const queueListEl = ref(null)
 const activeQueueEl = ref(null)
+
+// 音效面板
+const showEqPanel = ref(false)
+const eqGroups = [
+  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical'] },
+  { name: '低频', keys: ['bass'] },
+  { name: '人声', keys: ['vocal', 'aiVocal'] },
+  { name: '环绕', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
+  { name: '律动', keys: ['dj', 'live'] },
+  { name: '更多', keys: ['auto', 'chinese'] }
+]
 
 function toggleQueuePanel() {
   showQueuePanel.value = !showQueuePanel.value
@@ -819,6 +870,33 @@ async function searchLyric() {
 .queue-remove:hover { background: rgba(255,77,79,0.2); color: #ff6b6b; }
 .queue-slide-enter-active, .queue-slide-leave-active { transition: opacity 0.22s, transform 0.22s; }
 .queue-slide-enter-from, .queue-slide-leave-to { opacity: 0; transform: translateY(12px); }
+
+/* 音效面板(播放页) */
+.eq-panel {
+  position: absolute; bottom: 76px; right: 20px;
+  width: 640px; max-height: 480px;
+  background: rgba(16, 18, 26, 0.96);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+  display: flex; flex-direction: column; z-index: 40; overflow: hidden;
+}
+.eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+.eq-toggle.on { background: var(--color-primary); color: #fff; }
+.eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: rgba(255,255,255,0.4); }
+.eq-group { display: flex; flex-direction: column; gap: 5px; }
+.eq-group-name { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
+.eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; border-radius: var(--radius-md); background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); transition: all var(--transition-fast); }
+.eq-preset-btn.active { background: var(--color-primary); color: #fff; }
+.eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
+.eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 100px; }
+.eq-gain { font-size: 10px; color: rgba(255,255,255,0.4); }
+.eq-freq { font-size: 10px; color: rgba(255,255,255,0.4); }
+.eq-extra { display: flex; align-items: center; gap: 8px; }
+.eq-extra .label-text { min-width: 48px; }
+.eq-extra input[type="range"] { width: 100px; }
 
 .ctrl-btn {
   width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
