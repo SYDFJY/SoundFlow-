@@ -35,49 +35,45 @@
       <div class="col-actions"></div>
     </div>
 
-    <!-- 列表(虚拟滚动:只渲染可视区域行,解决大量歌曲滚动卡顿) -->
-    <div class="list-body" v-if="songs.length > 0" ref="listBody" @scroll.passive="onScroll">
-      <div class="list-virtual" :style="{ height: virtualTotal + 'px' }">
-        <div class="list-virtual-inner" :style="{ transform: `translateY(${virtualOffset}px)` }">
-          <div
-            v-for="row in virtualRows"
-            :key="row.song.path"
-            class="list-row"
-            :class="{ active: isCurrentSong(row.song), selected: selectedSet.has(row.song.path) }"
-            :ref="el => { if (el) ensureCover(row.song) }"
-            @dblclick="playSong(row.idx)"
-            @contextmenu.prevent="showContextMenu($event, row.song)"
-          >
-            <div v-if="batchMode" class="col-check" @click.stop>
-              <input type="checkbox" :checked="selectedSet.has(row.song.path)" @change="toggleSelect(row.song.path)" />
-            </div>
-            <div class="col-index">
-              <span class="index-num">{{ row.idx + 1 }}</span>
-              <button class="play-icon" @click.stop="playSong(row.idx)">
-                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
-              </button>
-            </div>
-            <div class="col-title">
-              <div class="song-cover">
-                <img v-if="row.song.coverUrl && !isScrolling" :src="row.song.coverUrl" loading="lazy" decoding="async" />
-              </div>
-              <div class="song-info">
-                <span class="song-name text-ellipsis" v-html="highlight(row.song.title)"></span>
-                <span class="song-format">{{ row.song.format }}</span>
-              </div>
-            </div>
-            <div class="col-artist text-ellipsis" v-html="highlight(row.song.artist)"></div>
-            <div class="col-album text-ellipsis" v-html="highlight(row.song.album)"></div>
-            <div class="col-duration">{{ formatDuration(row.song.duration) }}</div>
-            <div class="col-actions">
-              <button class="action-btn" @click.stop="toggleFav(row.song)" :class="{ active: isFav(row.song) }" title="收藏">
-                <svg viewBox="0 0 24 24" :fill="isFav(row.song) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-              </button>
-              <button class="action-btn" @click.stop="showContextMenu($event, row.song)" title="更多">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-              </button>
-            </div>
+    <!-- 列表(全量渲染 + content-visibility 自动跳过视口外行,性能与滚动条语义兼得) -->
+    <div class="list-body" v-if="songs.length > 0" @scroll.passive="onListScroll">
+      <div
+        v-for="(song, idx) in songs"
+        :key="song.path"
+        class="list-row"
+        :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path) }"
+        :ref="el => { if (el) ensureCover(song) }"
+        @dblclick="playSong(idx)"
+        @contextmenu.prevent="showContextMenu($event, song)"
+      >
+        <div v-if="batchMode" class="col-check" @click.stop>
+          <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
+        </div>
+        <div class="col-index">
+          <span class="index-num">{{ idx + 1 }}</span>
+          <button class="play-icon" @click.stop="playSong(idx)">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          </button>
+        </div>
+        <div class="col-title">
+          <div class="song-cover">
+            <img v-if="song.coverUrl && !isScrolling" :src="song.coverUrl" loading="lazy" decoding="async" />
           </div>
+          <div class="song-info">
+            <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
+            <span class="song-format">{{ song.format }}</span>
+          </div>
+        </div>
+        <div class="col-artist text-ellipsis" v-html="highlight(song.artist)"></div>
+        <div class="col-album text-ellipsis" v-html="highlight(song.album)"></div>
+        <div class="col-duration">{{ formatDuration(song.duration) }}</div>
+        <div class="col-actions">
+          <button class="action-btn" @click.stop="toggleFav(song)" :class="{ active: isFav(song) }" title="收藏">
+            <svg viewBox="0 0 24 24" :fill="isFav(song) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+          </button>
+          <button class="action-btn" @click.stop="showContextMenu($event, song)" title="更多">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+          </button>
         </div>
       </div>
     </div>
@@ -127,45 +123,9 @@ const selectedSet = ref(new Set())
 const ctxMenu = ref({ show: false, x: 0, y: 0, song: null })
 const playlists = computed(() => musicStore.playlists)
 
-// ===== 虚拟滚动(295+ 首歌只渲染可视行,滚动流畅) =====
-const ROW_H = 56 // 必须与 .list-row 高度一致
-const listBody = ref(null)
-// scrollTopPx:实时滚动像素(只驱动 transform,不重渲染);scrollTopRow:行号(跨行才触发重渲染)
-const scrollTopPx = ref(0)
-const scrollTopRow = ref(0)
-const viewportH = ref(300)
-const isScrolling = ref(false) // 滚动中暂停封面加载,避免 base64 解码卡顿
+// 滚动中暂停封面渲染(避免滚动时反复解码图片),停止 200ms 后恢复
+const isScrolling = ref(false)
 let scrollTimer = null
-let ro = null
-
-const virtualTotal = computed(() => props.songs.length * ROW_H)
-const virtualStart = computed(() => Math.max(0, scrollTopRow.value - 5))
-const virtualEnd = computed(() => Math.min(props.songs.length, Math.ceil((scrollTopRow.value + viewportH.value / ROW_H)) + 5))
-const virtualRows = computed(() => {
-  const rows = []
-  for (let i = virtualStart.value; i < virtualEnd.value; i++) {
-    rows.push({ idx: i, song: props.songs[i] })
-  }
-  return rows
-})
-// 行位置随滚动精确平移(连续不跳动),只在跨行时重渲染行
-const virtualOffset = computed(() => scrollTopRow.value * ROW_H - scrollTopPx.value)
-
-function onScroll() {
-  const el = listBody.value
-  if (!el) return
-  scrollTopPx.value = el.scrollTop
-  const row = Math.floor(el.scrollTop / ROW_H)
-  if (row !== scrollTopRow.value) scrollTopRow.value = row
-  // 滚动中暂停封面渲染
-  if (!isScrolling.value) isScrolling.value = true
-  clearTimeout(scrollTimer)
-  scrollTimer = setTimeout(() => { isScrolling.value = false }, 200)
-}
-
-function updateViewport() {
-  if (listBody.value) viewportH.value = listBody.value.clientHeight
-}
 
 // 懒补封面:曲库中 coverUrl 为空(历史数据)时,可见行按需从主进程获取封面文件
 const pendingCovers = new Set()
@@ -178,6 +138,12 @@ async function ensureCover(song) {
   } catch {} finally {
     pendingCovers.delete(song.path)
   }
+}
+
+function onListScroll() {
+  if (!isScrolling.value) isScrolling.value = true
+  clearTimeout(scrollTimer)
+  scrollTimer = setTimeout(() => { isScrolling.value = false }, 200)
 }
 
 const allChecked = computed(() => {
@@ -308,14 +274,10 @@ function closeCtx() { ctxMenu.value.show = false }
 
 onMounted(() => {
   document.addEventListener('click', closeCtx)
-  // 初始化虚拟滚动视口
-  updateViewport()
-  ro = new ResizeObserver(updateViewport)
-  if (listBody.value) ro.observe(listBody.value)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
-  if (ro) ro.disconnect()
+  clearTimeout(scrollTimer)
 })
 </script>
 
@@ -370,8 +332,6 @@ onUnmounted(() => {
 }
 
 .list-body { flex: 1; overflow-y: auto; }
-.list-virtual { position: relative; }
-.list-virtual-inner { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
 
 .list-row {
   display: flex;
@@ -382,6 +342,8 @@ onUnmounted(() => {
   margin: 0 4px;
   cursor: default;
   transition: background var(--transition-fast);
+  content-visibility: auto;      /* 浏览器自动跳过视口外行的渲染/绘制 */
+  contain-intrinsic-size: 56px;  /* 视口外行占位高度,保证滚动条正确 */
 }
 .list-row:hover { background: var(--bg-hover); }
 .list-row.active { background: var(--color-primary-alpha); }
