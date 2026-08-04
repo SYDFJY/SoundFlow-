@@ -127,14 +127,8 @@
       <!-- 底部控制栏 -->
       <div class="player-controls">
         <div class="controls-row">
-          <!-- 播放控制组(居中) -->
+          <!-- 播放控制组(居中:上一曲/播放/下一曲) -->
           <div class="controls-group">
-            <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="playModeLabel">
-              <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-              <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
-              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-            </button>
             <button class="ctrl-btn" @click="playerStore.playPrev()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
             </button>
@@ -147,8 +141,14 @@
             </button>
           </div>
 
-          <!-- 右侧工具组(倍速 / 收起式音量 / 播放列表) -->
+          <!-- 右侧工具组(播放模式 / 倍速 / 收起式音量 / 播放列表) -->
           <div class="tools-group">
+            <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="playModeLabel">
+              <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+          <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+              <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            </button>
             <button class="ctrl-btn ctrl-btn--small" @click="playerStore.cyclePlaybackRate()" :title="'倍速 ' + playerStore.playbackRate + 'x'">
               {{ playerStore.playbackRate }}x
             </button>
@@ -310,12 +310,6 @@ function onCoverError() {
     .catch(() => {})
 }
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
-
-// 频谱常驻绘制生命周期
-onMounted(startSpectrum)
-onUnmounted(() => {
-  if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
-})
 
 // ===== 播放页背景设置(封面 / 纯色 / 渐变,持久化) =====
 const bgPresets = {
@@ -507,7 +501,6 @@ const volExpanded = ref(false) // 音量滑块默认收起
 // 频谱可视化(华丽版:左右对称镜像 + 圆头渐变条 + 峰值保持亮点 + 平滑动画)
 const spectrumCanvas = ref(null)
 let spectrumRAF = null
-let spectrumCtx = null
 const BAR_COUNT = 56
 const barVals = new Array(BAR_COUNT).fill(0)    // 当前平滑高度
 const barPeaks = new Array(BAR_COUNT).fill(0)   // 峰值保持
@@ -518,8 +511,8 @@ function hexToRgb(hex) {
 function drawSpectrum() {
   const canvas = spectrumCanvas.value
   if (!canvas) return
-  if (!spectrumCtx) spectrumCtx = canvas.getContext('2d')
-  const ctx = spectrumCtx
+  // 每次取当前 canvas 的 context(切 tab 后 canvas 是新的,不能复用旧 context)
+  const ctx = canvas.getContext('2d')
   const { width, height } = canvas
   ctx.clearRect(0, 0, width, height)
   const data = playerStore.getSpectrumData()
@@ -573,8 +566,16 @@ function drawSpectrum() {
 function startSpectrum() {
   if (spectrumCanvas.value) drawSpectrum()
 }
-// 切回封面模式时启动(歌词模式无 canvas);canvas 卸载会中断 rAF,回来必须重启
-watch(activeTab, (v) => { if (v === 'cover') startSpectrum() })
+// 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)
+let spectrumTimer = null
+onMounted(() => {
+  startSpectrum()
+  spectrumTimer = setInterval(startSpectrum, 400)
+})
+onUnmounted(() => {
+  if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
+  if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
+})
 
 // 歌词对齐(居中/左,持久化)
 const lyricAlign = ref(localStorage.getItem('soundflow_lyric_align') || 'center')
@@ -889,6 +890,9 @@ async function searchLyric() {
   min-height: 56px;
 }
 .controls-group {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex; align-items: center; gap: 24px;
 }
 .tools-group {
