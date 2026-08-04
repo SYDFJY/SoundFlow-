@@ -34,6 +34,8 @@ export const usePlayerStore = defineStore('player', () => {
   const MAX_CONSECUTIVE_ERRORS = 3
   // 本次加载是否允许恢复播放记忆(随机模式/用户手动选择时为 false)
   let _pendingRestore = false
+  // 原始队列顺序(供随机/顺序切换时恢复)
+  let _originalQueue = []
 
   // 系统媒体控制 (MediaSession / SMTC)
   let _mediaSessionInited = false
@@ -100,8 +102,10 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
+  // 同时记录原始顺序,供随机/顺序切换时恢复
   function setPlayQueue(songs, startIndex = 0) {
     playQueue.value = songs.map(s => ({ ...s }))
+    _originalQueue = playQueue.value.map(s => ({ ...s }))
     currentIndex.value = startIndex
     if (songs.length > 0 && startIndex >= 0 && startIndex < songs.length) {
       loadAndPlay(startIndex, true)
@@ -113,6 +117,8 @@ export const usePlayerStore = defineStore('player', () => {
   function insertNext(song) {
     const insertIdx = currentIndex.value + 1
     playQueue.value.splice(insertIdx, 0, { ...song })
+    _originalQueue.push({ ...song }) // 同步原始队列
+    saveQueueState()
   }
 
   // 停止播放并清空队列
@@ -121,6 +127,7 @@ export const usePlayerStore = defineStore('player', () => {
     currentSong.value = null
     currentIndex.value = -1
     playQueue.value = []
+    _originalQueue = []
     isPlaying.value = false
     currentTime.value = 0
     duration.value = 0
@@ -133,7 +140,13 @@ export const usePlayerStore = defineStore('player', () => {
   function removeFromQueue(index) {
     if (index < 0 || index >= playQueue.value.length) return
     const wasCurrent = index === currentIndex.value
+    const removedPath = playQueue.value[index]?.path
     playQueue.value.splice(index, 1)
+    // 同步原始队列(按 path 移除)
+    if (removedPath) {
+      const oi = _originalQueue.findIndex(s => s.path === removedPath)
+      if (oi >= 0) _originalQueue.splice(oi, 1)
+    }
 
     if (wasCurrent) {
       if (playQueue.value.length === 0) {
@@ -170,6 +183,7 @@ export const usePlayerStore = defineStore('player', () => {
       if (!state && window.electronAPI) state = await window.electronAPI.storeGet('queue')
       if (!state || !Array.isArray(state.queue) || state.queue.length === 0) return
       playQueue.value = state.queue.filter(s => s && s.path)
+      _originalQueue = playQueue.value.map(s => ({ ...s }))
       if (playQueue.value.length === 0) return
       currentIndex.value = (state.index >= 0 && state.index < playQueue.value.length) ? state.index : 0
       currentSong.value = playQueue.value[currentIndex.value]
@@ -479,9 +493,54 @@ export const usePlayerStore = defineStore('player', () => {
 
   function setPlayMode(mode) { playMode.value = mode }
 
+  // 切换播放方式:进入随机模式时打乱队列(当前歌曲保持原位),退出时恢复原始顺序
   function cyclePlayMode() {
     const modes = ['list', 'repeat', 'repeatOne', 'random']
     playMode.value = modes[(modes.indexOf(playMode.value) + 1) % modes.length]
+    if (playMode.value === 'random') {
+      applyRandomShuffle()
+    } else if (_originalQueue.length > 0) {
+      restoreOriginalQueue()
+    }
+    localStorage.setItem('soundflow_play_mode', playMode.value)
+  }
+
+  // 随机模式:当前歌曲保持在当前位置,其余歌曲 Fisher-Yates 洗牌
+  function applyRandomShuffle() {
+    if (playQueue.value.length <= 2) return
+    const curPath = currentSong.value?.path
+    const others = playQueue.value.filter((s, i) => i !== currentIndex.value)
+    for (let i = others.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[others[i], others[j]] = [others[j], others[i]]
+    }
+    const newQueue = [...others]
+    const insertAt = Math.min(Math.max(currentIndex.value, 0), newQueue.length)
+    if (curPath) {
+      // 当前歌曲放回原索引(若有)
+      const curSong = playQueue.value.find(s => s.path === curPath)
+      if (curSong) newQueue.splice(insertAt, 0, { ...curSong })
+    }
+    playQueue.value = newQueue
+    // 重新定位当前歌曲索引
+    if (curPath) {
+      const idx = playQueue.value.findIndex(s => s.path === curPath)
+      if (idx >= 0) currentIndex.value = idx
+    }
+    saveQueueState()
+  }
+
+  // 退出随机:恢复原始顺序,当前歌曲跟随
+  function restoreOriginalQueue() {
+    const curPath = currentSong.value?.path
+    playQueue.value = _originalQueue.map(s => ({ ...s }))
+    if (curPath) {
+      const idx = playQueue.value.findIndex(s => s.path === curPath)
+      if (idx >= 0) currentIndex.value = idx
+    } else if (currentIndex.value >= playQueue.value.length) {
+      currentIndex.value = Math.max(0, playQueue.value.length - 1)
+    }
+    saveQueueState()
   }
 
   function setPlaybackRate(rate) {
