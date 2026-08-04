@@ -7,7 +7,7 @@
           <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
           <span>播放全部</span>
         </button>
-        <button v-if="songs.length > 0" class="toolbar-btn" @click="toggleBatch" :class="{ active: batchMode }">
+        <button v-if="songs.length > 0" class="toolbar-btn" @click="toggleBatch" :class="{ active: batchOn }">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
           <span>批量</span>
         </button>
@@ -24,7 +24,7 @@
 
     <!-- 表头 -->
     <div class="list-header">
-      <div v-if="batchMode" class="col-check">
+      <div v-if="batchOn" class="col-check">
         <input type="checkbox" :checked="allChecked" @change="toggleAll" />
       </div>
       <div class="col-index">#</div>
@@ -46,7 +46,7 @@
         @dblclick="playSong(idx)"
         @contextmenu.prevent="showContextMenu($event, song)"
       >
-        <div v-if="batchMode" class="col-check" @click.stop>
+        <div v-if="batchOn" class="col-check" @click.stop>
           <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
         </div>
         <div class="col-index">
@@ -83,6 +83,28 @@
       <div class="empty-icon">🎵</div>
       <div class="empty-text">{{ emptyText }}</div>
     </div>
+
+    <!-- 批量操作栏 -->
+    <div v-if="batchOn" class="batch-bar">
+      <span class="batch-count">已选 {{ selectedSet.size }} 首</span>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAddToPlaylist">加入歌单</button>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="confirmRemoveSelected">删除</button>
+      <button class="batch-btn" @click="toggleBatch">取消</button>
+    </div>
+
+    <!-- 选择歌单弹窗 -->
+    <teleport to="body">
+      <transition name="fade">
+        <div v-if="showPlaylistPicker" class="pl-picker-overlay" @click.self="showPlaylistPicker = false">
+          <div class="pl-picker-card">
+            <h3>添加到歌单</h3>
+            <div v-if="playlists.length === 0" class="pl-picker-empty">暂无歌单,请先在侧边栏创建</div>
+            <div v-for="pl in playlists" :key="pl.id" class="pl-picker-item" @click="addSelectedToPlaylist(pl.id)">{{ pl.name }} ({{ pl.songs.length }})</div>
+            <button class="pl-picker-close" @click="showPlaylistPicker = false">取消</button>
+          </div>
+        </div>
+      </transition>
+    </teleport>
 
     <!-- 右键菜单 -->
     <transition name="fade">
@@ -166,8 +188,15 @@ function toggleFav(song) {
   musicStore.toggleFavorite(song.path)
 }
 
+// 批量模式:内置(MusicList 自管,所有视图通用)
+const batchOn = ref(false)
+const showPlaylistPicker = ref(false)
+
 function toggleBatch() {
+  batchOn.value = !batchOn.value
+  if (!batchOn.value) selectedSet.value = new Set()
   emit('context-action', 'toggle-batch')
+  emit('selection-change', [])
 }
 
 function toggleSelect(path) {
@@ -185,6 +214,37 @@ function toggleAll() {
     selectedSet.value = new Set(props.songs.map(s => s.path))
   }
   emit('selection-change', [...selectedSet.value])
+}
+
+// 批量操作:删除选中
+function confirmRemoveSelected() {
+  if (selectedSet.value.size === 0) return
+  const n = selectedSet.value.size
+  if (!confirm(`确定从曲库移除选中的 ${n} 首歌曲？`)) return
+  musicStore.removeSongs([...selectedSet.value])
+  selectedSet.value = new Set()
+  emit('selection-change', [])
+  toggleBatch()
+}
+
+// 批量操作:加入歌单
+function openAddToPlaylist() {
+  if (selectedSet.value.size === 0) return
+  showPlaylistPicker.value = true
+}
+function addSelectedToPlaylist(plId) {
+  const paths = [...selectedSet.value]
+  const pl = musicStore.playlists.find(p => p.id === plId)
+  if (pl) {
+    for (const p of paths) {
+      if (!pl.songs.includes(p)) pl.songs.push(p)
+    }
+    musicStore.saveToStorage()
+  }
+  showPlaylistPicker.value = false
+  selectedSet.value = new Set()
+  emit('selection-change', [])
+  toggleBatch()
 }
 
 function formatDuration(sec) {
@@ -330,6 +390,45 @@ onUnmounted(() => {
 }
 
 .list-body { flex: 1; overflow-y: auto; }
+
+/* 批量操作栏 */
+.batch-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+.batch-count { font-size: 12px; color: var(--text-secondary); flex: 1; }
+.batch-btn {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--color-primary);
+  background: var(--color-primary-alpha);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+.batch-btn:hover { background: var(--color-primary); color: #fff; }
+.batch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 选择歌单弹窗 */
+.pl-picker-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center; z-index: 300;
+}
+.pl-picker-card {
+  width: 280px; padding: 18px;
+  background: var(--bg-card); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.pl-picker-card h3 { font-size: 15px; color: var(--text-primary); margin-bottom: 12px; }
+.pl-picker-empty { font-size: 13px; color: var(--text-tertiary); padding: 16px 0; text-align: center; }
+.pl-picker-item {
+  padding: 9px 12px; font-size: 13px; color: var(--text-primary);
+  border-radius: var(--radius-md); cursor: pointer;
+}
+.pl-picker-item:hover { background: var(--bg-hover); }
+.pl-picker-close { margin-top: 12px; width: 100%; padding: 8px; font-size: 13px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+.pl-picker-close:hover { background: var(--bg-hover); }
 
 .list-row {
   display: flex;
