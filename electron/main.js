@@ -580,6 +580,31 @@ function setupIPC() {
     return null
   })
 
+  // 在线歌词(LRCLIB):按 歌名/歌手/时长 搜索同步歌词,返回 LRC 文本
+  ipcMain.handle('fetch-online-lyric', async (event, info) => {
+    const base = 'https://lrclib.net/api'
+    try {
+      const params = new URLSearchParams({ track_name: info?.title || '', artist_name: info?.artist || '' })
+      if (info?.duration && info.duration > 0) params.set('duration', Math.round(info.duration))
+      const res = await fetch(`${base}/get?${params.toString()}`, {
+        headers: {
+          'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)',
+          'Accept': 'application/json'
+        },
+        signal: AbortSignal.timeout(8000)
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      if (data && data.syncedLyrics) {
+        return { lyrics: data.syncedLyrics, source: 'lrclib' }
+      }
+      return null
+    } catch (e) {
+      console.error('[在线歌词] LRCLIB 请求失败:', e.message)
+      return null
+    }
+  })
+
   // 扫描歌词文件夹，返回所有 .lrc 文件列表
   ipcMain.handle('scan-lyric-folder', async (event, folderPath) => {
     try {

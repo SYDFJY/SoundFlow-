@@ -174,12 +174,31 @@ export const usePlayerStore = defineStore('player', () => {
     window.dispatchEvent(new CustomEvent('soundflow:play', { detail: { path: song.path } }))
   }
 
-  // 加载歌词
+  // 在线歌词缓存(主进程 JSON,键=标题|歌手)
+  async function _getCachedOnlineLyric(key) {
+    try {
+      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
+      return cache[key] || null
+    } catch { return null }
+  }
+
+  async function _setCachedOnlineLyric(key, lyricsText) {
+    try {
+      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
+      cache[key] = lyricsText
+      const keys = Object.keys(cache)
+      if (keys.length > 300) delete cache[keys[0]] // 控制缓存规模
+      await window.electronAPI.storeSet('lyricsCache', cache)
+    } catch {}
+  }
+
+  // 加载歌词:本地 .lrc → 在线歌词缓存 → LRCLIB 在线获取
   async function loadLyrics(song) {
     lyrics.value = []
     currentLyricIndex.value = -1
     if (!window.electronAPI) return
     try {
+      // 1. 本地 .lrc 文件
       let lyricFolders = []
       try {
         const saved = localStorage.getItem('soundflow_lyric_folders')
@@ -188,6 +207,23 @@ export const usePlayerStore = defineStore('player', () => {
       const lrcText = await window.electronAPI.readLyricFile(song.path, lyricFolders)
       if (lrcText) {
         lyrics.value = parseLRC(lrcText)
+        return
+      }
+      // 2. 在线歌词(设置开启时):先查缓存,再请求 LRCLIB
+      let onlineEnabled = true
+      try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
+      if (onlineEnabled && song.title) {
+        const cacheKey = `${song.title}|${song.artist || ''}`
+        let onlineText = await _getCachedOnlineLyric(cacheKey)
+        if (!onlineText) {
+          onlineText = await window.electronAPI.fetchOnlineLyric({
+            title: song.title,
+            artist: song.artist || '',
+            duration: song.duration || 0
+          })?.then?.((r) => r?.lyrics || null)
+          if (onlineText) await _setCachedOnlineLyric(cacheKey, onlineText)
+        }
+        if (onlineText) lyrics.value = parseLRC(onlineText)
       }
     } catch {}
   }

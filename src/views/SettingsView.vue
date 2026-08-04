@@ -85,6 +85,13 @@
         <h3 class="section-title">歌词</h3>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">在线歌词</span>
+            <span class="label-desc">本地无 .lrc 时自动从 LRCLIB 获取同步歌词（需联网）</span>
+          </div>
+          <button class="setting-btn" @click="toggleOnlineLyric">{{ onlineLyric ? '已开启' : '已关闭' }}</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">歌词文件夹</span>
             <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲</span>
           </div>
@@ -175,6 +182,13 @@ function removeLyricFolder(folder) {
   musicStore.removeLyricFolder(folder)
 }
 
+// 在线歌词开关(localStorage,默认开启)
+const onlineLyric = ref(localStorage.getItem('soundflow_online_lyric') !== '0')
+
+function toggleOnlineLyric() {
+  onlineLyric.value = !onlineLyric.value
+  localStorage.setItem('soundflow_online_lyric', onlineLyric.value ? '1' : '0')
+}
 </script>
 
 <style scoped>
