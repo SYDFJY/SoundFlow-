@@ -774,19 +774,25 @@ function setupIPC() {
     return await fetchLRCLIB(info)
   })
 
-  // 歌词翻译(MyMemory 免费接口,无需 key):逐行翻译,返回与输入等长的译文数组
+  // 歌词翻译(MyMemory 免费接口,无需 key):自动检测源语言(中/日/韩/英),逐行翻译
   ipcMain.handle('translate-lyrics', async (event, { lines, targetLang }) => {
     if (!Array.isArray(lines) || !lines.length) return []
-    // 自动判断:原文含中文→译成英文,否则→译成中文
-    const hasChinese = lines.some(t => /[\u4e00-\u9fff]/.test(t || ''))
-    const pair = hasChinese ? 'zh-CN|en' : 'en|zh-CN'
+    const text = lines.join('\n')
+    // 源语言检测:中文 / 日文 / 韩文 / 其他(英文)
+    let src = 'en'
+    if (/[\u4e00-\u9fff]/.test(text)) src = 'zh-CN'
+    else if (/[\u3040-\u30ff]/.test(text)) src = 'ja'
+    else if (/[\uac00-\ud7af]/.test(text)) src = 'ko'
+    // 目标语言:源是中文→英文,否则→中文(可显式指定)
+    const target = (targetLang && /^[a-z-]+$/i.test(targetLang)) ? targetLang : (src === 'zh-CN' ? 'en' : 'zh-CN')
+    const pair = `${src}|${target}`
     const results = []
     const headers = { 'User-Agent': 'Mozilla/5.0' }
     // 逐行翻译(串行,避免限流)
-    for (const text of lines) {
-      if (!text || !text.trim()) { results.push(''); continue }
+    for (const line of lines) {
+      if (!line || !line.trim()) { results.push(''); continue }
       try {
-        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${pair}`
+        const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(line)}&langpair=${pair}`
         const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
         if (!res.ok) { results.push(''); continue }
         const data = await res.json()
