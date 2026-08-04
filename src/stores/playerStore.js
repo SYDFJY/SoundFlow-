@@ -209,18 +209,19 @@ export const usePlayerStore = defineStore('player', () => {
         lyrics.value = parseLRC(lrcText)
         return
       }
-      // 2. 在线歌词(设置开启时):先查缓存,再请求 LRCLIB
+      // 2. 在线歌词(设置开启时):先查缓存,再请求 LRCLIB/网易云
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
       if (onlineEnabled && song.title) {
         const cacheKey = `${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
         if (!onlineText) {
-          onlineText = await window.electronAPI.fetchOnlineLyric({
+          const res = await window.electronAPI.fetchOnlineLyric({
             title: song.title,
             artist: song.artist || '',
             duration: song.duration || 0
-          })?.then?.((r) => r?.lyrics || null)
+          })
+          onlineText = (res && res.lyrics) || null
           if (onlineText) await _setCachedOnlineLyric(cacheKey, onlineText)
         }
         if (onlineText) lyrics.value = parseLRC(onlineText)
