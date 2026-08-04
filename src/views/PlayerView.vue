@@ -411,21 +411,24 @@ async function searchLyric() {
 }
 .lyric-source-switch {
   position: absolute;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
   z-index: 5;
   display: flex;
-  gap: 2px;
+  flex-direction: column;
+  gap: 4px;
   background: rgba(0,0,0,0.35);
-  border-radius: 14px;
-  padding: 2px;
+  border-radius: 12px;
+  padding: 4px 3px;
 }
 .ls-btn {
-  padding: 3px 10px;
+  width: 46px;
+  padding: 6px 0;
   font-size: 11px;
   color: rgba(255,255,255,0.5);
-  border-radius: 12px;
+  border-radius: 8px;
+  text-align: center;
   transition: all 0.2s;
 }
 .ls-btn:hover { color: #fff; }
