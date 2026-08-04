@@ -137,7 +137,7 @@
                 <div class="done-icon">✅</div>
                 <h3>歌词下载完成</h3>
                 <div class="done-row">成功下载 <b>{{ batchLyric.success }}</b> 首 &nbsp;·&nbsp; 已有 <b>{{ batchLyric.skipped }}</b> 首</div>
-                <div class="done-row" v-if="batchLyric.matchFail || batchLyric.saveFail">未匹配 <b>{{ batchLyric.matchFail }}</b> 首 · 写入失败 <b>{{ batchLyric.saveFail }}</b> 首</div>
+                <div class="done-row" v-if="batchLyric.matchFail || batchLyric.saveFail || batchLyric.failed">未匹配 <b>{{ batchLyric.matchFail }}</b> 首 · 写入失败 <b>{{ batchLyric.saveFail }}</b> 首 · 其他失败 <b>{{ batchLyric.failed }}</b> 首</div>
                 <div class="done-row muted">用时 {{ batchLyric.elapsed }} · 完成时间 {{ batchLyric.finishedAt }}</div>
                 <div class="done-folder" :title="batchLyric.folder">下载到：{{ batchLyric.folder }}</div>
                 <div class="done-btns">
@@ -289,6 +289,7 @@ async function batchDownloadLyrics() {
   }
 
   const CONCURRENCY = 5 // 并发数,避免单首慢导致进度停滞
+  const lyricFolders = [...musicStore.lyricFolders] // 展开为纯数组(Proxy 无法过 IPC 序列化)
   let idx = 0
   let doneCount = 0
   let success = 0, skipped = 0, failed = 0, saveFail = 0, matchFail = 0
@@ -299,7 +300,7 @@ async function batchDownloadLyrics() {
       if (i >= songs.length) break
       const s = songs[i]
       try {
-        const hasLocal = await window.electronAPI.readLyricFile(s.path, musicStore.lyricFolders)
+        const hasLocal = await window.electronAPI.readLyricFile(s.path, lyricFolders)
         if (hasLocal) {
           skipped++
         } else {
