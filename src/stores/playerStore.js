@@ -51,6 +51,8 @@ export const usePlayerStore = defineStore('player', () => {
     if (audio.value) return
     audio.value = new Audio()
     audio.value.volume = volume.value
+    // 建立音频图(频谱可视化常驻;音效开启时挂 EQ 链)
+    ensureAudioGraph()
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
@@ -151,8 +153,9 @@ export const usePlayerStore = defineStore('player', () => {
   let _reverbConvolver = null
   let _reverbGain = null
   let _compressor = null
+  let _analyser = null
 
-  // 确保音频图存在(音效开启时创建 AudioContext 处理链)
+  // 确保音频图存在(频谱可视化需要常驻 AudioContext;音效开启时再挂 EQ 链)
   function ensureAudioGraph() {
     try {
       if (!audio.value) return
@@ -162,6 +165,11 @@ export const usePlayerStore = defineStore('player', () => {
       if (_audioCtx.state === 'suspended') _audioCtx.resume()
       if (!_mediaSourceNode) {
         _mediaSourceNode = _audioCtx.createMediaElementSource(audio.value)
+      }
+      if (!_analyser) {
+        _analyser = _audioCtx.createAnalyser()
+        _analyser.fftSize = 256
+        _analyser.smoothingTimeConstant = 0.8
       }
       rebuildAudioChain()
     } catch (e) {
@@ -271,9 +279,19 @@ export const usePlayerStore = defineStore('player', () => {
         // 未开启:直通(仍走 AudioContext,保持路由一致)
         _mediaSourceNode.connect(_audioCtx.destination)
       }
+      // 频谱分析:从链尾(或直通点)分接,不连 destination
+      try { prev.connect(_analyser) } catch {}
     } catch (e) {
       console.error('[音效] 重建链失败:', e.message)
     }
+  }
+
+  // 供频谱可视化读取实时频域数据
+  function getSpectrumData() {
+    if (!_analyser) return null
+    const arr = new Uint8Array(_analyser.frequencyBinCount)
+    _analyser.getByteFrequencyData(arr)
+    return arr
   }
 
   // 生成短混响脉冲(噪声指数衰减)
@@ -941,6 +959,7 @@ export const usePlayerStore = defineStore('player', () => {
     loadSettings, saveSettings, playSingle, toggleQueue,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
+    getSpectrumData,
     initMediaSession
   }
 })

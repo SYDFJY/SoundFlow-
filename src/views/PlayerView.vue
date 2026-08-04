@@ -54,6 +54,8 @@
           <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
+          <!-- 音频频谱(播放时跳动) -->
+          <canvas ref="spectrumCanvas" class="spectrum-bar" width="520" height="80"></canvas>
         </div>
       </div>
 
@@ -496,6 +498,46 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const volExpanded = ref(false) // 音量滑块默认收起
 
+// 频谱可视化(canvas + rAF,播放时绘制)
+const spectrumCanvas = ref(null)
+let spectrumRAF = null
+let spectrumCtx = null
+function drawSpectrum() {
+  const canvas = spectrumCanvas.value
+  if (!canvas) return
+  if (!spectrumCtx) spectrumCtx = canvas.getContext('2d')
+  const data = playerStore.getSpectrumData()
+  const { width, height } = canvas
+  spectrumCtx.clearRect(0, 0, width, height)
+  const bars = 48
+  const barW = width / bars
+  const step = Math.max(1, Math.floor((data ? data.length : 0) / bars))
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff'
+  const grad = spectrumCtx.createLinearGradient(0, height, 0, 0)
+  grad.addColorStop(0, accent + '33')
+  grad.addColorStop(1, accent)
+  spectrumCtx.fillStyle = grad
+  for (let i = 0; i < bars; i++) {
+    let v = 0
+    if (data) {
+      for (let j = 0; j < step; j++) v += data[i * step + j]
+      v = v / step / 255
+    }
+    const h = Math.max(2, Math.round(v * height))
+    spectrumCtx.fillRect(i * barW + 1, height - h, barW - 2, h)
+  }
+  spectrumRAF = requestAnimationFrame(drawSpectrum)
+}
+watch(() => playerStore.isPlaying, (v) => {
+  if (v && !spectrumRAF) drawSpectrum()
+  else if (!v && spectrumRAF) {
+    cancelAnimationFrame(spectrumRAF)
+    spectrumRAF = null
+    const canvas = spectrumCanvas.value
+    if (canvas && spectrumCtx) spectrumCtx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+})
+
 // 歌词对齐(居中/左,持久化)
 const lyricAlign = ref(localStorage.getItem('soundflow_lyric_align') || 'center')
 function toggleLyricAlign() {
@@ -644,6 +686,7 @@ async function searchLyric() {
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 .disc-cover-small img { width: 100%; height: 100%; object-fit: cover; }
+.spectrum-bar { display: block; margin: 14px auto 0; max-width: 520px; width: 100%; height: 80px; opacity: 0.9; }
 
 .song-meta-small { text-align: center; }
 .song-title-sm { font-size: 18px; font-weight: 600; color: white; margin-bottom: 4px; }
