@@ -23,6 +23,7 @@ export const useAppStore = defineStore('app', () => {
     blue: buildTheme('深海蓝', '#172330', '#24394d', '#3c98ec', '#e6eff8', '#7498b8', '#1e3143', 'rgba(60,152,236,0.16)', '#172330', 'rgba(0,0,0,0.35)'),
     red: buildTheme('极夜红', '#2a171a', '#40252a', '#e05a5a', '#f6e6e8', '#b08a8e', '#351f23', 'rgba(224,90,90,0.16)', '#2a171a', 'rgba(0,0,0,0.35)'),
     purple: buildTheme('暗玫紫', '#272036', '#382e4e', '#b378f0', '#e9e4f4', '#a89bc2', '#312946', 'rgba(179,120,240,0.16)', '#272036', 'rgba(0,0,0,0.35)'),
+    liquid: buildTheme('液态玻璃', '#101828', 'rgba(32,44,72,0.45)', '#6ec6ff', '#eaf2ff', '#9fb4d8', 'rgba(255,255,255,0.08)', 'rgba(110,198,255,0.18)', 'rgba(14,20,36,0.65)', 'rgba(0,0,0,0.45)'),
     c_light: {
       '--bg-primary': '#f5f7fa',
       '--bg-secondary': '#ffffff',
