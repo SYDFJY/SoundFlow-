@@ -213,12 +213,12 @@ export const usePlayerStore = defineStore('player', () => {
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
       if (onlineEnabled && song.title) {
-        const cacheKey = `${song.title}|${song.artist || ''}`
+        // 歌词来源:lrclib(默认)/ netease / auto —— 缓存按来源隔离,切换来源后重新获取
+        let source = 'lrclib'
+        try { source = localStorage.getItem('soundflow_lyric_source') || 'lrclib' } catch {}
+        const cacheKey = `${source}|${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
         if (!onlineText) {
-          // 歌词来源:lrclib(默认)/ netease / auto
-          let source = 'lrclib'
-          try { source = localStorage.getItem('soundflow_lyric_source') || 'lrclib' } catch {}
           const res = await window.electronAPI.fetchOnlineLyric({
             title: song.title,
             artist: song.artist || '',

@@ -252,6 +252,9 @@ const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrcli
 function setLyricSource(v) {
   lyricSource.value = v
   localStorage.setItem('soundflow_lyric_source', v)
+  // 切换来源后立即重新获取当前歌曲歌词(缓存按来源隔离,会走新来源)
+  const cur = playerStore.currentSong
+  if (cur) playerStore.loadLyrics(cur)
 }
 
 // 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)
