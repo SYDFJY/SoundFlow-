@@ -622,11 +622,11 @@ async function searchLyric() {
   border-radius: 10px;
 }
 .lyric-source-switch {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
-  z-index: 5;
+  position: fixed;
+  top: 76px;
+  right: 10px;
+  transform: none;
+  z-index: 40;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -677,7 +677,7 @@ async function searchLyric() {
 
 /* 歌词颜色面板 */
 .color-panel {
-  position: absolute;
+  position: fixed;
   top: 50%;
   right: 58px;
   transform: translateY(-50%);
