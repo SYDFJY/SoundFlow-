@@ -602,9 +602,6 @@ async function searchLyric() {
 .progress-bar:hover .progress-thumb { opacity: 1; }
 .progress-bar:hover .progress-track { height: 6px; }
 
-.volume-row {
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-}
 .vol-btn {
   width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
   border-radius: 50%; color: rgba(255,255,255,0.5);
