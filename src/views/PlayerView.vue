@@ -52,6 +52,10 @@
               <div class="empty-icon">📝</div>
               <div>暂无歌词</div>
               <div class="empty-hint">右键歌曲可导入 .lrc 文件<br/>或在设置中添加歌词文件夹</div>
+              <button class="search-lyric-btn" :disabled="searchingLyric" @click="searchLyric">
+                {{ searchingLyric ? '正在搜索…' : '🔍 在线搜索歌词并下载' }}
+              </button>
+              <div v-if="searchLyricMsg" class="search-lyric-msg">{{ searchLyricMsg }}</div>
             </div>
             <div v-else class="lyrics-content">
               <div style="height:40%"></div>
@@ -174,6 +178,39 @@ function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
 function seekToLine(line) {
   if (line && Number.isFinite(line.time)) {
     playerStore.seek(line.time)
+  }
+}
+
+// 在线搜索并下载歌词到本地(LRCLIB → 网易云)
+const searchingLyric = ref(false)
+const searchLyricMsg = ref('')
+
+async function searchLyric() {
+  const song = playerStore.currentSong
+  if (!song || searchingLyric.value || !window.electronAPI) return
+  searchingLyric.value = true
+  searchLyricMsg.value = ''
+  try {
+    const res = await window.electronAPI.searchOnlineLyric({
+      title: song.title,
+      artist: song.artist || '',
+      duration: song.duration || 0
+    })
+    if (res?.lyrics) {
+      const saved = await window.electronAPI.saveLyricFile(song.path, res.lyrics)
+      if (saved?.ok) {
+        searchLyricMsg.value = '✅ 已保存到歌曲同目录'
+        await playerStore.loadLyrics(song)
+      } else {
+        searchLyricMsg.value = '⚠️ 获取成功但保存失败'
+      }
+    } else {
+      searchLyricMsg.value = '未找到这首歌的歌词'
+    }
+  } catch (e) {
+    searchLyricMsg.value = '搜索失败,请检查网络'
+  } finally {
+    searchingLyric.value = false
   }
 }
 </script>
@@ -300,6 +337,18 @@ function seekToLine(line) {
 }
 .empty-icon { font-size: 48px; }
 .empty-hint { font-size: 13px; color: rgba(255,255,255,0.25); line-height: 1.6; }
+.search-lyric-btn {
+  margin-top: 4px;
+  padding: 8px 18px;
+  background: var(--color-primary);
+  color: #fff;
+  border-radius: 20px;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+.search-lyric-btn:hover { background: var(--color-primary-light); transform: scale(1.03); }
+.search-lyric-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
+.search-lyric-msg { font-size: 12px; color: rgba(255,255,255,0.5); }
 
 .lyric-line {
   padding: 10px 0; font-size: 18px;

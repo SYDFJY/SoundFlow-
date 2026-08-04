@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   bindLyricFile: (audioPath, lrcPath) => ipcRenderer.invoke('bind-lyric-file', audioPath, lrcPath),
   scanLyricFolder: (folderPath) => ipcRenderer.invoke('scan-lyric-folder', folderPath),
   fetchOnlineLyric: (info) => ipcRenderer.invoke('fetch-online-lyric', info),
+  searchOnlineLyric: (info) => ipcRenderer.invoke('search-lyric-online', info),
+  saveLyricFile: (audioPath, lrcText) => ipcRenderer.invoke('save-lyric-file', audioPath, lrcText),
 
   // 存储
   storeGet: (key) => ipcRenderer.invoke('store-get', key),

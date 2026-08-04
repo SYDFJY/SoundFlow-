@@ -581,7 +581,9 @@ function setupIPC() {
   })
 
   // 在线歌词(LRCLIB):按 歌名/歌手/时长 搜索同步歌词,返回 LRC 文本
-  ipcMain.handle('fetch-online-lyric', async (event, info) => {
+  // ===== 在线歌词 =====
+  // LRCLIB:按 歌名/歌手/时长 精确匹配同步歌词
+  async function fetchLRCLIB(info) {
     const base = 'https://lrclib.net/api'
     try {
       const params = new URLSearchParams({ track_name: info?.title || '', artist_name: info?.artist || '' })
@@ -595,13 +597,72 @@ function setupIPC() {
       })
       if (!res.ok) return null
       const data = await res.json()
-      if (data && data.syncedLyrics) {
-        return { lyrics: data.syncedLyrics, source: 'lrclib' }
-      }
+      if (data && data.syncedLyrics) return { lyrics: data.syncedLyrics, source: 'lrclib' }
       return null
     } catch (e) {
       console.error('[在线歌词] LRCLIB 请求失败:', e.message)
       return null
+    }
+  }
+
+  // 网易云音乐(非官方接口):搜索歌曲并获取 LRC 歌词(中文歌词兜底)
+  async function fetchNetEaseLyric(info) {
+    const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://music.163.com', 'Cookie': 'NMTID=00O7QrX000gR7RcBfEXtZQKJPt3HzEAAQ' }
+    try {
+      const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
+      if (!q) return null
+      const res = await fetch(`https://music.163.com/api/search/get?s=${encodeURIComponent(q)}&type=1&limit=10`, {
+        headers: UA, signal: AbortSignal.timeout(8000)
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      const songs = data?.result?.songs || []
+      if (!songs.length) return null
+      // 标题归一化,优先精确匹配标题+歌手,其次仅标题
+      const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？]/g, '')
+      const targetTitle = norm(info?.title)
+      const targetArtist = norm(info?.artist)
+      let song = null
+      for (const s of songs) {
+        const artistHit = (s.artists || []).some(a => targetArtist && (norm(a.name).includes(targetArtist) || targetArtist.includes(norm(a.name))))
+        if (norm(s.name) === targetTitle && artistHit) { song = s; break }
+      }
+      if (!song) song = songs.find(s => norm(s.name) === targetTitle) || songs[0]
+      const lr = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
+        headers: UA, signal: AbortSignal.timeout(8000)
+      })
+      if (!lr.ok) return null
+      const ldata = await lr.json()
+      const lrc = ldata?.lrc?.lyric || ''
+      // 至少包含一句带时间戳的歌词才接受
+      if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, source: 'netease' }
+      return null
+    } catch (e) {
+      console.error('[在线歌词] 网易云请求失败:', e.message)
+      return null
+    }
+  }
+
+  // 自动获取(播放时):LRCLIB → 网易云
+  ipcMain.handle('fetch-online-lyric', async (event, info) => {
+    return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
+  })
+
+  // 手动搜索下载(用户点击):同样 LRCLIB → 网易云
+  ipcMain.handle('search-lyric-online', async (event, info) => {
+    return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
+  })
+
+  // 保存歌词到音频同目录同名 .lrc
+  ipcMain.handle('save-lyric-file', (event, audioPath, lrcText) => {
+    try {
+      const ext = path.extname(audioPath)
+      const target = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
+      fs.writeFileSync(target, lrcText, 'utf8')
+      return { ok: true, path: target }
+    } catch (e) {
+      console.error('[歌词] 保存到本地失败:', e.message)
+      return { ok: false, error: e.message }
     }
   })
 
