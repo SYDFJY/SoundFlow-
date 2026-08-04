@@ -234,9 +234,11 @@ function scrollToActiveQueue() {
   const list = queueListEl.value
   const el = activeQueueEl.value
   if (!list || !el) return
-  // 手动计算滚动位置,避免 scrollIntoView 滚动到错误容器
-  const top = el.offsetTop - list.offsetTop - list.clientHeight / 2 + el.clientHeight / 2
-  list.scrollTop = Math.max(0, top)
+  // 用 getBoundingClientRect 相对定位,不依赖 offsetParent
+  const listRect = list.getBoundingClientRect()
+  const elRect = el.getBoundingClientRect()
+  const target = elRect.top - listRect.top + list.scrollTop - list.clientHeight / 2 + elRect.height / 2
+  list.scrollTop = Math.max(0, target)
 }
 watch(() => playerStore.currentIndex, () => {
   if (showQueuePanel.value) nextTick(() => scrollToActiveQueue())
@@ -797,7 +799,7 @@ async function searchLyric() {
 .queue-count { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
 .queue-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.5); font-size: var(--font-size-sm); }
 .queue-close:hover { background: rgba(255,255,255,0.1); color: white; }
-.queue-list { flex: 1; overflow-y: auto; padding: 6px; max-height: 320px; }
+.queue-list { position: relative; flex: 1; overflow-y: auto; padding: 6px; max-height: 320px; }
 .queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: var(--font-size-sm); padding: 30px 0; }
 .queue-item {
   display: flex; align-items: center; gap: 10px;
