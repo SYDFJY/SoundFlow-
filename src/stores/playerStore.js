@@ -192,7 +192,10 @@ export const usePlayerStore = defineStore('player', () => {
     } catch {}
   }
 
-  // 加载歌词:本地 .lrc → 在线歌词缓存 → LRCLIB 在线获取
+  // 当前歌词来源(供界面显示:本地 / LRCLIB / 网易云 / 自动)
+  const lyricOrigin = ref('')
+
+  // 加载歌词:本地 .lrc → 在线歌词缓存 → 在线来源
   async function loadLyrics(song) {
     lyrics.value = []
     currentLyricIndex.value = -1
@@ -206,6 +209,7 @@ export const usePlayerStore = defineStore('player', () => {
       } catch {}
       const lrcText = await window.electronAPI.readLyricFile(song.path, lyricFolders)
       if (lrcText) {
+        lyricOrigin.value = '本地'
         lyrics.value = parseLRC(lrcText)
         return
       }
@@ -226,7 +230,12 @@ export const usePlayerStore = defineStore('player', () => {
             source
           })
           onlineText = (res && res.lyrics) || null
-          if (onlineText) await _setCachedOnlineLyric(cacheKey, onlineText)
+          if (onlineText) {
+            lyricOrigin.value = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : '自动')
+            await _setCachedOnlineLyric(cacheKey, onlineText)
+          } else {
+            lyricOrigin.value = ''
+          }
         }
         if (onlineText) lyrics.value = parseLRC(onlineText)
       }
@@ -556,7 +565,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
-    duration, volume, isMuted, playMode, lyrics, currentLyricIndex,
+    duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, loadAndPlay, togglePlay,

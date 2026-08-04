@@ -48,6 +48,7 @@
         </div>
         <div class="lyric-right">
           <div class="lyrics-scroll" ref="lyricsPanel">
+            <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">{{ playerStore.lyricOrigin }}歌词</div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
               <div class="empty-icon">📝</div>
               <div>暂无歌词</div>
@@ -376,6 +377,17 @@ async function searchLyric() {
 .lyric-line:hover {
   color: rgba(255,255,255,0.75);
   background: rgba(255,255,255,0.06);
+}
+.lyric-origin-tag {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  z-index: 5;
+  font-size: 11px;
+  color: rgba(255,255,255,0.4);
+  background: rgba(255,255,255,0.08);
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 .lyric-line.active {
   color: white; font-size: 22px; font-weight: 600;
