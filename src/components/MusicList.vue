@@ -186,6 +186,7 @@ function playSong(idx) {
 
 function toggleFav(song) {
   musicStore.toggleFavorite(song.path)
+  window.$toast?.(musicStore.isFavorite(song.path) ? "已加入收藏 ♥" : "已取消收藏", "info")
 }
 
 // 批量模式:内置(MusicList 自管,所有视图通用)
@@ -274,7 +275,10 @@ function ctxPlayNext() {
 }
 
 function ctxToggleFav() {
-  if (ctxMenu.value.song) musicStore.toggleFavorite(ctxMenu.value.song.path)
+  if (ctxMenu.value.song) {
+    musicStore.toggleFavorite(ctxMenu.value.song.path)
+    window.$toast?.(musicStore.isFavorite(ctxMenu.value.song.path) ? "已加入收藏 ♥" : "已取消收藏", "info")
+  }
   closeCtx()
 }
 

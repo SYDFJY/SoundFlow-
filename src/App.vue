@@ -24,6 +24,7 @@
       </div>
       <PlayerBar />
     </template>
+    <ToastHost />
   </div>
 </template>
 
@@ -36,6 +37,13 @@ import { usePlayerStore } from '@/stores/playerStore'
 import TopBar from '@/components/TopBar.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import PlayerBar from '@/components/PlayerBar.vue'
+import ToastHost from '@/components/ToastHost.vue'
+import { toast, toastState } from '@/composables/useToast'
+
+// 全局 Toast 入口:任意组件/普通 JS 均可 window.$toast(...)
+if (typeof window !== 'undefined') window.$toast = toast
+// 供模板引用
+const _toastState = toastState
 
 const route = useRoute()
 const appStore = useAppStore()
@@ -55,7 +63,8 @@ const defaultShortcuts = {
   next: 'Control+ArrowRight',
   prev: 'Control+ArrowLeft',
   volUp: 'Control+ArrowUp',
-  volDown: 'Control+ArrowDown'
+  volDown: 'Control+ArrowDown',
+  mute: 'Control+KeyM'
 }
 const shortcuts = ref({ ...defaultShortcuts, ...safeParse(localStorage.getItem('soundflow_shortcuts')) })
 
@@ -67,7 +76,7 @@ function matchShortcut(e, name) {
   return shortcuts.value[name] === ((e.ctrlKey ? 'Control+' : '') + e.code)
 }
 
-// 全局快捷键:空格=播放/暂停,Ctrl+←/→=上一曲/下一曲,Ctrl+↑/↓=音量
+// 全局快捷键:空格=播放/暂停,Ctrl+←/→=上一曲/下一曲,Ctrl+↑/↓=音量,Ctrl+M=静音
 function onGlobalKey(e) {
   const tag = (e.target.tagName || '').toLowerCase()
   if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return
@@ -86,6 +95,9 @@ function onGlobalKey(e) {
   } else if (matchShortcut(e, 'volDown')) {
     e.preventDefault()
     playerStore.setVolume(Math.max(0, playerStore.volume - 0.05))
+  } else if (matchShortcut(e, 'mute')) {
+    e.preventDefault()
+    playerStore.toggleMute()
   }
 }
 
@@ -115,6 +127,22 @@ onMounted(() => {
   } catch {}
 
   if (window.electronAPI) {
+    // 外部唤起 soundflow://play?path=... → 播放该文件
+    window.electronAPI.on('external-command', async ({ action, path }) => {
+      if (action === 'play' && path) {
+        try {
+          await musicStore.restoreLibrary()
+          let song = musicStore.songs.find(s => s.path === path)
+          if (!song) {
+            // 曲库无此歌:用元数据解析构造临时歌曲并播放
+            const meta = await window.electronAPI.parseMetadata(path)
+            song = { path, title: meta?.title || path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || '未知', artist: meta?.artist || '未知艺术家', album: meta?.album || '', duration: meta?.duration || 0, coverUrl: meta?.coverUrl || '' }
+          }
+          playerStore.setPlayQueue([song], 0, false)
+          window.$toast?.(`正在播放: ${song.title}`, 'info')
+        } catch (e) { console.error('[scheme] 播放失败:', e) }
+      }
+    })
     window.electronAPI.on('menu-add-folder', () => { try { musicStore.addFolder() } catch (e) { console.error(e) } })
     window.electronAPI.on('menu-add-files', () => { try { musicStore.addFiles() } catch (e) { console.error(e) } })
     window.electronAPI.on('tray-command', (cmd) => {

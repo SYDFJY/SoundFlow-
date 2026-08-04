@@ -1224,6 +1224,25 @@ try { app.setAppUserModelId('com.soundflow.music') } catch (_) {}
 // ========== 自动更新(骨架) ==========
 // 说明:需在 electron-builder 配置 publish 发布源(如 GitHub Releases / 私有服务器)并生成 latest.yml 后生效;
 // 未配置发布源时 checkForUpdates 会失败并静默忽略,不影响正常使用。
+// ===== Scheme URL:外部唤起(soundflow://play?path=...) =====
+function handleExternalUrl(url) {
+  try {
+    const u = new URL(url)
+    const action = u.hostname || 'play'
+    const params = new URLSearchParams(u.search)
+    const path = params.get('path') ? decodeURIComponent(params.get('path')) : ''
+    log.info('[scheme] 收到外部唤起:', action, path ? 'path=' + path.slice(0, 60) : '')
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+      mainWindow.webContents.send('external-command', { action, path })
+    }
+  } catch (e) {
+    log.error('[scheme] 解析失败:', e.message)
+  }
+}
+
 function setupAutoUpdater() {
   if (!autoUpdater || !app.isPackaged) return
   try {
@@ -1276,10 +1295,20 @@ const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (event, argv) => {
+    // 外部唤起 soundflow:// URL
+    const url = (argv || []).find(a => typeof a === 'string' && a.startsWith('soundflow://'))
+    if (url) handleExternalUrl(url)
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
     }
   })
+
+  // 注册自定义协议 soundflow://(打包安装后生效)
+  try { app.setAsDefaultProtocolClient('soundflow') } catch (_) {}
+
+  // 启动参数携带 soundflow:// URL(协议唤起时由系统带参启动)
+  const bootUrl = process.argv.find(a => typeof a === 'string' && a.startsWith('soundflow://'))
+  if (bootUrl) setTimeout(() => handleExternalUrl(bootUrl), 1800)
 }

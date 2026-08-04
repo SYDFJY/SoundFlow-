@@ -478,9 +478,11 @@ async function importLocalLyric() {
     const ok = await window.electronAPI.bindLyricFile(song.path, lrcPath)
     if (ok) {
       searchLyricMsg.value = '✅ 已导入本地歌词'
+      window.$toast?.('已导入本地歌词', 'success')
       await playerStore.loadLyrics(song)
     } else {
       searchLyricMsg.value = '⚠️ 歌词导入失败'
+      window.$toast?.('歌词导入失败', 'error')
     }
   } catch (e) {
     searchLyricMsg.value = '导入出错'

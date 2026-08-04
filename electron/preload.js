@@ -75,7 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'app:before-close', 'update-available']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'app:before-close', 'update-available', 'external-command']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

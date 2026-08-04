@@ -335,6 +335,7 @@ async function exportBackup() {
     if (filePath) {
       backupOk.value = true
       backupMsg.value = `已导出到 ${filePath}`
+      window.$toast?.('备份导出成功', 'success')
     } else {
       backupMsg.value = '已取消导出'
     }
@@ -353,6 +354,7 @@ async function importBackup() {
     if (res && res.ok) {
       backupOk.value = true
       backupMsg.value = '导入成功，正在重启应用…'
+      window.$toast?.('数据恢复成功，正在重启', 'success')
       setTimeout(() => window.electronAPI.restartApp(), 1200)
     } else if (res && res.cancel) {
       backupMsg.value = '已取消导入'
@@ -451,7 +453,8 @@ const shortcutDefs = [
   { key: 'next', label: '下一曲' },
   { key: 'prev', label: '上一曲' },
   { key: 'volUp', label: '音量 +' },
-  { key: 'volDown', label: '音量 -' }
+  { key: 'volDown', label: '音量 -' },
+  { key: 'mute', label: '静音' }
 ]
 const shortcuts = ref(JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}'))
 const recordingKey = ref('')
@@ -472,7 +475,7 @@ function onRecordKey(e) {
 
 // 恢复默认快捷键
 function resetShortcuts() {
-  const defaults = { playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft', volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown' }
+  const defaults = { playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft', volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown', mute: 'Control+KeyM' }
   shortcuts.value = { ...defaults }
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(defaults))
 }

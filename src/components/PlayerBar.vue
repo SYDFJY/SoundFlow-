@@ -5,7 +5,7 @@
       <div class="player-cover" @click="goToPlayer">
         <img v-if="coverUrl" :src="coverUrl" class="cover-img" />
         <div v-else class="cover-placeholder">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+          <Disc3 :size="16" />
         </div>
       </div>
       <div class="player-info">
@@ -13,7 +13,7 @@
         <div class="player-artist text-ellipsis">{{ playerStore.currentSong?.artist || '选择一首歌曲开始播放' }}</div>
       </div>
       <button class="player-fav" @click="toggleFav" :class="{ active: isFav }">
-        <svg viewBox="0 0 24 24" :fill="isFav ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+        <Heart :size="18" :fill="isFav ? 'currentColor' : 'none'" />
       </button>
     </div>
 
@@ -21,20 +21,20 @@
     <div class="player-center">
       <div class="player-controls">
         <button class="ctrl-btn" :title="playModeLabel" @click="playerStore.cyclePlayMode()">
-          <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-          <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          <List :size="16" />
+          <Repeat :size="16" />
+          <Repeat1 :size="16" />
+          <Shuffle :size="16" />
         </button>
         <button class="ctrl-btn" @click="playerStore.playPrev()" title="上一曲">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+          <SkipBack :size="20" :fill="'currentColor'" :stroke-width="0" />
         </button>
         <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
-          <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          <Pause :size="24" :fill="'currentColor'" :stroke-width="0" />
+          <Play :size="24" :fill="'currentColor'" :stroke-width="0" />
         </button>
         <button class="ctrl-btn" @click="playerStore.playNext()" title="下一曲">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+          <SkipForward :size="20" :fill="'currentColor'" :stroke-width="0" />
         </button>
         <button class="ctrl-btn rate-btn" @click="playerStore.cyclePlaybackRate()" :title="'倍速 ' + playerStore.playbackRate + 'x'">
           {{ playerStore.playbackRate }}x
@@ -57,7 +57,7 @@
       <!-- 定时 -->
       <div class="tool-wrapper">
         <button class="right-btn" :class="{ active: playerStore.sleepTimerMinutes !== 0 }" @click="showTimer = !showTimer" title="定时停止">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <History :size="16" />
           <span v-if="playerStore.sleepTimerRemaining > 0" class="timer-badge">{{ playerStore.formatTimerDisplay(playerStore.sleepTimerRemaining) }}</span>
         </button>
         <transition name="popup">
@@ -82,9 +82,9 @@
       <!-- 音量 -->
       <div class="volume-control">
         <button class="right-btn" @click="playerStore.toggleMute()" title="音量">
-          <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-          <svg v-else-if="playerStore.volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+          <VolumeX :size="16" />
+          <Volume1 :size="16" />
+          <Volume2 :size="16" />
         </button>
         <div class="volume-slider">
           <input type="range" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
@@ -167,6 +167,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
+import { Disc3, Heart, List, Repeat, Repeat1, Shuffle, SkipBack, Pause, Play, SkipForward, History, VolumeX, Volume1, Volume2 } from '@lucide/vue'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useMusicStore } from '@/stores/musicStore'
 
@@ -226,7 +227,10 @@ const playModeLabel = computed(() => {
 })
 
 function toggleFav() {
-  if (playerStore.currentSong) musicStore.toggleFavorite(playerStore.currentSong.path)
+  if (playerStore.currentSong) {
+    musicStore.toggleFavorite(playerStore.currentSong.path)
+    window.$toast?.(musicStore.isFavorite(playerStore.currentSong.path) ? "已加入收藏 ♥" : "已取消收藏", "info")
+  }
 }
 
 function goToPlayer() {

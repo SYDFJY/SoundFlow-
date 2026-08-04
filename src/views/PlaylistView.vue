@@ -143,6 +143,7 @@ function confirmAddSongs() {
   addSelected.value.forEach(path => {
     musicStore.addSongToPlaylist(plId, path)
   })
+  if (addSelected.value.size > 0) window.$toast?.(`已添加 ${addSelected.value.size} 首到歌单`, "success")
   showAddDialog.value = false
   addSelected.value = new Set()
   addSearchQuery.value = ''

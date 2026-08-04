@@ -68,4 +68,28 @@ describe('parseLRC', () => {
     expect(parseLRC('')).toEqual([])
     expect(parseLRC('\n\n')).toEqual([])
   })
+
+  it('忽略只有时间戳没有文本的行', () => {
+    const lrc = '[00:01.00]\n[00:02.00]有歌词'
+    const result = parseLRC(lrc)
+    expect(result.length).toBe(1)
+    expect(result[0].text).toBe('有歌词')
+  })
+
+  it('标准行与增强逐字行混合解析', () => {
+    const lrc = '[00:01.00]<00:01.00>你<00:01.50>好\n[00:03.00]普通行'
+    const result = parseLRC(lrc)
+    expect(result.length).toBe(2)
+    expect(result[0].words).toBeTruthy()
+    expect(result[0].words[0].c).toBe('你')
+    expect(result[1].words).toBeNull()
+    expect(result[1].text).toBe('普通行')
+  })
+
+  it('逐字标签文本中含括号等符号不受影响', () => {
+    const lrc = '[00:01.00]<00:01.00>Love (feat. X)<00:01.60> forever'
+    const result = parseLRC(lrc)
+    expect(result[0].text).toBe('Love (feat. X) forever')
+    expect(result[0].words.length).toBe(2)
+  })
 })
