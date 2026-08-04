@@ -623,7 +623,7 @@ async function searchLyric() {
 }
 .lyric-source-switch {
   position: fixed;
-  top: 76px;
+  top: 130px;
   right: 10px;
   transform: none;
   z-index: 40;
