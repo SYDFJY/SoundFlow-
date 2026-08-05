@@ -41,8 +41,8 @@
       </div>
 
       <!-- 封面模式 -->
-      <transition name="mode-fade">
-      <div v-show="activeTab === 'cover'" class="cover-mode">
+      <transition name="mode-fade" mode="out-in">
+      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
@@ -50,8 +50,6 @@
               <div v-else class="cover-placeholder">🎵</div>
             </div>
           </div>
-          <!-- 音频频谱(常驻:播放跳动/暂停低矮基线) -->
-          <canvas ref="spectrumCanvas" class="spectrum-bar"></canvas>
         </div>
         <div class="song-meta" :key="'meta-' + (playerStore.currentSong?.path || 'none')">
           <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
@@ -59,11 +57,7 @@
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
         </div>
       </div>
-      </transition>
-
-      <!-- 歌词模式(独立 transition:transition 只允许单子元素,两个 v-show 必须分开) -->
-      <transition name="mode-fade">
-      <div v-show="activeTab !== 'cover'" class="lyric-mode">
+      <div v-else class="lyric-mode">
         <div class="lyric-left">
           <div class="disc-small" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover-small">
@@ -145,6 +139,9 @@
         </div>
       </div>
       </transition>
+
+      <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
+      <canvas v-show="activeTab === 'cover'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
 
       <!-- 底部控制栏 -->
       <div class="player-controls">
