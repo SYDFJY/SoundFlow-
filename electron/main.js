@@ -1010,8 +1010,34 @@ function setupIPC() {
     } catch { return [] }
   }
 
-  ipcMain.handle('read-lyric-file', async (event, audioPath, lyricFolders) => {
-    const ext = path.extname(audioPath)
+  // 删除本地歌词(精确匹配:歌曲同目录同名 .lrc,或歌词文件夹中完全同名;不做模糊匹配防误删)
+  ipcMain.handle('delete-lyric-file', async (event, audioPath, lyricFolders) => {
+    try {
+      const ext = path.extname(audioPath)
+      const base = path.basename(audioPath, ext)
+      // 1. 同目录同名
+      const sameDir = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
+      if (fs.existsSync(sameDir)) {
+        fs.unlinkSync(sameDir)
+        return { ok: true, deleted: sameDir }
+      }
+      // 2. 歌词文件夹完全同名(仅精确匹配,不模糊)
+      if (lyricFolders && lyricFolders.length) {
+        for (const folder of lyricFolders) {
+          const exact = path.join(folder, base + '.lrc')
+          if (fs.existsSync(exact)) {
+            fs.unlinkSync(exact)
+            return { ok: true, deleted: exact }
+          }
+        }
+      }
+      return { ok: false, error: '未找到该歌曲的本地歌词文件' }
+    } catch (e) {
+      return { ok: false, error: e.code === 'EACCES' || e.code === 'EPERM' ? '无权限删除(文件只读或被占用)' : (e.message || '删除失败') }
+    }
+  })
+
+  ipcMain.handle('read-lyric-file', async (event, audioPath, lyricFolders) => {    const ext = path.extname(audioPath)
     const base = path.basename(audioPath, ext)
     // 1. 同目录同名
     const sameDirLrc = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'

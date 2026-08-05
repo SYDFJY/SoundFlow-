@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readLyricFile: (audioPath, lyricFolders) => ipcRenderer.invoke('read-lyric-file', audioPath, lyricFolders),
   selectLyricFile: () => ipcRenderer.invoke('select-lyric-file'),
   bindLyricFile: (audioPath, lrcPath) => ipcRenderer.invoke('bind-lyric-file', audioPath, lrcPath),
+  deleteLyricFile: (audioPath, lyricFolders) => ipcRenderer.invoke('delete-lyric-file', audioPath, lyricFolders),
   scanLyricFolder: (folderPath) => ipcRenderer.invoke('scan-lyric-folder', folderPath),
   fetchOnlineLyric: (info) => ipcRenderer.invoke('fetch-online-lyric', info),
   translateLyrics: (data) => ipcRenderer.invoke('translate-lyrics', data),

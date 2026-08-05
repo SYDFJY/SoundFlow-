@@ -91,7 +91,10 @@
             <div v-if="showColorPanel" class="color-panel" @click.stop>
               <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
             </div>
-            <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">{{ playerStore.lyricOrigin }}歌词</div>
+            <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">
+              {{ playerStore.lyricOrigin }}歌词
+              <button v-if="playerStore.lyricOrigin === '本地'" class="ls-del-btn" title="删除本地歌词" @click="deleteLocalLyric">🗑</button>
+            </div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
               <div class="empty-icon">📝</div>
               <div>{{ t('playerView.noLyrics') }}</div>
@@ -924,8 +927,23 @@ function lyricWordSegments(line) {
   return tokens.map((c, i) => ({ t: start + i * per, c }))
 }
 
-function switchLyricSource(v) {
-  if (lyricSource.value === v) return
+// 删除当前歌曲的本地歌词文件(绕开资源管理器删除问题,精确匹配不误删)
+async function deleteLocalLyric() {
+  const song = playerStore.currentSong
+  if (!song || !window.electronAPI) return
+  if (!window.confirm('确定删除这首歌的本地歌词文件吗?\n删除后播放时将使用在线歌词。')) return
+  let folders = []
+  try { folders = JSON.parse(localStorage.getItem('soundflow_lyric_folders') || '[]') } catch {}
+  const r = await window.electronAPI.deleteLyricFile(song.path, folders)
+  if (r && r.ok) {
+    window.$toast?.('本地歌词已删除 ✓ 已切换到在线歌词', 'success')
+    playerStore.loadLyrics(song)
+  } else {
+    window.$toast?.('删除失败:' + ((r && r.error) || '请检查文件权限'), 'error')
+  }
+}
+
+function switchLyricSource(v) {  if (lyricSource.value === v) return
   lyricSource.value = v
   localStorage.setItem('soundflow_lyric_source', v)
   const cur = playerStore.currentSong
@@ -1159,6 +1177,8 @@ async function searchLyric() {
   color: rgba(255,255,255,0.75);
   background: rgba(255,255,255,0.06);
 }
+.ls-del-btn { margin-left: 6px; padding: 0 4px; font-size: 12px; cursor: pointer; opacity: 0.7; border: none; background: none; }
+.ls-del-btn:hover { opacity: 1; }
 .lyric-origin-tag {
   position: absolute;
   top: 6px;
