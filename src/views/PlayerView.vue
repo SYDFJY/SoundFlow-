@@ -574,11 +574,15 @@ const playModeLabelKey = computed(() => {
 })
 const playModeLabel = computed(() => t(playModeLabelKey.value))
 
-// 切歌时自动滚动歌词
+// 切歌时自动滚动歌词:近距离平滑、远距离直接跳(避免播放中每句 smooth 的持续合成开销)
 watch(() => playerStore.currentLyricIndex, () => {
   nextTick(() => {
     if (activeLyricEl.value && lyricsPanel.value) {
-      activeLyricEl.value.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const panel = lyricsPanel.value.getBoundingClientRect()
+      const el = activeLyricEl.value.getBoundingClientRect()
+      // 歌词行中心距面板中心的距离
+      const dist = (el.top + el.height / 2) - (panel.top + panel.height / 2)
+      activeLyricEl.value.scrollIntoView({ behavior: Math.abs(dist) <= 200 ? 'smooth' : 'auto', block: 'center' })
     }
   })
 })
