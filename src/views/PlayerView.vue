@@ -176,9 +176,16 @@
                 <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
                   <div class="pitch-header">
                     <span>{{ t('playerView.pitch') }}</span>
-                    <span class="pitch-value">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
+                    <span class="pitch-value" :class="{ 'pitch-value--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
+                  </div>
+                  <!-- 常用预设:一键切换音高 -->
+                  <div class="pitch-presets">
+                    <button v-for="p in PITCH_PRESETS" :key="p.v" class="pitch-preset" :class="{ active: playerStore.pitch === p.v }" @click="playerStore.setPitch(p.v)">{{ p.label }}</button>
                   </div>
                   <input type="range" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
+                  <div class="pitch-scale">
+                    <span>-12</span><span>0</span><span>+12</span>
+                  </div>
                   <div class="pitch-actions">
                     <button class="pitch-reset" @click="playerStore.setPitch(0)">{{ t('playerView.pitchReset') }}</button>
                   </div>
@@ -578,6 +585,14 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
 const volExpanded = ref(false) // 音量滑块默认收起
+const PITCH_PRESETS = [
+  { v: 0, label: '原声' },
+  { v: -3, label: '男声' },
+  { v: 4, label: '女声' },
+  { v: 7, label: '童声' },
+  { v: -2, label: '降' },
+  { v: 2, label: '升' }
+]
 const showPitchPanel = ref(false) // 变调面板默认收起
 
 // 频响曲线可视化:随 EQ 滑块实时绘制
@@ -1357,6 +1372,19 @@ async function searchLyric() {
   -webkit-appearance: none; width: 12px; height: 12px;
   background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
 }
+.pitch-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.pitch-preset {
+  flex: 1; min-width: 42px; padding: 3px 0; font-size: var(--font-size-sm, 12px);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
+  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+}
+.pitch-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.pitch-preset.active {
+  background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff);
+  box-shadow: 0 0 0 1px var(--color-primary, #4096ff);
+}
+.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-top: 2px; padding: 0 2px; }
+.pitch-value--active { color: #fff; background: var(--color-primary, #4096ff); border-radius: 4px; padding: 0 6px; }
 .pitch-actions { display: flex; justify-content: center; margin-top: 8px; }
 .pitch-reset {
   font-size: var(--font-size-sm, 12px); padding: 3px 14px;

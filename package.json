@@ -18,6 +18,7 @@
     "music-metadata": "^11.12.3",
     "pinia": "^2.1.7",
     "sortablejs": "^1.15.7",
+    "soundtouchjs": "^0.3.0",
     "vue": "^3.4.0",
     "vue-router": "^4.2.5"
   },
@@ -43,7 +44,10 @@
       "build/thumb/**/*"
     ],
     "extraResources": [
-      { "from": "C:/ffmpeg/bin/ffmpeg.exe", "to": "ffmpeg/ffmpeg.exe" }
+      {
+        "from": "C:/ffmpeg/bin/ffmpeg.exe",
+        "to": "ffmpeg/ffmpeg.exe"
+      }
     ],
     "win": {
       "target": [
