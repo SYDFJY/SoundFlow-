@@ -37,10 +37,27 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">跟随系统深色模式</span>
+            <span class="label-desc">系统切换深色/浅色时自动切换主题(手动选主题将关闭此功能)</span>
+          </div>
+          <button class="setting-btn" :class="{ active: appStore.followSystemTheme }" @click="appStore.setFollowSystemTheme(!appStore.followSystemTheme)">
+            {{ appStore.followSystemTheme ? '已开启 ✓' : '已关闭' }}
+          </button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">切歌系统通知</span>
+            <span class="label-desc">切换歌曲时在系统通知中心弹出提示(默认关闭)</span>
+          </div>
+          <button class="setting-btn" :class="{ active: songNotify }" @click="toggleSongNotify">
+            {{ songNotify ? '已开启 ✓' : '已关闭' }}
+          </button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">{{ t('settings.language') }}</span>
             <span class="label-desc">Language / 界面语言</span>
-          </div>
-          <div class="lang-options">
+          </div>          <div class="lang-options">
             <button class="theme-btn" :class="{ active: currentLang === 'zh' }" @click="switchLang('zh')">简体中文</button>
             <button class="theme-btn" :class="{ active: currentLang === 'en' }" @click="switchLang('en')">English</button>
           </div>
@@ -666,6 +683,11 @@ const systemFonts = [
 const currentFont = ref(localStorage.getItem('soundflow_font_family') || systemFonts[0].value)
 const customFonts = ref(JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]'))
 const fontExpanded = ref(false) // 已导入字体区展开/收起
+const songNotify = ref(localStorage.getItem('soundflow_song_notify') === '1')
+function toggleSongNotify() {
+  songNotify.value = !songNotify.value
+  localStorage.setItem('soundflow_song_notify', songNotify.value ? '1' : '0')
+}
 
 function selectFont(family) {
   currentFont.value = family

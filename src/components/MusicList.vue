@@ -122,6 +122,12 @@
         </button>
         <button @click="ctxBindLyric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> 导入歌词文件</button>
         <button @click="ctxOpenFile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> 打开文件位置</button>
+        <button @click="ctxShowProps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> 文件属性</button>
+        <div class="ctx-divider"></div>
+        <div class="ctx-sort-label">排序方式</div>
+        <button v-for="sf in ctxSortFields" :key="sf.value" class="ctx-sort-btn" :class="{ active: musicStore.sortField === sf.value }" @click="ctxSort(sf.value)">
+          {{ sf.label }} {{ musicStore.sortField === sf.value ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}
+        </button>
         <div class="ctx-divider"></div>
         <button class="danger" @click="ctxRemove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> 移除</button>
       </div>
@@ -151,6 +157,27 @@
         <div class="edit-actions">
           <button class="modal-btn cancel" @click="editModal.show = false">取消</button>
           <button class="modal-btn confirm" :disabled="savingTags" @click="saveEditInfo">{{ savingTags ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
+    <!-- 文件属性 -->
+    <div v-if="propModal.show" class="modal-mask" @click.self="propModal.show = false">
+      <div class="edit-modal prop-modal">
+        <h3>文件属性</h3>
+        <div class="prop-grid">
+          <div class="prop-item"><span class="prop-k">文件名</span><span class="prop-v">{{ propModal.fileName }}</span></div>
+          <div class="prop-item"><span class="prop-k">格式</span><span class="prop-v">{{ propModal.format }}</span></div>
+          <div class="prop-item"><span class="prop-k">大小</span><span class="prop-v">{{ propModal.size }}</span></div>
+          <div class="prop-item"><span class="prop-k">时长</span><span class="prop-v">{{ propModal.duration }}</span></div>
+          <div class="prop-item"><span class="prop-k">比特率</span><span class="prop-v">{{ propModal.bitrate }}</span></div>
+          <div class="prop-item"><span class="prop-k">采样率</span><span class="prop-v">{{ propModal.sampleRate }}</span></div>
+          <div class="prop-item"><span class="prop-k">标题</span><span class="prop-v">{{ propModal.title }}</span></div>
+          <div class="prop-item"><span class="prop-k">歌手</span><span class="prop-v">{{ propModal.artist }}</span></div>
+          <div class="prop-item"><span class="prop-k">专辑</span><span class="prop-v">{{ propModal.album }}</span></div>
+          <div class="prop-item prop-path"><span class="prop-k">路径</span><span class="prop-v">{{ propModal.path }}</span></div>
+        </div>
+        <div class="edit-actions">
+          <button class="modal-btn cancel" @click="propModal.show = false">关闭</button>
         </div>
       </div>
     </div>
@@ -258,6 +285,52 @@ async function saveEditInfo() {
 const playerStore = usePlayerStore()
 const selectedSet = ref(new Set())
 const ctxMenu = ref({ show: false, x: 0, y: 0, song: null })
+const propModal = ref({ show: false, fileName: '', format: '', size: '', duration: '', bitrate: '', sampleRate: '', title: '', artist: '', album: '', path: '' })
+const ctxSortFields = [
+  { value: 'title', label: '按标题' },
+  { value: 'artist', label: '按歌手' },
+  { value: 'album', label: '按专辑' },
+  { value: 'duration', label: '按时长' },
+  { value: 'playCount', label: '按播放次数' }
+]
+
+function ctxSort(field) {
+  musicStore.setSortField(field)
+}
+
+function fmtBytes(n) {
+  if (!n && n !== 0) return '-'
+  if (n < 1024) return n + ' B'
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB'
+  if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB'
+  return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB'
+}
+
+async function ctxShowProps() {
+  const s = ctxMenu.value.song
+  closeCtx()
+  if (!s) return
+  let size = '-'
+  try {
+    if (window.electronAPI?.getFileInfo) {
+      const info = await window.electronAPI.getFileInfo(s.path)
+      if (info) size = fmtBytes(info.size)
+    }
+  } catch {}
+  propModal.value = {
+    show: true,
+    fileName: s.path.split(/[\\/]/).pop() || s.title || '',
+    format: (s.path.split('.').pop() || '').toUpperCase(),
+    size,
+    duration: s.duration ? Math.floor(s.duration / 60) + ':' + String(Math.floor(s.duration % 60)).padStart(2, '0') : '-',
+    bitrate: s.bitrate ? s.bitrate + ' kbps' : '-',
+    sampleRate: s.sampleRate ? (s.sampleRate / 1000).toFixed(1) + ' kHz' : '-',
+    title: s.title || '-',
+    artist: s.artist || '-',
+    album: s.album || '-',
+    path: s.path
+  }
+}
 const playlists = computed(() => musicStore.playlists)
 
 // 懒补封面:曲库中 coverUrl 为空(历史数据)时,可见行按需从主进程获取封面文件
@@ -399,7 +472,7 @@ function highlight(text) {
 function showContextMenu(e, song) {
   // 菜单限制在视口内:右/下溢出时自动左移/上移,避免被截断遮挡
   const menuW = 200
-  const menuH = 320
+  const menuH = 460
   let x = e.clientX
   let y = e.clientY
   if (x + menuW > window.innerWidth - 8) x = Math.max(4, window.innerWidth - menuW - 8)
@@ -735,6 +808,16 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .context-menu button.danger { color: var(--color-danger); }
 .context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
 .ctx-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+.ctx-sort-label { font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.4)); padding: 4px 12px 2px; }
+.ctx-sort-btn { width: 100%; padding: 5px 12px; font-size: 12px; color: var(--text-secondary, rgba(255,255,255,0.65)); text-align: left; background: none; border: none; cursor: pointer; }
+.ctx-sort-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.ctx-sort-btn.active { color: var(--color-primary, #4096ff); }
+/* 文件属性弹窗 */
+.prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 10px 0 4px; }
+.prop-item { display: flex; flex-direction: column; gap: 2px; }
+.prop-item.prop-path { grid-column: 1 / -1; }
+.prop-k { font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.45)); }
+.prop-v { font-size: 13px; color: var(--text-primary, #fff); word-break: break-all; }
 /* 编辑歌曲信息弹窗 */
 .modal-mask {
   position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 300;

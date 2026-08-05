@@ -12,6 +12,7 @@ export const useAppStore = defineStore('app', () => {
   const language = ref('zh-CN')
   const autoPlay = ref(true)
   const closeAction = ref('minimize') // minimize, exit
+  const followSystemTheme = ref(false) // 跟随系统深色模式(默认关)
 
   // 主题色
   // 主题配色:纯色低饱和(BG-Main / BG-Card / Accent / 文本),每套含播放页深色沉浸背景(--player-bg-dark)
@@ -287,6 +288,19 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // 跟随系统深色模式:系统切换时自动用 深色(dark)/浅色(light) 主题
+  function setFollowSystemTheme(on) {
+    followSystemTheme.value = !!on
+    localStorage.setItem('soundflow_follow_system_theme', followSystemTheme.value ? '1' : '0')
+    if (followSystemTheme.value) {
+      const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+      applyTheme(dark ? 'dark' : 'light')
+    }
+  }
+  function applySystemTheme(dark) {
+    if (followSystemTheme.value) applyTheme(dark ? 'dark' : 'light')
+  }
+
   // 主题导入导出(自定义主题持久化到 localStorage)
   const customThemes = ref({})
   function loadCustomThemes() {
@@ -324,6 +338,13 @@ export const useAppStore = defineStore('app', () => {
 
       const cl = localStorage.getItem('soundflow_close_action')
       if (cl) closeAction.value = cl
+
+      // 跟随系统深色模式(默认关)
+      if (localStorage.getItem('soundflow_follow_system_theme') === '1') {
+        followSystemTheme.value = true
+        const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        applyTheme(dark ? 'dark' : 'light')
+      }
 
       // 界面语言
       const lang = localStorage.getItem('soundflow_language') || 'zh'
@@ -363,8 +384,9 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     theme, fontSize, showSidebar, sidebarWidth, currentView,
-    showSettings, language, autoPlay, closeAction,
+    showSettings, language, autoPlay, closeAction, followSystemTheme,
     themes, applyTheme, loadSettings, saveSettings, setFontSize,
+    setFollowSystemTheme, applySystemTheme,
     exportThemeJSON, importThemeJSON
   }
 })

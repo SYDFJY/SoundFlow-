@@ -179,8 +179,8 @@ export const useMusicStore = defineStore('music', () => {
       )
     }
     list.sort((a, b) => {
-      let va = a[sortField.value] || ''
-      let vb = b[sortField.value] || ''
+      let va = sortField.value === 'playCount' ? (playCounts.value[a.path] || 0) : (a[sortField.value] || '')
+      let vb = sortField.value === 'playCount' ? (playCounts.value[b.path] || 0) : (b[sortField.value] || '')
       if (typeof va === 'string') va = va.toLowerCase()
       if (typeof vb === 'string') vb = vb.toLowerCase()
       if (va < vb) return sortOrder.value === 'asc' ? -1 : 1
@@ -399,6 +399,25 @@ export const useMusicStore = defineStore('music', () => {
     if (files && files.length) await scanFiles(files)
   }
 
+  // 拖放导入:文件/文件夹混合,去重后入库
+  async function importDropped(paths) {
+    if (!window.electronAPI || !paths || !paths.length) return 0
+    const results = await window.electronAPI.importDropped(paths)
+    if (!results || !results.length) {
+      try { window.$toast?.('拖入的内容中没有可导入的音乐文件', 'warning') } catch {}
+      return 0
+    }
+    const existing = new Set(songs.value.map(s => s.path))
+    const added = results.filter(r => !existing.has(r.path))
+    if (added.length) {
+      addSongs(added)
+      try { window.$toast?.(`已导入 ${added.length} 首音乐`, 'success') } catch {}
+    } else {
+      try { window.$toast?.('这些音乐已在曲库中', 'info') } catch {}
+    }
+    return added.length
+  }
+
   // 添加歌词文件夹
   async function addLyricFolder() {
     if (!window.electronAPI) return
@@ -512,7 +531,7 @@ export const useMusicStore = defineStore('music', () => {
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, getPlaylistSongs,
-    setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles,
+    setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles, importDropped,
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, clearHistory,
     checkMissingSongs, startupMissingCheck,

@@ -1,7 +1,7 @@
 /**
  * SoundFlow 声流音乐 — Electron 主进程
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker, nativeTheme, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { readdir, stat, readFile, writeFile, mkdir } = require('fs/promises')
@@ -437,8 +437,7 @@ async function refreshFolderSnapshot(dir) {
   folderSnapshots.set(dir, newSnap)
   // 注意:文件内容变化(mtime/size 变)不算新增;解析失败的文件保留在快照里,避免反复推送
   if ((added.length || removed.length) && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('library-folder-changed', { added, removed })
-  }
+    mainWindow.webContents.send('library-folder-changed', { added, removed })  }
 }
 
 function startFolderWatch() {
@@ -881,6 +880,38 @@ function setupIPC() {
       filters: [{ name: '音频文件', extensions: Array.from(AUDIO_EXTS).map(e => e.replace('.', '')) }]
     })
     return result.canceled ? [] : result.filePaths
+  })
+
+  // 文件属性:大小/修改时间(属性弹窗用)
+  ipcMain.handle('get-file-info', async (event, filePath) => {
+    try {
+      const st = await stat(filePath)
+      return { size: st.size, mtime: st.mtimeMs }
+    } catch {
+      return null
+    }
+  })
+
+  // 拖放导入:文件/文件夹混合,复用扫描逻辑
+  ipcMain.handle('import-dropped', async (event, paths) => {
+    const audioPaths = []
+    for (const p of (paths || [])) {
+      try {
+        const st = await stat(p)
+        if (st.isDirectory()) audioPaths.push(...await scanFolderRecursive(p))
+        else if (st.isFile() && AUDIO_EXTS.has(path.extname(p).toLowerCase())) audioPaths.push(p)
+      } catch {}
+    }
+    const results = []
+    for (const filePath of audioPaths) {
+      try {
+        const meta = await parseMetadata(filePath)
+        results.push({ path: filePath, ...meta })
+      } catch (e) {
+        console.error('[拖放导入] 解析失败:', filePath, e.message)
+      }
+    }
+    return results
   })
 
   // 扫描文件夹
@@ -1662,6 +1693,18 @@ function setupIPC() {
 
   // 文件夹监控开关(自动刷新曲库)
   ipcMain.on('set-folder-watch', (event, enabled) => setFolderWatchEnabled(!!enabled))
+  // 切歌系统通知(开关在设置页,渲染进程控制)
+  ipcMain.on('notify-song', (event, info) => {
+    try {
+      if (!info || !info.title) return
+      const n = new Notification({
+        title: info.title,
+        body: info.artist ? `正在播放:${info.artist}` : '正在播放',
+        silent: true
+      })
+      n.show()
+    } catch {}
+  })
   ipcMain.handle('get-folder-watch', () => !!storageData.folderWatch)
 
   // 迷你播放器
@@ -2093,6 +2136,14 @@ app.whenReady().then(async () => {
   createTray()
   setupIPC()
   setupAutoUpdater()
+  // 系统深色模式变化 → 推送渲染进程(主题跟随系统)
+  nativeTheme.on('updated', () => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('system-theme', nativeTheme.shouldUseDarkColors)
+      }
+    } catch {}
+  })
   // 文件夹监控:默认开(用户关闭过则保持关闭),扫描目录存在时启动
   if (storageData.folderWatch !== false) setFolderWatchEnabled(true)
   // 注意:不再用 globalShortcut 注册系统媒体键(MediaPlayPause 等)。

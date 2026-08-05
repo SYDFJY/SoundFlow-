@@ -537,6 +537,15 @@ export const usePlayerStore = defineStore('player', () => {
     currentSong.value = song
     isBuffering.value = true
 
+    // 切歌系统通知(设置开关,默认关)
+    if (window.electronAPI?.send) {
+      try {
+        if (localStorage.getItem('soundflow_song_notify') === '1') {
+          window.electronAPI.send('notify-song', { title: song.title || '', artist: song.artist || '' })
+        }
+      } catch {}
+    }
+
     // 是否允许恢复记忆:非手动选择 且 非随机模式 且 该歌有记忆记录
     _pendingRestore = !fromBeginning && playMode.value !== 'random'
     if (!_pendingRestore || !progressHistory.value[song.path]) {

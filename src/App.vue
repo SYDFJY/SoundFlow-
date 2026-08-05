@@ -1,5 +1,13 @@
 <template>
   <div class="app" :class="[`theme-${appStore.theme}`]">
+    <!-- 拖放导入遮罩 -->
+    <div v-if="dragOver" class="drop-overlay">
+      <div class="drop-box">
+        <div class="drop-icon">🎵</div>
+        <div class="drop-text">松开导入音乐</div>
+        <div class="drop-sub">支持音频文件与文件夹(自动扫描)</div>
+      </div>
+    </div>
     <!-- 播放器全屏模式：不显示侧边栏、顶部栏、底部播放栏 -->
     <template v-if="isFullscreen">
       <router-view v-slot="{ Component }">
@@ -25,6 +33,28 @@
       <PlayerBar />
     </template>
     <ToastHost />
+    <!-- 快捷键帮助面板 -->
+    <teleport to="body">
+      <div v-if="showShortcutHelp" class="shortcut-help-mask" @click.self="showShortcutHelp = false">
+        <div class="shortcut-help">
+          <div class="sh-header">
+            <h3>⌨️ 快捷键</h3>
+            <button class="sh-close" @click="showShortcutHelp = false">✕</button>
+          </div>
+          <div class="sh-list">
+            <div v-for="(it, i) in shortcutHelpItems" :key="i" class="sh-item">
+              <kbd class="sh-key">{{ it.k }}</kbd>
+              <span class="sh-desc">{{ it.d }}</span>
+            </div>
+          </div>
+          <div class="sh-tips">
+            <div class="sh-tip"><b>右键</b>歌曲 → 排序 / 属性 / 收藏 / 导入歌词</div>
+            <div class="sh-tip"><b>双击</b>歌曲播放 · <b>拖放</b>文件/文件夹导入 · 点击歌词跳转进度</div>
+            <div class="sh-tip">设置页可自定义以上快捷键</div>
+          </div>
+        </div>
+      </div>
+    </teleport>
     <!-- 翻译服务不可用弹窗 -->
     <teleport to="body">
       <div v-if="playerStore.translateNotice" class="translate-notice-mask" @click.self="playerStore.translateNotice = ''">
@@ -68,6 +98,44 @@ const router = useRouter()
 function goTranslateConfig() {
   playerStore.translateNotice = ''
   router.push('/settings')
+}
+
+// 拖放导入状态与处理
+const dragOver = ref(false)
+const showShortcutHelp = ref(false)
+const shortcutHelpItems = computed(() => {
+  const s = safeParse(localStorage.getItem('soundflow_shortcuts'))
+  const def = {
+    playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft',
+    volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown', mute: 'Control+KeyM'
+  }
+  const fmt = (k) => (s[k] || def[k]).replace('Control+', 'Ctrl+').replace('Arrow', '').replace('KeyM', 'M')
+  return [
+    { k: fmt('playPause'), d: '播放 / 暂停' },
+    { k: fmt('next'), d: '下一曲' },
+    { k: fmt('prev'), d: '上一曲' },
+    { k: fmt('volUp'), d: '音量 +' },
+    { k: fmt('volDown'), d: '音量 -' },
+    { k: fmt('mute'), d: '静音' }
+  ]
+})
+let _dragDepth = 0
+function onDragOver(e) {
+  if (!e.dataTransfer?.types?.includes('Files')) return
+  e.preventDefault()
+  _dragDepth++
+  dragOver.value = true
+}
+function onDragLeave() {
+  _dragDepth = Math.max(0, _dragDepth - 1)
+  if (_dragDepth === 0) dragOver.value = false
+}
+function onDrop(e) {
+  e.preventDefault()
+  _dragDepth = 0
+  dragOver.value = false
+  const paths = [...(e.dataTransfer?.files || [])].map(f => f.path).filter(Boolean)
+  if (paths.length) musicStore.importDropped(paths)
 }
 
 // 播放器页面和歌词悬浮窗全屏显示
@@ -118,14 +186,24 @@ function onGlobalKey(e) {
   } else if (matchShortcut(e, 'mute')) {
     e.preventDefault()
     playerStore.toggleMute()
+  } else if ((e.code === 'Slash' && e.shiftKey) || e.code === 'NumpadDivide') {
+    // ? 键:快捷键帮助面板
+    e.preventDefault()
+    showShortcutHelp.value = !showShortcutHelp.value
   }
 }
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKey)
+  // 拖放导入:文件/文件夹拖入窗口
+  window.addEventListener('dragover', onDragOver)
+  window.addEventListener('drop', onDrop)
+  window.addEventListener('dragleave', onDragLeave)
   // 桌面歌词窗口点击歌词行 → 跳转播放进度
   if (window.electronAPI && window.electronAPI.on) {
     window.electronAPI.on('lyric:seek', (time) => { playerStore.seek(time) })
+    // 系统深色模式变化 → 主题跟随
+    window.electronAPI.on('system-theme', (dark) => { appStore.applySystemTheme(!!dark) })
   }
   appStore.loadSettings()
   musicStore.restoreLibrary()
@@ -257,4 +335,48 @@ onUnmounted(() => {
 .tn-btn:hover { background: rgba(255,255,255,0.08); }
 .tn-btn--primary { background: var(--color-primary, #4096ff); border-color: var(--color-primary, #4096ff); color: #fff; font-weight: 600; }
 .tn-btn--primary:hover { filter: brightness(1.1); }
+/* 拖放导入遮罩 */
+.drop-overlay {
+  position: fixed; inset: 0; z-index: 99999;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.drop-box {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 42px 70px; border-radius: 20px;
+  background: var(--bg-card, rgba(255,255,255,0.08));
+  border: 2px dashed var(--color-primary, #4096ff);
+  color: var(--text-primary, #fff);
+}
+.drop-icon { font-size: 44px; }
+.drop-text { font-size: 20px; font-weight: 600; }
+.drop-sub { font-size: 13px; color: var(--text-secondary, rgba(255,255,255,0.6)); }
+/* 快捷键帮助面板 */
+.shortcut-help-mask {
+  position: fixed; inset: 0; z-index: 99998;
+  background: rgba(0,0,0,0.5); backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+}
+.shortcut-help {
+  width: 380px; max-width: 90vw; padding: 20px 24px;
+  background: var(--bg-secondary, rgba(20,28,50,0.97));
+  border: 1px solid var(--border-color); border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  color: var(--text-primary, #fff);
+}
+.sh-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.sh-header h3 { margin: 0; font-size: 17px; }
+.sh-close { background: none; border: none; color: var(--text-secondary); font-size: 16px; cursor: pointer; padding: 2px 6px; }
+.sh-close:hover { color: #fff; }
+.sh-list { display: flex; flex-direction: column; gap: 8px; }
+.sh-item { display: flex; align-items: center; gap: 12px; }
+.sh-key {
+  min-width: 90px; padding: 3px 10px; text-align: center;
+  background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 6px; font-size: 12px; font-family: Consolas, monospace; color: var(--color-primary-light, #58a6ff);
+}
+.sh-desc { font-size: 13px; color: var(--text-primary, #fff); }
+.sh-tips { margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border-color); display: flex; flex-direction: column; gap: 6px; }
+.sh-tip { font-size: 12px; color: var(--text-secondary, rgba(255,255,255,0.6)); }
 </style>

@@ -25,6 +25,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: () => ipcRenderer.invoke('select-files'),
   scanFolder: (folderPath) => ipcRenderer.invoke('scan-folder', folderPath),
+  importDropped: (paths) => ipcRenderer.invoke('import-dropped', paths),
+  getFileInfo: (p) => ipcRenderer.invoke('get-file-info', p),
   scanFiles: (filePaths) => ipcRenderer.invoke('scan-files', filePaths),
 
   // 元数据
@@ -107,7 +109,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)
@@ -120,7 +122,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save', 'notify-song']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }
