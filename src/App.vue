@@ -226,10 +226,13 @@ onMounted(() => {
   try {
     const fam = localStorage.getItem('soundflow_font_family')
     if (fam) document.documentElement.style.setProperty('--font-family', fam)
+    // 只加载当前使用的那个字体(其余按需:设置页选择时再加载)
+    // 原因:中文字体每个 10-24MB,全部加载会在主线程解码导致启动卡顿+字体延迟
     const cfs = JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]')
-    for (const cf of cfs) {
+    const activeFont = cfs.find(cf => fam && fam.includes(cf.name))
+    if (activeFont) {
       try {
-        const f = new FontFace(cf.name, `url('${cf.url}')`)
+        const f = new FontFace(activeFont.name, `url('${activeFont.url}')`)
         f.load().then(() => document.fonts.add(f)).catch(() => {})
       } catch {}
     }

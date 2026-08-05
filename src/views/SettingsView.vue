@@ -706,6 +706,18 @@ function selectFont(family) {
   currentFont.value = family
   localStorage.setItem('soundflow_font_family', family)
   document.documentElement.style.setProperty('--font-family', family)
+  // 按需注册:切换到的字体若尚未加载,异步加载 FontFace(避免启动时全部加载 90MB 卡顿)
+  const name = (family || '').replace(/"/g, '')
+  const cf = customFonts.value.find(f => f.name === name)
+  if (cf) {
+    try {
+      const exists = [...document.fonts].some(ff => ff.family === name)
+      if (!exists) {
+        const f = new FontFace(cf.name, `url('${cf.url}')`)
+        f.load().then(() => document.fonts.add(f)).catch(() => {})
+      }
+    } catch {}
+  }
 }
 
 async function importFont() {
