@@ -501,7 +501,9 @@ function createLyricWindow() {
   if (lyricWindow) { lyricWindow.show(); return }
 
   const pos = storageData.lyricPos || null
-  const size = storageData.lyricSize || { width: 560, height: 90 }
+  // 记忆的尺寸过大(异常/旧值)时回退默认;用户后续拖动会重新记忆
+  let size = storageData.lyricSize || { width: 560, height: 90 }
+  if (!size || size.width > 1000 || size.height > 320) size = { width: 560, height: 90 }
   lyricWindow = new BrowserWindow({
     width: size.width || 560,
     height: size.height || 90,
