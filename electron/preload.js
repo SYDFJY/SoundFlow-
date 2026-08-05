@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 歌单导入导出
   exportPlaylist: (name, data) => ipcRenderer.invoke('export-playlist', name, data),
   importPlaylist: () => ipcRenderer.invoke('import-playlist'),
+  exportPlaylistM3u: (name, songs) => ipcRenderer.invoke('export-playlist-m3u', name, songs),
+  importM3u: () => ipcRenderer.invoke('import-m3u'),
 
   // 文件夹监控(自动刷新曲库)
   setFolderWatch: (enabled) => ipcRenderer.send('set-folder-watch', !!enabled),

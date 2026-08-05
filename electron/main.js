@@ -1809,6 +1809,51 @@ function setupIPC() {
     }
     return null
   })
+
+  // 歌单导出为 .m3u(通用播放列表格式)
+  ipcMain.handle('export-playlist-m3u', async (event, name, songs) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: `${name || '歌单'}.m3u`,
+      filters: [{ name: 'M3U 播放列表', extensions: ['m3u'] }]
+    })
+    if (result.canceled || !result.filePath) return false
+    try {
+      const lines = ['#EXTM3U']
+      for (const s of songs || []) {
+        lines.push(`#EXTINF:${Math.round(s.duration || 0)},${s.artist || '未知'} - ${s.title || ''}`)
+        lines.push(s.path)
+      }
+      fs.writeFileSync(result.filePath, lines.join('\r\n') + '\r\n', 'utf8')
+      return true
+    } catch (e) { return false }
+  })
+
+  // 导入歌单:支持 .m3u(解析文件路径列表)与 .json(歌单数据)
+  ipcMain.handle('import-m3u', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile'],
+      filters: [{ name: '播放列表', extensions: ['m3u', 'json'] }]
+    })
+    if (result.canceled || !result.filePaths[0]) return null
+    const file = result.filePaths[0]
+    const ext = path.extname(file).toLowerCase()
+    if (ext === '.json') {
+      try {
+        const data = JSON.parse(fs.readFileSync(file, 'utf8'))
+        return { kind: 'json', data }
+      } catch { return null }
+    }
+    try {
+      const text = fs.readFileSync(file, 'utf8')
+      const paths = []
+      for (const raw of text.split(/\r?\n/)) {
+        const line = raw.trim()
+        if (!line || line.startsWith('#EXT')) continue
+        paths.push(line.replace(/^"(.*)"$/, '$1').trim())
+      }
+      return { kind: 'm3u', paths }
+    } catch { return null }
+  })
 }
 
 // ========== 菜单 ==========
