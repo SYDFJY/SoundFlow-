@@ -472,7 +472,7 @@ function highlight(text) {
 function showContextMenu(e, song) {
   // 菜单限制在视口内:右/下溢出时自动左移/上移,避免被截断遮挡
   const menuW = 200
-  const menuH = 460
+  const menuH = Math.min(680, window.innerHeight - 16) // 实际菜单高度约 660px,超高部分菜单内部滚动
   let x = e.clientX
   let y = e.clientY
   if (x + menuW > window.innerWidth - 8) x = Math.max(4, window.innerWidth - menuW - 8)
@@ -788,8 +788,9 @@ watch(() => playerStore.currentSong?.path, (p) => {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: 200;
-  overflow: hidden;
+  z-index: 9999;
+  overflow-y: auto;
+  max-height: calc(100vh - 16px);
   min-width: 180px;
   padding: 4px;
 }
