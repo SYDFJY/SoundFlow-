@@ -97,9 +97,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   exportPlaylist: (name, data) => ipcRenderer.invoke('export-playlist', name, data),
   importPlaylist: () => ipcRenderer.invoke('import-playlist'),
 
+  // 文件夹监控(自动刷新曲库)
+  setFolderWatch: (enabled) => ipcRenderer.send('set-folder-watch', !!enabled),
+  getFolderWatch: () => ipcRenderer.invoke('get-folder-watch'),
+
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

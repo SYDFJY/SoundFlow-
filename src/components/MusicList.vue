@@ -140,6 +140,14 @@
         <label>专辑
           <input v-model="editModal.album" placeholder="专辑" />
         </label>
+        <div class="edit-row">
+          <label>流派
+            <input v-model="editModal.genre" placeholder="流派" />
+          </label>
+          <label>年份
+            <input v-model="editModal.year" placeholder="年份" type="number" />
+          </label>
+        </div>
         <div class="edit-actions">
           <button class="modal-btn cancel" @click="editModal.show = false">取消</button>
           <button class="modal-btn confirm" :disabled="savingTags" @click="saveEditInfo">{{ savingTags ? '保存中…' : '保存' }}</button>
@@ -204,12 +212,12 @@ function restoreListScroll() {
 
 
 // 编辑歌曲信息(写回文件标签)
-const editModal = ref({ show: false, path: '', title: '', artist: '', album: '' })
+const editModal = ref({ show: false, path: '', title: '', artist: '', album: '', genre: '', year: '' })
 const savingTags = ref(false)
 function ctxEditInfo() {
   const song = ctxMenu.value?.song
   if (!song) return
-  editModal.value = { show: true, path: song.path, title: song.title || '', artist: song.artist || '', album: song.album || '' }
+  editModal.value = { show: true, path: song.path, title: song.title || '', artist: song.artist || '', album: song.album || '', genre: song.genre || '', year: song.year ? String(song.year) : '' }
 }
 async function saveEditInfo() {
   const m = editModal.value
@@ -227,15 +235,18 @@ async function saveEditInfo() {
       await new Promise(r => setTimeout(r, 300))
     }
     if (window.electronAPI && window.electronAPI.writeTags) {
-      const r = await window.electronAPI.writeTags(m.path, { title: m.title, artist: m.artist, album: m.album }).catch(() => ({ ok: false, error: 'IPC调用失败' }))
+      const r = await window.electronAPI.writeTags(m.path, { title: m.title, artist: m.artist, album: m.album, genre: m.genre, year: m.year }).catch(() => ({ ok: false, error: 'IPC调用失败' }))
       ok = !!r?.ok
       if (!ok) window.$toast?.('文件写入失败: ' + (r?.error || '未知错误'), 'warning')
     }
     if (wasPlaying) playerStore2.restoreAudio(resumeTime)
-    // 更新曲库(即使写标签失败也更新内存,方便用户继续用)
-    musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '' })
-    if (ok) window.$toast?.('歌曲信息已保存到文件 ✓', 'success')
-    else window.$toast?.('文件写入失败:请确认 ffmpeg 可用、文件未被占用', 'warning')
+    // 写入成功才更新内存曲库(保证列表与文件标签一致);写失败不改内存,提示用户
+    if (ok) {
+      musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '', genre: m.genre || '', year: m.year ? Number(m.year) : null })
+      window.$toast?.('歌曲信息已保存到文件 ✓', 'success')
+    } else {
+      window.$toast?.('文件写入失败:请确认 ffmpeg 可用、文件未被占用', 'warning')
+    }
   } catch (e) {
     console.error('saveEditInfo 失败', e)
     window.$toast?.('保存失败: ' + (e.message || e), 'error')
@@ -741,6 +752,8 @@ watch(() => playerStore.currentSong?.path, (p) => {
   border-radius: 6px; color: var(--text-primary); font-size: 13px; outline: none;
 }
 .edit-modal input:focus { border-color: var(--color-primary); }
+.edit-row { display: flex; gap: 12px; }
+.edit-row label { flex: 1; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .modal-btn { padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; }
 .modal-btn.cancel { background: rgba(255,255,255,0.08); color: var(--text-secondary); }

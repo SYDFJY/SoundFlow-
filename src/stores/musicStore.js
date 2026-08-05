@@ -487,6 +487,22 @@ export const useMusicStore = defineStore('music', () => {
     })
   }
 
+  // 文件夹监控推送:主进程检测到曲库目录新增/删除文件 → 增量更新(复用既有扫描/删除路径)
+  let _folderWatchAttached = false
+  function initFolderWatch() {
+    if (_folderWatchAttached || !window.electronAPI?.on) return
+    _folderWatchAttached = true
+    window.electronAPI.on('library-folder-changed', async ({ added, removed } = {}) => {
+      if (removed && removed.length) removeSongs(removed)
+      if (added && added.length) {
+        try {
+          const songs = await window.electronAPI.scanFiles(added)
+          if (songs && songs.length) addSongs(songs)
+        } catch {}
+      }
+    })
+  }
+
   return {
     songs, favorites, playlists, playCounts, history, searchQuery, startupMissing,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
@@ -500,6 +516,6 @@ export const useMusicStore = defineStore('music', () => {
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, clearHistory,
     checkMissingSongs, startupMissingCheck,
-    initPlayListener
+    initPlayListener, initFolderWatch
   }
 })

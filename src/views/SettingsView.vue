@@ -117,6 +117,15 @@
           <span class="folder-path text-ellipsis">{{ folder }}</span>
           <button class="remove-btn" @click="removeFolder(folder)">移除</button>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">自动刷新曲库</span>
+            <span class="label-desc">监听扫描目录,新增/删除文件自动同步(事件驱动,无后台轮询)</span>
+          </div>
+          <button class="sec-btn" :class="{ 'on': folderWatchOn }" @click="toggleFolderWatch">
+            {{ folderWatchOn ? '已开启' : '已关闭' }}
+          </button>
+        </div>
       </div>
 
       <!-- 歌词文件夹 -->
@@ -525,6 +534,17 @@ const themeOptions = [
 async function addFolder() {
   await musicStore.addFolder()
 }
+
+// 自动刷新曲库开关(状态以主进程持久化为准,重启后自动恢复)
+const folderWatchOn = ref(false)
+async function toggleFolderWatch() {
+  const next = !folderWatchOn.value
+  folderWatchOn.value = next
+  window.electronAPI?.setFolderWatch(next)
+}
+try {
+  window.electronAPI?.getFolderWatch().then(v => { folderWatchOn.value = !!v }).catch(() => {})
+} catch {}
 
 function removeFolder(folder) {
   musicStore.scanFolders = musicStore.scanFolders.filter(f => f !== folder)

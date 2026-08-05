@@ -11,6 +11,12 @@ const { execFile } = require('child_process')
 const log = require('electron-log')
 // 日志配置:默认写入 userData/logs/main.log(上限 5MB)
 log.transports.file.maxSize = 5 * 1024 * 1024
+// 禁用控制台输出:从管道/后台启动时 stdout 已关闭,写 console 会触发 EPIPE → errorHandler 再写 → 无限循环阻塞主进程
+log.transports.console.level = false
+// stdout/stderr EPIPE 防护:管道关闭时静默丢弃,不抛 uncaughtException
+for (const s of [process.stdout, process.stderr]) {
+  s.on('error', (e) => { if (e && e.code !== 'EPIPE') throw e })
+}
 log.errorHandler.startCatching({ showDialog: false })
 process.on('uncaughtException', (err) => log.error('[uncaught]', err))
 let autoUpdater = null
@@ -402,6 +408,73 @@ async function scanFolderRecursive(folderPath) {
   }
   await walk(folderPath)
   return results
+}
+
+// ========== 文件夹监控(曲库自动刷新,事件驱动无轮询) ==========
+// fs.watch 递归监听已保存目录;变更去抖后做增量快照对比,推送新增/删除文件路径
+let folderWatchers = []            // fs.FSWatcher 句柄
+const folderSnapshots = new Map()  // dir -> Map(filePath -> mtimeMs|size)
+let folderWatchEnabled = false
+let folderWatchDebounce = null
+
+function buildFolderSnapshot(dir) {
+  return scanFolderRecursive(dir).then(files => {
+    const snap = new Map()
+    return Promise.all(files.map(f =>
+      stat(f).then(st => snap.set(f, st.mtimeMs + '|' + st.size)).catch(() => {})
+    )).then(() => snap)
+  })
+}
+
+async function refreshFolderSnapshot(dir) {
+  const oldSnap = folderSnapshots.get(dir)
+  if (!oldSnap) { folderSnapshots.set(dir, await buildFolderSnapshot(dir)); return }
+  const newSnap = await buildFolderSnapshot(dir)
+  const added = []
+  const removed = []
+  for (const f of newSnap.keys()) if (!oldSnap.has(f)) added.push(f)
+  for (const f of oldSnap.keys()) if (!newSnap.has(f)) removed.push(f)
+  folderSnapshots.set(dir, newSnap)
+  // 注意:文件内容变化(mtime/size 变)不算新增;解析失败的文件保留在快照里,避免反复推送
+  if ((added.length || removed.length) && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('library-folder-changed', { added, removed })
+  }
+}
+
+function startFolderWatch() {
+  stopFolderWatch()
+  const dirs = (storageData.scanFolders || []).filter(d => typeof d === 'string' && d)
+  if (!dirs.length) return
+  for (const dir of dirs) {
+    try {
+      const watcher = fs.watch(dir, { recursive: true }, () => {
+        // 去抖 1.5s:合并批量复制/写入期间的高频事件
+        if (folderWatchDebounce) return
+        folderWatchDebounce = setTimeout(() => {
+          folderWatchDebounce = null
+          for (const d of dirs) refreshFolderSnapshot(d)
+        }, 1500)
+      })
+      watcher.on('error', () => {}) // 网络盘/权限不足:静默降级,依赖手动扫描
+      folderWatchers.push(watcher)
+    } catch (_) {}
+    refreshFolderSnapshot(dir) // 初始快照(异步,不阻塞)
+  }
+}
+
+function stopFolderWatch() {
+  for (const w of folderWatchers) { try { w.close() } catch (_) {} }
+  folderWatchers = []
+  folderSnapshots.clear()
+  if (folderWatchDebounce) { clearTimeout(folderWatchDebounce); folderWatchDebounce = null }
+}
+
+function setFolderWatchEnabled(enabled) {
+  folderWatchEnabled = !!enabled
+  storageData.folderWatch = folderWatchEnabled
+  saveStorage(true)
+  if (folderWatchEnabled) startFolderWatch()
+  else stopFolderWatch()
 }
 
 // ========== 窗口创建 ==========
@@ -1460,6 +1533,10 @@ function setupIPC() {
   // 获取应用路径
   ipcMain.handle('get-app-path', () => app.getPath('userData'))
 
+  // 文件夹监控开关(自动刷新曲库)
+  ipcMain.on('set-folder-watch', (event, enabled) => setFolderWatchEnabled(!!enabled))
+  ipcMain.handle('get-folder-watch', () => !!storageData.folderWatch)
+
   // 迷你播放器
   ipcMain.on('mini:toggle', () => {
     if (miniWindow) { miniWindow.close(); miniWindow = null }
@@ -1660,10 +1737,12 @@ function setupIPC() {
       const { execFile } = require('child_process')
       const fs = require('fs')
       const tmp = filePath + '.tagtmp' + path.extname(filePath)
-      const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy']
+      const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy', '-id3v2_version', '3']
       if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
       if (tags && tags.artist) args.push('-metadata', 'artist=' + tags.artist)
       if (tags && tags.album) args.push('-metadata', 'album=' + tags.album)
+      if (tags && tags.genre) args.push('-metadata', 'genre=' + tags.genre)
+      if (tags && tags.year) args.push('-metadata', 'date=' + tags.year)
       args.push(tmp)
       await new Promise((res, rej) => {
         execFile(ffmpegPathForLoudness, args, { timeout: 60000 }, (err, stdout, stderr) => {
@@ -1842,6 +1921,8 @@ app.whenReady().then(async () => {
   createTray()
   setupIPC()
   setupAutoUpdater()
+  // 文件夹监控:默认开(用户关闭过则保持关闭),扫描目录存在时启动
+  if (storageData.folderWatch !== false) setFolderWatchEnabled(true)
   // 注意:不再用 globalShortcut 注册系统媒体键(MediaPlayPause 等)。
   // 这些键会被 globalShortcut 抢占,导致 Chromium 不注册 Windows SMTC(系统媒体控制),
   // 从而控制中心/锁屏不显示播放卡片。播放控制改由 navigator.mediaSession 的
