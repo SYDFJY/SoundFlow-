@@ -834,7 +834,12 @@ function startSpectrum() {
 let spectrumTimer = null
 // 切回封面 tab 立即恢复频谱(比 1s 轮询更快,感知无延迟)
 watch(activeTab, (v) => {
-  if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) startSpectrum()
+  if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) {
+    // Vue 异步更新 DOM:nextTick 后 canvas 才真正挂载,此时启动才能立即出效果
+    nextTick(() => {
+      if (spectrumCanvas.value && !spectrumRAF) startSpectrum()
+    })
+  }
 })
 onMounted(() => {
   setupPvPanelsClickOutside()
