@@ -636,6 +636,8 @@ export const usePlayerStore = defineStore('player', () => {
   function sendLyricUpdate() {
     if (!window.electronAPI || !window.electronAPI.sendLyricUpdate) return
     try {
+      // 歌词可能刚加载而 currentTime 未变化 → 主动重算当前句索引
+      updateLyricIndex()
       const lines = JSON.parse(JSON.stringify(lyrics.value)).map(l => ({ time: l.time, text: l.text }))
       window.electronAPI.sendLyricUpdate({
         title: currentSong.value?.title || '',
