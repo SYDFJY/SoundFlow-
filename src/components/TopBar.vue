@@ -66,7 +66,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/appStore'
@@ -78,6 +78,16 @@ const appStore = useAppStore()
 const isElectron = computed(() => !!window.electronAPI)
 
 const showThemeDropdown = ref(false)
+// 点击主题下拉外空白关闭
+function onThemeDocClick(e) {
+  if (!e.target.closest('.theme-dropdown-wrapper')) {
+    showThemeDropdown.value = false
+  }
+}
+watch(showThemeDropdown, (v) => {
+  if (v) document.addEventListener('click', onThemeDocClick)
+  else document.removeEventListener('click', onThemeDocClick)
+})
 
 const themeList = [
   { value: 'light', label: '海盐蓝', color: '#edf4fa' },

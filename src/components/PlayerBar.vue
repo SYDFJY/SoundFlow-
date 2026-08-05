@@ -210,17 +210,29 @@ function scrollToActiveQueue() {
   list.scrollTop = Math.max(0, target)
 }
 function onQueueDocClick(e) {
-  if (!e.target.closest('.queue-panel') && !e.target.closest('[data-queue-toggle]')) {
-    playerStore.showQueue = false
-  }
+  // 面板内 / 触发按钮上点击不关闭
+  if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel') ||
+      e.target.closest('.right-btn, [data-queue-toggle]')) return
+  playerStore.showQueue = false
+  volExpanded.value = false
+  showEqPanel.value = false
+  showTimer.value = false
 }
+// 任一面板打开时挂全局监听,全部关闭时移除
+let _pbPanelWatch = null
+function setupPbPanelsClickOutside() {
+  if (_pbPanelWatch) return
+  _pbPanelWatch = watch(
+    [() => playerStore.showQueue, volExpanded, showEqPanel, showTimer],
+    (vs) => {
+      if (vs.some(Boolean)) document.addEventListener('click', onQueueDocClick)
+      else document.removeEventListener('click', onQueueDocClick)
+    }
+  )
+}
+setupPbPanelsClickOutside()
 watch(() => playerStore.showQueue, (v) => {
-  if (v) {
-    document.addEventListener('click', onQueueDocClick)
-    nextTick(scrollToActiveQueue)
-  } else {
-    document.removeEventListener('click', onQueueDocClick)
-  }
+  if (v) nextTick(scrollToActiveQueue)
 })
 watch(() => playerStore.currentIndex, () => {
   if (playerStore.showQueue) nextTick(scrollToActiveQueue)

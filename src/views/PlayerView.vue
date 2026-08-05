@@ -381,18 +381,34 @@ const eqGroups = [
 function toggleQueuePanel() {
   showQueuePanel.value = !showQueuePanel.value
   if (showQueuePanel.value) {
-    document.addEventListener('click', onPvQueueDocClick)
     nextTick(() => scrollToActiveQueue())
-  } else {
-    document.removeEventListener('click', onPvQueueDocClick)
   }
 }
-function onPvQueueDocClick(e) {
-  if (!e.target.closest('.queue-panel') && !e.target.closest('[data-queue-toggle]')) {
-    showQueuePanel.value = false
-    document.removeEventListener('click', onPvQueueDocClick)
-  }
+// 综合空白关闭:任何面板打开时挂全局监听,点击面板/触发按钮之外区域全部关闭
+let _pvPanelWatch = null
+function setupPvPanelsClickOutside() {
+  if (_pvPanelWatch) return
+  _pvPanelWatch = watch(
+    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, volExpanded, showRatePanel, showPitchPanel],
+    (vs) => {
+      if (vs.some(Boolean)) document.addEventListener('click', onPvPanelDocClick)
+      else document.removeEventListener('click', onPvPanelDocClick)
+    }
+  )
 }
+function onPvPanelDocClick(e) {
+  // 面板内 / 触发按钮上点击不关闭
+  if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .vol-pop, .rate-panel, .pitch-panel') ||
+      e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, [data-queue-toggle]')) return
+  showQueuePanel.value = false
+  showEqPanel.value = false
+  showBgPanel.value = false
+  showColorPanel.value = false
+  volExpanded.value = false
+  showRatePanel.value = false
+  showPitchPanel.value = false
+}
+setupPvPanelsClickOutside()
 
 // 打开/切换歌曲时,自动定位当前播放项
 function scrollToActiveQueue() {
