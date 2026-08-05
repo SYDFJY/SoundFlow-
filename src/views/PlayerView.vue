@@ -408,7 +408,6 @@ function onPvPanelDocClick(e) {
   showRatePanel.value = false
   showPitchPanel.value = false
 }
-setupPvPanelsClickOutside()
 
 // 打开/切换歌曲时,自动定位当前播放项
 function scrollToActiveQueue() {
@@ -827,6 +826,7 @@ function startSpectrum() {
 // 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)
 let spectrumTimer = null
 onMounted(() => {
+  setupPvPanelsClickOutside()
   if (playerStore.isPlaying) startSpectrum()
   spectrumTimer = setInterval(() => {
     // 仅当 rAF 链意外断开时重启(切 tab 重建 canvas 场景),避免常驻空转
