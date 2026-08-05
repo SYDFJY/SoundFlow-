@@ -41,8 +41,8 @@
       </div>
 
       <!-- 封面模式 -->
-      <transition name="mode-fade" mode="out-in">
-      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
+      <transition name="mode-fade">
+      <div v-show="activeTab === 'cover'" class="cover-mode">
         <div class="disc-area">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
@@ -61,7 +61,7 @@
       </div>
 
       <!-- 歌词模式 -->
-      <div v-else class="lyric-mode">
+      <div v-show="activeTab !== 'cover'" class="lyric-mode">
         <div class="lyric-left">
           <div class="disc-small" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover-small">
@@ -832,14 +832,9 @@ function startSpectrum() {
 }
 // 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)
 let spectrumTimer = null
-// 切回封面 tab 立即恢复频谱(比 1s 轮询更快,感知无延迟)
+// 切回封面 tab 立即恢复频谱(canvas 常驻 v-show,切回瞬间即可绘制,无挂载延迟)
 watch(activeTab, (v) => {
-  if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) {
-    // Vue 异步更新 DOM:nextTick 后 canvas 才真正挂载,此时启动才能立即出效果
-    nextTick(() => {
-      if (spectrumCanvas.value && !spectrumRAF) startSpectrum()
-    })
-  }
+  if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) startSpectrum()
 })
 onMounted(() => {
   setupPvPanelsClickOutside()
