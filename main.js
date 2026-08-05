@@ -1484,10 +1484,7 @@ function setupIPC() {
       if (tags && tags.album) args.push('-metadata', 'album=' + tags.album)
       args.push(tmp)
       await new Promise((res, rej) => {
-        execFile(ffmpegPathForLoudness, args, { timeout: 60000 }, (err, stdout, stderr) => {
-          if (err) rej(new Error((err.message || 'ffmpeg失败') + ' ' + String(stderr || '').slice(0, 300)))
-          else res()
-        })
+        execFile(ffmpegPathForLoudness, args, { timeout: 60000 }, (err) => err ? rej(err) : res())
       })
       // 备份后替换原文件;失败回滚
       const bak = filePath + '.bak'
@@ -1500,11 +1497,8 @@ function setupIPC() {
         try { fs.renameSync(bak, filePath) } catch {}
         throw e
       }
-      return { ok: true }
-    } catch (e) {
-      console.error('[write-tags] 失败:', e && e.message ? e.message : e)
-      return { ok: false, error: e && e.message ? e.message : String(e) }
-    }
+      return true
+    } catch { return false }
   })
 
   // 预加载数据

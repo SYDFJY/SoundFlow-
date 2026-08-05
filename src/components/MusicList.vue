@@ -196,25 +196,33 @@ async function saveEditInfo() {
   if (!m.path) return
   savingTags.value = true
   let ok = false
-  // 若正在播放该文件:先暂停释放文件锁,写入成功后恢复播放(位置保持)
-  const playerStore2 = usePlayerStore()
-  const wasPlaying = playerStore2.isPlaying && playerStore2.currentSong?.path === m.path
-  const resumeTime = playerStore2.currentTime
-  if (wasPlaying) {
-    // 必须清空 src 才能释放文件句柄,否则 rename 替换会失败
-    playerStore2.releaseAudio()
-    await new Promise(r => setTimeout(r, 300))
+  try {
+    // 若正在播放该文件:先暂停释放文件锁,写入成功后恢复播放(位置保持)
+    const playerStore2 = usePlayerStore()
+    const wasPlaying = playerStore2.isPlaying && playerStore2.currentSong?.path === m.path
+    const resumeTime = playerStore2.currentTime
+    if (wasPlaying) {
+      // 必须清空 src 才能释放文件句柄,否则 rename 替换会失败
+      playerStore2.releaseAudio()
+      await new Promise(r => setTimeout(r, 300))
+    }
+    if (window.electronAPI && window.electronAPI.writeTags) {
+      const r = await window.electronAPI.writeTags(m.path, { title: m.title, artist: m.artist, album: m.album }).catch(() => ({ ok: false, error: 'IPC调用失败' }))
+      ok = !!r?.ok
+      if (!ok) window.$toast?.('文件写入失败: ' + (r?.error || '未知错误'), 'warning')
+    }
+    if (wasPlaying) playerStore2.restoreAudio(resumeTime)
+    // 更新曲库(即使写标签失败也更新内存,方便用户继续用)
+    musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '' })
+    if (ok) window.$toast?.('歌曲信息已保存到文件 ✓', 'success')
+    else window.$toast?.('文件写入失败:请确认 ffmpeg 可用、文件未被占用', 'warning')
+  } catch (e) {
+    console.error('saveEditInfo 失败', e)
+    window.$toast?.('保存失败: ' + (e.message || e), 'error')
+  } finally {
+    savingTags.value = false
+    editModal.value.show = false
   }
-  if (window.electronAPI && window.electronAPI.writeTags) {
-    ok = await window.electronAPI.writeTags(m.path, { title: m.title, artist: m.artist, album: m.album }).catch(() => false)
-  }
-  if (wasPlaying) playerStore2.restoreAudio(resumeTime)
-  // 更新曲库(即使写标签失败也更新内存,方便用户继续用)
-  musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '' })
-  savingTags.value = false
-  editModal.value.show = false
-  if (!ok && window.electronAPI) window.$toast?.('文件写入失败:文件可能被占用,请停止播放或关闭占用后重试', 'warning')
-  else window.$toast?.('歌曲信息已保存到文件 ✓', 'success')
 }
 const playerStore = usePlayerStore()
 const selectedSet = ref(new Set())

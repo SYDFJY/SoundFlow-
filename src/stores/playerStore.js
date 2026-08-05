@@ -1135,6 +1135,7 @@ export const usePlayerStore = defineStore('player', () => {
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,
+    releaseAudio, restoreAudio,
     loadSettings, saveSettings, playSingle, toggleQueue,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
