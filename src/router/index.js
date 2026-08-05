@@ -11,7 +11,8 @@ const routes = [
   { path: '/folder', name: 'Folder', component: () => import('@/views/FolderView.vue') },
   { path: '/settings', name: 'Settings', component: () => import('@/views/SettingsView.vue') },
   { path: '/player', name: 'Player', component: () => import('@/views/PlayerView.vue') },
-  { path: '/mini', name: 'Mini', component: () => import('@/views/MiniView.vue') }
+  { path: '/mini', name: 'Mini', component: () => import('@/views/MiniView.vue') },
+  { path: '/lyric', name: 'Lyric', component: () => import('@/views/LyricView.vue') }
 ]
 
 const router = createRouter({

@@ -19,6 +19,8 @@ export const usePlayerStore = defineStore('player', () => {
   const playbackRate = ref(1.0)
   // 变调(半音,-12 ~ +12,0 = 不变调;经 SoundTouch 实时处理,变速不变调)
   const pitch = ref(0)
+  // 桌面歌词三态:0=未打开 1=打开(解锁) 2=锁定(穿透)
+  const desktopLyricState = ref(0)
   const showLyricPanel = ref(false)
   const isBuffering = ref(false)
   const progressHistory = ref({})
@@ -630,6 +632,23 @@ export const usePlayerStore = defineStore('player', () => {
 
   watch(currentTime, () => updateLyricIndex())
 
+  // ========== 桌面歌词数据推送 ==========
+  function sendLyricUpdate() {
+    if (!window.electronAPI || !window.electronAPI.sendLyricUpdate) return
+    try {
+      window.electronAPI.sendLyricUpdate({
+        title: currentSong.value?.title || '',
+        artist: currentSong.value?.artist || '',
+        lyrics: JSON.parse(JSON.stringify(lyrics.value)),
+        currentTime: currentTime.value || 0,
+        playing: isPlaying.value
+      })
+    } catch {}
+  }
+  watch(currentSong, () => sendLyricUpdate())
+  watch(lyrics, () => sendLyricUpdate())
+  watch(isPlaying, () => sendLyricUpdate())
+
   // ========== 系统媒体控制 (MediaSession / SMTC) ==========
   // Windows 通知栏 / 音量浮层 / 锁屏上的播放控件,相当于 Android 的 MediaSession
   function dataUrlToBlob(dataUrl) {
@@ -816,6 +835,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function seek(time) {
     if (audio.value) { audio.value.currentTime = time; currentTime.value = time }
+    sendLyricUpdate()
   }
 
   function setPlayMode(mode) { playMode.value = mode }
@@ -884,6 +904,14 @@ export const usePlayerStore = defineStore('player', () => {
     pitch.value = Math.max(-12, Math.min(12, Math.round(semitones)))
     applyPitch()
     saveSettings()
+  }
+
+  // 桌面歌词:打开(解锁) → 锁定 → 关闭 循环
+  function cycleDesktopLyric() {
+    desktopLyricState.value = (desktopLyricState.value + 1) % 3
+    if (window.electronAPI && window.electronAPI.lyricToggle) {
+      window.electronAPI.lyricToggle(desktopLyricState.value)
+    }
   }
 
   function setPlaybackRate(rate) {
@@ -1008,7 +1036,7 @@ export const usePlayerStore = defineStore('player', () => {
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
     showTranslation, translating, translations, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
-    pitch, setPitch,
+    pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,

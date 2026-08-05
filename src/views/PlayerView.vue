@@ -181,8 +181,14 @@
             </div>
           </div>
 
-          <!-- 右侧工具组(音量 / 音效 / 播放列表) -->
+          <!-- 右侧工具组(桌面歌词 / 音量 / 音效 / 播放列表) -->
           <div class="tools-group">
+
+            <!-- 桌面歌词 -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              <span v-if="playerStore.desktopLyricState === 2" class="pitch-badge lyric-lock-badge">🔒</span>
+            </button>
 
             <!-- 音量(默认收起,点击图标展开滑块) -->
             <div class="volume-control" :class="{ expanded: volExpanded }">
@@ -1281,6 +1287,7 @@ async function searchLyric() {
   background: var(--color-primary, #4096ff); color: #fff;
   border-radius: 8px; padding: 0 4px; line-height: 14px;
 }
+.lyric-lock-badge { font-size: 8px; padding: 0 3px; line-height: 12px; }
 .pitch-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));

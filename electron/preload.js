@@ -68,6 +68,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 迷你播放器
   toggleMiniWindow: () => ipcRenderer.send('mini:toggle'),
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
+  // 桌面歌词
+  lyricToggle: (state) => ipcRenderer.send('lyric:toggle', state),
+  lyricLock: (locked) => ipcRenderer.send('lyric:lock', locked),
+  lyricClose: () => ipcRenderer.send('lyric:close'),
+  sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
+  setLyricStyle: (style) => ipcRenderer.send('lyric:style', style),
+  getLyricStyle: () => ipcRenderer.invoke('lyric:get-style'),
 
   // 歌单导入导出
   exportPlaylist: (name, data) => ipcRenderer.invoke('export-playlist', name, data),
@@ -75,7 +82,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'app:before-close', 'update-available', 'external-command']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'app:before-close', 'update-available', 'external-command']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)
@@ -88,7 +95,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:close', 'lyric:update', 'lyric:style']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }

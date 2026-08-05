@@ -29,6 +29,8 @@ const isDev = !app.isPackaged && !fs.existsSync(localDist)
 // ========== 窗口引用 ==========
 let mainWindow = null
 let miniWindow = null
+let lyricWindow = null
+let lyricLocked = false
 let tray = null
 
 // ========== 存储 ==========
@@ -425,6 +427,7 @@ function createMainWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
     if (miniWindow) { miniWindow.close(); miniWindow = null }
+    if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
   })
 }
 
@@ -489,6 +492,68 @@ function createMiniWindow() {
   })
 
   miniWindow.on('closed', () => { miniWindow = null })
+}
+
+// ========== 桌面歌词窗口 ==========
+function createLyricWindow() {
+  if (lyricWindow) { lyricWindow.show(); return }
+
+  const pos = storageData.lyricPos || null
+  const size = storageData.lyricSize || { width: 700, height: 130 }
+  lyricWindow = new BrowserWindow({
+    width: size.width || 700,
+    height: size.height || 130,
+    frame: false,
+    transparent: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: true,
+    hasShadow: false,
+    ...(pos ? { x: pos.x, y: pos.y } : {}),
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  })
+
+  if (isDev) {
+    lyricWindow.loadURL('http://localhost:5173/#/lyric')
+  } else {
+    lyricWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: '/lyric' })
+  }
+
+  // 位置/大小记忆(拖动/缩放后保存,重启恢复)
+  let posSaveTimer = null
+  const saveLyricBounds = () => {
+    if (posSaveTimer) return
+    posSaveTimer = setTimeout(() => {
+      posSaveTimer = null
+      try {
+        const [x, y] = lyricWindow.getPosition()
+        const [w, h] = lyricWindow.getSize()
+        storageData.lyricPos = { x, y }
+        storageData.lyricSize = { width: w, height: h }
+        saveStorage(true)
+      } catch {}
+    }, 400)
+  }
+  lyricWindow.on('moved', saveLyricBounds)
+  lyricWindow.on('resized', saveLyricBounds)
+
+  lyricWindow.on('closed', () => { lyricWindow = null })
+}
+
+// 锁定 = 点击穿透(不挡桌面操作);解锁恢复交互
+function setLyricLocked(locked) {
+  lyricLocked = locked
+  if (lyricWindow) {
+    try {
+      lyricWindow.setIgnoreMouseEvents(locked, { forward: true })
+    } catch {
+      lyricWindow.setIgnoreMouseEvents(locked)
+    }
+  }
 }
 
 // ========== 系统托盘 ==========
@@ -1149,6 +1214,47 @@ function setupIPC() {
     if (miniWindow) { miniWindow.close(); miniWindow = null }
     else createMiniWindow()
   })
+
+  // ========== 桌面歌词 ==========
+  // 主窗口按钮三态:打开(解锁) → 锁定 → 关闭
+  ipcMain.on('lyric:toggle', (event, state) => {
+    if (state === 0) {
+      // 打开(解锁)
+      lyricLocked = false
+      createLyricWindow()
+      setLyricLocked(false)
+    } else if (state === 1) {
+      // 锁定(穿透)
+      setLyricLocked(true)
+    } else {
+      // 关闭
+      if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
+    }
+  })
+
+  // 歌词窗口内:锁定/解锁
+  ipcMain.on('lyric:lock', (event, locked) => {
+    setLyricLocked(!!locked)
+  })
+
+  // 歌词窗口关闭按钮
+  ipcMain.on('lyric:close', () => {
+    if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
+  })
+
+  // 主窗口推送播放/歌词数据到歌词窗口
+  ipcMain.on('lyric:update', (event, data) => {
+    if (lyricWindow) lyricWindow.webContents.send('lyric:update', data)
+  })
+
+  // 歌词窗口请求样式(主窗口存一份,重启保留)
+  ipcMain.on('lyric:style', (event, style) => {
+    try {
+      storageData.lyricStyle = style
+      saveStorage(true)
+    } catch {}
+  })
+  ipcMain.handle('lyric:get-style', () => storageData.lyricStyle || null)
 
   ipcMain.on('mini:update', (event, data) => {
     if (miniWindow) miniWindow.webContents.send('mini:update', data)

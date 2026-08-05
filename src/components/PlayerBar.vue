@@ -79,6 +79,12 @@
         </transition>
       </div>
 
+      <!-- 桌面歌词 -->
+      <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <span v-if="playerStore.desktopLyricState === 2" class="lyric-lock">🔒</span>
+      </button>
+
       <!-- 音量:点击弹出竖直滑块 -->
       <div class="volume-control">
         <button class="right-btn" :class="{ active: volExpanded }" @click="volExpanded = !volExpanded" :title="t('player.volume')">
@@ -326,6 +332,7 @@ function setCustomTimer() {
 .right-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .right-btn.active { color: var(--color-primary); }
 .right-btn svg { width: 18px; height: 18px; }
+.lyric-lock { position: absolute; top: 2px; right: 2px; font-size: 10px; }
 .timer-badge { position: absolute; bottom: 2px; right: 2px; font-size: 9px; background: var(--color-primary); color: white; padding: 0 3px; border-radius: 4px; line-height: 1.4; }
 
 .volume-control { position: relative; display: flex; align-items: center; }
