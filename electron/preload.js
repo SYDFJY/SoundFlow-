@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analyzeLoudness: (filePath) => ipcRenderer.invoke('analyze-loudness', filePath),
   getLoudness: (filePath) => ipcRenderer.invoke('get-loudness', filePath),
   writeTags: (filePath, tags) => ipcRenderer.invoke('write-tags', filePath, tags),
+  pushLoudnessBatch: (paths) => ipcRenderer.send('loudness-batch', paths),
+  stopLoudnessBatch: () => ipcRenderer.send('loudness-stop'),
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
   saveThemeFile: (content) => ipcRenderer.invoke('save-theme-file', content),
   openThemeFile: () => ipcRenderer.invoke('open-theme-file'),
@@ -106,7 +108,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }

@@ -56,6 +56,19 @@
         <h3 class="section-title">{{ t('settings.playback') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">响度均衡</span>
+            <span class="label-desc">ReplayGain — 换歌音量均衡(开启后后台分析,可能占用少量 CPU)</span>
+          </div>
+          <button class="sec-btn" :class="{ 'on': playerStore.replayGainEnabled }" @click="toggleReplayGain">
+            {{ playerStore.replayGainEnabled ? '已开启' : '已关闭' }}
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="section-title">{{ t('settings.playback') }}</h3>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">默认音量</span>
           </div>
           <div class="setting-control">
@@ -348,6 +361,18 @@ import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const appStore = useAppStore()
+function toggleReplayGain() {
+  const v = !playerStore.replayGainEnabled
+  playerStore.setReplayGainEnabled(v)
+  if (v && window.electronAPI && window.electronAPI.pushLoudnessBatch) {
+    // 开启:后台批量分析曲库(串行慢速,不阻塞播放)
+    window.electronAPI.pushLoudnessBatch((musicStore.songs || []).map(s => s.path))
+    window.$toast?.('响度均衡已开启,正在后台分析音量…', 'info')
+  } else if (window.electronAPI && window.electronAPI.stopLoudnessBatch) {
+    window.electronAPI.stopLoudnessBatch()
+    window.$toast?.('响度均衡已关闭', 'info')
+  }
+}
 async function exportTheme() {
   try {
     const json = appStore.exportThemeJSON()

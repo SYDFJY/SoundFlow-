@@ -153,6 +153,8 @@ export const usePlayerStore = defineStore('player', () => {
   let _mediaSourceNode = null
   let _fadeGain = null   // 播放淡入淡出增益节点
   let _replayGainFactor = 1  // 响度均衡系数(与用户音量叠加)
+  // 响度均衡开关(默认关;开启后后台批量分析,避免启动期 CPU 压力)
+  const replayGainEnabled = ref(false)
   let _eqFilters = []
   let _bassFilter = null
   let _trebleFilter = null
@@ -886,9 +888,20 @@ export const usePlayerStore = defineStore('player', () => {
   // 应用响度缓存(播放时只读;分析由主进程空闲批量执行,不占播放 CPU)
   function ensureReplayGain(songPath) {
     if (!window.electronAPI || !songPath) return
+    if (!replayGainEnabled.value) { applyReplayGain(null); return }
     window.electronAPI.getLoudness(songPath).then((db) => {
       if (db != null && currentSong.value?.path === songPath) applyReplayGain(db)
     }).catch(() => {})
+  }
+  // 响度开关持久化
+  function loadReplayGainPref() {
+    try { replayGainEnabled.value = localStorage.getItem('soundflow_replaygain') === '1' } catch {}
+  }
+  function setReplayGainEnabled(v) {
+    replayGainEnabled.value = !!v
+    try { localStorage.setItem('soundflow_replaygain', v ? '1' : '0') } catch {}
+    if (!v) applyReplayGain(null)
+    else ensureReplayGain(currentSong.value?.path)
   }
 
   function seek(time) {
@@ -1063,6 +1076,7 @@ export const usePlayerStore = defineStore('player', () => {
       if (ph2) pitch.value = Math.max(-12, Math.min(12, parseInt(ph2) || 0))
       const ph = localStorage.getItem('soundflow_progress')
       if (ph) progressHistory.value = JSON.parse(ph)
+      loadReplayGainPref()
       // 变调/倍速应用到 audio(若已初始化)
       if (audio.value) applyPitch()
     } catch {}
@@ -1095,6 +1109,7 @@ export const usePlayerStore = defineStore('player', () => {
     showTranslation, translating, translations, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     pitch, setPitch, desktopLyricState, cycleDesktopLyric,
+    replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,

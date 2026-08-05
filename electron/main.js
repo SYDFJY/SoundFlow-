@@ -1428,6 +1428,14 @@ function setupIPC() {
     runLoudnessQueue()
   }
 
+  // 设置页开启响度均衡时触发批量分析;关闭时停止
+  ipcMain.on('loudness-batch', (event, paths) => {
+    pushLoudnessBatch(paths)
+  })
+  ipcMain.on('loudness-stop', () => {
+    _loudnessQueue.length = 0
+  })
+
   ipcMain.handle('analyze-loudness', async (event, filePath) => {
     try {
       if (!ffmpegPathForLoudness) detectFFmpegLoudness()
@@ -1629,13 +1637,7 @@ app.whenReady().then(async () => {
   await ensureParseFile()
   detectFFprobe()
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
-  // 空闲后批量响度分析(串行慢速 1.5s/首,不抢播放 CPU);曲库为空则跳过
-  setTimeout(() => {
-    try {
-      const paths = (storageData.library || []).map(s => s.path).filter(Boolean)
-      if (paths.length) pushLoudnessBatch(paths)
-    } catch {}
-  }, 20000)
+
   createMenu()
   createMainWindow()
   createTray()

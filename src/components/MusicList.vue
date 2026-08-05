@@ -42,7 +42,6 @@
         :key="song.path"
         class="list-row"
         :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path) }"
-        :ref="el => { if (el) ensureCover(song) }"
         @dblclick="playSong(idx)"
         @contextmenu.prevent="showContextMenu($event, song)"
       >
@@ -147,7 +146,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 
@@ -167,6 +166,7 @@ const listBodyEl = ref(null)
 let _scrollSaveTimer = null
 const LIST_SCROLL_KEY = 'soundflow_list_scroll'
 function onListScroll() {
+  scheduleCoverLoad()
   if (_scrollSaveTimer) return
   _scrollSaveTimer = setTimeout(() => {
     _scrollSaveTimer = null
@@ -222,6 +222,28 @@ async function ensureCover(song) {
     pendingCovers.delete(song.path)
   }
 }
+
+// 封面可视区懒加载:只加载视口内 ±缓冲 行的封面,避免 295 首并发读文件卡顿
+const ROW_H = 56
+let _coverScrollTimer = null
+function loadVisibleCovers() {
+  const el = listBodyEl.value
+  if (!el) return
+  const top = el.scrollTop
+  const first = Math.max(0, Math.floor(top / ROW_H) - 8)
+  const last = Math.min(songs.value.length - 1, Math.ceil((top + el.clientHeight) / ROW_H) + 8)
+  for (let i = first; i <= last; i++) {
+    const song = songs.value[i]
+    if (song && !song.coverUrl && !pendingCovers.has(song.path)) ensureCover(song)
+  }
+}
+function scheduleCoverLoad() {
+  if (_coverScrollTimer) return
+  _coverScrollTimer = setTimeout(() => { _coverScrollTimer = null; loadVisibleCovers() }, 80)
+}
+
+// 歌曲列表变化(切视图/搜索/导入)后重新加载可视区封面
+watch(() => props.songs, () => { nextTick(loadVisibleCovers) }, { deep: false })
 
 // 封面容灾:封面文件丢失/加载失败时,从主进程重新生成封面文件
 function onCoverError(song) {
@@ -413,6 +435,7 @@ function closeCtx() { ctxMenu.value.show = false }
 
 onMounted(() => {
   restoreListScroll()
+  loadVisibleCovers()
   document.addEventListener('click', closeCtx)
 })
 onUnmounted(() => {
