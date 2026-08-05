@@ -10,7 +10,7 @@ export const useAppStore = defineStore('app', () => {
   const currentView = ref('home')
   const showSettings = ref(false)
   const language = ref('zh-CN')
-  const autoPlay = ref(true)
+  const autoPlay = ref(false) // 启动自动续播(默认关,避免启动即播放卡顿;用户可在设置开启)
   const closeAction = ref('minimize') // minimize, exit
   const followSystemTheme = ref(false) // 跟随系统深色模式(默认关)
 

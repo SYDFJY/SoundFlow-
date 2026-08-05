@@ -3,9 +3,9 @@
     <div class="view-header">
       <h1 class="header-title">听歌统计</h1>
       <div class="header-tools">
-        <div class="tab-switcher">
-          <button class="tab-btn" :class="{ active: timeRange === 'all' }" @click="timeRange = 'all'">全部</button>
-          <button class="tab-btn" :class="{ active: timeRange === '30d' }" @click="timeRange = '30d'">近30天</button>
+        <div class="range-switch">
+          <button class="range-btn" :class="{ active: timeRange === 'all' }" @click="setTimeRange('all')">全部</button>
+          <button class="range-btn" :class="{ active: timeRange === '30d' }" @click="setTimeRange('30d')">近30天</button>
         </div>
         <button class="share-btn" @click="copyShare">📤 分享报告</button>
         <button class="hist-btn" @click="router.push('/history')">🎵 播放记录与排行</button>
@@ -197,11 +197,21 @@ const playedSongs = computed(() => {
     .map(s => ({ ...s, _playCount: counts[s.path], _lastPlayTime: lastPlay[s.path] || 0 }))
     .sort((a, b) => b._playCount - a._playCount)
 })
+// 时间范围过滤后的歌曲集合:近30天 = 30 天内有播放记录的歌曲
+const rangeSongs = computed(() => {
+  if (timeRange.value !== '30d') return playedSongs.value
+  const cutoff = Date.now() - 30 * 24 * 3600 * 1000
+  const inRange = new Set()
+  for (const h of musicStore.history) {
+    if (h.time >= cutoff) inRange.add(h.path)
+  }
+  return playedSongs.value.filter(s => inRange.has(s.path))
+})
 
 // 总览
-const totalPlays = computed(() => playedSongs.value.reduce((a, s) => a + s._playCount, 0))
-const totalHours = computed(() => Math.round(playedSongs.value.reduce((a, s) => a + (s.duration || 0) * s._playCount, 0) / 3600))
-const artistCount = computed(() => new Set(playedSongs.value.map(s => s.artist).filter(Boolean)).size)
+const totalPlays = computed(() => rangeSongs.value.reduce((a, s) => a + s._playCount, 0))
+const totalHours = computed(() => Math.round(rangeSongs.value.reduce((a, s) => a + (s.duration || 0) * s._playCount, 0) / 3600))
+const artistCount = computed(() => new Set(rangeSongs.value.map(s => s.artist).filter(Boolean)).size)
 const favCount = computed(() => musicStore.favoriteSongs.length)
 
 // 近 7 天趋势(按 history 时间戳聚合)
@@ -223,13 +233,13 @@ const weekTrend = computed(() => {
 const weekMax = computed(() => Math.max(1, ...weekTrend.value.map(d => d.count)))
 
 // Top 榜单
-const topSongs = computed(() => playedSongs.value.slice(0, 10))
+const topSongs = computed(() => rangeSongs.value.slice(0, 10))
 const topArtists = computed(() => aggregate('artist'))
 const topAlbums = computed(() => aggregate('album'))
 
 function aggregate(field) {
   const map = new Map()
-  for (const s of playedSongs.value) {
+  for (const s of rangeSongs.value) {
     const k = (s[field] || '').trim() || '未知'
     map.set(k, (map.get(k) || 0) + s._playCount)
   }
@@ -238,6 +248,10 @@ function aggregate(field) {
 
 // ==== 丰富化维度(基于播放历史时间戳,computed 惰性) ====
 const timeRange = ref('all') // all | 30d
+function setTimeRange(v) {
+  timeRange.value = v
+  try { window.$toast?.(v === 'all' ? '已切换:全部时间' : '已切换:近30天', 'info') } catch {}
+}
 const rangeHistory = computed(() => {
   if (timeRange.value !== '30d') return musicStore.history
   const cutoff = Date.now() - 30 * 24 * 3600 * 1000
@@ -289,7 +303,7 @@ const funFacts = computed(() => {
 // 年代分布
 const eraDist = computed(() => {
   const map = {}
-  for (const s of playedSongs.value) {
+  for (const s of rangeSongs.value) {
     const y = parseInt(s.year) || 0
     const era = y >= 2020 ? '20s' : y >= 2010 ? '10s' : y >= 2000 ? '00s' : y >= 1990 ? '90s' : y >= 1980 ? '80s' : y ? '更早' : '未知'
     map[era] = (map[era] || 0) + 1
@@ -300,7 +314,7 @@ const eraMax = computed(() => Math.max(1, ...eraDist.value.map(d => d.count)))
 // 音质分布
 const qualityDist = computed(() => {
   const map = {}
-  for (const s of playedSongs.value) {
+  for (const s of rangeSongs.value) {
     const ext = (s.path || '').split('.').pop().toLowerCase()
     let q = '标准'
     if (ext === 'flac' || ext === 'ape' || ext === 'wav' || ext === 'alac') q = '无损'
@@ -313,7 +327,7 @@ const qualityMax = computed(() => Math.max(1, ...qualityDist.value.map(d => d.co
 // 多样性评分:常听歌手数 / 曲库歌手池
 const diversityScore = computed(() => {
   const allArtists = new Set(musicStore.songs.map(s => s.artist).filter(Boolean))
-  const playedArtists = new Set(playedSongs.value.map(s => s.artist).filter(Boolean))
+  const playedArtists = new Set(rangeSongs.value.map(s => s.artist).filter(Boolean))
   if (!allArtists.size) return 0
   return Math.round(playedArtists.size / allArtists.size * 100)
 })
@@ -341,7 +355,7 @@ function copyShare() {
 }
 
 function playTop(idx) {
-  const queue = playedSongs.value.map(s => ({ ...s }))
+  const queue = rangeSongs.value.map(s => ({ ...s }))
   playerStore.setPlayQueue(queue, idx)
 }
 </script>
@@ -396,6 +410,14 @@ function playTop(idx) {
 
 /* 丰富化:header/分享/趣味/热力/星期/分布 */
 .header-tools { display: flex; align-items: center; gap: 10px; }
+.range-switch { display: flex; gap: 4px; background: var(--bg-hover); border-radius: var(--radius-md); padding: 3px; }
+.range-btn {
+  padding: 6px 18px; border-radius: var(--radius-md); font-size: var(--font-size-sm);
+  color: var(--text-secondary); background: none; border: none; cursor: pointer;
+  transition: all 0.2s; font-weight: 500;
+}
+.range-btn:hover { color: var(--text-primary); }
+.range-btn.active { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-sm); }
 .share-btn { padding: 6px 14px; background: var(--color-primary); color: #fff; border-radius: var(--radius-md); font-size: var(--font-size-sm); transition: all 0.2s; }
 .share-btn:hover { background: var(--color-primary-light); transform: scale(1.03); }
 .hist-btn { padding: 6px 14px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-md); font-size: var(--font-size-sm); transition: all 0.2s; }

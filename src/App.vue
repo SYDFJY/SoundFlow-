@@ -205,19 +205,19 @@ onMounted(() => {
   musicStore.restoreLibrary()
   musicStore.initPlayListener()
   musicStore.initFolderWatch()
-  // 启动自动检测失效歌曲(延迟等 toast 就绪)
-  setTimeout(() => musicStore.startupMissingCheck(), 2500)
+  // 启动自动检测失效歌曲(延迟等 UI 就绪,不抢占启动资源)
+  setTimeout(() => musicStore.startupMissingCheck(), 6000)
   playerStore.loadSettings()
   playerStore.restoreQueue()
   playerStore.initAudio()
   playerStore.initMediaSession()
-  // 启动自动续播:开启后恢复上次歌曲并继续播放
+  // 启动自动续播:开启后等 UI 稳定(2.5s)再继续播放,避免启动卡顿
   if (appStore.autoPlay && playerStore.playQueue.length > 0 && playerStore.currentIndex >= 0) {
     setTimeout(() => {
       try {
         playerStore.loadAndPlay(playerStore.currentIndex, false)
       } catch {}
-    }, 300)
+    }, 2500)
   }
   // 恢复自定义侧边栏宽度
   const sw = localStorage.getItem('soundflow_sidebar_width')
