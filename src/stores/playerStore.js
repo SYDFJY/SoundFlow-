@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch, reactive } from 'vue'
 import { parseLRC as parseLRCLines } from '@/utils/lrc'
-import { SoundTouch } from 'soundtouchjs'
 
 export const usePlayerStore = defineStore('player', () => {
   const audio = ref(null)
@@ -54,6 +53,8 @@ export const usePlayerStore = defineStore('player', () => {
     if (audio.value) return
     audio.value = new Audio()
     audio.value.volume = volume.value
+    // 变调(变速变调)初始应用
+    applyPitch()
     // 建立音频图(频谱可视化常驻;音效开启时挂 EQ 链)
     ensureAudioGraph()
 
@@ -180,54 +181,11 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 根据当前设置重建节点链(无音效时直通)
-  let _pitchProcessor = null
-  let _soundTouch = null
-  let _pitchInBuf = null
-  let _pitchOutBuf = null
-
-  // 变调处理器:MediaElementSource → ScriptProcessor(SoundTouch) → 链
-  function getPitchProcessor() {
-    if (_pitchProcessor) return _pitchProcessor
-    _pitchProcessor = _audioCtx.createScriptProcessor(4096, 2, 2)
-    _soundTouch = new SoundTouch()
-    _soundTouch.pitchSemitones = pitch.value
-    _pitchProcessor.onaudioprocess = (e) => {
-      try {
-        const frames = e.inputBuffer.length
-        const inL = e.inputBuffer.getChannelData(0)
-        const inR = e.inputBuffer.getChannelData(1)
-        const outL = e.outputBuffer.getChannelData(0)
-        const outR = e.outputBuffer.getChannelData(1)
-        outL.fill(0); outR.fill(0)
-        if (!_pitchInBuf || _pitchInBuf.length < frames * 2) _pitchInBuf = new Float32Array(frames * 2)
-        for (let i = 0; i < frames; i++) { _pitchInBuf[i * 2] = inL[i]; _pitchInBuf[i * 2 + 1] = inR[i] }
-        _soundTouch.inputBuffer.putSamples(_pitchInBuf, 0, frames)
-        const avail = _soundTouch.outputBuffer.frameCount
-        if (avail <= 0) return
-        const n = Math.min(avail, frames)
-        if (!_pitchOutBuf || _pitchOutBuf.length < n * 2) _pitchOutBuf = new Float32Array(n * 2)
-        _soundTouch.outputBuffer.extract(_pitchOutBuf, 0, n)
-        _soundTouch.outputBuffer.receive(n)
-        for (let i = 0; i < n; i++) { outL[i] = _pitchOutBuf[i * 2]; outR[i] = _pitchOutBuf[i * 2 + 1] }
-      } catch {}
-    }
-    return _pitchProcessor
-  }
-
-  function setPitch(semitones) {
-    pitch.value = Math.max(-12, Math.min(12, Math.round(semitones)))
-    if (_soundTouch) _soundTouch.pitchSemitones = pitch.value
-    rebuildAudioChain()
-    saveSettings()
-  }
-
   function rebuildAudioChain() {
     if (!_audioCtx || !_mediaSourceNode) return
     try {
       // 断开旧连接
       _mediaSourceNode.disconnect()
-      if (_pitchProcessor) { try { _pitchProcessor.disconnect() } catch {} }
       _eqFilters.forEach(f => { try { f.disconnect() } catch {} })
       _eqFilters = []
       if (_bassFilter) { try { _bassFilter.disconnect() } catch {}; _bassFilter = null }
@@ -240,11 +198,6 @@ export const usePlayerStore = defineStore('player', () => {
 
       const s = eqSettings.value
       let prev = _mediaSourceNode
-      // 变调节点(pitch ≠ 0 时插入)
-      if (pitch.value !== 0) {
-        prev = getPitchProcessor()
-        _mediaSourceNode.connect(prev)
-      }
       if (s.enabled) {
         // 10 段 EQ
         s.gains.forEach((g, i) => {
@@ -326,8 +279,8 @@ export const usePlayerStore = defineStore('player', () => {
         }
         prev.connect(_audioCtx.destination)
       } else {
-        // 未开启:直通(仍走 AudioContext,保持路由一致;有变调节点时从 prev 走)
-        prev.connect(_audioCtx.destination)
+        // 未开启:直通(仍走 AudioContext,保持路由一致)
+        _mediaSourceNode.connect(_audioCtx.destination)
       }
       // 频谱分析:从链尾(或直通点)分接,不连 destination
       try { prev.connect(_analyser) } catch {}
@@ -917,9 +870,25 @@ export const usePlayerStore = defineStore('player', () => {
     saveQueueState()
   }
 
+  // 变调(变速变调方案):preservesPitch=false + playbackRate 联动,绝不崩溃
+  // 保速变调需 AudioWorklet,后续可升级
+  function applyPitch() {
+    if (!audio.value) return
+    try {
+      audio.value.preservesPitch = pitch.value === 0
+      audio.value.playbackRate = playbackRate.value * Math.pow(2, pitch.value / 12)
+    } catch {}
+  }
+
+  function setPitch(semitones) {
+    pitch.value = Math.max(-12, Math.min(12, Math.round(semitones)))
+    applyPitch()
+    saveSettings()
+  }
+
   function setPlaybackRate(rate) {
     playbackRate.value = rate
-    if (audio.value) audio.value.playbackRate = rate
+    applyPitch()
   }
 
   function cyclePlaybackRate() {
@@ -1008,6 +977,8 @@ export const usePlayerStore = defineStore('player', () => {
       if (ph2) pitch.value = Math.max(-12, Math.min(12, parseInt(ph2) || 0))
       const ph = localStorage.getItem('soundflow_progress')
       if (ph) progressHistory.value = JSON.parse(ph)
+      // 变调/倍速应用到 audio(若已初始化)
+      if (audio.value) applyPitch()
     } catch {}
   }
 
