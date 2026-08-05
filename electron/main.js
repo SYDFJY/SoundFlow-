@@ -82,8 +82,11 @@ function saveStorage(immediate = false) {
   clearTimeout(saveStorageTimer)
   const doWrite = () => {
     try {
-      // 正常保存不复制 .bak(每次全量 JSON + 复制太伤盘);仅退出前备份一次
-      fs.writeFileSync(storagePath, JSON.stringify(storageData))
+      // 异步写盘,不阻塞主进程(JSON.stringify 仍同步,但写入 IO 不再阻塞)
+      const data = JSON.stringify(storageData)
+      fs.writeFile(storagePath, data, (err) => {
+        if (err) { console.error('[存储] 写入失败:', err.message); log.error('[存储] 写入失败:', err.message) }
+      })
     } catch (e) { console.error('[存储] 写入失败:', e.message); log.error('[存储] 写入失败:', e.message) }
   }
   if (immediate) doWrite()
@@ -475,11 +478,15 @@ function createMainWindow() {
     console.error('[崩溃恢复] 渲染进程异常:', details.reason)
     recoverCrash()
   })
-  // 假死 6 秒仍无响应则强制重载
+  // 假死 6 秒仍无响应则强制重载(复用 recoverCrash 防循环计数)
   mainWindow.webContents.on('unresponsive', () => {
     setTimeout(() => {
       try {
         if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+          const now = Date.now()
+          if (now - crashWindowStart > 10000) { crashCount = 0; crashWindowStart = now }
+          crashCount++
+          if (crashCount > 3) { console.error('[崩溃恢复] 无响应超 3 次,停止自动重载'); return }
           console.log('[崩溃恢复] 窗口无响应,强制重载')
           mainWindow.webContents.reload()
         }
@@ -492,17 +499,17 @@ function createMainWindow() {
     if (app.isQuitting) return
     // 先阻止默认关闭,根据用户设置决定:exit 真退出 / minimize 隐藏到托盘
     e.preventDefault()
+    // 用主进程已持久化的 closeAction 判断(渲染进程通过 storeSet('closeAction') 同步),避免 sendSync 阻塞
+    // 异步通知渲染进程做最后的保存(收藏/进度/队列),留 400ms 落盘时间
     try { mainWindow.webContents.send('app:before-close') } catch (_) {}
-    // 同步读取渲染进程的关闭行为设置(实时准确,可靠)
-    let action = storageData.closeAction === 'exit' ? 'exit' : 'minimize'
-    try {
-      const v = mainWindow.webContents.sendSync('get-close-action')
-      if (v === 'exit') action = 'exit'
-      else if (v === 'minimize') action = 'minimize'
-    } catch {}
+    const action = storageData.closeAction === 'exit' ? 'exit' : 'minimize'
     if (action === 'exit') {
-      app.isQuitting = true
-      mainWindow.destroy()
+      setTimeout(() => {
+        if (app.isQuitting) return
+        app.isQuitting = true
+        try { saveStorage(true) } catch (_) {}
+        mainWindow.destroy()
+      }, 400)
     } else {
       mainWindow.hide()
     }
@@ -637,7 +644,11 @@ function createLyricWindow() {
   lyricWindow.on('moved', saveLyricBounds)
   lyricWindow.on('resized', saveLyricBounds)
 
-  lyricWindow.on('closed', () => { lyricWindow = null })
+  lyricWindow.on('closed', () => {
+    lyricWindow = null
+    // 通知渲染进程归零桌面歌词状态(窗口被系统/其他方式关闭时同步按钮状态)
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lyric-state-sync', 0) } catch {}
+  })
 }
 
 // 锁定 = 点击穿透(不挡桌面操作);解锁恢复交互
@@ -748,7 +759,10 @@ function setupIPC() {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize()
     else mainWindow?.maximize()
   })
-  ipcMain.on('close-window', () => mainWindow?.hide())
+  ipcMain.on('close-window', () => {
+    // 统一走 close 事件流程,尊重"关闭时退出/最小化到托盘"设置
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
+  })
 
   // 选择文件夹
   ipcMain.handle('select-folder', async () => {
@@ -880,6 +894,20 @@ function setupIPC() {
   }
 
   // 读取歌词文件（同目录优先，再搜歌词文件夹）
+  // 歌词文件夹索引缓存:按 mtime 增量扫描,避免每次切歌全量 readdirSync
+  const lyricDirCache = new Map()
+  function getLrcFiles(folder) {
+    try {
+      const stat = fs.statSync(folder)
+      const cached = lyricDirCache.get(folder)
+      if (cached && cached.mtimeMs === stat.mtimeMs) return cached.lrcList
+      const lrcList = fs.readdirSync(folder).filter(f => f.toLowerCase().endsWith('.lrc'))
+      lyricDirCache.set(folder, { mtimeMs: stat.mtimeMs, lrcList })
+      if (lyricDirCache.size > 20) lyricDirCache.delete(lyricDirCache.keys().next().value)
+      return lrcList
+    } catch { return [] }
+  }
+
   ipcMain.handle('read-lyric-file', async (event, audioPath, lyricFolders) => {
     const ext = path.extname(audioPath)
     const base = path.basename(audioPath, ext)
@@ -900,7 +928,7 @@ function setupIPC() {
           const exact = path.join(folder, base + '.lrc')
           if (fs.existsSync(exact)) return fs.readFileSync(exact, 'utf8')
 
-          const files = fs.readdirSync(folder).filter(f => f.toLowerCase().endsWith('.lrc'))
+          const files = getLrcFiles(folder)
           // 收集所有候选，按匹配度排序
           const candidates = []
           for (const f of files) {
@@ -1183,6 +1211,16 @@ function setupIPC() {
   ipcMain.handle('store-set', (event, key, value) => {
     storageData[key] = value
     saveStorage()
+  })
+  // 批量写入(一次 IPC 写入多组数据,避免多次全量深拷贝 + 多次 saveStorage)
+  ipcMain.handle('store-set-bulk', (event, payload) => {
+    if (!payload || typeof payload !== 'object') return
+    let changed = false
+    for (const k of Object.keys(payload)) {
+      storageData[k] = payload[k]
+      changed = true
+    }
+    if (changed) saveStorage()
   })
   ipcMain.handle('store-delete', (event, key) => {
     delete storageData[key]

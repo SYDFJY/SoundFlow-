@@ -134,16 +134,27 @@ export const useMusicStore = defineStore('music', () => {
       safeSet('soundflow_scan_folders', scanFolders.value)
       safeSet('soundflow_lyric_folders', lyricFolders.value)
       if (window.electronAPI) {
-        // IPC 序列化前深拷贝为纯对象:Vue 响应式 Proxy 无法被结构化克隆,
-        // 否则 storeSet 报 "An object could not be cloned",主进程永远存不上数据
+        // 一次深拷贝 + 一次 IPC 批量写入(避免 7 次全量深拷贝 + 7 次 storeSet + 7 次全量写盘)
         const toPlain = (v) => JSON.parse(JSON.stringify(v))
-        window.electronAPI.storeSet('library', toPlain(songs.value))
-        window.electronAPI.storeSet('favorites', toPlain(favorites.toArray()))
-        window.electronAPI.storeSet('playlists', toPlain(playlists.value))
-        window.electronAPI.storeSet('playCounts', toPlain(playCounts.value))
-        window.electronAPI.storeSet('history', toPlain(history.value))
-        window.electronAPI.storeSet('scanFolders', toPlain(scanFolders.value))
-        window.electronAPI.storeSet('lyricFolders', toPlain(lyricFolders.value))
+        if (window.electronAPI.storeSetBulk) {
+          window.electronAPI.storeSetBulk({
+            library: toPlain(songs.value),
+            favorites: toPlain(favorites.toArray()),
+            playlists: toPlain(playlists.value),
+            playCounts: toPlain(playCounts.value),
+            history: toPlain(history.value),
+            scanFolders: toPlain(scanFolders.value),
+            lyricFolders: toPlain(lyricFolders.value)
+          })
+        } else {
+          window.electronAPI.storeSet('library', toPlain(songs.value))
+          window.electronAPI.storeSet('favorites', toPlain(favorites.toArray()))
+          window.electronAPI.storeSet('playlists', toPlain(playlists.value))
+          window.electronAPI.storeSet('playCounts', toPlain(playCounts.value))
+          window.electronAPI.storeSet('history', toPlain(history.value))
+          window.electronAPI.storeSet('scanFolders', toPlain(scanFolders.value))
+          window.electronAPI.storeSet('lyricFolders', toPlain(lyricFolders.value))
+        }
       }
     } catch (e) {
       console.error('[存储] 保存失败:', e)

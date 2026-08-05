@@ -367,7 +367,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useAppStore } from '@/stores/appStore'
 import { t, i18n, setLang } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'

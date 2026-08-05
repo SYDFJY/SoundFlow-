@@ -836,7 +836,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
   if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
-  document.removeEventListener('click', onPvQueueDocClick)
+  document.removeEventListener('click', onPvPanelDocClick)
 })
 // 暂停时停止频谱 rAF(省 CPU),播放时恢复
 watch(() => playerStore.isPlaying, (v) => {

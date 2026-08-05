@@ -99,6 +99,8 @@ export const usePlayerStore = defineStore('player', () => {
     audio.value.addEventListener('waiting', () => { isBuffering.value = true })
     audio.value.addEventListener('canplay', () => { isBuffering.value = false })
     audio.value.addEventListener('error', (e) => {
+      // 主动清空 src(releaseAudio/stopPlayback)会触发空 src 错误,直接忽略,不视为播放失败
+      if (!audio.value || !audio.value.src) return
       console.error('[播放器] 错误:', e)
       isBuffering.value = false
       _consecutiveErrors++
@@ -367,21 +369,35 @@ export const usePlayerStore = defineStore('player', () => {
       rebuildAudioChain()
     }
   }
+  // EQ 拖动实时更新:节点已存在时直接改增益,避免每帧断开重建整条链(爆音/卡顿)
   function setEqGain(index, value) {
     eqSettings.value.gains[index] = value
     if (eqSettings.value.preset !== 'flat') eqSettings.value.preset = 'flat'
+    if (eqSettings.value.enabled && _eqFilters.length > 0 && _eqFilters[index]) {
+      _eqFilters[index].gain.value = value
+    } else {
+      rebuildAudioChain()
+    }
     saveEqSettings()
-    rebuildAudioChain()
   }
   function setBass(v) {
     eqSettings.value.bass = v
+    if (_bassFilter) _bassFilter.gain.value = v
+    else rebuildAudioChain()
     saveEqSettings()
-    rebuildAudioChain()
   }
   function setReverb(v) {
     eqSettings.value.reverb = v
+    if (_reverbGain) _reverbGain.gain.value = v
+    else rebuildAudioChain()
     saveEqSettings()
-    rebuildAudioChain()
+  }
+
+  // 拖拽排序后同步原始队列(随机模式恢复时保持一致)
+  function syncOriginalQueue() {
+    if (_originalQueue.length === playQueue.value.length) {
+      _originalQueue = playQueue.value.map(s => ({ ...s }))
+    }
   }
 
   // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
@@ -460,12 +476,18 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 播放列表持久化:保存队列与当前索引(重启后恢复)
+  // 节流 500ms:切歌/拖拽频繁时合并写,避免每首歌都同步序列化整个队列
+  let _queueSaveTimer = null
   function saveQueueState() {
-    try {
-      const state = { queue: playQueue.value, index: currentIndex.value }
-      localStorage.setItem('soundflow_queue', JSON.stringify(state))
-      if (window.electronAPI) window.electronAPI.storeSet('queue', state)
-    } catch {}
+    if (_queueSaveTimer) return
+    _queueSaveTimer = setTimeout(() => {
+      _queueSaveTimer = null
+      try {
+        const state = { queue: playQueue.value.map(s => s && s.path), index: currentIndex.value }
+        localStorage.setItem('soundflow_queue', JSON.stringify(state))
+        if (window.electronAPI) window.electronAPI.storeSet('queue', state)
+      } catch {}
+    }, 500)
   }
 
   // 恢复上次播放列表(不自动播放,当前歌曲显示,用户点播放开始)
@@ -478,6 +500,18 @@ export const usePlayerStore = defineStore('player', () => {
       } catch {}
       if (!state && window.electronAPI) state = await window.electronAPI.storeGet('queue')
       if (!state || !Array.isArray(state.queue) || state.queue.length === 0) return
+      // 新格式 queue 为 path 数组 → 映射回歌曲对象(避免序列化整个队列);旧格式对象数组兼容
+      if (typeof state.queue[0] === 'string') {
+        try {
+          const { useMusicStore } = await import('@/stores/musicStore')
+          const songMap = new Map(useMusicStore().songs.map(s => [s.path, s]))
+          const mapped = state.queue.map(p => songMap.get(p)).filter(Boolean)
+          if (mapped.length > 0) {
+            state.queue = mapped
+            if (typeof state.index === 'number' && state.index >= mapped.length) state.index = mapped.length - 1
+          }
+        } catch { return }
+      }
       playQueue.value = state.queue.filter(s => s && s.path)
       _originalQueue = playQueue.value.map(s => ({ ...s }))
       if (playQueue.value.length === 0) return
@@ -591,6 +625,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (!window.electronAPI || lyrics.value.length === 0) return
     const song = currentSong.value
     if (!song) return
+    const reqSong = song
     if (_translationCache.has(song.path)) {
       translations.value = _translationCache.get(song.path)
       return
@@ -614,6 +649,8 @@ export const usePlayerStore = defineStore('player', () => {
         service,
         deepseekKey
       })
+      // 竞态保护:翻译期间可能已切歌
+      if (currentSong.value !== reqSong) return
       translations.value = Array.isArray(result) ? result : []
       _translationCache.set(song.path, translations.value)
       _saveTransCache()
@@ -631,6 +668,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 加载歌词:本地 .lrc → 在线歌词缓存 → 在线来源
   async function loadLyrics(song) {
+    const reqSong = song
     lyrics.value = []
     currentLyricIndex.value = -1
     if (!window.electronAPI) return
@@ -643,6 +681,8 @@ export const usePlayerStore = defineStore('player', () => {
       } catch {}
       const lrcText = await window.electronAPI.readLyricFile(song.path, lyricFolders)
       if (lrcText) {
+        // 竞态保护:期间可能已切歌
+        if (currentSong.value !== reqSong) return
         lyricOrigin.value = '本地'
         lyrics.value = parseLRC(lrcText)
         if (showTranslation.value) translateCurrentLyrics()
@@ -657,6 +697,9 @@ export const usePlayerStore = defineStore('player', () => {
         // 缓存按来源隔离,切换来源后重新获取
         const cacheKey = `${source}|${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
+        if (onlineText) {
+          lyricOrigin.value = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : '自动')
+        }
         if (!onlineText) {
           const res = await window.electronAPI.fetchOnlineLyric({
             title: song.title,
@@ -673,6 +716,8 @@ export const usePlayerStore = defineStore('player', () => {
           }
         }
         if (onlineText) {
+          // 竞态保护:期间可能已切歌
+          if (currentSong.value !== reqSong) return
           lyrics.value = parseLRC(onlineText)
           if (showTranslation.value) translateCurrentLyrics()
         }
@@ -732,6 +777,15 @@ export const usePlayerStore = defineStore('player', () => {
       window.electronAPI.sendLyricIndex(idx)
     }
   })
+
+  // 桌面歌词窗口被系统/托盘关闭时,主进程通知归零状态
+  if (window.electronAPI && window.electronAPI.on) {
+    try {
+      window.electronAPI.on('lyric-state-sync', (state) => {
+        if (typeof state === 'number') desktopLyricState.value = state
+      })
+    } catch {}
+  }
 
   // ========== 系统媒体控制 (MediaSession / SMTC) ==========
   // Windows 通知栏 / 音量浮层 / 锁屏上的播放控件,相当于 Android 的 MediaSession
@@ -871,8 +925,13 @@ export const usePlayerStore = defineStore('player', () => {
   function togglePlay() {
     initAudio()
     if (!audio.value) return
-    if (isPlaying.value) audio.value.pause()
-    else { fadeIn(); audio.value.play().catch(() => {}) }
+    if (isPlaying.value) { audio.value.pause(); return }
+    // 恢复队列/停止后:有当前歌曲但 audio 无 src → 重新加载再播放
+    if (currentSong.value && !audio.value.src) {
+      loadAndPlay(currentIndex.value)
+      return
+    }
+    fadeIn(); audio.value.play().catch(() => {})
   }
 
   function playIndex(index) {
@@ -1093,7 +1152,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (_pitchNode && _pitchNode.port) _pitchNode.port.postMessage({ type: 'pitch', value: v })
     applyPitchToAudio()
     rebuildAudioChain()
-    saveSettings()
+    schedulePitchSave()
   }
 
   // 切换变调模式:变速不变调(SoundTouch)/ 变速变调(playbackRate 卡带效果)
@@ -1101,6 +1160,12 @@ export const usePlayerStore = defineStore('player', () => {
     pitchShiftTempo.value = !!v
     applyPitch()
     saveSettings()
+  }
+  // 变调滑条拖动时保存节流(避免每帧全量持久化)
+  let _pitchSaveTimer = null
+  function schedulePitchSave() {
+    if (_pitchSaveTimer) return
+    _pitchSaveTimer = setTimeout(() => { _pitchSaveTimer = null; saveSettings() }, 800)
   }
 
   // 桌面歌词:开/关(锁定等操作在歌词窗口右键菜单)
@@ -1239,7 +1304,7 @@ export const usePlayerStore = defineStore('player', () => {
     pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
-    initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, loadAndPlay, togglePlay,
+    initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,

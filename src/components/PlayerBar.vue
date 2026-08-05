@@ -173,7 +173,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/playerStore'
 import { t } from '@/i18n'
@@ -231,6 +231,7 @@ function setupPbPanelsClickOutside() {
   )
 }
 onMounted(() => { setupPbPanelsClickOutside() })
+onUnmounted(() => { document.removeEventListener('click', onQueueDocClick) })
 watch(() => playerStore.showQueue, (v) => {
   if (v) nextTick(scrollToActiveQueue)
 })
