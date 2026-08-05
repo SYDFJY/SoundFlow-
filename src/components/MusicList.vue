@@ -499,6 +499,19 @@ onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
   if (_listResizeObserver) { try { _listResizeObserver.disconnect() } catch {} }
 })
+// 当前歌曲变化时自动滚动到可视区(虚拟滚动:直接算 scrollTop,当前行不可见才滚动,不打断浏览)
+watch(() => playerStore.currentSong?.path, (p) => {
+  if (!p) return
+  const idx = props.songs.findIndex(s => s.path === p)
+  if (idx < 0) return
+  const el = listBodyEl.value
+  if (!el) return
+  const rowTop = idx * ROW_H
+  const rowBottom = rowTop + ROW_H
+  if (rowTop < el.scrollTop || rowBottom > el.scrollTop + el.clientHeight) {
+    el.scrollTop = Math.max(0, rowTop - (el.clientHeight - ROW_H) / 2)
+  }
+})
 </script>
 
 <style scoped>
