@@ -287,7 +287,7 @@
               :key="f.url"
               class="font-pick-card"
               :class="{ active: currentFont.includes(f.name) }"
-              :style="{ fontFamily: '\"' + f.name + '\"' }"
+              :style='{ fontFamily: "\"" + f.name + "\"" }'
               @click="selectFont('&quot;' + f.name + '&quot;')"
             >{{ f.name }}</button>
           </div>
@@ -299,7 +299,7 @@
           </div>
           <div v-show="fontExpanded" class="font-expand-list">
             <div v-for="(f, i) in customFonts" :key="f.url" class="custom-font-row">
-              <span class="font-name" :style="{ fontFamily: '\"' + f.name + '\"' }">{{ f.name }}</span>
+              <span class="font-name" :style='{ fontFamily: "\"" + f.name + "\"" }'>{{ f.name }}</span>
               <button class="setting-btn font-remove" @click="removeCustomFont(i)">删除</button>
             </div>
           </div>
