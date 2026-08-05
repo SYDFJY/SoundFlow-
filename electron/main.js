@@ -37,6 +37,7 @@ let ffmpegPathForLoudness = null
 function detectFFmpegLoudness() {
   try {
     const dirs = [
+      path.join(process.resourcesPath || '', 'ffmpeg'),
       path.dirname(process.execPath),
       path.join(__dirname, '..'),
       'C:\\ffmpeg\\bin',
@@ -385,9 +386,21 @@ async function scanFolderRecursive(folderPath) {
 
 // ========== 窗口创建 ==========
 function createMainWindow() {
+  // 恢复上次窗口大小/位置(边界保护:必须仍在可见屏幕内)
+  let winX = undefined, winY = undefined, winW = 1280, winH = 800
+  try {
+    if (storageData.windowBounds) {
+      const b = storageData.windowBounds
+      if (typeof b.width === 'number' && b.width >= 960) winW = Math.round(b.width)
+      if (typeof b.height === 'number' && b.height >= 600) winH = Math.round(b.height)
+      if (typeof b.x === 'number' && typeof b.y === 'number') { winX = Math.round(b.x); winY = Math.round(b.y) }
+    }
+  } catch {}
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: winW,
+    height: winH,
+    x: winX,
+    y: winY,
     minWidth: 960,
     minHeight: 600,
     frame: false,
@@ -423,6 +436,58 @@ function createMainWindow() {
   })
   mainWindow.on('show', () => {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
+  })
+
+  // 窗口大小/位置记忆:拖动或缩放后节流保存,重启恢复
+  let winBoundsTimer = null
+  const saveWinBounds = () => {
+    if (winBoundsTimer) return
+    winBoundsTimer = setTimeout(() => {
+      winBoundsTimer = null
+      try {
+        if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized() || mainWindow.isMaximized()) return
+        storageData.windowBounds = mainWindow.getBounds()
+        saveStorage()
+      } catch {}
+    }, 500)
+  }
+
+
+  // 崩溃自动恢复:渲染进程异常退出时自动重载(带防循环保护)
+  let crashCount = 0
+  let crashWindowStart = 0
+  const recoverCrash = () => {
+    const now = Date.now()
+    if (now - crashWindowStart > 10000) { crashCount = 0; crashWindowStart = now }
+    crashCount++
+    if (crashCount > 3) {
+      console.error('[崩溃恢复] 连续崩溃超过 3 次,停止自动重载')
+      return
+    }
+    setTimeout(() => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.reload()
+          console.log('[崩溃恢复] 已自动重载窗口')
+        }
+      } catch {}
+    }, 1000)
+  }
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    if (details.reason === 'clean-exit') return
+    console.error('[崩溃恢复] 渲染进程异常:', details.reason)
+    recoverCrash()
+  })
+  // 假死 6 秒仍无响应则强制重载
+  mainWindow.webContents.on('unresponsive', () => {
+    setTimeout(() => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
+          console.log('[崩溃恢复] 窗口无响应,强制重载')
+          mainWindow.webContents.reload()
+        }
+      } catch {}
+    }, 6000)
   })
 
   mainWindow.on('close', (e) => {
@@ -1143,6 +1208,23 @@ function setupIPC() {
   })
   ipcMain.handle('get-login-item', () => {
     try { return app.getLoginItemSettings().openAtLogin } catch { return false }
+  })
+
+  // 选择歌单封面图片(复制到 userData/covers 持久保存)
+  ipcMain.handle('select-cover', async () => {
+    try {
+      const r = await dialog.showOpenDialog(mainWindow, {
+        properties: ['openFile'],
+        filters: [{ name: '图片', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }]
+      })
+      if (r.canceled || !r.filePaths || !r.filePaths[0]) return null
+      const src = r.filePaths[0]
+      const coverDir = path.join(app.getPath('userData'), 'covers')
+      fs.mkdirSync(coverDir, { recursive: true })
+      const dest = path.join(coverDir, 'pl_' + Date.now() + path.extname(src))
+      fs.copyFileSync(src, dest)
+      return dest
+    } catch { return null }
   })
 
   ipcMain.handle('open-theme-file', async (event) => {

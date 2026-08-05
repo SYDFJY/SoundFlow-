@@ -42,6 +42,9 @@
       "package.json",
       "build/thumb/**/*"
     ],
+    "extraResources": [
+      { "from": "C:/ffmpeg/bin/ffmpeg.exe", "to": "ffmpeg/ffmpeg.exe" }
+    ],
     "win": {
       "target": [
         {

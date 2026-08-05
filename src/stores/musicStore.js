@@ -240,6 +240,12 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 歌单拖拽排序(useDraggable 已改序,这里只持久化)
+  // 歌单自定义封面(优先于自动取第一首封面)
+  function setPlaylistCover(id, coverPath) {
+    playlists.value = playlists.value.map(p => p.id === id ? { ...p, cover: coverPath || '' } : p)
+    saveToStorage()
+  }
+
   function reorderPlaylists(oldIndex, newIndex) {
     if (oldIndex === newIndex) return
     const list = playlists.value

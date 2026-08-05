@@ -541,12 +541,44 @@ export const usePlayerStore = defineStore('player', () => {
   const translating = ref(false)
   const translations = ref([])
   let _translationCache = new Map() // 歌曲路径 -> 译文数组(会话内缓存)
+  const TRANS_CACHE_KEY = 'soundflow_translation_cache'
+  const TRANS_CACHE_MAX = 500
+  // 从 localStorage 加载持久化翻译缓存(懒加载,首次使用某首歌时)
+  function _loadTransCache() {
+    try {
+      const raw = localStorage.getItem(TRANS_CACHE_KEY)
+      if (!raw) return
+      const obj = JSON.parse(raw)
+      for (const k of Object.keys(obj)) {
+        if (_translationCache.size >= TRANS_CACHE_MAX) break
+        if (Array.isArray(obj[k])) _translationCache.set(k, obj[k])
+      }
+    } catch {}
+  }
+  function _saveTransCache() {
+    try {
+      while (_translationCache.size > TRANS_CACHE_MAX) {
+        const first = _translationCache.keys().next().value
+        if (first === undefined) break
+        _translationCache.delete(first)
+      }
+      const obj = {}
+      _translationCache.forEach((v, k) => { obj[k] = v })
+      localStorage.setItem(TRANS_CACHE_KEY, JSON.stringify(obj))
+    } catch {}
+  }
 
   // 翻译当前歌词:自动判断目标语言(原文含中文→英文,否则→中文)
   async function translateCurrentLyrics() {
     if (!window.electronAPI || lyrics.value.length === 0) return
     const song = currentSong.value
     if (!song) return
+    if (_translationCache.has(song.path)) {
+      translations.value = _translationCache.get(song.path)
+      return
+    }
+    // 懒加载持久化缓存
+    if (_translationCache.size === 0) _loadTransCache()
     if (_translationCache.has(song.path)) {
       translations.value = _translationCache.get(song.path)
       return
@@ -566,6 +598,7 @@ export const usePlayerStore = defineStore('player', () => {
       })
       translations.value = Array.isArray(result) ? result : []
       _translationCache.set(song.path, translations.value)
+      _saveTransCache()
     } catch {
       translations.value = []
     } finally {

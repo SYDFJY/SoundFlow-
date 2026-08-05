@@ -72,6 +72,8 @@
     <!-- 歌单右键菜单 -->
     <transition name="fade">
       <div v-if="contextMenu.show" class="context-menu" :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
+        <button @click="setPlaylistCover">设置封面</button>
+        <button @click="removePlaylistCover">移除封面</button>
         <button @click="renamePlaylist">{{ t('common.rename') }}</button>
         <button @click="deletePlaylist" class="danger">{{ t('common.delete') }}</button>
       </div>
@@ -164,10 +166,27 @@ function startResize(e) {
   window.addEventListener('mouseup', onUp)
 }
 
-// 歌单封面:取歌单第一首歌的封面
+// 歌单封面:自定义封面优先,否则取歌单第一首歌的封面
 function getPlaylistCover(pl) {
+  if (pl.cover) return pl.cover
   const songs = musicStore.getPlaylistSongs(pl.id)
   return songs[0]?.coverUrl || ''
+}
+// 设置歌单封面(选图片 → 主进程复制到 userData/covers)
+async function setPlaylistCover() {
+  const pl = contextMenu.value?.playlist
+  if (!pl || !window.electronAPI?.selectCover) return
+  const coverPath = await window.electronAPI.selectCover().catch(() => null)
+  if (coverPath) {
+    musicStore.setPlaylistCover(pl.id, coverPath)
+    window.$toast?.('歌单封面已更新 ✓', 'success')
+  }
+  contextMenu.value.show = false
+}
+function removePlaylistCover() {
+  const pl = contextMenu.value?.playlist
+  if (pl) musicStore.setPlaylistCover(pl.id, '')
+  contextMenu.value.show = false
 }
 
 // 歌单自定义排序(上移/下移)

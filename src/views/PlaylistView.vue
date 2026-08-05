@@ -2,8 +2,11 @@
   <div class="playlist-view">
     <div class="view-header">
       <div class="header-left">
-        <h1 class="header-title">{{ playlist?.name || '歌单' }}</h1>
-        <span class="header-count">{{ songs.length }} 首</span>
+        <img v-if="playlistCover" :src="playlistCover" class="pl-big-cover" />
+        <div>
+          <h1 class="header-title">{{ playlist?.name || '歌单' }}</h1>
+          <span class="header-count">{{ songs.length }} 首</span>
+        </div>
       </div>
       <div class="header-right">
         <button class="add-songs-btn" @click="showAddDialog = true">
@@ -85,6 +88,12 @@ const route = useRoute()
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
 
+const playlistCover = computed(() => {
+  const pl = playlist.value
+  if (!pl) return ''
+  if (pl.cover) return pl.cover
+  return musicStore.getPlaylistSongs(pl.id)[0]?.coverUrl || ''
+})
 const playlist = computed(() => musicStore.playlists.find(p => p.id === route.params.id))
 const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
 
@@ -163,7 +172,8 @@ function playAll() {
 <style scoped>
 .playlist-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .view-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; flex-shrink: 0; }
-.header-left { display: flex; align-items: baseline; gap: 12px; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.pl-big-cover { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; box-shadow: var(--shadow-md); }
 .header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
 .header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
 .header-right { display: flex; align-items: center; gap: 8px; }

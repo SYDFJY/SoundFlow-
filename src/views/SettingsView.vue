@@ -7,6 +7,12 @@
       <h1 class="header-title">设置</h1>
     </div>
 
+    <div class="settings-search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      <input v-model="searchQuery" placeholder="搜索设置项…(如 歌词 / 字体 / 开机自启)" />
+      <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">✕</button>
+    </div>
+
     <div class="settings-content">
       <!-- 主题设置 -->
       <div class="settings-section">
@@ -410,6 +416,21 @@ async function toggleLoginItem() {
   window.$toast?.(v ? '已开启开机自启' : '已关闭开机自启', 'success')
 }
 loadLoginItem()
+const searchQuery = ref('')
+function applySearch(q) {
+  const qq = (q || '').trim().toLowerCase()
+  document.querySelectorAll('.settings-section').forEach(sec => {
+    let any = false
+    sec.querySelectorAll('.setting-item').forEach(item => {
+      const text = (item.textContent || '').toLowerCase()
+      const hit = !qq || text.includes(qq)
+      item.style.display = hit ? '' : 'none'
+      if (hit) any = true
+    })
+    sec.style.display = (!qq || any) ? '' : 'none'
+  })
+}
+watch(searchQuery, applySearch)
 const currentLang = computed(() => i18n.lang)
 // 检查更新(自动更新骨架;未配置发布源时提示)
 const checkingUpdate = ref(false)
@@ -873,4 +894,10 @@ select {
 .about-info h4 { font-size: var(--font-size-lg); color: var(--text-primary); font-weight: 600; }
 .about-info span { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .about-info p { font-size: var(--font-size-sm); color: var(--text-secondary); margin-top: 4px; }
+.settings-search { display: flex; align-items: center; gap: 8px; padding: 10px 24px 4px; flex-shrink: 0; }
+.settings-search svg { width: 16px; height: 16px; color: var(--text-tertiary); margin-left: 8px; }
+.settings-search input { flex: 1; max-width: 340px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; padding: 7px 28px 7px 30px; color: var(--text-primary); font-size: var(--font-size-base); outline: none; }
+.settings-search input:focus { border-color: var(--color-primary); }
+.search-clear { background: none; border: none; color: var(--text-tertiary); cursor: pointer; margin-left: -26px; font-size: 13px; }
+.search-clear:hover { color: var(--text-primary); }
 </style>
