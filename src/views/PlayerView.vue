@@ -215,7 +215,7 @@
             </button>
 
             <!-- 播放列表 -->
-            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showQueuePanel }" @click="toggleQueuePanel" :title="t('player.queue')">
+            <button class="ctrl-btn ctrl-btn--small" data-queue-toggle :class="{ active: showQueuePanel }" @click="toggleQueuePanel" :title="t('player.queue')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
             </button>
           </div>
@@ -346,7 +346,16 @@ const eqGroups = [
 function toggleQueuePanel() {
   showQueuePanel.value = !showQueuePanel.value
   if (showQueuePanel.value) {
+    document.addEventListener('click', onPvQueueDocClick)
     nextTick(() => scrollToActiveQueue())
+  } else {
+    document.removeEventListener('click', onPvQueueDocClick)
+  }
+}
+function onPvQueueDocClick(e) {
+  if (!e.target.closest('.queue-panel') && !e.target.closest('[data-queue-toggle]')) {
+    showQueuePanel.value = false
+    document.removeEventListener('click', onPvQueueDocClick)
   }
 }
 
@@ -751,6 +760,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
   if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
+  document.removeEventListener('click', onPvQueueDocClick)
 })
 // 暂停时停止频谱 rAF(省 CPU),播放时恢复
 watch(() => playerStore.isPlaying, (v) => {

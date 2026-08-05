@@ -103,7 +103,7 @@
       <button class="right-btn" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
       </button>
-      <button class="right-btn" :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" :title="t('player.queue')">
+      <button class="right-btn" data-queue-toggle :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" :title="t('player.queue')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       </button>
     </div>
@@ -209,8 +209,18 @@ function scrollToActiveQueue() {
   const target = elRect.top - listRect.top + list.scrollTop - list.clientHeight / 2 + elRect.height / 2
   list.scrollTop = Math.max(0, target)
 }
+function onQueueDocClick(e) {
+  if (!e.target.closest('.queue-panel') && !e.target.closest('[data-queue-toggle]')) {
+    playerStore.showQueue = false
+  }
+}
 watch(() => playerStore.showQueue, (v) => {
-  if (v) nextTick(scrollToActiveQueue)
+  if (v) {
+    document.addEventListener('click', onQueueDocClick)
+    nextTick(scrollToActiveQueue)
+  } else {
+    document.removeEventListener('click', onQueueDocClick)
+  }
 })
 watch(() => playerStore.currentIndex, () => {
   if (playerStore.showQueue) nextTick(scrollToActiveQueue)
