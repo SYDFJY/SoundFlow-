@@ -592,6 +592,7 @@ export const usePlayerStore = defineStore('player', () => {
   const showTranslation = ref(false)
   const translating = ref(false)
   const translations = ref([])
+  const translateNotice = ref('') // 翻译服务不可用提示弹窗:'' 无 / 'quota' 额度用完 / 'empty' 服务不可用
   let _translationCache = new Map() // 歌曲路径 -> 译文数组(会话内缓存)
   const TRANS_CACHE_KEY = 'soundflow_translation_cache'
   const TRANS_CACHE_MAX = 500
@@ -654,12 +655,12 @@ export const usePlayerStore = defineStore('player', () => {
       // 免费配额耗尽 / 服务不可用:友好提示 + 引导配置 DeepSeek
       if (result && result.error === 'quota') {
         translations.value = []
-        if (window.$toast) window.$toast?.('翻译服务今日免费额度已用完,可在 设置→歌词 中填写 DeepSeek Key 继续翻译', 'warning')
+        translateNotice.value = 'quota' // 弹窗提示
         return
       }
       if (result && result.error === 'empty') {
         translations.value = []
-        if (window.$toast) window.$toast?.('翻译服务暂时不可用,请稍后重试,或到 设置→歌词 配置 DeepSeek Key', 'warning')
+        translateNotice.value = 'empty'
         return
       }
       translations.value = Array.isArray(result) ? result : []
@@ -1310,7 +1311,7 @@ export const usePlayerStore = defineStore('player', () => {
   return {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
-    showTranslation, translating, translations, toggleTranslation, translateCurrentLyrics,
+    showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,

@@ -25,6 +25,21 @@
       <PlayerBar />
     </template>
     <ToastHost />
+    <!-- 翻译服务不可用弹窗 -->
+    <teleport to="body">
+      <div v-if="playerStore.translateNotice" class="translate-notice-mask" @click.self="playerStore.translateNotice = ''">
+        <div class="translate-notice">
+          <div class="tn-icon">🌐</div>
+          <h3>翻译服务暂不可用</h3>
+          <p class="tn-desc">{{ playerStore.translateNotice === 'quota' ? 'MyMemory 免费翻译今日额度已用完,每日会自动恢复。' : '翻译服务暂时无法连接,请稍后重试。' }}</p>
+          <p class="tn-hint">配置 <b>DeepSeek API Key</b> 可立即继续翻译,且无每日次数限制、翻译质量更好。</p>
+          <div class="tn-actions">
+            <button class="tn-btn" @click="playerStore.translateNotice = ''">关闭</button>
+            <button class="tn-btn tn-btn--primary" @click="goTranslateConfig">去配置 DeepSeek</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
   </div>
 </template>
 
@@ -49,6 +64,11 @@ const route = useRoute()
 const appStore = useAppStore()
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
+const router = useRouter()
+function goTranslateConfig() {
+  playerStore.translateNotice = ''
+  router.push('/settings')
+}
 
 // 播放器页面和歌词悬浮窗全屏显示
 const isFullscreen = computed(() => {
@@ -214,4 +234,26 @@ onUnmounted(() => {
   overflow: hidden;
   background: var(--bg-primary);
 }
+.translate-notice-mask {
+  position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.45); backdrop-filter: blur(2px);
+}
+.translate-notice {
+  width: 360px; max-width: 90vw; padding: 22px 24px; border-radius: 14px; text-align: center;
+  background: var(--bg-card, #fff); border: 1px solid var(--border-color); box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+  animation: tn-in 0.2s ease;
+}
+@keyframes tn-in { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: scale(1); } }
+.tn-icon { font-size: 34px; margin-bottom: 8px; }
+.translate-notice h3 { margin: 0 0 8px; font-size: 16px; color: var(--text-primary); }
+.tn-desc { margin: 0 0 6px; font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.tn-hint { margin: 0 0 16px; font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
+.tn-actions { display: flex; gap: 8px; justify-content: center; }
+.tn-btn {
+  padding: 7px 16px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: transparent; color: var(--text-primary); font-size: 13px; cursor: pointer; transition: all 0.15s;
+}
+.tn-btn:hover { background: rgba(255,255,255,0.08); }
+.tn-btn--primary { background: var(--color-primary, #4096ff); border-color: var(--color-primary, #4096ff); color: #fff; font-weight: 600; }
+.tn-btn--primary:hover { filter: brightness(1.1); }
 </style>
