@@ -41,6 +41,11 @@
               <span>{{ t.label }}</span>
               <svg v-if="appStore.theme === t.value" class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             </button>
+            <div class="theme-dropdown-divider"></div>
+            <div class="theme-io-row">
+              <button class="theme-io-btn" @click="exportTheme">导出</button>
+              <button class="theme-io-btn" @click="importTheme">导入</button>
+            </div>
           </div>
         </transition>
       </div>
@@ -112,6 +117,29 @@ const themeList = [
 function selectTheme(value) {
   appStore.applyTheme(value)
   showThemeDropdown.value = false
+}
+
+// 主题导入/导出(顶栏快捷入口)
+async function exportTheme() {
+  try {
+    const json = appStore.exportThemeJSON()
+    if (window.electronAPI && window.electronAPI.saveThemeFile) {
+      const ok = await window.electronAPI.saveThemeFile(json)
+      window.$toast?.(ok ? '主题已导出 ✓' : '已取消导出', ok ? 'success' : 'info')
+      showThemeDropdown.value = false
+    }
+  } catch { window.$toast?.('导出失败', 'error') }
+}
+async function importTheme() {
+  try {
+    if (window.electronAPI && window.electronAPI.openThemeFile) {
+      const content = await window.electronAPI.openThemeFile()
+      if (!content) return
+      const ok = appStore.importThemeJSON(content)
+      window.$toast?.(ok ? '主题已导入并应用 ✓' : '主题文件格式无效', ok ? 'success' : 'warning')
+      showThemeDropdown.value = false
+    }
+  } catch { window.$toast?.('导入失败', 'error') }
 }
 
 function closeDropdown() {
@@ -215,6 +243,15 @@ function closeWindow() { window.electronAPI?.closeWindow() }
   text-align: left;
 }
 .theme-option:hover { background: var(--bg-hover); }
+.theme-dropdown-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+.theme-io-row { display: flex; gap: 6px; padding: 0 4px; }
+.theme-io-btn {
+  flex: 1; padding: 6px 0; font-size: var(--font-size-xs);
+  color: var(--text-secondary); background: var(--bg-hover);
+  border: 1px solid var(--border-color); border-radius: var(--radius-sm);
+  transition: all 0.15s;
+}
+.theme-io-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
 .theme-option.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 500; }
 .theme-dot { width: 14px; height: 14px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.3); box-shadow: 0 0 0 1px rgba(0,0,0,0.1); }
 .check-icon { width: 16px; height: 16px; margin-left: auto; color: var(--color-primary); }

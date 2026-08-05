@@ -182,7 +182,11 @@
             <button class="source-btn" :class="{ active: translateService === 'mymemory' }" @click="setTranslateService('mymemory')">MyMemory</button>
             <button class="source-btn" :class="{ active: translateService === 'deepseek' }" @click="setTranslateService('deepseek')">DeepSeek</button>
           </div>
-          <input v-if="translateService === 'deepseek'" v-model="deepseekKey" type="password" class="deepseek-key-input" placeholder="输入 DeepSeek API Key（仅保存在本地）" @blur="saveDeepseekKey" />
+          <div v-if="translateService === 'deepseek'" class="deepseek-key-row">
+            <input v-model="deepseekKey" :type="showDeepseekKey ? 'text' : 'password'" class="deepseek-key-input" :placeholder="deepseekKey ? '已配置(输入可更换)' : '输入 DeepSeek API Key(仅保存在本地)'" @blur="saveDeepseekKey" />
+            <button class="key-eye" @click="showDeepseekKey = !showDeepseekKey" :title="showDeepseekKey ? '隐藏' : '显示'">{{ showDeepseekKey ? '🙈' : '👁' }}</button>
+            <span v-if="deepseekKey" class="key-configured">已配置 ✓</span>
+          </div>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -636,6 +640,7 @@ function setLyricSource(v) {
 // 歌词翻译服务(MyMemory 免费 / DeepSeek 需 key)
 const translateService = ref(localStorage.getItem('soundflow_translate_service') || 'mymemory')
 const deepseekKey = ref(localStorage.getItem('soundflow_deepseek_key') || '')
+const showDeepseekKey = ref(false)
 
 function setTranslateService(v) {
   translateService.value = v
@@ -936,6 +941,11 @@ select {
 .source-btn:hover { color: var(--text-primary); }
 .source-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
 .deepseek-key-input { width: 100%; margin-top: 8px; }
+.deepseek-key-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; position: relative; }
+.deepseek-key-row .deepseek-key-input { flex: 1; margin-top: 0; }
+.key-eye { flex-shrink: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; }
+.key-eye:hover { border-color: var(--color-primary); }
+.key-configured { flex-shrink: 0; font-size: 11px; color: #42c988; font-weight: 500; }
 .font-row { display: flex; align-items: center; gap: 10px; }
 .font-select {
   flex: 1; padding: 7px 10px; font-size: var(--font-size-sm);
