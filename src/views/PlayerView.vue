@@ -427,7 +427,6 @@ watch(() => playerStore.currentIndex, () => {
   if (showQueuePanel.value) nextTick(() => scrollToActiveQueue())
 })
 const activeTab = ref('cover')
-
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
 
 // 封面容灾:封面文件丢失时重新生成
@@ -747,7 +746,11 @@ let lastSpecTs = 0
 let gradCache = { key: '', grad: null }
 function drawSpectrum(ts) {
   const canvas = spectrumCanvas.value
-  if (!canvas) return
+  // canvas 被销毁(切 tab 时 v-if)必须重置 rAF 状态,否则 1s 兜底定时器误判"仍在运行"而永不重启
+  if (!canvas) {
+    spectrumRAF = null
+    return
+  }
   const playing = playerStore.isPlaying
   // 30fps 限帧:视觉仍流畅,主线程占用减半
   if (ts && ts - lastSpecTs < 33) {
@@ -829,6 +832,10 @@ function startSpectrum() {
 }
 // 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)
 let spectrumTimer = null
+// 切回封面 tab 立即恢复频谱(比 1s 轮询更快,感知无延迟)
+watch(activeTab, (v) => {
+  if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) startSpectrum()
+})
 onMounted(() => {
   setupPvPanelsClickOutside()
   if (playerStore.isPlaying) startSpectrum()
