@@ -82,6 +82,7 @@
               <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
               <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
               <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" title="歌词对齐(居中/左)" @click="toggleLyricAlign">对齐</button>
+              <button class="ls-btn" :class="{ active: lyricEffect }" title="歌词特效(远近模糊/发光)" @click="lyricEffect = !lyricEffect; localStorage.setItem('soundflow_lyric_effect', lyricEffect ? '1' : '0')">✨</button>
               <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
               <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
               <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
@@ -101,13 +102,18 @@
               <button class="search-lyric-btn local" @click="importLocalLyric">📄 导入本地歌词文件</button>
               <div v-if="searchLyricMsg" class="search-lyric-msg">{{ searchLyricMsg }}</div>
             </div>
-            <div v-else class="lyrics-content">
+            <div v-else class="lyrics-content" :class="{ 'no-lyric-effect': !lyricEffect }">
               <div style="height:40%"></div>
               <div
                 v-for="(line, idx) in playerStore.lyrics"
                 :key="idx"
                 class="lyric-line"
-                :class="{ active: idx === playerStore.currentLyricIndex, left: lyricAlign === 'left' }"
+                :class="{
+                  active: idx === playerStore.currentLyricIndex,
+                  left: lyricAlign === 'left',
+                  near: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) === 1,
+                  far: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) > 1
+                }"
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px',
                   color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99',
@@ -561,6 +567,7 @@ function setLyricColor(v) {
 }
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
+const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') !== '0' } catch { return true } })())
 const volExpanded = ref(false) // 音量滑块默认收起
 const showPitchPanel = ref(false) // 变调面板默认收起
 
@@ -997,6 +1004,11 @@ async function searchLyric() {
   text-align: center;
 }
 .lyric-line.left { text-align: left; }
+/* Apple Music 风格:远离当前句越远越模糊透明 */
+.lyric-line.near { opacity: 0.55; filter: blur(0.4px); }
+.lyric-line.far { opacity: 0.22; filter: blur(1.2px); }
+.no-lyric-effect .lyric-line.near,
+.no-lyric-effect .lyric-line.far { opacity: 0.6; filter: none; }
 .lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; }
 .lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 18px var(--color-primary); }
 .lyric-trans {

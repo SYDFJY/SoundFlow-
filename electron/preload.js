@@ -79,6 +79,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lyricSave: (text) => ipcRenderer.send('lyric:save', text),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
   sendLyricIndex: (idx) => ipcRenderer.send('lyric:index', idx),
+  // 响度分析(ReplayGain)
+  analyzeLoudness: (filePath) => ipcRenderer.invoke('analyze-loudness', filePath),
+  getLoudness: (filePath) => ipcRenderer.invoke('get-loudness', filePath),
+  writeTags: (filePath, tags) => ipcRenderer.invoke('write-tags', filePath, tags),
+  checkUpdates: () => ipcRenderer.invoke('check-updates'),
+  saveThemeFile: (content) => ipcRenderer.invoke('save-theme-file', content),
+  openThemeFile: () => ipcRenderer.invoke('open-theme-file'),
 
   // 歌单导入导出
   exportPlaylist: (name, data) => ipcRenderer.invoke('export-playlist', name, data),

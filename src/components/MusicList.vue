@@ -36,7 +36,7 @@
     </div>
 
     <!-- 列表(全量渲染 + content-visibility 自动跳过视口外行,性能与滚动条语义兼得) -->
-    <div class="list-body" v-if="songs.length > 0">
+    <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" @scroll="onListScroll">
       <div
         v-for="(song, idx) in songs"
         :key="song.path"
@@ -110,6 +110,7 @@
     <transition name="fade">
       <div v-if="ctxMenu.show" class="context-menu" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }">
         <button @click="ctxPlay"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg> 播放</button>
+        <button @click="ctxEditInfo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> 编辑信息</button>
         <button @click="ctxPlayNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/></svg> 下一首播放</button>
         <button @click="ctxToggleFav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</button>
         <div class="ctx-divider"></div>
@@ -122,6 +123,26 @@
         <button class="danger" @click="ctxRemove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> 移除</button>
       </div>
     </transition>
+
+    <!-- 编辑歌曲信息 -->
+    <div v-if="editModal.show" class="modal-mask" @click.self="editModal.show = false">
+      <div class="edit-modal">
+        <h3>编辑歌曲信息</h3>
+        <label>标题
+          <input v-model="editModal.title" placeholder="标题" />
+        </label>
+        <label>歌手
+          <input v-model="editModal.artist" placeholder="歌手" />
+        </label>
+        <label>专辑
+          <input v-model="editModal.album" placeholder="专辑" />
+        </label>
+        <div class="edit-actions">
+          <button class="modal-btn cancel" @click="editModal.show = false">取消</button>
+          <button class="modal-btn confirm" :disabled="savingTags" @click="saveEditInfo">{{ savingTags ? '保存中…' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -140,6 +161,50 @@ const props = defineProps({
 const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change'])
 
 const musicStore = useMusicStore()
+
+// 列表滚动位置记忆(切视图/切歌后恢复,大型曲库浏览体验)
+const listBodyEl = ref(null)
+let _scrollSaveTimer = null
+const LIST_SCROLL_KEY = 'soundflow_list_scroll'
+function onListScroll() {
+  if (_scrollSaveTimer) return
+  _scrollSaveTimer = setTimeout(() => {
+    _scrollSaveTimer = null
+    try { localStorage.setItem(LIST_SCROLL_KEY, String(listBodyEl.value?.scrollTop || 0)) } catch {}
+  }, 300)
+}
+function restoreListScroll() {
+  requestAnimationFrame(() => {
+    try {
+      const top = parseInt(localStorage.getItem(LIST_SCROLL_KEY) || '0')
+      if (listBodyEl.value && top > 0) listBodyEl.value.scrollTop = top
+    } catch {}
+  })
+}
+
+
+// 编辑歌曲信息(写回文件标签)
+const editModal = ref({ show: false, path: '', title: '', artist: '', album: '' })
+const savingTags = ref(false)
+function ctxEditInfo() {
+  const song = ctxMenu.value?.song
+  if (!song) return
+  editModal.value = { show: true, path: song.path, title: song.title || '', artist: song.artist || '', album: song.album || '' }
+}
+async function saveEditInfo() {
+  const m = editModal.value
+  if (!m.path) return
+  savingTags.value = true
+  let ok = false
+  if (window.electronAPI && window.electronAPI.writeTags) {
+    ok = await window.electronAPI.writeTags(m.path, { title: m.title, artist: m.artist, album: m.album }).catch(() => false)
+  }
+  // 更新曲库(即使写标签失败也更新内存,方便用户继续用)
+  musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '' })
+  savingTags.value = false
+  editModal.value.show = false
+  window.$toast?.(ok ? '歌曲信息已保存到文件 ✓' : '已更新列表(文件写入失败,可能文件正被播放占用)', ok ? 'success' : 'warning')
+}
 const playerStore = usePlayerStore()
 const selectedSet = ref(new Set())
 const ctxMenu = ref({ show: false, x: 0, y: 0, song: null })
@@ -347,6 +412,7 @@ function ctxRemove() {
 function closeCtx() { ctxMenu.value.show = false }
 
 onMounted(() => {
+  restoreListScroll()
   document.addEventListener('click', closeCtx)
 })
 onUnmounted(() => {
@@ -562,4 +628,28 @@ onUnmounted(() => {
 .context-menu button.danger { color: var(--color-danger); }
 .context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
 .ctx-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+/* 编辑歌曲信息弹窗 */
+.modal-mask {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+}
+.edit-modal {
+  width: 340px; background: var(--bg-secondary, #1e2433);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+  border-radius: 12px; padding: 18px 20px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+.edit-modal h3 { font-size: 15px; margin-bottom: 12px; color: var(--text-primary); }
+.edit-modal label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.edit-modal input {
+  width: 100%; margin-top: 4px; padding: 7px 10px;
+  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px; color: var(--text-primary); font-size: 13px; outline: none;
+}
+.edit-modal input:focus { border-color: var(--color-primary); }
+.edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.modal-btn { padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; }
+.modal-btn.cancel { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
+.modal-btn.confirm { background: var(--color-primary); color: #fff; }
+.modal-btn.confirm:disabled { opacity: 0.5; cursor: default; }
 </style>

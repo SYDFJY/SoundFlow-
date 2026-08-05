@@ -151,6 +151,8 @@ export const usePlayerStore = defineStore('player', () => {
   // Web Audio 节点
   let _audioCtx = null
   let _mediaSourceNode = null
+  let _fadeGain = null   // 播放淡入淡出增益节点
+  let _replayGainFactor = 1  // 响度均衡系数(与用户音量叠加)
   let _eqFilters = []
   let _bassFilter = null
   let _trebleFilter = null
@@ -172,6 +174,10 @@ export const usePlayerStore = defineStore('player', () => {
       if (!_mediaSourceNode) {
         _mediaSourceNode = _audioCtx.createMediaElementSource(audio.value)
       }
+      if (!_fadeGain) {
+        _fadeGain = _audioCtx.createGain()
+        _fadeGain.gain.value = 1
+      }
       if (!_analyser) {
         _analyser = _audioCtx.createAnalyser()
         _analyser.fftSize = 256
@@ -188,6 +194,7 @@ export const usePlayerStore = defineStore('player', () => {
     try {
       // 断开旧连接
       _mediaSourceNode.disconnect()
+      if (_fadeGain) { try { _fadeGain.disconnect() } catch {} }
       _eqFilters.forEach(f => { try { f.disconnect() } catch {} })
       _eqFilters = []
       if (_bassFilter) { try { _bassFilter.disconnect() } catch {}; _bassFilter = null }
@@ -200,6 +207,11 @@ export const usePlayerStore = defineStore('player', () => {
 
       const s = eqSettings.value
       let prev = _mediaSourceNode
+      // 淡入淡出增益节点(链首,播放淡入用)
+      if (_fadeGain) {
+        _mediaSourceNode.connect(_fadeGain)
+        prev = _fadeGain
+      }
       if (s.enabled) {
         // 10 段 EQ
         s.gains.forEach((g, i) => {
@@ -282,7 +294,7 @@ export const usePlayerStore = defineStore('player', () => {
         prev.connect(_audioCtx.destination)
       } else {
         // 未开启:直通(仍走 AudioContext,保持路由一致)
-        _mediaSourceNode.connect(_audioCtx.destination)
+        prev.connect(_audioCtx.destination)
       }
       // 频谱分析:从链尾(或直通点)分接,不连 destination
       try { prev.connect(_analyser) } catch {}
@@ -492,6 +504,8 @@ export const usePlayerStore = defineStore('player', () => {
     audio.value.src = src
     audio.value.playbackRate = playbackRate.value
     audio.value.play().catch(e => console.warn('[播放器] 播放失败:', e))
+    fadeIn()
+    ensureReplayGain(song.path)
     isBuffering.value = false
     loadLyrics(song)
 
@@ -780,7 +794,7 @@ export const usePlayerStore = defineStore('player', () => {
     initAudio()
     if (!audio.value) return
     if (isPlaying.value) audio.value.pause()
-    else audio.value.play().catch(() => {})
+    else { fadeIn(); audio.value.play().catch(() => {}) }
   }
 
   function playIndex(index) {
@@ -820,6 +834,7 @@ export const usePlayerStore = defineStore('player', () => {
     }
     if (playMode.value === 'repeatOne') {
       audio.value.currentTime = 0
+      fadeIn()
       audio.value.play().catch(() => {})
     } else {
       playNext()
@@ -828,7 +843,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function setVolume(v) {
     volume.value = Math.max(0, Math.min(1, v))
-    if (audio.value) audio.value.volume = volume.value
+    if (audio.value) audio.value.volume = Math.max(0, Math.min(1, volume.value * _replayGainFactor))
     isMuted.value = volume.value === 0
     if (volume.value > 0) _preMuteVolume.value = volume.value
   }
@@ -843,6 +858,44 @@ export const usePlayerStore = defineStore('player', () => {
       if (volume.value > 0) _preMuteVolume.value = volume.value
       setVolume(0)
     }
+  }
+
+  // 播放淡入(新歌/恢复播放 1.2s 从静音渐变)
+  function fadeIn() {
+    if (_fadeGain && _audioCtx) {
+      try {
+        const g = _fadeGain.gain
+        const t = _audioCtx.currentTime
+        g.cancelScheduledValues(t)
+        g.setValueAtTime(0.0001, t)
+        g.linearRampToValueAtTime(1, t + 1.2)
+      } catch {}
+    }
+  }
+
+  // 响度均衡应用(ReplayGain):增益 dB 换算到 volume
+  function applyReplayGain(db) {
+    if (!audio.value) return
+    try {
+      if (db == null || !isFinite(db)) _replayGainFactor = 1
+      else _replayGainFactor = Math.pow(10, db / 20)
+      audio.value.volume = Math.max(0, Math.min(1, volume.value * _replayGainFactor))
+    } catch {}
+  }
+
+  // 播放时应用响度缓存;无缓存则后台分析后应用
+  function ensureReplayGain(songPath) {
+    if (!window.electronAPI || !songPath) return
+    window.electronAPI.getLoudness(songPath).then((db) => {
+      if (db == null) {
+        // 后台分析(不阻塞播放),完成后应用
+        window.electronAPI.analyzeLoudness(songPath).then((g) => {
+          if (g != null && currentSong.value?.path === songPath) applyReplayGain(g)
+        }).catch(() => {})
+      } else {
+        if (currentSong.value?.path === songPath) applyReplayGain(db)
+      }
+    }).catch(() => {})
   }
 
   function seek(time) {

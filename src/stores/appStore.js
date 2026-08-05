@@ -287,8 +287,33 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // 主题导入导出(自定义主题持久化到 localStorage)
+  const customThemes = ref({})
+  function loadCustomThemes() {
+    try {
+      customThemes.value = JSON.parse(localStorage.getItem('soundflow_custom_themes') || '{}')
+      Object.assign(themes, customThemes.value)
+    } catch {}
+  }
+  function exportThemeJSON() {
+    const name = theme.value
+    return JSON.stringify({ name, vars: themes[name] || {} }, null, 2)
+  }
+  function importThemeJSON(jsonStr) {
+    try {
+      const data = JSON.parse(jsonStr)
+      if (!data || !data.name || !data.vars || typeof data.vars !== 'object') return false
+      themes[data.name] = data.vars
+      customThemes.value = { ...customThemes.value, [data.name]: data.vars }
+      localStorage.setItem('soundflow_custom_themes', JSON.stringify(customThemes.value))
+      applyTheme(data.name)
+      return true
+    } catch { return false }
+  }
+
   function loadSettings() {
     try {
+      loadCustomThemes()
       const t = localStorage.getItem('soundflow_theme')
       if (t && themes[t]) theme.value = t
       applyTheme(theme.value)
@@ -339,6 +364,7 @@ export const useAppStore = defineStore('app', () => {
   return {
     theme, fontSize, showSidebar, sidebarWidth, currentView,
     showSettings, language, autoPlay, closeAction,
-    themes, applyTheme, loadSettings, saveSettings, setFontSize
+    themes, applyTheme, loadSettings, saveSettings, setFontSize,
+    exportThemeJSON, importThemeJSON
   }
 })

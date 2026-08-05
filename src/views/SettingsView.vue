@@ -39,6 +39,16 @@
             <button class="theme-btn" :class="{ active: currentLang === 'en' }" @click="switchLang('en')">English</button>
           </div>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">主题导入 / 导出</span>
+            <span class="label-desc">Theme import / export</span>
+          </div>
+          <div class="theme-io-btns">
+            <button class="sec-btn" @click="exportTheme">导出当前主题</button>
+            <button class="sec-btn" @click="importTheme">导入主题</button>
+          </div>
+        </div>
       </div>
 
       <!-- 播放设置 -->
@@ -286,6 +296,13 @@
       <!-- 关于 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.about') }}</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">检查更新</span>
+            <span class="label-desc">Check for updates</span>
+          </div>
+          <button class="sec-btn" :disabled="checkingUpdate" @click="checkUpdate">{{ checkingUpdate ? '检查中…' : updateMsg || '检查更新' }}</button>
+        </div>
         <div class="about-card">
           <div class="about-logo">
             <img src="/icon.jpg" alt="logo" style="width:48px;height:48px;border-radius:12px;object-fit:cover;" />
@@ -331,7 +348,40 @@ import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const appStore = useAppStore()
+async function exportTheme() {
+  try {
+    const json = appStore.exportThemeJSON()
+    if (window.electronAPI && window.electronAPI.saveThemeFile) {
+      const ok = await window.electronAPI.saveThemeFile(json)
+      window.$toast?.(ok ? '主题已导出 ✓' : '已取消导出', ok ? 'success' : 'info')
+    }
+  } catch { window.$toast?.('导出失败', 'error') }
+}
+async function importTheme() {
+  try {
+    if (window.electronAPI && window.electronAPI.openThemeFile) {
+      const content = await window.electronAPI.openThemeFile()
+      if (!content) return
+      const ok = appStore.importThemeJSON(content)
+      window.$toast?.(ok ? '主题已导入并应用 ✓' : '主题文件格式无效', ok ? 'success' : 'warning')
+    }
+  } catch { window.$toast?.('导入失败', 'error') }
+}
 const currentLang = computed(() => i18n.lang)
+// 检查更新(自动更新骨架;未配置发布源时提示)
+const checkingUpdate = ref(false)
+const updateMsg = ref('')
+async function checkUpdate() {
+  checkingUpdate.value = true
+  updateMsg.value = ''
+  try {
+    if (!window.electronAPI || !window.electronAPI.checkUpdates) { updateMsg.value = '开发模式不可用'; return }
+    const r = await window.electronAPI.checkUpdates()
+    if (r.ok && r.hasUpdate) updateMsg.value = '发现新版本,请到发布页下载'
+    else if (r.ok) updateMsg.value = '已是最新版本'
+    else updateMsg.value = r.msg || '检查失败'
+  } catch { updateMsg.value = '检查失败' } finally { checkingUpdate.value = false }
+}
 function switchLang(l) { setLang(l); appStore.saveSettings() }
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()

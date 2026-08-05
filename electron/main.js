@@ -1,7 +1,7 @@
 /**
  * SoundFlow 声流音乐 — Electron 主进程
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { readdir, stat, readFile, writeFile, mkdir } = require('fs/promises')
@@ -31,6 +31,27 @@ let mainWindow = null
 let miniWindow = null
 let lyricWindow = null
 let lyricLocked = false
+
+// ffmpeg 探测(用于响度分析):与 ffprobe 同路径探测
+let ffmpegPathForLoudness = null
+function detectFFmpegLoudness() {
+  try {
+    const dirs = [
+      path.dirname(process.execPath),
+      path.join(__dirname, '..'),
+      'C:\ffmpeg\bin',
+      'C:\Program Files\ffmpeg\bin',
+      'C:\Program Files (x86)\ffmpeg\bin',
+      path.join(os.homedir(), 'ffmpeg', 'bin'),
+      path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin')
+    ]
+    for (const dir of dirs) {
+      const p = path.join(dir, 'ffmpeg.exe')
+      if (fs.existsSync(p)) { ffmpegPathForLoudness = p; return }
+    }
+    ffmpegPathForLoudness = 'ffmpeg'
+  } catch {}
+}
 let lastLyricData = null
 let tray = null
 
@@ -1091,6 +1112,30 @@ function setupIPC() {
     } catch { return false }
   })
 
+  // 主题导出/导入文件
+  ipcMain.handle('save-theme-file', async (event, content) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        title: '导出主题', defaultPath: 'soundflow-theme.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (canceled || !filePath) return false
+      fs.writeFileSync(filePath, content, 'utf-8')
+      return true
+    } catch { return false }
+  })
+  ipcMain.handle('open-theme-file', async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
+      const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+        title: '导入主题', filters: [{ name: 'JSON', extensions: ['json'] }], properties: ['openFile']
+      })
+      if (canceled || !filePaths || !filePaths[0]) return null
+      return fs.readFileSync(filePaths[0], 'utf-8')
+    } catch { return null }
+  })
+
   // 选择自定义字体文件:复制到 userData/fonts/,返回 {name, url}
   ipcMain.handle('select-font-file', async () => {
     const result = await dialog.showOpenDialog({
@@ -1325,9 +1370,73 @@ function setupIPC() {
     if (miniWindow) { miniWindow.close(); miniWindow = null }
   })
 
-  // SMTC 播放状态 → 更新任务栏缩略图按钮
+  // SMTC 播放状态 → 更新任务栏缩略图按钮 + 防休眠
+  let _powerSaveId = null
   ipcMain.on('smtc:playback-state', (event, state) => {
     updateThumbarButtons(state === 'playing' ? 'playing' : 'paused')
+    // 播放时阻止系统休眠/熄屏
+    try {
+      if (state === 'playing') {
+        if (!_powerSaveId) _powerSaveId = powerSaveBlocker.start('prevent-display-sleep')
+      } else {
+        if (_powerSaveId) { powerSaveBlocker.stop(_powerSaveId); _powerSaveId = null }
+      }
+    } catch {}
+  })
+
+  // 响度分析(ReplayGain):ffmpeg volumedetect → 目标 -14dB 的增益
+  ipcMain.handle('analyze-loudness', async (event, filePath) => {
+    try {
+      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
+      const { execFile } = require('child_process')
+      const out = await new Promise((resolve, reject) => {
+        execFile(ffmpegPathForLoudness, ['-hide_banner', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 60000 }, (err, stdout, stderr) => {
+          if (err && !String(stderr).includes('mean_volume')) { reject(err); return }
+          resolve(String(stderr))
+        })
+      })
+      const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(out)
+      if (!m) return null
+      const mean = parseFloat(m[1])
+      const gain = Math.round((-14 - mean) * 10) / 10
+      if (!storageData.replayGain) storageData.replayGain = {}
+      storageData.replayGain[filePath] = gain
+      saveStorage(true)
+      return gain
+    } catch { return null }
+  })
+  ipcMain.handle('get-loudness', (event, filePath) => {
+    try { return (storageData.replayGain && storageData.replayGain[filePath]) ?? null } catch { return null }
+  })
+
+  // 歌曲信息编辑:ffmpeg -metadata 写回标签(标题/歌手/专辑,流复制不改音频数据)
+  ipcMain.handle('write-tags', async (event, filePath, tags) => {
+    try {
+      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
+      const { execFile } = require('child_process')
+      const fs = require('fs')
+      const tmp = filePath + '.tagtmp' + path.extname(filePath)
+      const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy']
+      if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
+      if (tags && tags.artist) args.push('-metadata', 'artist=' + tags.artist)
+      if (tags && tags.album) args.push('-metadata', 'album=' + tags.album)
+      args.push(tmp)
+      await new Promise((res, rej) => {
+        execFile(ffmpegPathForLoudness, args, { timeout: 60000 }, (err) => err ? rej(err) : res())
+      })
+      // 备份后替换原文件;失败回滚
+      const bak = filePath + '.bak'
+      if (fs.existsSync(bak)) fs.unlinkSync(bak)
+      fs.renameSync(filePath, bak)
+      try {
+        fs.renameSync(tmp, filePath)
+        fs.unlinkSync(bak)
+      } catch (e) {
+        try { fs.renameSync(bak, filePath) } catch {}
+        throw e
+      }
+      return true
+    } catch { return false }
   })
 
   // 预加载数据
@@ -1445,12 +1554,33 @@ function setupAutoUpdater() {
     autoUpdater.on('update-available', () => {
       try { mainWindow?.webContents.send('update-available') } catch (_) {}
     })
+    autoUpdater.on('update-not-available', () => {
+      try { mainWindow?.webContents.send('update-not-available') } catch (_) {}
+    })
+    autoUpdater.on('error', () => {
+      try { mainWindow?.webContents.send('update-error') } catch (_) {}
+    })
     // 启动 15 秒后检查,避免拖慢启动
     setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}) }, 15000)
   } catch (e) {
     console.error('[更新] 自动更新不可用:', e.message)
   }
 }
+
+// 手动检查更新(设置页按钮触发)
+ipcMain.handle('check-updates', async () => {
+  try {
+    if (!app.isPackaged || !autoUpdater) return { ok: false, msg: '开发模式不可用' }
+    if (!fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'))) {
+      return { ok: false, msg: '未配置更新源(发布后自动可用)' }
+    }
+    autoUpdater.autoDownload = false
+    const result = await autoUpdater.checkForUpdates()
+    return { ok: true, hasUpdate: !!result?.updateInfo?.version && result.updateInfo.version !== app.getVersion() }
+  } catch (e) {
+    return { ok: false, msg: e?.message || '检查失败' }
+  }
+})
 
 app.whenReady().then(async () => {
   await ensureParseFile()
