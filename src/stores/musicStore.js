@@ -110,7 +110,18 @@ export const useMusicStore = defineStore('music', () => {
     }
   }
 
-  function saveToStorage() {
+  // 防抖合并:收藏/歌单/进度等频繁操作时,2s 内多次保存合并为一次全量写,避免反复全量序列化卡主线程
+  let _saveDebounce = null
+  function saveToStorage(immediate = false) {
+    if (immediate) {
+      if (_saveDebounce) { clearTimeout(_saveDebounce); _saveDebounce = null }
+      doSaveToStorage()
+      return
+    }
+    if (_saveDebounce) return
+    _saveDebounce = setTimeout(() => { _saveDebounce = null; doSaveToStorage() }, 2000)
+  }
+  function doSaveToStorage() {
     try {
       const safeSet = (key, value) => {
         try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) { console.warn('[存储] localStorage 写入失败:', key, e.message) }

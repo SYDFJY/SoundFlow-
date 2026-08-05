@@ -171,7 +171,7 @@ onMounted(() => {
     window.electronAPI.on('app:before-close', () => {
       try {
         playerStore.saveSettings()
-        musicStore.saveToStorage()
+        musicStore.saveToStorage(true)
       } catch (e) { console.error(e) }
     })
   }
@@ -180,7 +180,7 @@ onMounted(() => {
   _autoSaveTimer = setInterval(() => {
     try {
       playerStore.saveSettings()
-      musicStore.saveToStorage()
+      musicStore.saveToStorage(true)
     } catch (e) { console.error(e) }
   }, 90000)
 })
@@ -189,7 +189,7 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
   if (_autoSaveTimer) { clearInterval(_autoSaveTimer); _autoSaveTimer = null }
   playerStore.saveSettings()
-  musicStore.saveToStorage()
+  musicStore.saveToStorage(true)
 })
 </script>
 
