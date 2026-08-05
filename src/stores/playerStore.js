@@ -776,13 +776,13 @@ export const usePlayerStore = defineStore('player', () => {
     // 兜底:部分 FLAC/MP3 文件尾部数据异常时 Chromium 可能不触发 ended 事件,
     // 导致"播完不自动切歌"。检测到"接近播完但播放进度停滞"则手动触发 onSongEnd。
     const d = duration.value
-    if (isPlaying.value && d > 0 && t >= d - 1.2 && t < d) {
+    if (isPlaying.value && !isBuffering.value && d > 0 && t >= d - 1.2) {
       if (t === _endStallLast) {
         if (!_endStallTimer) {
           _endStallTimer = setTimeout(() => {
             _endStallTimer = null
             // 2.5s 后进度仍停滞且未触发 ended → 手动收尾切歌
-            if (isPlaying.value && duration.value > 0 && currentTime.value >= duration.value - 1.5 && currentTime.value < duration.value - 0.1) {
+            if (isPlaying.value && !isBuffering.value && duration.value > 0 && currentTime.value >= duration.value - 1.5) {
               onSongEnd()
             }
           }, 2500)
