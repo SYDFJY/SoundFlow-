@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppPath: () => ipcRenderer.invoke('get-app-path'),
   openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
+  getFontsDir: () => ipcRenderer.invoke('get-fonts-dir'),
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   selectFontFolder: () => ipcRenderer.invoke('select-font-folder'),

@@ -12,7 +12,8 @@
       <div v-else class="artist-grid">
         <div v-for="artist in artists" :key="artist.name" class="artist-card" style="content-visibility: auto; contain-intrinsic-size: 150px 190px;" @click="selectArtist(artist)">
           <div class="artist-avatar">
-            <div class="avatar-placeholder">{{ artist.name[0] }}</div>
+            <img v-if="artist.coverUrl" :src="artist.coverUrl" loading="lazy" class="artist-cover" />
+            <div v-else class="avatar-placeholder">{{ artist.name[0] }}</div>
             <button class="artist-play" title="播放全部" @click.stop="playArtistDirect(artist.name)">
               <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
             </button>
@@ -63,8 +64,10 @@ const artists = computed(() => {
   const map = {}
   musicStore.songs.forEach(s => {
     const name = s.artist || '未知艺术家'
-    if (!map[name]) map[name] = { name, count: 0 }
+    if (!map[name]) map[name] = { name, count: 0, coverUrl: '' }
     map[name].count++
+    // 取该歌手第一首有封面的歌曲作为代表封面(无封面保持空,卡片显示文字占位)
+    if (!map[name].coverUrl && s.coverUrl) map[name].coverUrl = s.coverUrl
   })
   return Object.values(map).sort((a, b) => b.count - a.count)
 })
@@ -120,6 +123,7 @@ function playArtistDirect(name) {
   display: flex; align-items: center; justify-content: center;
   font-size: 32px; font-weight: 700; color: white;
 }
+.artist-cover { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .artist-name { font-size: var(--font-size-base); font-weight: 500; color: var(--text-primary); text-align: center; }
 .artist-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 

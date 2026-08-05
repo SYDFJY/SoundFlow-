@@ -882,6 +882,9 @@ function setupIPC() {
     return result.canceled ? [] : result.filePaths
   })
 
+  // 字体文件夹路径(文件夹页打开用)
+  ipcMain.handle('get-fonts-dir', () => path.join(app.getPath('userData'), 'fonts'))
+
   // 文件属性:大小/修改时间(属性弹窗用)
   ipcMain.handle('get-file-info', async (event, filePath) => {
     try {

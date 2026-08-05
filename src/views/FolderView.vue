@@ -1,22 +1,16 @@
 <template>
   <div class="folder-view">
-    <div class="view-header">
-      <div class="header-left">
-        <h1 class="header-title">{{ t('folder.title') }}</h1>
-        <span class="header-count">{{ musicStore.scanFolders.length }} 个扫描目录</span>
+    <!-- 音乐扫描目录 -->
+    <div class="folder-section">
+      <div class="section-header">
+        <h2 class="section-title">🎵 音乐扫描目录</h2>
+        <span class="section-count">{{ musicStore.scanFolders.length }} 个</span>
+        <button class="add-btn" @click="addFolder">添加目录</button>
       </div>
-      <div class="header-right">
-        <button class="add-btn" @click="addFolder">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
-          <span>{{ t('common.add') }}</span>
-        </button>
-      </div>
-    </div>
-    <div class="view-content">
       <div v-if="musicStore.scanFolders.length === 0" class="empty-state">
         <div class="empty-icon">📁</div>
-        <div class="empty-text">还没有添加扫描目录</div>
-        <button class="add-btn" @click="addFolder">{{ t('common.add') }}</button>
+        <div class="empty-text">还没有添加音乐扫描目录</div>
+        <button class="add-btn" @click="addFolder">添加目录</button>
       </div>
       <div v-else class="folder-list">
         <div v-for="folder in musicStore.scanFolders" :key="folder" class="folder-item">
@@ -33,14 +27,60 @@
         </div>
       </div>
     </div>
+
+    <!-- 歌词文件夹 -->
+    <div class="folder-section">
+      <div class="section-header">
+        <h2 class="section-title">📝 歌词文件夹</h2>
+        <span class="section-count">{{ musicStore.lyricFolders.length }} 个</span>
+        <button class="add-btn" @click="addLyricFolder">添加歌词文件夹</button>
+      </div>
+      <div v-if="musicStore.lyricFolders.length === 0" class="empty-state">
+        <div class="empty-icon">📄</div>
+        <div class="empty-text">还没有添加歌词文件夹(本地歌词存放位置)</div>
+      </div>
+      <div v-else class="folder-list">
+        <div v-for="folder in musicStore.lyricFolders" :key="folder" class="folder-item">
+          <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+          <span class="folder-path text-ellipsis">{{ folder }}</span>
+          <div class="folder-actions">
+            <button class="folder-btn" @click="openLyricFolder(folder)" title="打开">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            </button>
+            <button class="folder-btn folder-btn--danger" @click="removeLyricFolder(folder)" title="移除">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 字体文件夹 -->
+    <div class="folder-section">
+      <div class="section-header">
+        <h2 class="section-title">🔤 字体文件夹</h2>
+        <span class="section-count">{{ fontCount }} 个已导入字体</span>
+        <button class="add-btn" @click="openFontsDir">打开字体文件夹</button>
+      </div>
+      <div class="folder-hint">
+        从字体文件夹导入的字体存放在应用数据目录(userData/fonts),在设置页可自由选择使用。
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
+import { ref, computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 
 const musicStore = useMusicStore()
+
+const fontCount = computed(() => {
+  try {
+    return JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]').length
+  } catch { return 0 }
+})
 
 async function addFolder() {
   await musicStore.addFolder()
@@ -56,39 +96,59 @@ function removeFolder(folder) {
     musicStore.saveToStorage()
   }
 }
+
+async function addLyricFolder() {
+  await musicStore.addLyricFolder()
+}
+
+function removeLyricFolder(folder) {
+  musicStore.removeLyricFolder(folder)
+}
+
+function openLyricFolder(folder) {
+  if (window.electronAPI?.openFolder) window.electronAPI.openFolder(folder)
+}
+
+async function openFontsDir() {
+  try {
+    if (window.electronAPI?.getFontsDir) {
+      const dir = await window.electronAPI.getFontsDir()
+      if (dir && window.electronAPI?.openFolder) window.electronAPI.openFolder(dir)
+    }
+  } catch {}
+}
 </script>
 
 <style scoped>
-.folder-view { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
-.view-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; flex-shrink: 0; }
-.header-left { display: flex; align-items: baseline; gap: 12px; }
-.header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
-.header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
-.add-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; }
-.add-btn:hover { background: var(--color-primary-light); }
-.add-btn svg { width: 16px; height: 16px; }
-
-.view-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
-
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; gap: 16px; color: var(--text-tertiary); }
-.empty-icon { font-size: 48px; }
-.empty-text { font-size: var(--font-size-base); }
-
-.folder-list { display: flex; flex-direction: column; gap: 8px; }
-.folder-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  transition: all var(--transition-fast);
+.folder-view { display: flex; flex-direction: column; gap: 28px; padding: 4px 0; }
+.folder-section { display: flex; flex-direction: column; gap: 10px; }
+.section-header { display: flex; align-items: center; gap: 12px; }
+.section-title { margin: 0; font-size: 16px; color: var(--text-primary); }
+.section-count { font-size: 12px; color: var(--text-tertiary); }
+.add-btn {
+  margin-left: auto; padding: 7px 16px;
+  background: var(--color-primary); color: #fff;
+  border-radius: var(--radius-md); font-size: var(--font-size-sm);
+  transition: all 0.2s;
 }
-.folder-item:hover { border-color: var(--color-primary-light); box-shadow: var(--shadow-sm); }
-.folder-icon { width: 20px; height: 20px; color: var(--color-primary); flex-shrink: 0; }
-.folder-path { flex: 1; font-size: var(--font-size-base); color: var(--text-primary); font-family: 'Cascadia Code', 'Consolas', monospace; }
+.add-btn:hover { background: var(--color-primary-light); }
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 0; color: var(--text-secondary); }
+.empty-icon { font-size: 34px; }
+.empty-text { font-size: var(--font-size-sm); }
+.folder-list { display: flex; flex-direction: column; gap: 6px; }
+.folder-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; background: var(--bg-card);
+  border: 1px solid var(--border-color); border-radius: var(--radius-md);
+}
+.folder-icon { width: 18px; height: 18px; color: var(--color-primary); flex-shrink: 0; }
+.folder-path { flex: 1; font-size: var(--font-size-sm); color: var(--text-primary); }
 .folder-actions { display: flex; gap: 4px; }
-.folder-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); transition: all var(--transition-fast); }
+.folder-btn {
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; color: var(--text-secondary); background: none; border: none; cursor: pointer;
+}
 .folder-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.folder-btn--danger:hover { background: rgba(255,77,79,0.1); color: var(--color-danger); }
-.folder-btn svg { width: 16px; height: 16px; }
+.folder-btn--danger:hover { color: var(--color-danger); }
+.folder-hint { font-size: var(--font-size-sm); color: var(--text-tertiary); padding: 4px 2px; }
 </style>

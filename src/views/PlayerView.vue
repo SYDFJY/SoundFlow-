@@ -122,6 +122,8 @@
                 @click="seekToLine(line)"
                 :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
               >
+                <!-- 行时间戳:当前行常显,其他行 hover 显示(QQ 音乐风) -->
+                <span class="lyric-time">{{ playerStore.formatTime(line.time) }}</span>
                 <!-- 逐字高亮模式:当前行按字/词渲染,实时高亮当前字词(强调色区分) -->
                 <template v-if="lyricMode === 'word' && idx === playerStore.currentLyricIndex">
                   <span v-for="(w, wi) in lyricWordSegments(line)" :key="wi"
@@ -574,17 +576,26 @@ const playModeLabelKey = computed(() => {
 })
 const playModeLabel = computed(() => t(playModeLabelKey.value))
 
-// 切歌时自动滚动歌词:近距离平滑、远距离直接跳(避免播放中每句 smooth 的持续合成开销)
-watch(() => playerStore.currentLyricIndex, () => {
+// 滚动歌词到当前播放行(近距离平滑/远距离直接跳)
+function scrollToActiveLyric() {
   nextTick(() => {
     if (activeLyricEl.value && lyricsPanel.value) {
       const panel = lyricsPanel.value.getBoundingClientRect()
       const el = activeLyricEl.value.getBoundingClientRect()
-      // 歌词行中心距面板中心的距离
       const dist = (el.top + el.height / 2) - (panel.top + panel.height / 2)
       activeLyricEl.value.scrollIntoView({ behavior: Math.abs(dist) <= 200 ? 'smooth' : 'auto', block: 'center' })
     }
   })
+}
+
+// 切歌时自动滚动歌词:近距离平滑、远距离直接跳(避免播放中每句 smooth 的持续合成开销)
+watch(() => playerStore.currentLyricIndex, () => {
+  scrollToActiveLyric()
+})
+
+// 进入歌词 tab 时跳转到当前播放行(播放一会后进歌词不再停在开头)
+watch(activeTab, (v) => {
+  if (v === 'lyric') scrollToActiveLyric()
 })
 
 // 切歌时自动切换到封面模式
@@ -1238,7 +1249,26 @@ async function searchLyric() {
   cursor: pointer;
   border-radius: 6px;
   text-align: center;
+  position: relative;
 }
+/* 行时间戳:默认隐藏,hover 显示;当前行常显(QQ 音乐风) */
+.lyric-time {
+  display: none;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: var(--color-primary);
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  background: rgba(0,0,0,0.35);
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.lyric-line:hover .lyric-time { display: block; }
+.lyric-line.active .lyric-time { display: block; color: #fff; background: var(--color-primary); }
 .lyric-line.left { text-align: left; }
 /* Apple Music 风格:远离当前句越远越模糊透明 */
 .lyric-line.near { opacity: 0.55; filter: blur(0.4px); }
