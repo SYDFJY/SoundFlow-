@@ -502,7 +502,11 @@ function createLyricWindow() {
   if (lyricWindow && !lyricWindow.isDestroyed()) { lyricWindow.show(); return }
 
   const pos = storageData.lyricPos || null
-  const size = storageData.lyricSize || { width: 480, height: 260 }
+  // 记忆的尺寸;超出合理范围(旧版本残留)时回退默认
+  let size = storageData.lyricSize || { width: 480, height: 260 }
+  if (!size || size.width < 200 || size.width > 900 || size.height < 120 || size.height > 600) {
+    size = { width: 480, height: 260 }
+  }
   lyricWindow = new BrowserWindow({
     width: size.width || 480,
     height: size.height || 260,

@@ -76,6 +76,14 @@
 - **变调功能**:soundtouchjs 流式处理,±12 半音升降调(变速不变调),播放页倍速旁变调按钮+滑条
 - **SMTC 封面修复**:coverUrl 封面文件化后为 file:// 路径,现 fetch→blob→objectURL 正确显示封面
 
+### 9. 桌面歌词重构(参考蓝韵音乐 LanYunMusic 实现,2026-08)
+- **独立 lyric.html 窗口**(public/ 静态页,绕过 SPA/App.vue 壳,不再渲染整个播放器)
+- 整窗拖拽移动 + 右下角尺寸手柄自由缩放(resizable)+ 位置/大小记忆
+- **右键菜单**:复制当前/全部歌词、字号子菜单(10~28px)、颜色子菜单(7色)、透明度±、锁定(点击穿透)/置顶、保存歌词到 .lrc、重置
+- 半透明圆角背景(rgba 可调)、歌词列表滚动、当前句放大高亮居中、双击歌词行跳转播放
+- 数据链路:主窗口推送 lines+currentIdx + 当前句索引实时推送(lyric:index);修复歌词加载后 currentLyricIndex 不重算(恒 -1)问题
+- 入口:播放栏/播放页歌词按钮开/关(toggle);设置存 localStorage('lyric_window_settings')
+
 ### 8. 桌面歌词重做(参考 lx-music-desktop 思路,2026-08)
 - 独立透明置顶窗口(可拖边缘调整大小,位置/大小记忆)
 - **逐字卡拉OK**高亮(增强 LRC 逐字;无逐字时近似整句)
