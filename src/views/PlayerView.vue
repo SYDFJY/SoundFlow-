@@ -3,7 +3,7 @@
     <div class="player-overlay" :class="{ 'overlay-theme': bgMode === 'theme' }">
       <!-- 顶部栏 -->
       <div class="player-topbar">
-        <button class="back-btn" @click="$router.back()">
+        <button class="back-btn" @click="goBack">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
           <span>{{ t('playerView.back') }}</span>
         </button>
@@ -337,9 +337,17 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import Sortable from 'sortablejs'
 import { usePlayerStore } from '@/stores/playerStore'
+import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
 
 const playerStore = usePlayerStore()
+const router = useRouter()
+
+// 返回:历史栈为空时(如直接进入播放页)回退到主页,避免"返回键失灵"
+function goBack() {
+  if (window.history.length > 1) router.back()
+  else router.push('/home')
+}
 const progressBar = ref(null)
 const lyricsPanel = ref(null)
 const activeLyricEl = ref(null)

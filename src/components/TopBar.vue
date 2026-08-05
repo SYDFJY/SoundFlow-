@@ -121,7 +121,11 @@ function closeDropdown() {
 onMounted(() => document.addEventListener('click', closeDropdown))
 onUnmounted(() => document.removeEventListener('click', closeDropdown))
 
-function goBack() { router.back() }
+function goBack() {
+  // 历史栈为空时(如直接进入播放页)回退到主页,避免返回键失灵
+  if (window.history.length > 1) router.back()
+  else router.push('/home')
+}
 function goForward() { router.forward() }
 function minimizeWindow() { window.electronAPI?.minimizeWindow() }
 function maximizeWindow() { window.electronAPI?.maximizeWindow() }
