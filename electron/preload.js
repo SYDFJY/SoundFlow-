@@ -88,6 +88,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
   saveThemeFile: (content) => ipcRenderer.invoke('save-theme-file', content),
   openThemeFile: () => ipcRenderer.invoke('open-theme-file'),
+  setLoginItem: (enabled) => ipcRenderer.invoke('set-login-item', enabled),
+  getLoginItem: () => ipcRenderer.invoke('get-login-item'),
 
   // 歌单导入导出
   exportPlaylist: (name, data) => ipcRenderer.invoke('export-playlist', name, data),

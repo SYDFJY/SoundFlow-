@@ -1125,6 +1125,17 @@ function setupIPC() {
       return true
     } catch { return false }
   })
+  // 开机自启
+  ipcMain.handle('set-login-item', (event, enabled) => {
+    try {
+      app.setLoginItemSettings({ openAtLogin: !!enabled })
+      return true
+    } catch { return false }
+  })
+  ipcMain.handle('get-login-item', () => {
+    try { return app.getLoginItemSettings().openAtLogin } catch { return false }
+  })
+
   ipcMain.handle('open-theme-file', async (event) => {
     try {
       const win = BrowserWindow.fromWebContents(event.sender) || mainWindow

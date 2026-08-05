@@ -567,7 +567,7 @@ function setLyricColor(v) {
 }
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
-const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') !== '0' } catch { return true } })())
+const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
 const volExpanded = ref(false) // 音量滑块默认收起
 const showPitchPanel = ref(false) // 变调面板默认收起
 

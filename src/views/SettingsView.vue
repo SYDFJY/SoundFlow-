@@ -297,6 +297,13 @@
         <h3 class="section-title">{{ t('settings.system') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">开机自启</span>
+            <span class="label-desc">Start with Windows</span>
+          </div>
+          <button class="sec-btn" :class="{ on: loginItem }" @click="toggleLoginItem">{{ loginItem ? '已开启' : '已关闭' }}</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">关闭窗口时</span>
           </div>
           <select v-model="closeAction">
@@ -392,6 +399,17 @@ async function importTheme() {
     }
   } catch { window.$toast?.('导入失败', 'error') }
 }
+const loginItem = ref(false)
+async function loadLoginItem() {
+  try { if (window.electronAPI && window.electronAPI.getLoginItem) loginItem.value = await window.electronAPI.getLoginItem() } catch {}
+}
+async function toggleLoginItem() {
+  const v = !loginItem.value
+  loginItem.value = v
+  try { if (window.electronAPI && window.electronAPI.setLoginItem) await window.electronAPI.setLoginItem(v) } catch {}
+  window.$toast?.(v ? '已开启开机自启' : '已关闭开机自启', 'success')
+}
+loadLoginItem()
 const currentLang = computed(() => i18n.lang)
 // 检查更新(自动更新骨架;未配置发布源时提示)
 const checkingUpdate = ref(false)
