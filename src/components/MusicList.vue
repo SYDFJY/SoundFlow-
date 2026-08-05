@@ -616,8 +616,6 @@ watch(() => playerStore.currentSong?.path, (p) => {
   margin: 0 4px;
   cursor: default;
   transition: background var(--transition-fast);
-  content-visibility: auto;      /* 浏览器自动跳过视口外行的渲染/绘制 */
-  contain-intrinsic-size: 56px;  /* 视口外行占位高度,保证滚动条正确 */
 }
 .list-row:hover { background: var(--bg-hover); }
 .list-row.active { background: var(--color-primary-alpha); }

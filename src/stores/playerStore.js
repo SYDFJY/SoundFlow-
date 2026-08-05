@@ -1233,7 +1233,7 @@ export const usePlayerStore = defineStore('player', () => {
       }
     } else {
       progressHistory.value = { ...progressHistory.value, [path]: t }
-      // 容量保护:超过 600 条时按时间戳淘汰最旧的 100 条
+      // 容量保护:超过 600 条时淘汰播放进度最浅的条目(值=进度秒数,进度越深越值得保留),裁到 500 条
       if (Object.keys(progressHistory.value).length > 600) {
         const es = Object.entries(progressHistory.value).sort((a, b) => (a[1] || 0) - (b[1] || 0))
         progressHistory.value = Object.fromEntries(es.slice(es.length - 500))
