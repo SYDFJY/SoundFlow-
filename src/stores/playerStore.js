@@ -792,6 +792,26 @@ export const usePlayerStore = defineStore('player', () => {
   })
 
   // 播放/暂停
+  // 释放音频文件句柄(暂停并清空 src,让文件可被替换/写入);写入标签等场景用
+  function releaseAudio() {
+    const a = audio.value
+    if (a) {
+      try { a.pause() } catch {}
+      try { a.removeAttribute('src'); a.load() } catch {}
+    }
+  }
+  // 写文件后恢复播放(重新加载当前歌曲并从指定秒继续)
+  function restoreAudio(time) {
+    const a = audio.value
+    const song = currentSong.value
+    if (!a || !song) return
+    try {
+      a.src = song.path
+      a.currentTime = time || 0
+      a.play().catch(() => {})
+    } catch {}
+  }
+
   function togglePlay() {
     initAudio()
     if (!audio.value) return

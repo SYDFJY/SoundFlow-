@@ -199,12 +199,16 @@ async function saveEditInfo() {
   // 若正在播放该文件:先暂停释放文件锁,写入成功后恢复播放(位置保持)
   const playerStore2 = usePlayerStore()
   const wasPlaying = playerStore2.isPlaying && playerStore2.currentSong?.path === m.path
-  if (wasPlaying) playerStore2.togglePlay()
-  await new Promise(r => setTimeout(r, 200))
+  const resumeTime = playerStore2.currentTime
+  if (wasPlaying) {
+    // 必须清空 src 才能释放文件句柄,否则 rename 替换会失败
+    playerStore2.releaseAudio()
+    await new Promise(r => setTimeout(r, 300))
+  }
   if (window.electronAPI && window.electronAPI.writeTags) {
     ok = await window.electronAPI.writeTags(m.path, { title: m.title, artist: m.artist, album: m.album }).catch(() => false)
   }
-  if (wasPlaying) playerStore2.togglePlay()
+  if (wasPlaying) playerStore2.restoreAudio(resumeTime)
   // 更新曲库(即使写标签失败也更新内存,方便用户继续用)
   musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '' })
   savingTags.value = false

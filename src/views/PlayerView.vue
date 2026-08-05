@@ -655,9 +655,15 @@ function hexToRgb(hex) {
 function drawSpectrum() {
   const canvas = spectrumCanvas.value
   if (!canvas) return
+  const playing = playerStore.isPlaying
+  // 不可见(隐藏/切tab)或未播放 → 停止绘制循环,避免空转耗 CPU
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0 || !playing) {
+    spectrumRAF = null
+    return
+  }
   // DPR 适配:按实际显示尺寸 × 像素比设置画布,避免拉伸模糊
   const dpr = window.devicePixelRatio || 1
-  const rect = canvas.getBoundingClientRect()
   const fitW = Math.max(1, Math.round(rect.width * dpr))
   const fitH = Math.max(1, Math.round(rect.height * dpr))
   if (canvas.width !== fitW || canvas.height !== fitH) {
@@ -669,7 +675,6 @@ function drawSpectrum() {
   const { width, height } = canvas
   ctx.clearRect(0, 0, width, height)
   const data = playerStore.getSpectrumData()
-  const playing = playerStore.isPlaying
   const half = BAR_COUNT / 2
   const barW = (width - (BAR_COUNT - 1) * 3) / BAR_COUNT
   const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
@@ -713,7 +718,8 @@ function drawSpectrum() {
       ctx.fill()
     }
   }
-  spectrumRAF = requestAnimationFrame(drawSpectrum)
+  if (playing) spectrumRAF = requestAnimationFrame(drawSpectrum)
+  else spectrumRAF = null
 }
 // 组件挂载后启动常驻绘制
 function startSpectrum() {
