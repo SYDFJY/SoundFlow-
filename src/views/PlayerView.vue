@@ -162,9 +162,27 @@
             <button class="ctrl-btn" @click="playerStore.playNext()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
             </button>
-            <button class="ctrl-btn ctrl-btn--small" @click="playerStore.cyclePlaybackRate()" :title="t('player.rate', { x: playerStore.playbackRate })">
-              {{ playerStore.playbackRate }}x
-            </button>
+            <!-- 倍速(自定义) -->
+            <div class="rate-control">
+              <button class="ctrl-btn ctrl-btn--small" @click="showRatePanel = !showRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
+                {{ playerStore.playbackRate }}x
+              </button>
+              <transition name="vol-fade">
+                <div v-if="showRatePanel" class="rate-panel" @click.stop>
+                  <div class="pitch-header">
+                    <span>播放速度</span>
+                    <span class="pitch-value">{{ playerStore.playbackRate }}x</span>
+                  </div>
+                  <input type="range" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
+                  <div class="rate-presets">
+                    <button v-for="r in RATE_PRESETS" :key="r" class="rate-preset" :class="{ active: Math.abs(playerStore.playbackRate - r) < 0.001 }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
+                  </div>
+                  <div class="pitch-actions">
+                    <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">重置 1x</button>
+                  </div>
+                </div>
+              </transition>
+            </div>
 
             <!-- 变调(升降调) -->
             <div class="pitch-control">
@@ -188,6 +206,10 @@
                     <button class="pitch-mode-btn" :class="{ active: playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(true)">变速变调</button>
                   </div>
                   <div class="pitch-mode-hint">{{ playerStore.pitchShiftTempo ? '速度与音高同步变化(卡带/花栗鼠效果)' : '音高变化,速度不变' }}</div>
+                  <!-- 网络流行音色:一键组合音高+变速 -->
+                  <div class="voice-presets">
+                    <button v-for="v in VOICE_PRESETS" :key="v.label" class="voice-preset" :class="{ active: playerStore.pitch === v.pitch && playerStore.pitchShiftTempo === v.tempo }" @click="applyVoice(v)">{{ v.label }}</button>
+                  </div>
                   <input type="range" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
                   <div class="pitch-scale">
                     <span>-12</span><span>0</span><span>+12</span>
@@ -599,6 +621,21 @@ const PITCH_PRESETS = [
   { v: -2, label: '降' },
   { v: 2, label: '升' }
 ]
+const showRatePanel = ref(false) // 倍速面板默认收起
+const RATE_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
+// 网络流行音色:音高 + 变速组合
+const VOICE_PRESETS = [
+  { label: '萝莉音', pitch: 7, tempo: true },
+  { label: '花栗鼠', pitch: 8, tempo: true },
+  { label: '大叔音', pitch: -6, tempo: true },
+  { label: '慢速深沉', pitch: -5, tempo: true },
+  { label: '御姐音', pitch: 4, tempo: false },
+  { label: 'DJ电音', pitch: 2, tempo: false }
+]
+function applyVoice(v) {
+  playerStore.setPitchShiftTempo(v.tempo)
+  playerStore.setPitch(v.pitch)
+}
 const showPitchPanel = ref(false) // 变调面板默认收起
 
 // 频响曲线可视化:随 EQ 滑块实时绘制
@@ -1398,6 +1435,37 @@ async function searchLyric() {
 .pitch-mode-btn:hover { border-color: var(--color-primary, #4096ff); }
 .pitch-mode-btn.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
 .pitch-mode-hint { font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-bottom: 6px; text-align: center; }
+.voice-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.voice-preset {
+  flex: 1; min-width: 58px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
+  border: 1px dashed var(--border-color, rgba(255,255,255,0.25)); border-radius: 6px;
+  background: transparent; color: var(--text-secondary, #ccc); cursor: pointer; transition: all 0.15s;
+}
+.voice-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.voice-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); box-shadow: 0 0 0 1px var(--color-primary, #4096ff); }
+.rate-control { position: relative; display: flex; align-items: center; }
+.rate-panel {
+  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  border-radius: 10px; padding: 10px 14px; width: 210px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
+}
+.rate-panel input[type="range"] {
+  width: 100%; -webkit-appearance: none; appearance: none; height: 4px;
+  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+}
+.rate-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 12px; height: 12px;
+  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
+}
+.rate-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.rate-preset {
+  flex: 1; min-width: 38px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
+  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+}
+.rate-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.rate-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
 .pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-top: 2px; padding: 0 2px; }
 .pitch-value--active { color: #fff; background: var(--color-primary, #4096ff); border-radius: 4px; padding: 0 6px; }
 .pitch-actions { display: flex; justify-content: center; margin-top: 8px; }
