@@ -623,13 +623,17 @@ const PITCH_PRESETS = [
 ]
 const showRatePanel = ref(false) // 倍速面板默认收起
 const RATE_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
-// 网络流行音色:音高 + 变速组合
+// 网络流行音色:音高 + 变速组合(变速变调时速度 ×2^(pitch/12),模拟各类变声)
 const VOICE_PRESETS = [
+  { label: '原声', pitch: 0, tempo: false },
   { label: '萝莉音', pitch: 7, tempo: true },
-  { label: '花栗鼠', pitch: 8, tempo: true },
-  { label: '大叔音', pitch: -6, tempo: true },
-  { label: '慢速深沉', pitch: -5, tempo: true },
   { label: '御姐音', pitch: 4, tempo: false },
+  { label: '花栗鼠', pitch: 8, tempo: true },
+  { label: '曼波配音', pitch: 5, tempo: true },
+  { label: '大叔音', pitch: -6, tempo: true },
+  { label: '耄耋(老人)', pitch: -4, tempo: true },
+  { label: '大狗叫', pitch: -9, tempo: true },
+  { label: '慢速深沉', pitch: -5, tempo: true },
   { label: 'DJ电音', pitch: 2, tempo: false }
 ]
 function applyVoice(v) {
@@ -1437,7 +1441,7 @@ async function searchLyric() {
 .pitch-mode-hint { font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-bottom: 6px; text-align: center; }
 .voice-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .voice-preset {
-  flex: 1; min-width: 58px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
+  flex: 1 1 30%; min-width: 58px; padding: 4px 0; font-size: var(--font-size-sm, 11px);
   border: 1px dashed var(--border-color, rgba(255,255,255,0.25)); border-radius: 6px;
   background: transparent; color: var(--text-secondary, #ccc); cursor: pointer; transition: all 0.15s;
 }
