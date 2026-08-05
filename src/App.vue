@@ -52,7 +52,7 @@ const playerStore = usePlayerStore()
 
 // 播放器页面和歌词悬浮窗全屏显示
 const isFullscreen = computed(() => {
-  return route.path === '/player' || route.path === '/mini'
+  return route.path === '/player' || route.path === '/mini' || route.path === '/lyric'
 })
 
 let _autoSaveTimer = null
