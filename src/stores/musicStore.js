@@ -450,7 +450,7 @@ export const useMusicStore = defineStore('music', () => {
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
-    incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, reorderPlaylists,
+    incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, getPlaylistSongs,
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles,
     addLyricFolder, removeLyricFolder,

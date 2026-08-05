@@ -386,11 +386,12 @@ async function scanFolderRecursive(folderPath) {
 
 // ========== 窗口创建 ==========
 function createMainWindow() {
-  // 恢复上次窗口大小/位置(边界保护:必须仍在可见屏幕内)
+  // 恢复上次窗口大小/位置(独立小文件,避免每次移动触发全量存储写盘)
+  const winBoundsFile = path.join(app.getPath('userData'), 'window-bounds.json')
   let winX = undefined, winY = undefined, winW = 1280, winH = 800
   try {
-    if (storageData.windowBounds) {
-      const b = storageData.windowBounds
+    if (fs.existsSync(winBoundsFile)) {
+      const b = JSON.parse(fs.readFileSync(winBoundsFile, 'utf-8'))
       if (typeof b.width === 'number' && b.width >= 960) winW = Math.round(b.width)
       if (typeof b.height === 'number' && b.height >= 600) winH = Math.round(b.height)
       if (typeof b.x === 'number' && typeof b.y === 'number') { winX = Math.round(b.x); winY = Math.round(b.y) }
@@ -438,7 +439,7 @@ function createMainWindow() {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
   })
 
-  // 窗口大小/位置记忆:拖动或缩放后节流保存,重启恢复
+  // 窗口大小/位置记忆:拖动或缩放后节流保存到独立小文件(不触发全量存储写盘)
   let winBoundsTimer = null
   const saveWinBounds = () => {
     if (winBoundsTimer) return
@@ -446,10 +447,9 @@ function createMainWindow() {
       winBoundsTimer = null
       try {
         if (!mainWindow || mainWindow.isDestroyed() || mainWindow.isMinimized() || mainWindow.isMaximized()) return
-        storageData.windowBounds = mainWindow.getBounds()
-        saveStorage()
+        fs.writeFileSync(winBoundsFile, JSON.stringify(mainWindow.getBounds()))
       } catch {}
-    }, 500)
+    }, 800)
   }
 
 
