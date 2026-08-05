@@ -216,6 +216,7 @@ async function transcodeAudio(filePath) {
   await new Promise((resolve, reject) => {
     execFile(ffmpeg, [
       '-y', '-hide_banner', '-loglevel', 'error',
+      '-threads', '2', // 限制线程数,避免转码吃满 CPU 导致程序/系统假死
       '-i', filePath,
       '-vn', '-c:a', 'flac',
       '-f', 'flac', outPath
@@ -473,13 +474,22 @@ function createMainWindow() {
       } catch {}
     }, 1000)
   }
+  const crashLogPath = path.join(app.getPath('temp'), 'soundflow-crash.log')
+  const logCrash = (tag, info) => {
+    try {
+      fs.appendFileSync(crashLogPath, `${new Date().toLocaleString()} [${tag}] ${info}
+`)
+    } catch {}
+  }
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     if (details.reason === 'clean-exit') return
     console.error('[崩溃恢复] 渲染进程异常:', details.reason)
+    logCrash('render-gone', 'reason=' + details.reason + ' exitCode=' + details.exitCode)
     recoverCrash()
   })
   // 假死 6 秒仍无响应则强制重载(复用 recoverCrash 防循环计数)
   mainWindow.webContents.on('unresponsive', () => {
+    logCrash('unresponsive', '窗口无响应,6秒后强制重载')
     setTimeout(() => {
       try {
         if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isLoading()) {
@@ -1557,7 +1567,7 @@ function setupIPC() {
       if (!ffmpegPathForLoudness) detectFFmpegLoudness()
       const { execFile } = require('child_process')
       const out = await new Promise((resolve, reject) => {
-        execFile(ffmpegPathForLoudness, ['-hide_banner', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 90000 }, (err, stdout, stderr) => {
+        execFile(ffmpegPathForLoudness, ['-hide_banner', '-threads', '2', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 90000 }, (err, stdout, stderr) => {
           if (err && !String(stderr).includes('mean_volume')) { reject(err); return }
           resolve(String(stderr))
         })
