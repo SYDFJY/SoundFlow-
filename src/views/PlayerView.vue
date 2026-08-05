@@ -579,14 +579,15 @@ async function importLocalLyric() {
   try {
     const lrcPath = await window.electronAPI.selectLyricFile()
     if (!lrcPath) return
-    const ok = await window.electronAPI.bindLyricFile(song.path, lrcPath)
-    if (ok) {
+    const r = await window.electronAPI.bindLyricFile(song.path, lrcPath)
+    if (r && r.ok) {
       searchLyricMsg.value = '✅ 已导入本地歌词'
-      window.$toast?.('已导入本地歌词', 'success')
+      window.$toast?.('已导入本地歌词 ✓', 'success')
       await playerStore.loadLyrics(song)
     } else {
-      searchLyricMsg.value = '⚠️ 歌词导入失败'
-      window.$toast?.('歌词导入失败', 'error')
+      const err = (r && r.error) || '请检查文件权限'
+      searchLyricMsg.value = '⚠️ 歌词导入失败:' + err
+      window.$toast?.('歌词导入失败:' + err, 'error')
     }
   } catch (e) {
     searchLyricMsg.value = '导入出错'
@@ -924,7 +925,16 @@ function switchLyricSource(v) {
   lyricSource.value = v
   localStorage.setItem('soundflow_lyric_source', v)
   const cur = playerStore.currentSong
-  if (cur) playerStore.loadLyrics(cur)
+  if (cur) {
+    // 本地歌词优先:切源前提示用户当前歌的歌词归属,避免"切源无效"的错觉
+    const hasLocal = playerStore.lyricOrigin === '本地'
+    playerStore.loadLyrics(cur)
+    if (hasLocal) {
+      window.$toast?.('已切换到「' + (lyricSourceOptions.find(o => o.value === v)?.label || v) + '」;当前歌曲有本地歌词,优先显示本地', 'info')
+    } else {
+      window.$toast?.('已切换到「' + (lyricSourceOptions.find(o => o.value === v)?.label || v) + '」歌词源', 'success')
+    }
+  }
 }
 
 // 在线搜索并下载歌词到本地(LRCLIB → 网易云)

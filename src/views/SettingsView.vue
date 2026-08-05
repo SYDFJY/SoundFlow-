@@ -580,7 +580,13 @@ function setLyricSource(v) {
   localStorage.setItem('soundflow_lyric_source', v)
   // 切换来源后立即重新获取当前歌曲歌词(缓存按来源隔离,会走新来源)
   const cur = playerStore.currentSong
-  if (cur) playerStore.loadLyrics(cur)
+  if (cur) {
+    const hasLocal = playerStore.lyricOrigin === '本地'
+    playerStore.loadLyrics(cur)
+    window.$toast?.(hasLocal
+      ? '已切换到「' + v + '」;当前歌曲有本地歌词,优先显示本地'
+      : '已切换到「' + v + '」歌词源', hasLocal ? 'info' : 'success')
+  }
 }
 
 // 歌词翻译服务(MyMemory 免费 / DeepSeek 需 key)

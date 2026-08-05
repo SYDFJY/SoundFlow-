@@ -1114,7 +1114,7 @@ function setupIPC() {
       return null
     } catch (e) {
       console.error('[在线歌词] LRCLIB 请求失败:', e.message)
-      return null
+      return { error: 'network', source: 'lrclib' }
     }
   }
 
@@ -1159,16 +1159,23 @@ function setupIPC() {
       return null
     } catch (e) {
       console.error('[在线歌词] 网易云请求失败:', e.message)
-      return null
+      return { error: 'network', source: 'netease' }
     }
   }
 
-  // 在线歌词:按用户选择的来源
+  // 在线歌词:按用户选择的来源;lrclib 未命中/失败自动回退网易云(中文歌命中率),网络异常透出
   ipcMain.handle('fetch-online-lyric', async (event, info) => {
     const src = info?.source || 'lrclib' // 默认 LRCLIB
     if (src === 'netease') return await fetchNetEaseLyric(info)
-    if (src === 'auto') return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
-    return await fetchLRCLIB(info)
+    if (src === 'local') return null
+    // lrclib / auto:LRCLIB 优先,未找到或网络异常时回退网易云
+    const r1 = await fetchLRCLIB(info)
+    if (r1 && !r1.error) return r1
+    const r2 = await fetchNetEaseLyric(info)
+    if (r2 && !r2.error) return r2
+    // 两个源都网络异常才提示网络问题;单个源未找到(null)不提示
+    if (r1 && r1.error && r2 && r2.error) return { error: 'network' }
+    return null
   })
 
   // DeepSeek 翻译:一次请求翻译整首歌词,返回与输入等长的译文数组
@@ -1255,7 +1262,12 @@ function setupIPC() {
 
   // 手动搜索下载(用户点击):同样 LRCLIB → 网易云
   ipcMain.handle('search-lyric-online', async (event, info) => {
-    return (await fetchLRCLIB(info)) || (await fetchNetEaseLyric(info))
+    // LRCLIB 优先,未命中/失败回退网易云;网络异常统一返回 null(由调用方区分)
+    const r1 = await fetchLRCLIB(info)
+    if (r1 && !r1.error) return r1
+    const r2 = await fetchNetEaseLyric(info)
+    if (r2 && !r2.error) return r2
+    return null
   })
 
   // 保存歌词到音频同目录同名 .lrc
@@ -1309,10 +1321,15 @@ function setupIPC() {
       const base = audioPath.substring(0, audioPath.length - ext.length)
       const targetPath = base + '.lrc'
       fs.copyFileSync(lrcPath, targetPath)
-      return true
+      return { ok: true }
     } catch (e) {
       console.error('[歌词] 绑定失败:', e.message)
-      return false
+      // 返回具体错误码,前端据此提示用户(权限/文件缺失/占用等)
+      let err = '未知错误'
+      if (e.code === 'ENOENT') err = '源文件不存在(可能已被移动)'
+      else if (e.code === 'EACCES' || e.code === 'EPERM') err = '无写入权限(目录只读或被占用)'
+      else if (e.code === 'ENOSPC') err = '磁盘空间不足'
+      return { ok: false, error: err }
     }
   })
 

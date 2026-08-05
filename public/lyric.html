@@ -15,12 +15,12 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 .line.near{color:rgba(255,255,255,0.5)}
 .line.past{opacity:.12}
 .empty{color:rgba(255,255,255,0.15);font-size:14px;text-align:center;padding-top:40%;-webkit-app-region:no-drag}
-#ctx{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 0;min-width:175px;box-shadow:0 6px 20px rgba(0,0,0,0.6);z-index:999;-webkit-app-region:no-drag}
+#ctx{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 0;min-width:175px;max-height:calc(100vh - 8px);overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,0.6);z-index:999;-webkit-app-region:no-drag}
 #ctx div{padding:7px 16px;font-size:12px;color:#bbb;cursor:pointer;white-space:nowrap}
 #ctx div:hover{background:rgba(77,148,255,0.2);color:#4d94ff}
 #ctx .sep{height:1px;background:rgba(255,255,255,0.06);margin:3px 0;padding:0;cursor:default}
 #ctx .sep:hover{background:rgba(255,255,255,0.06)}
-#submenu{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 0;min-width:140px;box-shadow:0 6px 20px rgba(0,0,0,0.6);z-index:1000;-webkit-app-region:no-drag}
+#submenu{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:6px;padding:4px 0;min-width:140px;max-height:calc(100vh - 8px);overflow-y:auto;box-shadow:0 6px 20px rgba(0,0,0,0.6);z-index:1000;-webkit-app-region:no-drag}
 #submenu div{padding:7px 16px;font-size:12px;color:#bbb;cursor:pointer;white-space:nowrap}
 #submenu div:hover{background:rgba(77,148,255,0.2);color:#4d94ff}
 #submenu .sep{height:1px;background:rgba(255,255,255,0.06);margin:3px 0;padding:0;cursor:default}

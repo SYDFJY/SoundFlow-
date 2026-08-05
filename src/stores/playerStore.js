@@ -733,6 +733,14 @@ export const usePlayerStore = defineStore('player', () => {
             duration: song.duration || 0,
             source
           })
+          if (res && res.error === 'network') {
+            // 两个在线源都网络异常:明确提示网络问题,而非"未找到"
+            if (currentSong.value === reqSong) {
+              lyricOrigin.value = '网络不可用'
+              try { window.$toast?.('歌词在线获取失败:网络不可用(请检查代理/连接)', 'warning') } catch {}
+            }
+            return
+          }
           onlineText = (res && res.lyrics) || null
           if (onlineText) {
             lyricOrigin.value = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : '自动')

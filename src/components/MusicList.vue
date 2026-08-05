@@ -475,9 +475,11 @@ async function ctxBindLyric() {
   const song = ctxMenu.value.song
   const lrcPath = await window.electronAPI.selectLyricFile()
   if (lrcPath) {
-    const ok = await window.electronAPI.bindLyricFile(song.path, lrcPath)
-    if (ok) {
-      alert('歌词已导入！播放此歌曲时将自动加载。')
+    const r = await window.electronAPI.bindLyricFile(song.path, lrcPath)
+    if (r && r.ok) {
+      window.$toast?.('歌词已导入 ✓ 播放此歌曲时将自动加载', 'success')
+    } else {
+      window.$toast?.('歌词导入失败:' + ((r && r.error) || '请检查歌曲文件与目录权限'), 'error')
     }
   }
   closeCtx()
