@@ -92,7 +92,7 @@ import { usePlayerStore } from '@/stores/playerStore'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
-const activeTab = ref('ranking')
+const activeTab = ref('history')
 const rankMode = ref('count') // count, recent
 
 // 播放记录（带时间戳，按时间倒序）
