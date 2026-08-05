@@ -182,7 +182,7 @@ onMounted(() => {
       playerStore.saveSettings()
       musicStore.saveToStorage()
     } catch (e) { console.error(e) }
-  }, 30000)
+  }, 90000)
 })
 
 onUnmounted(() => {

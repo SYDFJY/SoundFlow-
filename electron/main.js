@@ -82,15 +82,12 @@ function saveStorage(immediate = false) {
   clearTimeout(saveStorageTimer)
   const doWrite = () => {
     try {
-      // 写前自动备份上一份,防止数据被覆盖后无法找回
-      if (fs.existsSync(storagePath)) {
-        try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
-      }
-      fs.writeFileSync(storagePath, JSON.stringify(storageData, null, 2))
+      // 正常保存不复制 .bak(每次全量 JSON + 复制太伤盘);仅退出前备份一次
+      fs.writeFileSync(storagePath, JSON.stringify(storageData))
     } catch (e) { console.error('[存储] 写入失败:', e.message); log.error('[存储] 写入失败:', e.message) }
   }
   if (immediate) doWrite()
-  else saveStorageTimer = setTimeout(doWrite, 500) // 防抖:合并频繁写入,避免大文件反复写盘卡顿
+  else saveStorageTimer = setTimeout(doWrite, 1500) // 防抖:合并频繁写入,避免大文件反复写盘卡顿
 }
 
 // 迁移历史 data URL 封面 → 256px JPEG 文件(一次性,迁移后 JSON 大幅瘦身)
@@ -818,6 +815,21 @@ function setupIPC() {
   })
 
   // 懒获取封面文件 URL(历史数据/缺失封面时按需生成,带缓存)
+  // 封面解析并发限制:滚动时可视区会并发请求多首歌,避免同时解析大量音频文件
+  let coverParsing = 0
+  const coverWaiters = []
+  const withCoverSlot = (fn) => new Promise((res, rej) => {
+    const run = () => {
+      coverParsing++
+      Promise.resolve().then(fn).then(res, rej).finally(() => {
+        coverParsing--
+        const next = coverWaiters.shift()
+        if (next) next()
+      })
+    }
+    if (coverParsing < 3) run()
+    else coverWaiters.push(run)
+  })
   ipcMain.handle('get-cover', async (event, songPath) => {
     try {
       if (typeof songPath !== 'string' || !songPath) return null
@@ -827,15 +839,19 @@ function setupIPC() {
       if (fs.existsSync(fp)) {
         url = `file:///${fp.replace(/\\/g, '/')}`
       } else {
-        if (!parseFile) await ensureParseFile()
-        if (parseFile) {
-          try {
-            const metadata = await parseFile(songPath, { skipCovers: false })
-            const pic = metadata.common.picture?.[0]
-            if (pic) url = saveCoverFile(songPath, Buffer.from(pic.data))
-          } catch {}
-        }
-        if (!url) url = findCoverInDir(songPath)
+        url = await withCoverSlot(async () => {
+          // 排队期间可能已被其他请求解析完成
+          if (coverUrlCache.has(songPath)) return coverUrlCache.get(songPath)
+          if (!parseFile) await ensureParseFile()
+          if (parseFile) {
+            try {
+              const metadata = await parseFile(songPath, { skipCovers: false })
+              const pic = metadata.common.picture?.[0]
+              if (pic) return saveCoverFile(songPath, Buffer.from(pic.data))
+            } catch {}
+          }
+          return findCoverInDir(songPath)
+        })
       }
       coverUrlCache.set(songPath, url)
       return url
@@ -1767,7 +1783,13 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll() } catch (_) {}
-  if (storagePath) { try { saveStorage(true) } catch (_) {} }
+  if (storagePath) {
+    try {
+      saveStorage(true)
+      // 退出前备份一份(平时保存不复制 .bak,仅退出时留档)
+      try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
+    } catch (_) {}
+  }
 })
 
 // 阻止多实例

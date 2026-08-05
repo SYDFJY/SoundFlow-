@@ -729,11 +729,6 @@ function drawSpectrum(ts) {
     const barH = Math.max(3, barVals[i])
     const x = i * (barW + 3) + 1
     const y = height - barH
-    // 条:底部半透明、顶部亮(圆头)
-    const g = ctx.createLinearGradient(0, height, 0, y)
-    g.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.18)`)
-    g.addColorStop(0.7, `rgba(${c.r},${c.g},${c.b},0.85)`)
-    g.addColorStop(1, `rgba(${Math.min(255, c.r + 80)},${Math.min(255, c.g + 80)},${Math.min(255, c.b + 80)},1)`)
     ctx.fillStyle = grad
     ctx.fillRect(x, y, barW, barH)
     // 峰值亮点(白色小圆点)
@@ -755,7 +750,10 @@ function startSpectrum() {
 let spectrumTimer = null
 onMounted(() => {
   if (playerStore.isPlaying) startSpectrum()
-  spectrumTimer = setInterval(() => { if (playerStore.isPlaying) startSpectrum() }, 400)
+  spectrumTimer = setInterval(() => {
+    // 仅当 rAF 链意外断开时重启(切 tab 重建 canvas 场景),避免常驻空转
+    if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
+  }, 1000)
 })
 onUnmounted(() => {
   if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }

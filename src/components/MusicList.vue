@@ -346,14 +346,24 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
+// 搜索高亮 memo:同一文本+查询只算一次(搜索时避免对全部行重复正则)
+let _hlCache = new Map()
+let _hlQuery = ''
 function highlight(text) {
   if (!text) return ''
+  const q = musicStore.searchQuery || ''
+  if (q !== _hlQuery) { _hlCache.clear(); _hlQuery = q }
+  if (_hlCache.has(text)) return _hlCache.get(text)
   const safe = escapeHtml(text)
-  const q = musicStore.searchQuery
-  if (!q) return safe
-  const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const regex = new RegExp(`(${escaped})`, 'gi')
-  return safe.replace(regex, '<mark>$1</mark>')
+  let html = safe
+  if (q) {
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const regex = new RegExp(`(${escaped})`, 'gi')
+    html = safe.replace(regex, '<mark>$1</mark>')
+  }
+  if (_hlCache.size > 3000) _hlCache.clear()
+  _hlCache.set(text, html)
+  return html
 }
 
 function showContextMenu(e, song) {

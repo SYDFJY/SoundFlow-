@@ -306,11 +306,14 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 供频谱可视化读取实时频域数据
+  let _spectrumBuf = null
   function getSpectrumData() {
     if (!_analyser) return null
-    const arr = new Uint8Array(_analyser.frequencyBinCount)
-    _analyser.getByteFrequencyData(arr)
-    return arr
+    if (!_spectrumBuf || _spectrumBuf.length !== _analyser.frequencyBinCount) {
+      _spectrumBuf = new Uint8Array(_analyser.frequencyBinCount)
+    }
+    _analyser.getByteFrequencyData(_spectrumBuf)
+    return _spectrumBuf
   }
 
   // 生成短混响脉冲(噪声指数衰减)
@@ -669,12 +672,15 @@ export const usePlayerStore = defineStore('player', () => {
     return parseLRCLines(text)
   }
 
-  // 更新当前歌词索引
+  // 更新当前歌词索引(二分查找,歌词时间有序)
   function updateLyricIndex() {
-    if (lyrics.value.length === 0) { currentLyricIndex.value = -1; return }
-    let idx = -1
-    for (let i = lyrics.value.length - 1; i >= 0; i--) {
-      if (currentTime.value >= lyrics.value[i].time) { idx = i; break }
+    const arr = lyrics.value
+    if (arr.length === 0) { currentLyricIndex.value = -1; return }
+    const t = currentTime.value
+    let lo = 0, hi = arr.length - 1, idx = -1
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1
+      if (arr[mid].time <= t) { idx = mid; lo = mid + 1 } else hi = mid - 1
     }
     currentLyricIndex.value = idx
   }
@@ -684,6 +690,8 @@ export const usePlayerStore = defineStore('player', () => {
   // ========== 桌面歌词数据推送 ==========
   function sendLyricUpdate() {
     if (!window.electronAPI || !window.electronAPI.sendLyricUpdate) return
+    // 桌面歌词窗未打开时不推送:避免每次切歌/播放状态变化都深拷贝全量歌词并走 IPC
+    if (desktopLyricState.value === 0) return
     try {
       // 歌词可能刚加载而 currentTime 未变化 → 主动重算当前句索引
       updateLyricIndex()
