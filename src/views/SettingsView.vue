@@ -571,7 +571,9 @@ function toggleOnlineLyric() {
 const lyricSources = [
   { value: 'auto', label: '自动(推荐)' },
   { value: 'netease', label: '网易云' },
-  { value: 'lrclib', label: 'LRCLIB' }
+  { value: 'lrclib', label: 'LRCLIB' },
+  { value: 'qq', label: 'QQ音乐' },
+  { value: 'qq', label: 'QQ音乐' }
 ]
 const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
 

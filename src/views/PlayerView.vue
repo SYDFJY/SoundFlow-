@@ -154,14 +154,14 @@
               <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
               <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
             </button>
-            <button class="ctrl-btn" @click="playerStore.playPrev()">
+            <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
             </button>
             <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
               <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
               <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
             </button>
-            <button class="ctrl-btn" @click="playerStore.playNext()">
+            <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
             </button>
             <!-- 倍速(自定义) -->
@@ -599,7 +599,8 @@ async function importLocalLyric() {
 const lyricSourceOptions = [
   { value: 'auto', label: '自动' },
   { value: 'netease', label: '网易云' },
-  { value: 'lrclib', label: 'LRCLIB' }
+  { value: 'lrclib', label: 'LRCLIB' },
+  { value: 'qq', label: 'QQ音乐' }
 ]
 const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
 
@@ -1439,11 +1440,17 @@ async function searchLyric() {
 .ctrl-btn svg { width: 24px; height: 24px; }
 
 .ctrl-btn--play {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   width: 56px; height: 56px;
   background: var(--color-primary); color: white !important;
 }
-.ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); }
+.ctrl-btn--play:hover { background: var(--color-primary-light); transform: translateX(-50%) scale(1.05); }
 .ctrl-btn--play svg { width: 28px; height: 28px; }
+/* 播放按钮绝对居中,上一曲/下一曲左右让位,保证与圆盘同一条竖直线 */
+.ctrl-prev { margin-right: 92px; }
+.ctrl-next { margin-left: 92px; }
 
 .progress-row { display: flex; align-items: center; gap: 12px; padding: 0 32px; }
 .time {

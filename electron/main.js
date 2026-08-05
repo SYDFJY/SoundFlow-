@@ -1186,16 +1186,67 @@ function setupIPC() {
   ipcMain.handle('fetch-online-lyric', async (event, info) => {
     const src = info?.source || 'lrclib' // 默认 LRCLIB
     if (src === 'netease') return await fetchNetEaseLyric(info)
+    if (src === 'qq') return await fetchQQMusicLyric(info)
     if (src === 'local') return null
-    // lrclib / auto:LRCLIB 优先,未找到或网络异常时回退网易云
+    // lrclib / auto:LRCLIB 优先,未找到或网络异常时回退 QQ 音乐 → 网易云
     const r1 = await fetchLRCLIB(info)
     if (r1 && !r1.error) return r1
-    const r2 = await fetchNetEaseLyric(info)
+    const r2 = await fetchQQMusicLyric(info)
     if (r2 && !r2.error) return r2
-    // 两个源都网络异常才提示网络问题;单个源未找到(null)不提示
-    if (r1 && r1.error && r2 && r2.error) return { error: 'network' }
+    const r3 = await fetchNetEaseLyric(info)
+    if (r3 && !r3.error) return r3
+    // 三个源都网络异常才提示网络问题;单个源未找到(null)不提示
+    if (r1 && r1.error && r2 && r2.error && r3 && r3.error) return { error: 'network' }
     return null
   })
+
+  // QQ 音乐歌词源(搜索 + 歌词两个接口,无需 key;歌词接口必须带 Referer)
+  async function fetchQQMusicLyric(info) {
+    const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://y.qq.com/' }
+    try {
+      const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
+      if (!q) return null
+      const res = await fetch(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(q)}&format=json&p=1&n=8`, {
+        headers: UA, signal: AbortSignal.timeout(8000)
+      })
+      if (!res.ok) return null
+      const data = await res.json()
+      const songs = data?.data?.song?.list || []
+      if (!songs.length) return null
+      // 标题归一化,候选排序:完全匹配标题+歌手 > 仅标题 > 其他(与网易云同款评分)
+      const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？]/g, '')
+      const targetTitle = norm(info?.title)
+      const targetArtist = norm(info?.artist)
+      const scored = songs.map(s => {
+        let score = 0
+        const nName = norm(s.songname)
+        const artistHit = (s.singer || []).some(a => targetArtist && (norm(a.name).includes(targetArtist) || targetArtist.includes(norm(a.name))))
+        if (nName === targetTitle) score += 100
+        else if (nName.includes(targetTitle) || targetTitle.includes(nName)) score += 50
+        if (artistHit) score += 40
+        return { song: s, score }
+      }).sort((a, b) => b.score - a.score)
+      // 逐首获取歌词,返回第一个有同步时间戳的
+      for (const { song } of scored.slice(0, 5)) {
+        if (!song.songmid) continue
+        try {
+          const lr = await fetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${song.songmid}&format=json&nobase64=1`, {
+            headers: UA, signal: AbortSignal.timeout(8000)
+          })
+          if (!lr.ok) continue
+          const ldata = await lr.json()
+          const lrc = ldata?.lyric || ''
+          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, source: 'qq' }
+        } catch { continue }
+      }
+      return null
+    } catch (e) {
+      if (e.name === 'AbortError' || e.cause?.code === 'ECONNREFUSED' || e.cause?.code === 'ENOTFOUND' || /network|fetch failed/i.test(e.message || '')) {
+        return { error: 'network' }
+      }
+      return null
+    }
+  }
 
   // DeepSeek 翻译:一次请求翻译整首歌词,返回与输入等长的译文数组
   async function translateWithDeepSeek(lines, apiKey) {

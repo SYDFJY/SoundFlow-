@@ -714,7 +714,7 @@ export const usePlayerStore = defineStore('player', () => {
       try {
         const saved = localStorage.getItem('soundflow_lyric_source')
         source = (saved === 'local') ? 'auto' : (saved || 'auto')
-        if (!['auto', 'netease', 'lrclib'].includes(source)) source = 'auto'
+        if (!['auto', 'netease', 'lrclib', 'qq'].includes(source)) source = 'auto'
       } catch {}
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
@@ -736,7 +736,7 @@ export const usePlayerStore = defineStore('player', () => {
       if (onlineEnabled && song.title) {
         const cacheKey = `${source}|${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
-        let origin = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : '自动')
+        let origin = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : (cacheKey.startsWith('qq|') ? 'QQ音乐' : '自动'))
         if (!onlineText) {
           const res = await window.electronAPI.fetchOnlineLyric({
             title: song.title,
@@ -756,7 +756,7 @@ export const usePlayerStore = defineStore('player', () => {
           }
           onlineText = (res && res.lyrics) || null
           if (onlineText) {
-            origin = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : '自动')
+            origin = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : (res.source === 'qq' ? 'QQ音乐' : '自动'))
             await _setCachedOnlineLyric(cacheKey, onlineText)
           }
         }
