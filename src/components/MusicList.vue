@@ -231,9 +231,9 @@ function loadVisibleCovers() {
   if (!el) return
   const top = el.scrollTop
   const first = Math.max(0, Math.floor(top / ROW_H) - 8)
-  const last = Math.min(songs.value.length - 1, Math.ceil((top + el.clientHeight) / ROW_H) + 8)
+  const last = Math.min(props.songs.length - 1, Math.ceil((top + el.clientHeight) / ROW_H) + 8)
   for (let i = first; i <= last; i++) {
-    const song = songs.value[i]
+    const song = props.songs[i]
     if (song && !song.coverUrl && !pendingCovers.has(song.path)) ensureCover(song)
   }
 }
