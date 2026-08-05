@@ -626,6 +626,7 @@ function createTray() {
 
 // ========== 任务栏缩略图按钮 (SMTC 的一部分) ==========
 let lastThumbState = 'paused'
+let thumbTimer = null
 
 // 内嵌 base64 图标(createFromDataURL 不依赖 asar 文件系统,nativeImage.createFromPath 读不到 asar 内文件)
 const THUMB_ICONS = {
@@ -649,8 +650,16 @@ function getThumbIcon(name) {
 }
 
 function updateThumbarButtons(state) {
-  if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
   lastThumbState = state === 'playing' ? 'playing' : 'paused'
+  // 节流:播放/暂停/切歌快速变化时合并,避免频繁同步 COM 调用卡主进程
+  if (thumbTimer) return
+  thumbTimer = setTimeout(() => {
+    thumbTimer = null
+    doSetThumbar(lastThumbState)
+  }, 120)
+}
+function doSetThumbar(state) {
+  if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
   // 窗口不可见时设置会触发 Electron bug(#28319),按钮会永久不显示,必须等窗口显示后再设
   if (!mainWindow.isVisible()) return
   const send = (cmd) => {
