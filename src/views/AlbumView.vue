@@ -10,9 +10,9 @@
         <div class="empty-text">{{ t('common.empty') }}</div>
       </div>
       <div v-else class="album-grid">
-        <div v-for="album in albums" :key="album.name" class="album-card" @click="selectAlbum(album)">
+        <div v-for="album in albums" :key="album.name" class="album-card" style="content-visibility: auto; contain-intrinsic-size: 150px 190px;" @click="selectAlbum(album)">
           <div class="album-cover">
-            <img v-if="album.cover" :src="album.cover" />
+            <img v-if="album.cover" :src="album.cover" loading="lazy" decoding="async" />
             <div v-else class="cover-placeholder">💿</div>
             <button class="album-play" title="播放全部" @click.stop="playAlbumDirect(album)">
               <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>

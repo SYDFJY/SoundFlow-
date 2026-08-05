@@ -581,7 +581,11 @@ export const usePlayerStore = defineStore('player', () => {
       const cache = await window.electronAPI.storeGet('lyricsCache') || {}
       cache[key] = lyricsText
       const keys = Object.keys(cache)
-      if (keys.length > 300) delete cache[keys[0]] // 控制缓存规模
+      // 容量上限 800 条(每条约 3-5KB,约 3MB);按最早写入淘汰(FIFO)
+      if (keys.length > 800) {
+        const dropCount = keys.length - 800
+        for (let i = 0; i < dropCount; i++) delete cache[keys[i]]
+      }
       await window.electronAPI.storeSet('lyricsCache', cache)
     } catch {}
   }
@@ -1229,6 +1233,11 @@ export const usePlayerStore = defineStore('player', () => {
       }
     } else {
       progressHistory.value = { ...progressHistory.value, [path]: t }
+      // 容量保护:超过 600 条时按时间戳淘汰最旧的 100 条
+      if (Object.keys(progressHistory.value).length > 600) {
+        const es = Object.entries(progressHistory.value).sort((a, b) => (a[1] || 0) - (b[1] || 0))
+        progressHistory.value = Object.fromEntries(es.slice(es.length - 500))
+      }
     }
   }
 

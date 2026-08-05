@@ -236,11 +236,27 @@ export const useMusicStore = defineStore('music', () => {
     saveToStorage()
   }
 
+  // 播放计数上限:超过 600 首时按"最近播放优先、其次次数"裁到 500,防数据无限膨胀
+  function trimPlayCounts() {
+    const entries = Object.entries(playCounts.value)
+    if (entries.length <= 500) return
+    const recent = new Set(history.value.slice(0, 500).map(h => h.path))
+    entries.sort((a, b) => {
+      const ra = recent.has(a[0]) ? 1 : 0
+      const rb = recent.has(b[0]) ? 1 : 0
+      if (ra !== rb) return rb - ra
+      return b[1] - a[1]
+    })
+    playCounts.value = Object.fromEntries(entries.slice(0, 500))
+  }
+
   // 播放计数
   function incrementPlayCount(path) {
     // 用展开运算符确保新增 key 也是响应式的
     const current = playCounts.value[path] || 0
     playCounts.value = { ...playCounts.value, [path]: current + 1 }
+    // 容量保护:数据膨胀时裁剪(保留最近播放的)
+    if (Object.keys(playCounts.value).length > 600) trimPlayCounts()
     // 添加到历史
     const song = songs.value.find(s => s.path === path)
     if (song) {

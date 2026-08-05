@@ -10,7 +10,7 @@
         <div class="empty-text">{{ t('common.empty') }}</div>
       </div>
       <div v-else class="artist-grid">
-        <div v-for="artist in artists" :key="artist.name" class="artist-card" @click="selectArtist(artist)">
+        <div v-for="artist in artists" :key="artist.name" class="artist-card" style="content-visibility: auto; contain-intrinsic-size: 150px 190px;" @click="selectArtist(artist)">
           <div class="artist-avatar">
             <div class="avatar-placeholder">{{ artist.name[0] }}</div>
             <button class="artist-play" title="播放全部" @click.stop="playArtistDirect(artist.name)">

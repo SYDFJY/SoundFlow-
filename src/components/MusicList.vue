@@ -35,44 +35,48 @@
       <div class="col-actions"></div>
     </div>
 
-    <!-- 列表(全量渲染 + content-visibility 自动跳过视口外行,性能与滚动条语义兼得) -->
+    <!-- 列表(虚拟滚动:固定行高 56px,只渲染可视区 ±缓冲 的行,大列表 DOM 恒定) -->
     <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" @scroll="onListScroll">
-      <div
-        v-for="(song, idx) in songs"
-        :key="song.path"
-        class="list-row"
-        :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path) }"
-        @dblclick="playSong(idx)"
-        @contextmenu.prevent="showContextMenu($event, song)"
-      >
-        <div v-if="batchOn" class="col-check" @click.stop>
-          <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
-        </div>
-        <div class="col-index">
-          <span class="index-num">{{ idx + 1 }}</span>
-          <button class="play-icon" @click.stop="playSong(idx)">
-            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
-          </button>
-        </div>
-        <div class="col-title">
-          <div class="song-cover">
-            <img v-if="song.coverUrl" :src="song.coverUrl" decoding="async" @error="onCoverError(song)" />
+      <div class="list-spacer" :style="{ height: songs.length * ROW_H + 'px' }">
+        <div class="list-virtual" :style="{ transform: 'translateY(' + virtualStart * ROW_H + 'px)' }">
+          <div
+            v-for="(song, i) in virtualSongs"
+            :key="song.path"
+            class="list-row"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path) }"
+            @dblclick="playSong(virtualStart + i)"
+            @contextmenu.prevent="showContextMenu($event, song)"
+          >
+            <div v-if="batchOn" class="col-check" @click.stop>
+              <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
+            </div>
+            <div class="col-index">
+              <span class="index-num">{{ virtualStart + i + 1 }}</span>
+              <button class="play-icon" @click.stop="playSong(virtualStart + i)">
+                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+              </button>
+            </div>
+            <div class="col-title">
+              <div class="song-cover">
+                <img v-if="song.coverUrl" :src="song.coverUrl" loading="lazy" decoding="async" @error="onCoverError(song)" />
+              </div>
+              <div class="song-info">
+                <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
+                <span class="song-format">{{ song.format }}</span>
+              </div>
+            </div>
+            <div class="col-artist text-ellipsis" v-html="highlight(song.artist)"></div>
+            <div class="col-album text-ellipsis" v-html="highlight(song.album)"></div>
+            <div class="col-duration">{{ formatDuration(song.duration) }}</div>
+            <div class="col-actions">
+              <button class="action-btn" @click.stop="toggleFav(song)" :class="{ active: isFav(song) }" title="收藏">
+                <svg viewBox="0 0 24 24" :fill="isFav(song) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+              </button>
+              <button class="action-btn" @click.stop="showContextMenu($event, song)" title="更多">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+              </button>
+            </div>
           </div>
-          <div class="song-info">
-            <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
-            <span class="song-format">{{ song.format }}</span>
-          </div>
-        </div>
-        <div class="col-artist text-ellipsis" v-html="highlight(song.artist)"></div>
-        <div class="col-album text-ellipsis" v-html="highlight(song.album)"></div>
-        <div class="col-duration">{{ formatDuration(song.duration) }}</div>
-        <div class="col-actions">
-          <button class="action-btn" @click.stop="toggleFav(song)" :class="{ active: isFav(song) }" title="收藏">
-            <svg viewBox="0 0 24 24" :fill="isFav(song) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-          </button>
-          <button class="action-btn" @click.stop="showContextMenu($event, song)" title="更多">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-          </button>
         </div>
       </div>
     </div>
@@ -165,7 +169,22 @@ const musicStore = useMusicStore()
 const listBodyEl = ref(null)
 let _scrollSaveTimer = null
 const LIST_SCROLL_KEY = 'soundflow_list_scroll'
+
+// ===== 虚拟滚动(固定行高 56px,只渲染可视区 ±8 行) =====
+const ROW_H = 56
+const VIRTUAL_BUFFER = 8
+const scrollTop = ref(0)
+const viewportH = ref(0)
+const virtualStart = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H) - VIRTUAL_BUFFER))
+const virtualEnd = computed(() => Math.min(props.songs.length, Math.ceil((scrollTop.value + viewportH.value) / ROW_H) + VIRTUAL_BUFFER))
+const virtualSongs = computed(() => props.songs.slice(virtualStart.value, virtualEnd.value))
+
 function onListScroll() {
+  const el = listBodyEl.value
+  if (el) {
+    scrollTop.value = el.scrollTop
+    viewportH.value = el.clientHeight
+  }
   scheduleCoverLoad()
   if (_scrollSaveTimer) return
   _scrollSaveTimer = setTimeout(() => {
@@ -173,6 +192,7 @@ function onListScroll() {
     try { localStorage.setItem(LIST_SCROLL_KEY, String(listBodyEl.value?.scrollTop || 0)) } catch {}
   }, 300)
 }
+let _listResizeObserver = null
 function restoreListScroll() {
   requestAnimationFrame(() => {
     try {
@@ -242,8 +262,7 @@ async function ensureCover(song) {
   }
 }
 
-// 封面可视区懒加载:只加载视口内 ±缓冲 行的封面,避免 295 首并发读文件卡顿
-const ROW_H = 56
+// 封面可视区懒加载:只加载视口内 ±缓冲 行的封面,避免 295 首并发读文件卡顿(ROW_H 见虚拟滚动定义)
 let _coverScrollTimer = null
 function loadVisibleCovers() {
   const el = listBodyEl.value
@@ -466,9 +485,19 @@ onMounted(() => {
   restoreListScroll()
   loadVisibleCovers()
   document.addEventListener('click', closeCtx)
+  // 初始化视口高度 + 监听容器尺寸变化(窗口缩放/侧边栏拖拽)
+  const el = listBodyEl.value
+  if (el) {
+    viewportH.value = el.clientHeight
+    if (typeof ResizeObserver !== 'undefined') {
+      _listResizeObserver = new ResizeObserver(() => { if (listBodyEl.value) viewportH.value = listBodyEl.value.clientHeight })
+      _listResizeObserver.observe(el)
+    }
+  }
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
+  if (_listResizeObserver) { try { _listResizeObserver.disconnect() } catch {} }
 })
 </script>
 
@@ -522,7 +551,9 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.list-body { flex: 1; overflow-y: auto; }
+.list-body { flex: 1; overflow-y: auto; position: relative; }
+.list-spacer { position: relative; width: 100%; }
+.list-virtual { position: relative; width: 100%; will-change: transform; }
 
 /* 批量操作栏 */
 .batch-bar {
