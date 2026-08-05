@@ -1022,6 +1022,7 @@ async function searchLyric() {
   border: 6px solid rgba(255,255,255,0.08);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  will-change: transform; /* 独立合成层,避免旋转触发整页重排 */
 }
 @keyframes disc-in {
   from { opacity: 0; transform: scale(0.9); }

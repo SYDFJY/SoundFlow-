@@ -25,7 +25,7 @@
   --radius-lg: 12px;
   --radius-xl: 16px;
   --transition-fast: 0.15s ease;
-  --transition-normal: 0.25s ease;
+  --transition-normal: 0.18s ease;
   --font-size-xs: 12px;
   --font-size-sm: 13px;
   --font-size-base: 14px;
@@ -78,7 +78,8 @@ button {
   outline: none;
 }
 
-button:active { transform: scale(0.97); }
+button:active { transform: scale(0.97); filter: brightness(0.94); }
+button { -webkit-tap-highlight-color: transparent; }
 
 /* 输入框 */
 input, select, textarea {
