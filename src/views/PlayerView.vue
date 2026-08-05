@@ -1453,7 +1453,6 @@ async function searchLyric() {
 .ctrl-prev { position: absolute; right: calc(50% + 38px); }
 .ctrl-next { position: absolute; left: calc(50% + 38px); }
 .ctrl-mode { position: absolute; right: calc(50% + 102px); }
-.rate-control { position: absolute; left: calc(50% + 102px); }
 
 .progress-row { display: flex; align-items: center; gap: 12px; padding: 0 32px; }
 .time {
@@ -1554,6 +1553,11 @@ async function searchLyric() {
 .voice-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
 .voice-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); box-shadow: 0 0 0 1px var(--color-primary, #4096ff); }
 .rate-control { position: relative; display: flex; align-items: center; }
+/* 播放控制组对称定位(置于末尾确保优先级,覆盖上面相对定位):
+   播放键居中,上一曲/下一曲贴靠,倍速/变调在右端对称排列 */
+.rate-control { position: absolute; left: calc(50% + 102px); }
+.pitch-control { position: absolute; left: calc(50% + 152px); }
+
 .rate-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
