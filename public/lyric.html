@@ -51,7 +51,7 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div data-a="bg-">透明度 -</div>
   <div data-a="bg+">透明度 +</div>
   <div class="sep"></div>
-  <div data-a="lock">🔒 锁定/解锁位置</div>
+  <div data-a="lock">🔒 锁定位置(禁止移动)</div>
   <div data-a="pin">📌 置顶切换</div>
   <div class="sep"></div>
   <div data-a="save">💾 保存歌词到文件</div>
@@ -78,6 +78,8 @@ function loadSettings(){
     if(s.locked!==undefined) locked=s.locked
     app.style.background=`rgba(0,0,0,${bgAlpha})`
     applyFont();applyColor()
+    // 锁定 = 禁止拖动(位置锁定),不是点击穿透
+    document.documentElement.style.webkitAppRegion = locked ? 'no-drag' : 'drag'
   }catch{}
 }
 function saveSettings(){
@@ -216,8 +218,9 @@ function handleAction(a){
     pinned=!pinned;api.lyricPin(pinned);showToast(pinned?'已置顶':'已取消置顶')
   }
   else if(a==='lock'){
-    locked=!locked;api.lyricLock(locked);app.style.opacity=locked?'0.85':'1'
-    showToast(locked?'已锁定(点击穿透)':'已解锁');saveSettings()
+    locked=!locked
+    document.documentElement.style.webkitAppRegion = locked ? 'no-drag' : 'drag'
+    showToast(locked?'已锁定位置(不可移动,右键可解锁)':'已解锁(可自由移动)');saveSettings()
   }
   else if(a==='copy'){
     const active=lyric.querySelector('.line.active')
@@ -246,7 +249,7 @@ function handleAction(a){
   else if(a==='reset'){
     fontSize=14;bgAlpha=0.05;lyricColor='#4d94ff';locked=false
     app.style.background=`rgba(0,0,0,${bgAlpha})`
-    api.lyricLock(false)
+    document.documentElement.style.webkitAppRegion = 'drag'
     applyFont();applyColor();saveSettings()
     showToast('所有设置已重置')
   }
