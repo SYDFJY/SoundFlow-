@@ -733,7 +733,7 @@ watch(showEqPanel, (v) => { if (v) nextTick(drawEqCurve) })
 // 频谱可视化(华丽版:左右对称镜像 + 圆头渐变条 + 峰值保持亮点 + 平滑动画)
 const spectrumCanvas = ref(null)
 let spectrumRAF = null
-const BAR_COUNT = 56
+const BAR_COUNT = 72
 const barVals = new Array(BAR_COUNT).fill(0)    // 当前平滑高度
 const barPeaks = new Array(BAR_COUNT).fill(0)   // 峰值保持
 function hexToRgb(hex) {
@@ -812,16 +812,45 @@ function drawSpectrum(ts) {
     const barH = Math.max(3, barVals[i])
     const x = i * (barW + 3) + 1
     const y = height - barH
+    const radius = Math.min(3, Math.max(1, barW / 2 - 0.5))
+
+    // 主体:圆角渐变柱(底部透明→顶部亮色)
     ctx.fillStyle = grad
-    ctx.fillRect(x, y, barW, barH)
-    // 峰值亮点(白色小圆点)
-    if (barPeaks[i] > 2 && playing) {
+    ctx.beginPath()
+    ctx.roundRect(x, y, barW, barH, radius)
+    ctx.fill()
+
+    // 顶部高亮 cap(白色细亮条,金属感)
+    if (barH > 6) {
       ctx.fillStyle = 'rgba(255,255,255,0.85)'
       ctx.beginPath()
-      ctx.roundRect(x + 1, height - barPeaks[i] - 2.5, barW - 2, 2.5, 1.2)
+      ctx.roundRect(x + 0.6, y + 1, barW - 1.2, Math.min(3, barH / 4), 1.4)
       ctx.fill()
     }
+
+    // 柱底镜面高光(模拟水面反射点)
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'
+    ctx.beginPath()
+    ctx.roundRect(x + 1, height - 2.5, barW - 2, 2, 1)
+    ctx.fill()
+
+    // 峰值辉光点:主色光晕 + 白色核心
+    if (barPeaks[i] > 3 && playing) {
+      const py = height - barPeaks[i] - 2
+      ctx.fillStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.4)'
+      ctx.beginPath(); ctx.arc(x + barW / 2, py, 4.2, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = 'rgba(255,255,255,0.95)'
+      ctx.beginPath(); ctx.arc(x + barW / 2, py, 1.7, 0, Math.PI * 2); ctx.fill()
+    }
   }
+  // 底部发光基线(整体氛围,随低音微微起伏)
+  const bass = data && playing ? Math.max(0.15, (data[0] || 0) / 255) : 0.15
+  ctx.globalAlpha = 0.35 + bass * 0.4
+  ctx.fillStyle = grad
+  ctx.beginPath()
+  ctx.roundRect(1, height - 2, width - 2, 2, 1)
+  ctx.fill()
+  ctx.globalAlpha = 1
   if (playing) spectrumRAF = requestAnimationFrame(drawSpectrum)
   else spectrumRAF = null
 }
@@ -1073,7 +1102,7 @@ async function searchLyric() {
   to { opacity: 1; transform: translateY(0); }
 }
 /* tab 切换过渡 */
-.mode-fade-enter-active, .mode-fade-leave-active { transition: opacity 0.15s ease; }
+.mode-fade-enter-active, .mode-fade-leave-active { transition: opacity 0.16s cubic-bezier(.4,0,.2,1); }
 .mode-fade-enter-from { opacity: 0; }
 .mode-fade-leave-to { opacity: 0; }
 .disc-ring.spinning { animation: spin 20s linear infinite; }
