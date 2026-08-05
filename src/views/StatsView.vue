@@ -8,6 +8,7 @@
           <button class="tab-btn" :class="{ active: timeRange === '30d' }" @click="timeRange = '30d'">近30天</button>
         </div>
         <button class="share-btn" @click="copyShare">📤 分享报告</button>
+        <button class="hist-btn" @click="router.push('/history')">🎵 播放记录与排行</button>
       </div>
     </div>
 
@@ -91,20 +92,6 @@
             <div v-if="!topAlbums.length" class="rank-empty">暂无数据</div>
           </div>
         </div>
-
-        <!-- Top 流派 -->
-        <div class="stat-section">
-          <h3 class="section-title">Top 流派</h3>
-          <div class="mini-rank">
-            <div v-for="(g, i) in topGenres" :key="g.name" class="mini-item">
-              <span class="rank-no">{{ i + 1 }}</span>
-              <span class="mini-name text-ellipsis">{{ g.name || '未知流派' }}</span>
-              <span class="mini-count">{{ g.count }}</span>
-              <div class="mini-bar"><div class="mini-bar-fill" :style="{ width: (g.count / topGenres[0].count * 100) + '%' }"></div></div>
-            </div>
-            <div v-if="!topGenres.length" class="rank-empty">暂无数据</div>
-          </div>
-        </div>
       </div>
     </div>
 
@@ -139,19 +126,8 @@
       </div>
     </div>
 
-    <!-- 分布:流派/年代/音质 + 多样性 -->
+    <!-- 分布:年代/音质 + 多样性 -->
     <div class="stats-columns">
-      <div class="stat-section">
-        <h3 class="section-title">流派分布</h3>
-        <div class="dist-list">
-          <div v-for="g in topGenres" :key="g.name" class="dist-item">
-            <span class="dist-name text-ellipsis">{{ g.name }}</span>
-            <div class="dist-bar"><div class="dist-fill" :style="{ width: (g.count / topGenres[0].count * 100) + '%' }"></div></div>
-            <span class="dist-count">{{ g.count }}</span>
-          </div>
-          <div v-if="!topGenres.length" class="rank-empty">暂无数据</div>
-        </div>
-      </div>
       <div class="stat-section">
         <h3 class="section-title">年代分布</h3>
         <div class="dist-list">
@@ -181,111 +157,19 @@
       </div>
     </div>
 
-    <!-- 播放记录与排行(原"播放历史"页并入) -->
-    <div class="stat-section history-section">
-      <div class="history-header">
-        <h3 class="section-title">播放记录与排行</h3>
-        <div class="tab-switcher">
-          <button class="tab-btn" :class="{ active: histTab === 'history' }" @click="histTab = 'history'">播放记录</button>
-          <button class="tab-btn" :class="{ active: histTab === 'ranking' }" @click="histTab = 'ranking'">播放排行</button>
-        </div>
-        <button v-if="histTab === 'history' && musicStore.history.length" class="clear-btn" @click="clearHistory">清空</button>
-      </div>
-
-      <!-- 播放记录 -->
-      <div v-if="histTab === 'history'" class="history-list">
-        <div v-for="(entry, idx) in historyEntries" :key="entry.path + '-' + entry.time" class="history-row" @dblclick="playHistory(idx)">
-          <div class="history-index">
-            <span class="index-num">{{ idx + 1 }}</span>
-            <button class="play-icon" @click.stop="playHistory(idx)">
-              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
-            </button>
-          </div>
-          <div class="history-cover" v-if="entry.coverUrl">
-            <img :src="entry.coverUrl" loading="lazy" />
-          </div>
-          <div class="history-info">
-            <div class="history-title text-ellipsis">{{ entry.title }}</div>
-            <div class="history-artist text-ellipsis">{{ entry.artist }}</div>
-          </div>
-          <div class="history-time">{{ formatTime(entry.time) }}</div>
-          <div class="history-actions">
-            <button class="action-btn" @click.stop="toggleFav(entry)" :class="{ active: isFav(entry) }" title="收藏">
-              <svg viewBox="0 0 24 24" :fill="isFav(entry) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-            </button>
-          </div>
-        </div>
-        <div v-if="!historyEntries.length" class="rank-empty">还没有播放记录,先听几首歌吧</div>
-      </div>
-
-      <!-- 播放排行 -->
-      <div v-else>
-        <div class="ranking-controls">
-          <button class="rank-btn" :class="{ active: rankMode === 'count' }" @click="rankMode = 'count'">按次数</button>
-          <button class="rank-btn" :class="{ active: rankMode === 'recent' }" @click="rankMode = 'recent'">按最近</button>
-        </div>
-        <div class="ranking-list" v-if="rankedSongs.length > 0">
-          <div v-for="(item, idx) in rankedSongs" :key="item.path" class="hist-rank-item" @dblclick="playAt(idx)">
-            <div class="hist-rank-num" :class="{ top: idx < 3 }">{{ idx + 1 }}</div>
-            <div class="history-cover" v-if="item.coverUrl"><img :src="item.coverUrl" loading="lazy" /></div>
-            <div class="history-info">
-              <div class="history-title text-ellipsis">{{ item.title }}</div>
-              <div class="history-artist text-ellipsis">{{ item.artist }}</div>
-            </div>
-            <div class="history-time" v-if="item._lastPlayTime">{{ formatTime(item._lastPlayTime) }}</div>
-            <div class="hist-rank-count">
-              <span class="count-num">{{ item._playCount }}</span>
-              <span class="count-label">次</span>
-            </div>
-            <button class="play-icon" @click.stop="playAt(idx)">
-              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
-            </button>
-          </div>
-        </div>
-        <div v-else class="rank-empty">还没有播放记录,先听几首歌吧</div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
+const router = useRouter()
 
-// 播放记录与排行(原"播放历史"页并入)
-const histTab = ref('history') // history | ranking
-const rankMode = ref('count') // count | recent
-const historyEntries = computed(() => {
-  const songMap = new Map(musicStore.songs.map(s => [s.path, s]))
-  return musicStore.history.map(h => ({ ...h, coverUrl: songMap.get(h.path)?.coverUrl || '' }))
-})
-const rankedSongs = computed(() => {
-  const counts = musicStore.playCounts
-  const lastPlayTime = {}
-  for (const h of musicStore.history) {
-    if (!lastPlayTime[h.path]) lastPlayTime[h.path] = h.time
-  }
-  const songs = musicStore.songs
-    .filter(s => counts[s.path] && counts[s.path] > 0)
-    .map(s => ({ ...s, _playCount: counts[s.path] || 0, _lastPlayTime: lastPlayTime[s.path] || 0 }))
-  if (rankMode.value === 'count') songs.sort((a, b) => b._playCount - a._playCount)
-  else songs.sort((a, b) => (b._lastPlayTime || 0) - (a._lastPlayTime || 0))
-  return songs
-})
-function playHistory(idx) {
-  const queue = historyEntries.value.map(s => ({ ...s }))
-  playerStore.setPlayQueue(queue, idx)
-}
-function playAt(idx) {
-  const queue = rankedSongs.value.map(s => ({ ...s }))
-  playerStore.setPlayQueue(queue, idx)
-}
-function isFav(entry) { return musicStore.isFavorite(entry.path) }
-function toggleFav(entry) { musicStore.toggleFavorite(entry.path) }
 function formatTime(ts) {
   if (!ts) return ''
   const d = new Date(ts)
@@ -342,7 +226,6 @@ const weekMax = computed(() => Math.max(1, ...weekTrend.value.map(d => d.count))
 const topSongs = computed(() => playedSongs.value.slice(0, 10))
 const topArtists = computed(() => aggregate('artist'))
 const topAlbums = computed(() => aggregate('album'))
-const topGenres = computed(() => aggregate('genre'))
 
 function aggregate(field) {
   const map = new Map()
@@ -437,14 +320,13 @@ const diversityScore = computed(() => {
 // 分享文案
 const shareText = computed(() => {
   const t1 = topSongs.value[0]
-  const g1 = topGenres.value[0]
   const a1 = topArtists.value[0]
   return [
     '🎧 我的听歌报告',
     `累计播放 ${totalPlays.value} 次 · ${totalHours.value} 小时`,
     `常听歌手 ${artistCount.value} 位 · 收藏 ${favCount.value} 首`,
     `最爱单曲:《${t1 ? t1.title : '-'}》${t1 ? t1._playCount : ''} 次`,
-    `最爱歌手:${a1 ? a1.name : '-'} · 最爱流派:${g1 ? g1.name : '-'}`,
+    `最爱歌手:${a1 ? a1.name : '-'}`,
     `最常听时段:${funFacts.value.lateHour} · 听歌多元化 ${diversityScore.value}/100`,
     '—— SoundFlow 声流音乐'
   ].join('\n')
@@ -511,49 +393,13 @@ function playTop(idx) {
 .mini-count { font-size: 12px; opacity: 0.6; width: 34px; text-align: right; }
 .mini-bar { flex: 1.2; height: 6px; border-radius: 3px; background: rgba(128,128,128,0.15); overflow: hidden; }
 .mini-bar-fill { height: 100%; border-radius: 3px; background: var(--color-primary, #6ec6ff); opacity: 0.7; }
-/* 播放记录与排行(原"播放历史"页) */.history-section { width: 100%; }
-.history-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
-.history-header .section-title { margin: 0; }
-.tab-switcher { display: flex; gap: 2px; background: var(--bg-hover); border-radius: var(--radius-md); padding: 3px; }
-.tab-switcher .tab-btn { padding: 6px 16px; border-radius: 6px; font-size: var(--font-size-sm); color: var(--text-secondary); transition: all 0.2s; }
-.tab-switcher .tab-btn.active { background: var(--bg-secondary); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-sm); }
-.clear-btn { padding: 6px 14px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-md); font-size: var(--font-size-sm); margin-left: auto; }
-.clear-btn:hover { background: rgba(255,77,79,0.1); color: var(--color-danger); }
-.history-list { display: flex; flex-direction: column; gap: 2px; }
-.history-row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); transition: background 0.15s; }
-.history-row:hover { background: var(--bg-hover); }
-.history-row:hover .play-icon { display: flex; }
-.history-row:hover .history-actions { opacity: 1; }
-.history-index { width: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: var(--font-size-sm); color: var(--text-tertiary); position: relative; }
-.index-num { display: block; }
-.play-icon { display: none; width: 24px; height: 24px; align-items: center; justify-content: center; color: var(--color-primary); background: none; border: none; }
-.play-icon svg { width: 14px; height: 14px; }
-.history-cover { width: 40px; height: 40px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
-.history-cover img { width: 100%; height: 100%; object-fit: cover; }
-.history-info { flex: 1; min-width: 0; }
-.history-title { font-size: var(--font-size-base); color: var(--text-primary); font-weight: 500; }
-.history-artist { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
-.history-time { font-size: var(--font-size-xs); color: var(--text-tertiary); flex-shrink: 0; min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
-.history-actions { width: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.15s; }
-.action-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-secondary); background: none; border: none; cursor: pointer; }
-.action-btn:hover { background: var(--bg-hover); color: var(--color-danger); }
-.action-btn.active { color: var(--color-danger); }
-.ranking-controls { display: flex; gap: 6px; margin-bottom: 10px; }
-.rank-btn { padding: 5px 14px; font-size: var(--font-size-sm); color: var(--text-secondary); background: var(--bg-hover); border-radius: var(--radius-md); }
-.rank-btn.active { background: var(--color-primary); color: #fff; }
-.ranking-list { display: flex; flex-direction: column; gap: 2px; }
-.hist-rank-item { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: var(--radius-md); transition: background 0.15s; }
-.hist-rank-item:hover { background: var(--bg-hover); }
-.hist-rank-item:hover .play-icon { display: flex; }
-.hist-rank-num { width: 34px; flex-shrink: 0; text-align: center; font-size: 15px; font-weight: 600; color: var(--text-tertiary); }
-.hist-rank-num.top { color: var(--color-primary); }
-.hist-rank-count { flex-shrink: 0; min-width: 60px; text-align: right; }
-.count-num { font-size: var(--font-size-base); font-weight: 600; color: var(--text-primary); }
-.count-label { font-size: var(--font-size-xs); color: var(--text-tertiary); margin-left: 2px; }
+
 /* 丰富化:header/分享/趣味/热力/星期/分布 */
 .header-tools { display: flex; align-items: center; gap: 10px; }
 .share-btn { padding: 6px 14px; background: var(--color-primary); color: #fff; border-radius: var(--radius-md); font-size: var(--font-size-sm); transition: all 0.2s; }
 .share-btn:hover { background: var(--color-primary-light); transform: scale(1.03); }
+.hist-btn { padding: 6px 14px; background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: var(--radius-md); font-size: var(--font-size-sm); transition: all 0.2s; }
+.hist-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .fun-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; width: 100%; }
 .fun-fact { display: flex; flex-direction: column; gap: 4px; padding: 12px 16px; background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-color); }
 .fun-k { font-size: 11px; color: var(--text-tertiary); }
