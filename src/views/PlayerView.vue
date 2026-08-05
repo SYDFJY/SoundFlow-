@@ -1411,13 +1411,22 @@ async function searchLyric() {
 }
 .pitch-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
 .pitch-value { color: var(--color-primary, #4096ff); font-weight: 700; }
-.pitch-panel input[type="range"] {
-  width: 100%; -webkit-appearance: none; appearance: none; height: 4px;
-  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+.pitch-panel input[type="range"],
+.rate-panel input[type="range"] {
+  width: 100%; -webkit-appearance: none; appearance: none; height: 6px;
+  background: var(--border-color, rgba(120,130,150,0.5)); border-radius: 3px; outline: none; cursor: pointer;
 }
-.pitch-panel input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 12px;
-  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
+.pitch-panel input[type="range"]::-webkit-slider-runnable-track,
+.rate-panel input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 3px;
+  background: var(--border-color, rgba(120,130,150,0.5));
+}
+.pitch-panel input[type="range"]::-webkit-slider-thumb,
+.rate-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -4px;
+  background: var(--color-primary, #4096ff);
+  border: 2px solid #fff; border-radius: 50%; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
 }
 .pitch-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .pitch-preset {
@@ -1453,14 +1462,6 @@ async function searchLyric() {
   background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
   border-radius: 10px; padding: 10px 14px; width: 210px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
-}
-.rate-panel input[type="range"] {
-  width: 100%; -webkit-appearance: none; appearance: none; height: 4px;
-  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
-}
-.rate-panel input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 12px;
-  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
 }
 .rate-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .rate-preset {
