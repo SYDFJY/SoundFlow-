@@ -41,6 +41,9 @@ export const usePlayerStore = defineStore('player', () => {
   const MAX_CONSECUTIVE_ERRORS = 3
   // 本次加载是否允许恢复播放记忆(随机模式/用户手动选择时为 false)
   let _pendingRestore = false
+  // 播完兜底:ended 事件可能因文件尾部异常不触发,停滞检测用
+  let _endStallTimer = null
+  let _endStallLast = -1
   // 原始队列顺序(供随机/顺序切换时恢复)
   let _originalQueue = []
 
@@ -768,7 +771,32 @@ export const usePlayerStore = defineStore('player', () => {
     currentLyricIndex.value = idx
   }
 
-  watch(currentTime, () => updateLyricIndex())
+  watch(currentTime, (t) => {
+    updateLyricIndex()
+    // 兜底:部分 FLAC/MP3 文件尾部数据异常时 Chromium 可能不触发 ended 事件,
+    // 导致"播完不自动切歌"。检测到"接近播完但播放进度停滞"则手动触发 onSongEnd。
+    const d = duration.value
+    if (isPlaying.value && d > 0 && t >= d - 1.2 && t < d) {
+      if (t === _endStallLast) {
+        if (!_endStallTimer) {
+          _endStallTimer = setTimeout(() => {
+            _endStallTimer = null
+            // 2.5s 后进度仍停滞且未触发 ended → 手动收尾切歌
+            if (isPlaying.value && duration.value > 0 && currentTime.value >= duration.value - 1.5 && currentTime.value < duration.value - 0.1) {
+              onSongEnd()
+            }
+          }, 2500)
+        }
+      } else if (_endStallTimer) {
+        clearTimeout(_endStallTimer)
+        _endStallTimer = null
+      }
+      _endStallLast = t
+    } else {
+      _endStallLast = -1
+      if (_endStallTimer) { clearTimeout(_endStallTimer); _endStallTimer = null }
+    }
+  })
 
   // ========== 桌面歌词数据推送 ==========
   function sendLyricUpdate() {
