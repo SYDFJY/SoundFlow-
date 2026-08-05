@@ -215,6 +215,14 @@ onMounted(() => {
   playerStore.restoreQueue()
   playerStore.initAudio()
   playerStore.initMediaSession()
+  // 启动自动续播:开启后恢复上次歌曲并继续播放
+  if (appStore.autoPlay && playerStore.playQueue.length > 0 && playerStore.currentIndex >= 0) {
+    setTimeout(() => {
+      try {
+        playerStore.loadAndPlay(playerStore.currentIndex, false)
+      } catch {}
+    }, 300)
+  }
   // 恢复自定义侧边栏宽度
   const sw = localStorage.getItem('soundflow_sidebar_width')
   if (sw) document.documentElement.style.setProperty('--sidebar-width', sw)

@@ -345,6 +345,9 @@ export const useAppStore = defineStore('app', () => {
         const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
         applyTheme(dark ? 'dark' : 'light')
       }
+      // 启动自动续播(默认开)
+      const ap = localStorage.getItem('soundflow_auto_play')
+      if (ap !== null) autoPlay.value = ap === '1'
 
       // 界面语言
       const lang = localStorage.getItem('soundflow_language') || 'zh'

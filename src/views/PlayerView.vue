@@ -310,6 +310,7 @@
             <div class="queue-header">
               <span class="queue-title">播放列表</span>
               <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
+              <button v-if="playerStore.playQueue.length" class="queue-save" title="保存为歌单" @click="openSaveQueue">💾</button>
               <button class="queue-close" @click="showQueuePanel = false">✕</button>
             </div>
             <div class="queue-list" ref="queueListEl">
@@ -328,6 +329,18 @@
             </div>
           </div>
         </transition>
+
+        <!-- 保存队列为歌单弹窗 -->
+        <div v-if="saveQueueModal" class="save-queue-mask" @click.self="saveQueueModal = false">
+          <div class="save-queue-card">
+            <h3>保存为歌单</h3>
+            <input v-model="saveQueueName" class="modal-input" placeholder="歌单名称" @keydown.enter="confirmSaveQueue" />
+            <div class="edit-actions">
+              <button class="modal-btn cancel" @click="saveQueueModal = false">取消</button>
+              <button class="modal-btn confirm" :disabled="!saveQueueName.trim()" @click="confirmSaveQueue">保存</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -337,16 +350,36 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import Sortable from 'sortablejs'
 import { usePlayerStore } from '@/stores/playerStore'
+import { useMusicStore } from '@/stores/musicStore'
 import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
 
 const playerStore = usePlayerStore()
+const musicStore = useMusicStore()
 const router = useRouter()
 
 // 返回:历史栈为空时(如直接进入播放页)回退到主页,避免"返回键失灵"
 function goBack() {
   if (window.history.length > 1) router.back()
   else router.push('/home')
+}
+
+// 保存播放队列为歌单
+const saveQueueModal = ref(false)
+const saveQueueName = ref('')
+function openSaveQueue() {
+  saveQueueName.value = ''
+  saveQueueModal.value = true
+}
+function confirmSaveQueue() {
+  const name = saveQueueName.value.trim()
+  if (!name || !playerStore.playQueue.length) return
+  const id = musicStore.createPlaylist(name)
+  for (const s of playerStore.playQueue) {
+    if (s && s.path) musicStore.addSongToPlaylist(id, s.path)
+  }
+  saveQueueModal.value = false
+  try { window.$toast?.(`已保存歌单「${name}」(${playerStore.playQueue.length} 首)`, 'success') } catch {}
 }
 const progressBar = ref(null)
 const lyricsPanel = ref(null)
@@ -1393,6 +1426,10 @@ async function searchLyric() {
 .queue-count { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
 .queue-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.5); font-size: var(--font-size-sm); }
 .queue-close:hover { background: rgba(255,255,255,0.1); color: white; }
+.queue-save { background: none; border: none; color: var(--color-primary); font-size: 15px; cursor: pointer; padding: 2px 5px; }
+.save-queue-mask { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
+.save-queue-card { width: 320px; padding: 20px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); }
+.save-queue-card h3 { margin: 0 0 12px; font-size: 16px; }
 .queue-list { position: relative; flex: 1; overflow-y: auto; padding: 6px; max-height: 320px; }
 .queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: var(--font-size-sm); padding: 30px 0; }
 .queue-item {

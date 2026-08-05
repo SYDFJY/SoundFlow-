@@ -37,6 +37,15 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">启动自动续播</span>
+            <span class="label-desc">打开应用后自动继续播放上次的歌曲</span>
+          </div>
+          <button class="setting-btn" :class="{ active: appStore.autoPlay }" @click="toggleAutoPlay">
+            {{ appStore.autoPlay ? '已开启 ✓' : '已关闭' }}
+          </button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">跟随系统深色模式</span>
             <span class="label-desc">系统切换深色/浅色时自动切换主题(手动选主题将关闭此功能)</span>
           </div>
@@ -687,6 +696,10 @@ const songNotify = ref(localStorage.getItem('soundflow_song_notify') === '1')
 function toggleSongNotify() {
   songNotify.value = !songNotify.value
   localStorage.setItem('soundflow_song_notify', songNotify.value ? '1' : '0')
+}
+function toggleAutoPlay() {
+  appStore.autoPlay = !appStore.autoPlay
+  localStorage.setItem('soundflow_auto_play', appStore.autoPlay ? '1' : '0')
 }
 
 function selectFont(family) {

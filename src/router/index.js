@@ -7,7 +7,6 @@ const routes = [
   { path: '/playlist/:id', name: 'Playlist', component: () => import('@/views/PlaylistView.vue') },
   { path: '/artist', name: 'Artist', component: () => import('@/views/ArtistView.vue') },
   { path: '/album', name: 'Album', component: () => import('@/views/AlbumView.vue') },
-  { path: '/history', name: 'History', component: () => import('@/views/HistoryView.vue') },
   { path: '/stats', name: 'Stats', component: () => import('@/views/StatsView.vue') },
   { path: '/recommend', name: 'Recommend', component: () => import('@/views/RecommendView.vue') },
   { path: '/folder', name: 'Folder', component: () => import('@/views/FolderView.vue') },

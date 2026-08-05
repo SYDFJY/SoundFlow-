@@ -12,10 +12,6 @@
           <span>{{ t('nav.favorites') }}</span>
           <span v-if="musicStore.favoriteCount > 0" class="menu-badge">{{ musicStore.favoriteCount }}</span>
         </router-link>
-        <router-link to="/history" class="menu-item" :class="{ active: $route.path === '/history' }">
-          <History :size="16" />
-          <span>{{ t('nav.history') }}</span>
-        </router-link>
         <router-link to="/stats" class="menu-item" :class="{ active: $route.path === '/stats' }">
           <BarChart3 :size="16" />
           <span>{{ t('nav.stats') }}</span>
@@ -108,19 +104,32 @@
         </div>
       </div>
     </transition>
+    <!-- 迷你统计 -->
+    <router-link to="/stats" class="mini-stats">
+      <div class="ms-title">我的听歌</div>
+      <div class="ms-row"><span>今日播放</span><b>{{ todayPlays }}</b></div>
+      <div class="ms-row"><span>累计播放</span><b>{{ totalPlayCount }}</b></div>
+      <div class="ms-row"><span>收藏</span><b>{{ musicStore.favoriteCount }}</b></div>
+    </router-link>
     <!-- 拖拽调整侧边栏宽度 -->
     <div class="sidebar-resizer" @mousedown="startResize" title="拖动调整宽度"></div>
   </aside>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import Sortable from 'sortablejs'
-import { Home, Heart, History, Users, Disc3, ListMusic, FolderPlus, BarChart3, Sparkles } from '@lucide/vue'
+import { Home, Heart, Users, Disc3, ListMusic, FolderPlus, BarChart3, Sparkles } from '@lucide/vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 
 const musicStore = useMusicStore()
+// 迷你统计:今日播放次数(基于播放历史时间戳)+ 累计播放
+const todayPlays = computed(() => {
+  const today = new Date().toDateString()
+  return musicStore.history.filter(h => new Date(h.time).toDateString() === today).length
+})
+const totalPlayCount = computed(() => Object.values(musicStore.playCounts).reduce((a, b) => a + (b || 0), 0))
 const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
 const modal = ref({ show: false, title: '', value: '', placeholder: '', mode: '', playlistId: null })
 const modalInput = ref(null)
@@ -292,4 +301,16 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .modal-btn.confirm { background: var(--color-primary); color: white; }
 .modal-btn.confirm:hover { background: var(--color-primary-light); }
 .modal-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 迷你统计卡 */
+.mini-stats {
+  margin: 8px 12px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 5px;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md); text-decoration: none;
+  transition: all 0.2s;
+}
+.mini-stats:hover { border-color: var(--color-primary); }
+.ms-title { font-size: 11px; color: var(--text-tertiary); }
+.ms-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-secondary); }
+.ms-row b { font-size: 13px; color: var(--color-primary); }
 </style>

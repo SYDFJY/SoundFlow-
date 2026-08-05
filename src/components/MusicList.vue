@@ -90,10 +90,28 @@
     <!-- 批量操作栏 -->
     <div v-if="batchOn" class="batch-bar">
       <span class="batch-count">已选 {{ selectedSet.size }} 首</span>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openBatchEdit">编辑标签</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAddToPlaylist">加入歌单</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="confirmRemoveSelected">删除</button>
       <button class="batch-btn" @click="toggleBatch">取消</button>
     </div>
+
+    <!-- 批量编辑标签弹窗 -->
+    <teleport to="body">
+      <div v-if="batchEditModal.show" class="modal-mask" @click.self="batchEditModal.show = false">
+        <div class="edit-modal">
+          <h3>批量编辑标签({{ batchEditModal.count }} 首)</h3>
+          <label>歌手<input v-model="batchEditModal.artist" placeholder="留空则不修改" /></label>
+          <label>专辑<input v-model="batchEditModal.album" placeholder="留空则不修改" /></label>
+          <label>流派<input v-model="batchEditModal.genre" placeholder="留空则不修改" /></label>
+          <label>年份<input v-model="batchEditModal.year" placeholder="留空则不修改" type="number" /></label>
+          <div class="edit-actions">
+            <button class="modal-btn cancel" @click="batchEditModal.show = false">取消</button>
+            <button class="modal-btn confirm" @click="saveBatchEdit">应用</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <!-- 选择歌单弹窗 -->
     <teleport to="body">
@@ -407,6 +425,24 @@ function toggleBatch() {
   if (!batchOn.value) selectedSet.value = new Set()
   emit('context-action', 'toggle-batch')
   emit('selection-change', [])
+}
+
+// 批量编辑标签
+const batchEditModal = ref({ show: false, count: 0, artist: '', album: '', genre: '', year: '' })
+function openBatchEdit() {
+  batchEditModal.value = { show: true, count: selectedSet.value.size, artist: '', album: '', genre: '', year: '' }
+}
+function saveBatchEdit() {
+  const updates = {}
+  if (batchEditModal.value.artist.trim()) updates.artist = batchEditModal.value.artist.trim()
+  if (batchEditModal.value.album.trim()) updates.album = batchEditModal.value.album.trim()
+  if (batchEditModal.value.genre.trim()) updates.genre = batchEditModal.value.genre.trim()
+  if (batchEditModal.value.year.trim()) updates.year = batchEditModal.value.year.trim()
+  if (Object.keys(updates).length) {
+    musicStore.batchUpdateMeta([...selectedSet.value], updates)
+    window.$toast?.(`已更新 ${selectedSet.value.size} 首歌曲标签`, 'success')
+  }
+  batchEditModal.value.show = false
 }
 
 function toggleSelect(path) {
