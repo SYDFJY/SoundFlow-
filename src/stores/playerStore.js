@@ -714,12 +714,17 @@ export const usePlayerStore = defineStore('player', () => {
         if (showTranslation.value) translateCurrentLyrics()
         return
       }
-      // 2. 在线歌词:来源为 local 时不联网;否则本地缺失时按所选来源(网易云/LRCLIB)获取
-      let source = 'lrclib'
-      try { source = localStorage.getItem('soundflow_lyric_source') || 'lrclib' } catch {}
+      // 2. 在线歌词:本地歌词已无条件优先(上面已命中返回);这里"源"只控制在线兜底用哪个
+      //    源选项:auto(自动,LRCLIB 优先回退网易云)/netease/lrclib —— 不再有"仅本地"选项
+      let source = 'auto'
+      try {
+        const saved = localStorage.getItem('soundflow_lyric_source')
+        source = (saved === 'local') ? 'auto' : (saved || 'auto') // 旧版 'local' 迁移为 auto,保证在线始终可用
+        if (!['auto', 'netease', 'lrclib'].includes(source)) source = 'auto'
+      } catch {}
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
-      if (source !== 'local' && onlineEnabled && song.title) {
+      if (onlineEnabled && song.title) {
         // 缓存按来源隔离,切换来源后重新获取
         const cacheKey = `${source}|${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
@@ -755,8 +760,9 @@ export const usePlayerStore = defineStore('player', () => {
           lyrics.value = parseLRC(onlineText)
           if (showTranslation.value) translateCurrentLyrics()
         }
-      } else if (source === 'local') {
-        lyricOrigin.value = lyrics.value.length ? '本地' : ''
+      } else {
+        // 在线被关闭或歌曲无标题:显示空(不误报)
+        lyricOrigin.value = onlineEnabled ? '' : '未找到'
       }
     } catch {}
   }

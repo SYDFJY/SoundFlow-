@@ -569,11 +569,11 @@ function toggleOnlineLyric() {
 
 // 歌词来源:local(本地,不联网)/ netease / lrclib(默认)
 const lyricSources = [
-  { value: 'local', label: '本地' },
+  { value: 'auto', label: '自动(推荐)' },
   { value: 'netease', label: '网易云' },
   { value: 'lrclib', label: 'LRCLIB' }
 ]
-const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrclib')
+const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
 
 function setLyricSource(v) {
   lyricSource.value = v

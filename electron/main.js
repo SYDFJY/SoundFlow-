@@ -1057,28 +1057,23 @@ function setupIPC() {
           if (fs.existsSync(exact)) return fs.readFileSync(exact, 'utf8')
 
           const files = getLrcFiles(folder)
-          // 收集所有候选，按匹配度排序(强匹配优先;移除最易张冠李戴的弱匹配)
+          // 可靠匹配:基于"完整文件名规范化"比对,不猜测"哪半是标题/歌手"(文件名格式不统一,
+          // 旧逻辑 extractTitle 把 "Welcome To New York - Taylor Swift" 提取成 "Taylor Swift",
+          // 导致任何 "xxx - Taylor Swift" 的 lrc 都误配,所有歌都显示错误"本地"歌词)
           const candidates = []
           for (const f of files) {
             const lrcBase = path.basename(f, '.lrc')
-            const lrcTitle = extractTitle(lrcBase)
             const normLrc = normalizeName(lrcBase)
-            const normLrcTitle = normalizeName(lrcTitle)
 
-            // 完全匹配
-            if (normLrc === normSong || normLrcTitle === normTitle) {
+            // 完全匹配:规范化后文件名相同
+            if (normLrc === normSong) {
               candidates.push({ path: path.join(folder, f), score: 100 })
             }
-            // 歌词名包含歌曲标题，或反过来(双向包含,较可靠)
-            else if (normLrc.includes(normTitle) || normTitle.includes(normLrc)) {
+            // 强包含:双向包含且双方都足够长(≥4字符),避免 "晴天"(2字)误配 "晴天娃娃"(4字)
+            else if (normSong.length >= 4 && normLrc.length >= 4 &&
+                     (normLrc.includes(normSong) || normSong.includes(normLrc))) {
               candidates.push({ path: path.join(folder, f), score: 80 })
             }
-            // 宽松:歌词提取标题包含歌曲名(仅强匹配无结果时兜底,避免误配其他歌曲)
-            else if (normLrcTitle.includes(normSong) && normLrcTitle.length >= 3) {
-              candidates.push({ path: path.join(folder, f), score: 50 })
-            }
-            // 注意:不再匹配"歌曲标题包含歌词文件名"(score40)——那会让
-            // "晴天.lrc" 误配 "晴天娃娃.mp3" 等,导致删除歌词后仍显示其他歌的歌词
           }
           // 返回得分最高的
           if (candidates.length > 0) {
@@ -1295,10 +1290,17 @@ function setupIPC() {
   })
 
   // 保存歌词到音频同目录同名 .lrc
-  ipcMain.handle('save-lyric-file', (event, audioPath, lrcText) => {
+  ipcMain.handle('save-lyric-file', (event, audioPath, lrcText, lyricFolders) => {
     try {
       const ext = path.extname(audioPath)
-      const target = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
+      const base = path.basename(audioPath, ext)
+      // 优先保存到歌词文件夹(已设置时),否则存歌曲同目录
+      let target
+      if (lyricFolders && lyricFolders.length) {
+        target = path.join(lyricFolders[0], base + '.lrc')
+      } else {
+        target = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
+      }
       fs.writeFileSync(target, lrcText, 'utf8')
       return { ok: true, path: target }
     } catch (e) {

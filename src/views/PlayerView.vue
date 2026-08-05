@@ -599,11 +599,11 @@ async function importLocalLyric() {
 
 // 歌词来源切换(本地 / 网易云 / LRCLIB),右上角三选一
 const lyricSourceOptions = [
-  { value: 'local', label: '本地' },
+  { value: 'auto', label: '自动' },
   { value: 'netease', label: '网易云' },
   { value: 'lrclib', label: 'LRCLIB' }
 ]
-const lyricSource = ref(localStorage.getItem('soundflow_lyric_source') || 'lrclib')
+const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
 
 // 歌词字号(可调,localStorage 持久化)
 const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_size')) || 18)
@@ -927,6 +927,11 @@ function lyricWordSegments(line) {
   return tokens.map((c, i) => ({ t: start + i * per, c }))
 }
 
+// 读取歌词文件夹配置(在线搜索下载优先存这里,避免散落在歌曲同目录)
+function lyricFoldersForSave() {
+  try { return JSON.parse(localStorage.getItem('soundflow_lyric_folders') || '[]') } catch { return [] }
+}
+
 // 删除当前歌曲的本地歌词文件(绕开资源管理器删除问题,精确匹配不误删)
 async function deleteLocalLyric() {
   const song = playerStore.currentSong
@@ -975,7 +980,7 @@ async function searchLyric() {
       duration: song.duration || 0
     })
     if (res?.lyrics) {
-      const saved = await window.electronAPI.saveLyricFile(song.path, res.lyrics)
+      const saved = await window.electronAPI.saveLyricFile(song.path, res.lyrics, lyricFoldersForSave())
       if (saved?.ok) {
         searchLyricMsg.value = '✅ 已保存到歌曲同目录'
         await playerStore.loadLyrics(song)
