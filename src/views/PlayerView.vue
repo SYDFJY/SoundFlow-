@@ -624,6 +624,7 @@ const lyricColor = ref(localStorage.getItem('soundflow_lyric_color') || '#ffffff
 function setLyricColor(v) {
   lyricColor.value = v
   localStorage.setItem('soundflow_lyric_color', v)
+  try { window.$toast?.('歌词颜色已更新', 'success') } catch {}
 }
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
