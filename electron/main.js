@@ -1385,6 +1385,49 @@ function setupIPC() {
   })
 
   // 响度分析(ReplayGain):ffmpeg volumedetect → 目标 -14dB 的增益
+  // 队列化 + 慢速串行(1.5s 间隔):后台空闲分析,绝不抢占播放 CPU
+  const _loudnessQueue = []
+  let _loudnessRunning = false
+  async function analyzeLoudnessOne(filePath) {
+    try {
+      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
+      const { execFile } = require('child_process')
+      const out = await new Promise((resolve, reject) => {
+        execFile(ffmpegPathForLoudness, ['-hide_banner', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 90000 }, (err, stdout, stderr) => {
+          if (err && !String(stderr).includes('mean_volume')) { reject(err); return }
+          resolve(String(stderr))
+        })
+      })
+      const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(out)
+      if (!m) return
+      const mean = parseFloat(m[1])
+      const gain = Math.round((-14 - mean) * 10) / 10
+      if (!storageData.replayGain) storageData.replayGain = {}
+      storageData.replayGain[filePath] = gain
+      saveStorage(true)
+    } catch {}
+  }
+  async function runLoudnessQueue() {
+    if (_loudnessRunning) return
+    _loudnessRunning = true
+    while (_loudnessQueue.length) {
+      const p = _loudnessQueue.shift()
+      try {
+        if (!storageData.replayGain || storageData.replayGain[p] == null) {
+          await analyzeLoudnessOne(p)
+        }
+      } catch {}
+      // 慢速节流,不抢 CPU/IO
+      await new Promise(r => setTimeout(r, 1500))
+    }
+    _loudnessRunning = false
+  }
+  function pushLoudnessBatch(paths) {
+    if (!Array.isArray(paths) || !paths.length) return
+    _loudnessQueue.push(...paths)
+    runLoudnessQueue()
+  }
+
   ipcMain.handle('analyze-loudness', async (event, filePath) => {
     try {
       if (!ffmpegPathForLoudness) detectFFmpegLoudness()
@@ -1586,6 +1629,13 @@ app.whenReady().then(async () => {
   await ensureParseFile()
   detectFFprobe()
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
+  // 空闲后批量响度分析(串行慢速 1.5s/首,不抢播放 CPU);曲库为空则跳过
+  setTimeout(() => {
+    try {
+      const paths = (storageData.library || []).map(s => s.path).filter(Boolean)
+      if (paths.length) pushLoudnessBatch(paths)
+    } catch {}
+  }, 20000)
   createMenu()
   createMainWindow()
   createTray()

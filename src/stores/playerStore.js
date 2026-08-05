@@ -883,18 +883,11 @@ export const usePlayerStore = defineStore('player', () => {
     } catch {}
   }
 
-  // 播放时应用响度缓存;无缓存则后台分析后应用
+  // 应用响度缓存(播放时只读;分析由主进程空闲批量执行,不占播放 CPU)
   function ensureReplayGain(songPath) {
     if (!window.electronAPI || !songPath) return
     window.electronAPI.getLoudness(songPath).then((db) => {
-      if (db == null) {
-        // 后台分析(不阻塞播放),完成后应用
-        window.electronAPI.analyzeLoudness(songPath).then((g) => {
-          if (g != null && currentSong.value?.path === songPath) applyReplayGain(g)
-        }).catch(() => {})
-      } else {
-        if (currentSong.value?.path === songPath) applyReplayGain(db)
-      }
+      if (db != null && currentSong.value?.path === songPath) applyReplayGain(db)
     }).catch(() => {})
   }
 

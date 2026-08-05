@@ -722,12 +722,23 @@ function startSpectrum() {
 // 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)
 let spectrumTimer = null
 onMounted(() => {
-  startSpectrum()
-  spectrumTimer = setInterval(startSpectrum, 400)
+  if (playerStore.isPlaying) startSpectrum()
+  spectrumTimer = setInterval(() => { if (playerStore.isPlaying) startSpectrum() }, 400)
 })
 onUnmounted(() => {
   if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
   if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
+})
+// 暂停时停止频谱 rAF(省 CPU),播放时恢复
+watch(() => playerStore.isPlaying, (v) => {
+  if (v) startSpectrum()
+  else {
+    if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
+    if (spectrumCanvas.value) {
+      const ctx = spectrumCanvas.value.getContext('2d')
+      ctx.clearRect(0, 0, spectrumCanvas.value.width, spectrumCanvas.value.height)
+    }
+  }
 })
 
 // 歌词对齐(居中/左,持久化)
