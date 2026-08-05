@@ -191,7 +191,9 @@
                 <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
               </button>
               <transition name="vol-fade">
-                <input v-if="volExpanded" type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+                <div v-if="volExpanded" class="vol-pop">
+                  <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+                </div>
               </transition>
             </div>
 
@@ -1129,10 +1131,19 @@ async function searchLyric() {
 .ctrl-btn--small { width: 34px; height: 34px; font-size: var(--font-size-sm); }
 .ctrl-btn--small svg { width: 20px; height: 20px; }
 .volume-control {
-  display: flex; align-items: center; gap: 8px;
+  position: relative; display: flex; align-items: center;
 }
-.vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.2s, width 0.2s; }
-.vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; width: 0; }
+.vol-pop {
+  position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+  padding: 10px 8px;
+  background: var(--bg-secondary, rgba(20,28,50,0.96));
+  border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  z-index: 60;
+}
+.vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
+.vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
 
 /* 播放列表面板 */
 .queue-panel {
@@ -1250,12 +1261,16 @@ async function searchLyric() {
 .vol-btn svg { width: 18px; height: 18px; }
 
 .vol-slider {
-  width: 100px; height: 4px; -webkit-appearance: none; appearance: none;
+  /* 竖直音量滑块:低在下、高在上 */
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 4px; height: 100px;
   background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
 }
 .vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 12px; height: 12px;
-  background: white; border-radius: 50%; cursor: pointer;
+  -webkit-appearance: none; width: 13px; height: 13px;
+  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
+  border: none;
 }
 
 /* 变调控件 */
