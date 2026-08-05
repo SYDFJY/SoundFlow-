@@ -692,45 +692,51 @@ export const usePlayerStore = defineStore('player', () => {
     if (showTranslation.value) translateCurrentLyrics()
   }
 
-  // 加载歌词:本地 .lrc → 在线歌词缓存 → 在线来源
+  // 加载歌词。策略:
+  //  - 源=auto(默认):本地 .lrc 无条件优先,没有本地才走在线
+  //  - 源=netease/lrclib(显式选择):强制用该在线源;在线无结果才回退本地
   async function loadLyrics(song) {
     const reqSong = song
     lyrics.value = []
     currentLyricIndex.value = -1
     if (!window.electronAPI) return
     try {
-      // 1. 本地 .lrc 文件
+      // 0. 读取本地 .lrc(备用于 auto 优先 / 显式源失败回退)
       let lyricFolders = []
       try {
         const saved = localStorage.getItem('soundflow_lyric_folders')
         if (saved) lyricFolders = JSON.parse(saved)
       } catch {}
       const lrcText = await window.electronAPI.readLyricFile(song.path, lyricFolders)
-      if (lrcText) {
-        // 竞态保护:期间可能已切歌
-        if (currentSong.value !== reqSong) return
-        lyricOrigin.value = '本地'
-        lyrics.value = parseLRC(lrcText)
-        if (showTranslation.value) translateCurrentLyrics()
-        return
-      }
-      // 2. 在线歌词:本地歌词已无条件优先(上面已命中返回);这里"源"只控制在线兜底用哪个
-      //    源选项:auto(自动,LRCLIB 优先回退网易云)/netease/lrclib —— 不再有"仅本地"选项
+
+      // 歌词源(旧版 'local' 迁移为 auto)
       let source = 'auto'
       try {
         const saved = localStorage.getItem('soundflow_lyric_source')
-        source = (saved === 'local') ? 'auto' : (saved || 'auto') // 旧版 'local' 迁移为 auto,保证在线始终可用
+        source = (saved === 'local') ? 'auto' : (saved || 'auto')
         if (!['auto', 'netease', 'lrclib'].includes(source)) source = 'auto'
       } catch {}
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
+
+      const showLyrics = (text, origin) => {
+        if (currentSong.value !== reqSong) return false
+        lyricOrigin.value = origin
+        lyrics.value = parseLRC(text)
+        if (showTranslation.value) translateCurrentLyrics()
+        return true
+      }
+
+      // auto:本地优先,命中即返回
+      if (source === 'auto' && lrcText && onlineEnabled) {
+        showLyrics(lrcText, '本地')
+        return
+      }
+      // 显式源(或 auto 但无本地):尝试在线
       if (onlineEnabled && song.title) {
-        // 缓存按来源隔离,切换来源后重新获取
         const cacheKey = `${source}|${song.title}|${song.artist || ''}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
-        if (onlineText) {
-          lyricOrigin.value = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : '自动')
-        }
+        let origin = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : '自动')
         if (!onlineText) {
           const res = await window.electronAPI.fetchOnlineLyric({
             title: song.title,
@@ -739,30 +745,32 @@ export const usePlayerStore = defineStore('player', () => {
             source
           })
           if (res && res.error === 'network') {
-            // 两个在线源都网络异常:明确提示网络问题,而非"未找到"
+            // 在线源都网络异常:明确提示网络问题
             if (currentSong.value === reqSong) {
               lyricOrigin.value = '网络不可用'
               try { window.$toast?.('歌词在线获取失败:网络不可用(请检查代理/连接)', 'warning') } catch {}
             }
+            // 网络异常时回退本地(有的话),保证有歌词可看
+            if (lrcText) { showLyrics(lrcText, '本地'); return }
             return
           }
           onlineText = (res && res.lyrics) || null
           if (onlineText) {
-            lyricOrigin.value = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : '自动')
+            origin = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : '自动')
             await _setCachedOnlineLyric(cacheKey, onlineText)
-          } else {
-            lyricOrigin.value = '未找到' // 在线获取失败/无匹配,界面提示
           }
         }
         if (onlineText) {
-          // 竞态保护:期间可能已切歌
-          if (currentSong.value !== reqSong) return
-          lyrics.value = parseLRC(onlineText)
-          if (showTranslation.value) translateCurrentLyrics()
+          showLyrics(onlineText, origin)
+          return
         }
+      }
+      // 在线无结果:auto 显示未找到;显式源回退本地(若存在)
+      if (lrcText && source !== 'auto') {
+        showLyrics(lrcText, '本地')
       } else {
-        // 在线被关闭或歌曲无标题:显示空(不误报)
-        lyricOrigin.value = onlineEnabled ? '' : '未找到'
+        lyricOrigin.value = (source === 'auto' && lrcText) ? '本地' : (onlineEnabled ? '未找到' : '')
+        if (source === 'auto' && lrcText) lyrics.value = parseLRC(lrcText)
       }
     } catch {}
   }
@@ -1376,6 +1384,7 @@ export const usePlayerStore = defineStore('player', () => {
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
+    loadLyrics,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     releaseAudio, restoreAudio,

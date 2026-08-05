@@ -953,14 +953,10 @@ function switchLyricSource(v) {  if (lyricSource.value === v) return
   localStorage.setItem('soundflow_lyric_source', v)
   const cur = playerStore.currentSong
   if (cur) {
-    // 本地歌词优先:切源前提示用户当前歌的歌词归属,避免"切源无效"的错觉
-    const hasLocal = playerStore.lyricOrigin === '本地'
+    const label = lyricSourceOptions.find(o => o.value === v)?.label || v
+    const hint = v === 'auto' ? '本地歌词优先,无本地时自动在线' : '在线歌词优先,获取失败回退本地'
     playerStore.loadLyrics(cur)
-    if (hasLocal) {
-      window.$toast?.('已切换到「' + (lyricSourceOptions.find(o => o.value === v)?.label || v) + '」;当前歌曲有本地歌词,优先显示本地', 'info')
-    } else {
-      window.$toast?.('已切换到「' + (lyricSourceOptions.find(o => o.value === v)?.label || v) + '」歌词源', 'success')
-    }
+    window.$toast?.('已切换到「' + label + '」(' + hint + ')', 'success')
   }
 }
 
