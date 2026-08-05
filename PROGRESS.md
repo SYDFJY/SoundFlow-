@@ -84,7 +84,10 @@
 - 样式持久化(主进程 storageData.lyricStyle)
 - 入口:播放栏 + 播放页三态按钮(打开 → 锁定 → 关闭)
 - 数据推送:切歌/播放暂停/seek 时 IPC 推送歌词+时间轴,窗口内 rAF 推进
-- **关键修复**:loadFile 的 hash 选项不生效(窗口打开显示主界面)→ 改 loadURL 显式 #/lyric、#/mini
+- **关键修复**:
+  - loadFile 的 hash 选项不生效(窗口打开显示主界面)→ 改 loadURL 显式 #/lyric、#/mini
+  - 歌词窗口渲染出整个播放器界面 → App.vue 对 /lyric 路由走纯渲染模式(不带 topbar/sidebar/播放栏壳)
+  - 三态语义错位(前端 1打开/2锁定/0关闭 vs 主进程 0打开/1锁定/2关闭)→ 对齐,一次点击即打开
 
 ## 三、技术栈与架构
 
