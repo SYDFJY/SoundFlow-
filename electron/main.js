@@ -78,15 +78,34 @@ function initStorage() {
   } catch (_) {}
 }
 
+// 存储写入 worker:JSON.stringify + 写盘都在独立线程,主进程零阻塞
+const { Worker } = require('worker_threads')
+let saveWorker = null
+function getSaveWorker() {
+  if (!saveWorker) {
+    saveWorker = new Worker(`
+      const { parentPort } = require('worker_threads')
+      const fs = require('fs')
+      parentPort.on('message', (msg) => {
+        try {
+          const json = JSON.stringify(msg.data)
+          fs.writeFileSync(msg.path, json)
+          parentPort.postMessage({ ok: true })
+        } catch (e) {
+          parentPort.postMessage({ ok: false, error: e && e.message ? e.message : String(e) })
+        }
+      })
+    `, { eval: true })
+    saveWorker.on('error', (e) => { console.error('[存储] worker 错误:', e && e.message); saveWorker = null })
+  }
+  return saveWorker
+}
 function saveStorage(immediate = false) {
   clearTimeout(saveStorageTimer)
   const doWrite = () => {
     try {
-      // 异步写盘,不阻塞主进程(JSON.stringify 仍同步,但写入 IO 不再阻塞)
-      const data = JSON.stringify(storageData)
-      fs.writeFile(storagePath, data, (err) => {
-        if (err) { console.error('[存储] 写入失败:', err.message); log.error('[存储] 写入失败:', err.message) }
-      })
+      // 结构化克隆 + worker 线程内 stringify/写盘,主进程仅短暂克隆(远轻于同步 stringify)
+      getSaveWorker().postMessage({ path: storagePath, data: storageData })
     } catch (e) { console.error('[存储] 写入失败:', e.message); log.error('[存储] 写入失败:', e.message) }
   }
   if (immediate) doWrite()
@@ -1841,8 +1860,8 @@ app.on('will-quit', () => {
   try { globalShortcut.unregisterAll() } catch (_) {}
   if (storagePath) {
     try {
-      saveStorage(true)
-      // 退出前备份一份(平时保存不复制 .bak,仅退出时留档)
+      // 退出前同步兜底写盘(worker 异步可能来不及)+ 备份一次
+      fs.writeFileSync(storagePath, JSON.stringify(storageData))
       try { fs.copyFileSync(storagePath, storagePath + '.bak') } catch {}
     } catch (_) {}
   }

@@ -122,6 +122,12 @@ export const useMusicStore = defineStore('music', () => {
     _saveDebounce = setTimeout(() => { _saveDebounce = null; doSaveToStorage() }, 2000)
   }
   function doSaveToStorage() {
+    // 延迟到浏览器空闲执行,避免点击/切歌瞬间的同步深拷贝阻塞交互
+    const run = () => doSaveNow()
+    if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 2000 })
+    else setTimeout(run, 50)
+  }
+  function doSaveNow() {
     try {
       const safeSet = (key, value) => {
         try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) { console.warn('[存储] localStorage 写入失败:', key, e.message) }
