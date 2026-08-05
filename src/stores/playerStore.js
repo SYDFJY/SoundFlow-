@@ -604,9 +604,13 @@ export const usePlayerStore = defineStore('player', () => {
       const obj = JSON.parse(raw)
       for (const k of Object.keys(obj)) {
         if (_translationCache.size >= TRANS_CACHE_MAX) break
-        if (Array.isArray(obj[k])) _translationCache.set(k, obj[k])
+        if (_isValidTranslation(obj[k])) _translationCache.set(k, obj[k])
       }
     } catch {}
+  }
+  // 译文有效性:非空数组且至少一行有实际译文(过滤掉失败/配额期间存的空结果)
+  function _isValidTranslation(arr) {
+    return Array.isArray(arr) && arr.length > 0 && arr.some(t => t && String(t).trim())
   }
   function _saveTransCache() {
     try {
@@ -627,13 +631,13 @@ export const usePlayerStore = defineStore('player', () => {
     const song = currentSong.value
     if (!song) return
     const reqSong = song
-    if (_translationCache.has(song.path)) {
+    if (_translationCache.has(song.path) && _isValidTranslation(_translationCache.get(song.path))) {
       translations.value = _translationCache.get(song.path)
       return
     }
     // 懒加载持久化缓存
     if (_translationCache.size === 0) _loadTransCache()
-    if (_translationCache.has(song.path)) {
+    if (_translationCache.has(song.path) && _isValidTranslation(_translationCache.get(song.path))) {
       translations.value = _translationCache.get(song.path)
       return
     }
@@ -664,8 +668,11 @@ export const usePlayerStore = defineStore('player', () => {
         return
       }
       translations.value = Array.isArray(result) ? result : []
-      _translationCache.set(song.path, translations.value)
-      _saveTransCache()
+      // 仅缓存有效译文(失败/空结果不缓存,下次可重试)
+      if (_isValidTranslation(translations.value)) {
+        _translationCache.set(song.path, translations.value)
+        _saveTransCache()
+      }
     } catch {
       translations.value = []
     } finally {
