@@ -1147,7 +1147,7 @@ function setupIPC() {
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, lines.length) }, worker))
-    if (quotaHit && results.every(r => !r)) return { error: 'quota' }
+    if (results.every(r => !r)) return { error: quotaHit ? 'quota' : 'empty' }
     return results
   })
 
