@@ -79,16 +79,18 @@
         </transition>
       </div>
 
-      <!-- 音量 -->
+      <!-- 音量:点击弹出竖直滑块 -->
       <div class="volume-control">
-        <button class="right-btn" @click="playerStore.toggleMute()" :title="t('player.volume')">
+        <button class="right-btn" :class="{ active: volExpanded }" @click="volExpanded = !volExpanded" :title="t('player.volume')">
           <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
           <svg v-else-if="playerStore.volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
         </button>
-        <div class="volume-slider">
-          <input type="range" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
-        </div>
+        <transition name="vol-fade">
+          <div v-if="volExpanded" class="vol-pop">
+            <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+          </div>
+        </transition>
       </div>
 
       <!-- 播放队列 -->
@@ -251,6 +253,7 @@ function onProgressMouseDown(e) {
   document.addEventListener('mouseup', onUp)
 }
 
+const volExpanded = ref(false)
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
 
 function setTimer(minutes) {
@@ -325,10 +328,29 @@ function setCustomTimer() {
 .right-btn svg { width: 18px; height: 18px; }
 .timer-badge { position: absolute; bottom: 2px; right: 2px; font-size: 9px; background: var(--color-primary); color: white; padding: 0 3px; border-radius: 4px; line-height: 1.4; }
 
-.volume-control { display: flex; align-items: center; gap: 4px; }
-.volume-slider { width: 80px; overflow: hidden; }
-.volume-slider input[type="range"] { width: 100%; height: 4px; -webkit-appearance: none; appearance: none; background: var(--bg-hover); border-radius: 2px; outline: none; }
-.volume-slider input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: var(--color-primary); border-radius: 50%; cursor: pointer; }
+.volume-control { position: relative; display: flex; align-items: center; }
+.vol-pop {
+  position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+  padding: 10px 8px;
+  background: var(--bg-secondary, rgba(20,28,50,0.96));
+  border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  z-index: 60;
+}
+.vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
+.vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
+.vol-slider {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 4px; height: 100px;
+  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px;
+  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
+  border: none;
+}
 
 /* 弹出面板 */
 .tool-wrapper { position: relative; }
