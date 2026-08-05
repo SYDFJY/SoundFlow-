@@ -148,7 +148,7 @@
         <div class="controls-row">
           <!-- 播放控制组(居中:播放模式/上一曲/播放/下一曲/倍速,与播放栏一致) -->
           <div class="controls-group">
-            <button class="ctrl-btn" @click="playerStore.cyclePlayMode()" :title="t(playModeLabelKey)">
+            <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" :title="t(playModeLabelKey)">
               <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
               <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
               <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
@@ -1328,7 +1328,8 @@ async function searchLyric() {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  display: flex; align-items: center; gap: 24px;
+  display: flex; align-items: center;
+  /* 按钮全部绝对定位:播放键居中,上一曲/下一曲对称贴靠,模式/倍速两端 */
 }
 .tools-group {
   position: absolute;
@@ -1448,9 +1449,11 @@ async function searchLyric() {
 }
 .ctrl-btn--play:hover { background: var(--color-primary-light); transform: translateX(-50%) scale(1.05); }
 .ctrl-btn--play svg { width: 28px; height: 28px; }
-/* 播放按钮绝对居中,上一曲/下一曲左右让位,保证与圆盘同一条竖直线 */
-.ctrl-prev { margin-right: 92px; }
-.ctrl-next { margin-left: 92px; }
+/* 对称布局:播放键居中(56px),上一曲/下一曲(44px)贴靠两侧(间隙10px),模式/倍速对称两端 */
+.ctrl-prev { position: absolute; right: calc(50% + 38px); }
+.ctrl-next { position: absolute; left: calc(50% + 38px); }
+.ctrl-mode { position: absolute; right: calc(50% + 102px); }
+.rate-control { position: absolute; left: calc(50% + 102px); }
 
 .progress-row { display: flex; align-items: center; gap: 12px; padding: 0 32px; }
 .time {

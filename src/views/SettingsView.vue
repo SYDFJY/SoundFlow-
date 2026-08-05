@@ -268,6 +268,7 @@
             <option v-for="f in customFonts" :key="f.url" :value="'&quot;' + f.name + '&quot;'">{{ f.name }}（自定义）</option>
           </select>
           <button class="setting-btn" @click="importFont">导入字体</button>
+          <button class="setting-btn" @click="importFontFolder">字体文件夹</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -572,7 +573,6 @@ const lyricSources = [
   { value: 'auto', label: '自动(推荐)' },
   { value: 'netease', label: '网易云' },
   { value: 'lrclib', label: 'LRCLIB' },
-  { value: 'qq', label: 'QQ音乐' },
   { value: 'qq', label: 'QQ音乐' }
 ]
 const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
@@ -666,6 +666,30 @@ async function importFont() {
   customFonts.value.push(res)
   localStorage.setItem('soundflow_custom_fonts', JSON.stringify(customFonts.value))
   selectFont(`"${res.name}"`)
+}
+
+async function importFontFolder() {
+  if (!window.electronAPI) return
+  const list = await window.electronAPI.selectFontFolder()
+  if (!list || !list.length) { window.$toast?.('该文件夹中未找到字体文件(.ttf/.otf/.woff/.woff2)', 'warning'); return }
+  let ok = 0
+  for (const res of list) {
+    if (customFonts.value.some(f => f.url === res.url)) continue
+    try {
+      const f = new FontFace(res.name, `url('${res.url}')`)
+      await f.load()
+      document.fonts.add(f)
+      customFonts.value.push(res)
+      ok++
+    } catch {}
+  }
+  if (ok) {
+    localStorage.setItem('soundflow_custom_fonts', JSON.stringify(customFonts.value))
+    selectFont(`"${customFonts.value[customFonts.value.length - 1].name}"`)
+    window.$toast?.(`已从文件夹导入 ${ok} 个字体(共 ${list.length} 个)`, 'success')
+  } else {
+    window.$toast?.('字体加载失败(文件损坏或已全部导入)', 'warning')
+  }
 }
 
 function removeCustomFont(i) {

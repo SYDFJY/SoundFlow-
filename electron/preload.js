@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
+  selectFontFolder: () => ipcRenderer.invoke('select-font-folder'),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),

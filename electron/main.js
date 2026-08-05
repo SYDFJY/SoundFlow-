@@ -1517,6 +1517,39 @@ function setupIPC() {
     }
   })
 
+  // 选择字体文件夹:递归扫描字体文件并复制到 userData/fonts/ 持久化,返回 [{name, url}]
+  ipcMain.handle('select-font-folder', async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] })
+    if (result.canceled || !result.filePaths.length) return []
+    try {
+      const dir = path.join(app.getPath('userData'), 'fonts')
+      fs.mkdirSync(dir, { recursive: true })
+      const FONT_EXTS = ['.ttf', '.otf', '.woff', '.woff2']
+      const out = []
+      const walk = (d) => {
+        let entries = []
+        try { entries = fs.readdirSync(d, { withFileTypes: true }) } catch { return }
+        for (const en of entries) {
+          const full = path.join(d, en.name)
+          if (en.isDirectory()) walk(full)
+          else if (FONT_EXTS.includes(path.extname(en.name).toLowerCase())) {
+            try {
+              const dest = path.join(dir, path.basename(en.name))
+              fs.copyFileSync(full, dest)
+              const name = path.basename(en.name, path.extname(en.name))
+              const url = 'file:///' + dest.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/')
+              out.push({ name, url })
+            } catch {}
+          }
+        }
+      }
+      walk(result.filePaths[0])
+      return out
+    } catch (e) {
+      return []
+    }
+  })
+
   // 选择自定义背景图片:复制到 userData/background/ 持久保存,返回 file:// URL
   ipcMain.handle('select-bg-image', async () => {
     const result = await dialog.showOpenDialog({
