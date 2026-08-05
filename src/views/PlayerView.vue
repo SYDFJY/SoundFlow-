@@ -182,6 +182,12 @@
                   <div class="pitch-presets">
                     <button v-for="p in PITCH_PRESETS" :key="p.v" class="pitch-preset" :class="{ active: playerStore.pitch === p.v }" @click="playerStore.setPitch(p.v)">{{ p.label }}</button>
                   </div>
+                  <!-- 变调模式:变速不变调 / 变速变调 -->
+                  <div class="pitch-mode">
+                    <button class="pitch-mode-btn" :class="{ active: !playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(false)">变速不变调</button>
+                    <button class="pitch-mode-btn" :class="{ active: playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(true)">变速变调</button>
+                  </div>
+                  <div class="pitch-mode-hint">{{ playerStore.pitchShiftTempo ? '速度与音高同步变化(卡带/花栗鼠效果)' : '音高变化,速度不变' }}</div>
                   <input type="range" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
                   <div class="pitch-scale">
                     <span>-12</span><span>0</span><span>+12</span>
@@ -1383,6 +1389,15 @@ async function searchLyric() {
   background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff);
   box-shadow: 0 0 0 1px var(--color-primary, #4096ff);
 }
+.pitch-mode { display: flex; gap: 4px; margin-bottom: 4px; }
+.pitch-mode-btn {
+  flex: 1; padding: 3px 0; font-size: var(--font-size-sm, 11px);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
+  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+}
+.pitch-mode-btn:hover { border-color: var(--color-primary, #4096ff); }
+.pitch-mode-btn.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
+.pitch-mode-hint { font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-bottom: 6px; text-align: center; }
 .pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-top: 2px; padding: 0 2px; }
 .pitch-value--active { color: #fff; background: var(--color-primary, #4096ff); border-radius: 4px; padding: 0 6px; }
 .pitch-actions { display: flex; justify-content: center; margin-top: 8px; }

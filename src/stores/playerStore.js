@@ -20,6 +20,8 @@ export const usePlayerStore = defineStore('player', () => {
   const playbackRate = ref(1.0)
   // 变调(半音,-12 ~ +12,0 = 不变调;经 SoundTouch 实时处理,变速不变调)
   const pitch = ref(0)
+  // 变调模式:false=变速不变调(SoundTouch,音高变速度不变);true=变速变调(playbackRate,卡带/花栗鼠效果)
+  const pitchShiftTempo = ref(false)
   // 桌面歌词三态:0=未打开 1=打开(解锁) 2=锁定(穿透)
   const desktopLyricState = ref(0)
   const showLyricPanel = ref(false)
@@ -219,8 +221,8 @@ export const usePlayerStore = defineStore('player', () => {
         _mediaSourceNode.connect(_fadeGain)
         prev = _fadeGain
       }
-      // 变调(pitch ≠ 0 时经 SoundTouch 管线,变速不变调)
-      if (pitch.value !== 0) {
+      // 变调(pitch ≠ 0 且变速不变调模式时,经 SoundTouch 管线;变速变调模式直接旁路,由 playbackRate 处理)
+      if (pitch.value !== 0 && !pitchShiftTempo.value) {
         if (!_pitchNode) createPitchNode()
         if (_pitchNode) {
           prev.connect(_pitchNode)
@@ -1063,12 +1065,19 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 应用倍速到 audio(变调经 SoundTouch 管线,这里只处理速度)
+  // 应用倍速+变调到 audio
   function applyPitchToAudio() {
     if (!audio.value) return
     try {
-      audio.value.preservesPitch = true
-      audio.value.playbackRate = playbackRate.value
+      if (pitchShiftTempo.value) {
+        // 变速变调:速度与音高同步变化(×2^(pitch/12)),preservesPitch=false
+        audio.value.preservesPitch = false
+        audio.value.playbackRate = playbackRate.value * Math.pow(2, pitch.value / 12)
+      } else {
+        // 变速不变调:只改倍速,音高由 SoundTouch 管线处理
+        audio.value.preservesPitch = true
+        audio.value.playbackRate = playbackRate.value
+      }
     } catch {}
   }
 
@@ -1084,6 +1093,13 @@ export const usePlayerStore = defineStore('player', () => {
     if (_pitchNode && _pitchNode.port) _pitchNode.port.postMessage({ type: 'pitch', value: v })
     applyPitchToAudio()
     rebuildAudioChain()
+    saveSettings()
+  }
+
+  // 切换变调模式:变速不变调(SoundTouch)/ 变速变调(playbackRate 卡带效果)
+  function setPitchShiftTempo(v) {
+    pitchShiftTempo.value = !!v
+    applyPitch()
     saveSettings()
   }
 
@@ -1184,6 +1200,7 @@ export const usePlayerStore = defineStore('player', () => {
       if (r) playbackRate.value = parseFloat(r)
       const ph2 = localStorage.getItem('soundflow_pitch')
       if (ph2) pitch.value = Math.max(-12, Math.min(12, parseInt(ph2) || 0))
+      try { pitchShiftTempo.value = localStorage.getItem('soundflow_pitch_shift_tempo') === '1' } catch {}
       const ph = localStorage.getItem('soundflow_progress')
       if (ph) progressHistory.value = JSON.parse(ph)
       loadReplayGainPref()
@@ -1199,6 +1216,7 @@ export const usePlayerStore = defineStore('player', () => {
       localStorage.setItem('soundflow_play_mode', playMode.value)
       localStorage.setItem('soundflow_playback_rate', String(playbackRate.value))
       localStorage.setItem('soundflow_pitch', String(pitch.value))
+      localStorage.setItem('soundflow_pitch_shift_tempo', pitchShiftTempo.value ? '1' : '0')
       localStorage.setItem('soundflow_progress', JSON.stringify(progressHistory.value))
       saveQueueState()
       if (window.electronAPI) {
@@ -1218,7 +1236,7 @@ export const usePlayerStore = defineStore('player', () => {
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
     showTranslation, translating, translations, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
-    pitch, setPitch, desktopLyricState, cycleDesktopLyric,
+    pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, loadAndPlay, togglePlay,
