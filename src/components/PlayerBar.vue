@@ -36,9 +36,27 @@
         <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next')">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
         </button>
-        <button class="ctrl-btn rate-btn" @click="playerStore.cyclePlaybackRate()" :title="t('player.rate', { x: playerStore.playbackRate })">
-          {{ playerStore.playbackRate }}x
-        </button>
+        <!-- 倍速(自定义面板) -->
+        <div class="pb-rate-control">
+          <button class="ctrl-btn rate-btn" @click="showPbRatePanel = !showPbRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
+            {{ playerStore.playbackRate }}x
+          </button>
+          <transition name="vol-fade">
+            <div v-if="showPbRatePanel" class="pb-rate-panel" @click.stop>
+              <div class="pb-rate-header">
+                <span>播放速度</span>
+                <span class="pb-rate-value">{{ playerStore.playbackRate }}x</span>
+              </div>
+              <input type="range" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
+              <div class="pb-rate-presets">
+                <button v-for="r in [0.5, 0.75, 1, 1.25, 1.5, 2, 3]" :key="r" class="pb-rate-preset" :class="{ active: Math.abs(playerStore.playbackRate - r) < 0.001 }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
+              </div>
+              <div class="pb-rate-actions">
+                <button class="pb-rate-reset" @click="playerStore.setPlaybackRate(1)">重置 1x</button>
+              </div>
+            </div>
+          </transition>
+        </div>
       </div>
       <div class="player-progress">
         <span class="time-current">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
@@ -183,6 +201,7 @@ const router = useRouter()
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
 const progressBar = ref(null)
+const showPbRatePanel = ref(false)
 const showTimer = ref(false)
 const customMinutes = ref(30)
 const showEqPanel = ref(false)
@@ -211,19 +230,20 @@ function scrollToActiveQueue() {
 }
 function onQueueDocClick(e) {
   // 面板内 / 触发按钮上点击不关闭
-  if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel') ||
-      e.target.closest('.right-btn, [data-queue-toggle]')) return
+  if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel, .pb-rate-panel') ||
+      e.target.closest('.right-btn, .rate-btn, [data-queue-toggle]')) return
   playerStore.showQueue = false
   volExpanded.value = false
   showEqPanel.value = false
   showTimer.value = false
+  showPbRatePanel.value = false
 }
 // 任一面板打开时挂全局监听,全部关闭时移除
 let _pbPanelWatch = null
 function setupPbPanelsClickOutside() {
   if (_pbPanelWatch) return
   _pbPanelWatch = watch(
-    [() => playerStore.showQueue, volExpanded, showEqPanel, showTimer],
+    [() => playerStore.showQueue, volExpanded, showEqPanel, showTimer, showPbRatePanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onQueueDocClick)
       else document.removeEventListener('click', onQueueDocClick)
@@ -457,4 +477,37 @@ function setCustomTimer() {
 
 .queue-slide-enter-active, .queue-slide-leave-active { transition: all 0.25s ease; }
 .queue-slide-enter-from, .queue-slide-leave-to { opacity: 0; transform: translateY(20px); }
+.pb-rate-control { position: relative; }
+.pb-rate-panel {
+  position: absolute; bottom: calc(var(--player-height, 72px) + 8px); left: 50%; transform: translateX(-50%);
+  background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  border-radius: 10px; padding: 10px 14px; width: 210px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 120;
+}
+.pb-rate-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
+.pb-rate-value { color: var(--color-primary, #4096ff); font-weight: 700; }
+.pb-rate-panel input[type="range"] {
+  width: 100%; -webkit-appearance: none; appearance: none; height: 6px;
+  background: var(--border-color, rgba(120,130,150,0.5)); border-radius: 3px; outline: none; cursor: pointer;
+}
+.pb-rate-panel input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; margin-top: -4px;
+  background: var(--color-primary, #4096ff); border: 2px solid #fff; border-radius: 50%; cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.35);
+}
+.pb-rate-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
+.pb-rate-preset {
+  flex: 1; min-width: 38px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
+  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+}
+.pb-rate-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.pb-rate-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
+.pb-rate-actions { display: flex; justify-content: center; margin-top: 8px; }
+.pb-rate-reset {
+  font-size: var(--font-size-sm, 12px); padding: 3px 14px;
+  border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 6px;
+  background: transparent; color: var(--text-primary, #fff); cursor: pointer;
+}
+.pb-rate-reset:hover { background: rgba(255,255,255,0.1); }
 </style>
