@@ -454,7 +454,8 @@ function createMiniWindow() {
   if (isDev) {
     miniWindow.loadURL('http://localhost:5173/#/mini')
   } else {
-    miniWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: '/mini' })
+    const distFile = path.join(__dirname, '..', 'dist', 'index.html').replace(/\\/g, '/')
+    miniWindow.loadURL('file:///' + distFile + '#/mini')
   }
 
   // 位置记忆(拖动后保存,重启恢复)
@@ -520,7 +521,8 @@ function createLyricWindow() {
   if (isDev) {
     lyricWindow.loadURL('http://localhost:5173/#/lyric')
   } else {
-    lyricWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'), { hash: '/lyric' })
+    const distFile = path.join(__dirname, '..', 'dist', 'index.html').replace(/\\/g, '/')
+    lyricWindow.loadURL('file:///' + distFile + '#/lyric')
   }
 
   // 位置/大小记忆(拖动/缩放后保存,重启恢复)
