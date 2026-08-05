@@ -829,6 +829,10 @@ let spectrumTimer = null
 onMounted(() => {
   setupPvPanelsClickOutside()
   if (playerStore.isPlaying) startSpectrum()
+  // 进入播放页时若当前显示本地歌词,重新读取(删除/外部修改 .lrc 后能立即反映,避免残留旧歌词)
+  if (playerStore.currentSong && playerStore.lyricOrigin === '本地') {
+    playerStore.loadLyrics(playerStore.currentSong)
+  }
   spectrumTimer = setInterval(() => {
     // 仅当 rAF 链意外断开时重启(切 tab 重建 canvas 场景),避免常驻空转
     if (playerStore.isPlaying && !spectrumRAF) startSpectrum()

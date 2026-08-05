@@ -1031,7 +1031,7 @@ function setupIPC() {
           if (fs.existsSync(exact)) return fs.readFileSync(exact, 'utf8')
 
           const files = getLrcFiles(folder)
-          // 收集所有候选，按匹配度排序
+          // 收集所有候选，按匹配度排序(强匹配优先;移除最易张冠李戴的弱匹配)
           const candidates = []
           for (const f of files) {
             const lrcBase = path.basename(f, '.lrc')
@@ -1043,18 +1043,16 @@ function setupIPC() {
             if (normLrc === normSong || normLrcTitle === normTitle) {
               candidates.push({ path: path.join(folder, f), score: 100 })
             }
-            // 歌词名包含歌曲标题，或反过来
+            // 歌词名包含歌曲标题，或反过来(双向包含,较可靠)
             else if (normLrc.includes(normTitle) || normTitle.includes(normLrc)) {
               candidates.push({ path: path.join(folder, f), score: 80 })
             }
-            // 歌词标题包含歌曲名，或反过来
-            else if (normLrcTitle.includes(normSong) || normSong.includes(normLrcTitle)) {
-              candidates.push({ path: path.join(folder, f), score: 60 })
+            // 宽松:歌词提取标题包含歌曲名(仅强匹配无结果时兜底,避免误配其他歌曲)
+            else if (normLrcTitle.includes(normSong) && normLrcTitle.length >= 3) {
+              candidates.push({ path: path.join(folder, f), score: 50 })
             }
-            // 歌曲标题包含歌词文件名（处理 "晴天.lrc" 匹配 "周杰伦 - 晴天.mp3"）
-            else if (normTitle.includes(normLrc) && normLrc.length >= 2) {
-              candidates.push({ path: path.join(folder, f), score: 40 })
-            }
+            // 注意:不再匹配"歌曲标题包含歌词文件名"(score40)——那会让
+            // "晴天.lrc" 误配 "晴天娃娃.mp3" 等,导致删除歌词后仍显示其他歌的歌词
           }
           // 返回得分最高的
           if (candidates.length > 0) {
