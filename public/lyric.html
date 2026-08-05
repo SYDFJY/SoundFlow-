@@ -52,6 +52,7 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div data-a="bg+">透明度 +</div>
   <div class="sep"></div>
   <div data-a="lock">🔒 锁定位置(禁止移动)</div>
+  <div data-a="through">👆 点击穿透(不影响桌面操作)</div>
   <div data-a="pin">📌 置顶切换</div>
   <div class="sep"></div>
   <div data-a="save">💾 保存歌词到文件</div>
@@ -214,12 +215,17 @@ function handleAction(a){
   }
   else if(a==='bg+'){bgAlpha=Math.min(0.9,+(bgAlpha+0.1).toFixed(1));app.style.background=`rgba(0,0,0,${bgAlpha})`;saveSettings();showToast('背景: '+Math.round(bgAlpha*100)+'%')}
   else if(a==='bg-'){bgAlpha=Math.max(0.05,+(bgAlpha-0.1).toFixed(1));app.style.background=`rgba(0,0,0,${bgAlpha})`;saveSettings();showToast('背景: '+Math.round(bgAlpha*100)+'%')}
+  else if(a==='through'){
+    api.lyricClickThrough(true)
+    showToast('已开启点击穿透(点播放栏歌词按钮关闭后重开恢复)')
+  }
   else if(a==='pin'){
     pinned=!pinned;api.lyricPin(pinned);showToast(pinned?'已置顶':'已取消置顶')
   }
   else if(a==='lock'){
     locked=!locked
     document.documentElement.style.webkitAppRegion = locked ? 'no-drag' : 'drag'
+    api.lyricLock(locked)
     showToast(locked?'已锁定位置(不可移动,右键可解锁)':'已解锁(可自由移动)');saveSettings()
   }
   else if(a==='copy'){

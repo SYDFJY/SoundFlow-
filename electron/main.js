@@ -1238,9 +1238,20 @@ function setupIPC() {
     }
   })
 
-  // 歌词窗口内:锁定 = 点击穿透
+  // 歌词窗口内:锁定位置(禁止拖动)
   ipcMain.on('lyric:lock', (event, locked) => {
-    setLyricLocked(!!locked)
+    if (lyricWindow && !lyricWindow.isDestroyed()) lyricWindow.setMovable(!locked)
+  })
+
+  // 歌词窗口:点击穿透(不影响桌面操作;不持久化,关掉重开自动恢复)
+  ipcMain.on('lyric:click-through', (event, on) => {
+    if (lyricWindow && !lyricWindow.isDestroyed()) {
+      try {
+        lyricWindow.setIgnoreMouseEvents(!!on, { forward: true })
+      } catch {
+        lyricWindow.setIgnoreMouseEvents(!!on)
+      }
+    }
   })
 
   // 置顶切换

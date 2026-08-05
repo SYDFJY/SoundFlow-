@@ -72,6 +72,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 桌面歌词(独立 lyric.html)
   lyricToggle: () => ipcRenderer.send('lyric:toggle'),
   lyricLock: (locked) => ipcRenderer.send('lyric:lock', locked),
+  lyricClickThrough: (on) => ipcRenderer.send('lyric:click-through', on),
   lyricPin: (pinned) => ipcRenderer.send('lyric:pin', pinned),
   lyricClose: () => ipcRenderer.send('lyric:close'),
   lyricSeek: (time) => ipcRenderer.send('lyric:seek', time),
@@ -98,7 +99,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:pin', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }
