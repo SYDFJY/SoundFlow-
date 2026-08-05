@@ -872,16 +872,21 @@ async function searchLyric() {
 
 /* ===== 封面模式 ===== */
 .cover-mode {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 32px;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  /* 圆盘与间距随窗口高度自适应,防止小窗口组件被挤出变形 */
+  --disc: clamp(150px, min(32vh, 30vw), 300px);
+  --gap: clamp(8px, 2.6vh, 32px);
+  gap: var(--gap);
 }
 
 .disc-area { display: flex; flex-direction: column; align-items: center; }
 
 .disc-ring {
-  width: 300px; height: 300px; border-radius: 50%;
+  width: var(--disc, 300px); height: var(--disc, 300px); border-radius: 50%;
   border: 6px solid rgba(255,255,255,0.08);
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 @keyframes disc-in {
   from { opacity: 0; transform: scale(0.9); }
@@ -900,7 +905,7 @@ async function searchLyric() {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 .disc-cover {
-  width: 270px; height: 270px; border-radius: 50%; overflow: hidden;
+  width: calc(var(--disc, 300px) - 30px); height: calc(var(--disc, 300px) - 30px); border-radius: 50%; overflow: hidden;
   box-shadow: 0 12px 40px rgba(0,0,0,0.4);
   animation: disc-in 0.5s ease;
 }
@@ -911,7 +916,7 @@ async function searchLyric() {
 }
 
 .song-meta { text-align: center; }
-.song-title { font-size: 26px; font-weight: 700; color: white; margin-bottom: 8px; }
+.song-title { font-size: clamp(18px, 3.4vh, 26px); font-weight: 700; color: white; margin-bottom: 8px; }
 .song-artist { font-size: var(--font-size-lg); color: rgba(255,255,255,0.6); }
 .song-album { font-size: var(--font-size-base); color: rgba(255,255,255,0.4); margin-top: 4px; }
 
@@ -921,21 +926,23 @@ async function searchLyric() {
 }
 
 .lyric-left {
-  width: 280px; flex-shrink: 0;
+  --disc-sm: clamp(110px, 20vh, 180px);
+  width: clamp(190px, 24vw, 280px); flex-shrink: 0;
   display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 20px;
+  align-items: center; justify-content: center; gap: clamp(8px, 2vh, 20px);
   padding: 20px;
 }
 
 .disc-small {
-  width: 180px; height: 180px; border-radius: 50%;
+  width: var(--disc-sm, 180px); height: var(--disc-sm, 180px); border-radius: 50%;
   border: 4px solid rgba(255,255,255,0.08);
   display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .disc-small.spinning { animation: spin 20s linear infinite; }
 
 .disc-cover-small {
-  width: 160px; height: 160px; border-radius: 50%; overflow: hidden;
+  width: calc(var(--disc-sm, 180px) - 20px); height: calc(var(--disc-sm, 180px) - 20px); border-radius: 50%; overflow: hidden;
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 .disc-cover-small img { width: 100%; height: 100%; object-fit: cover; }
@@ -1132,8 +1139,8 @@ async function searchLyric() {
   position: absolute;
   bottom: 76px;
   right: 20px;
-  width: 320px;
-  max-height: 380px;
+  width: min(320px, 88vw);
+  max-height: min(380px, 70vh);
   display: flex;
   flex-direction: column;
   background: rgba(18, 20, 28, 0.94);
@@ -1178,7 +1185,7 @@ async function searchLyric() {
 /* 音效面板(播放页) */
 .eq-panel {
   position: absolute; bottom: 76px; right: 20px;
-  width: 640px; max-height: 480px;
+  width: min(640px, 92vw); max-height: min(480px, 80vh);
   background: rgba(16, 18, 26, 0.96);
   border: 1px solid rgba(255,255,255,0.08);
   border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,0.55);
