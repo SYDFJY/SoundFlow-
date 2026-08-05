@@ -652,10 +652,19 @@ function hexToRgb(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '')
   return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null
 }
-function drawSpectrum() {
+let lastSpecTs = 0
+// 渐变缓存:主题色/高度不变时复用,避免每帧创建 gradient
+let gradCache = { key: '', grad: null }
+function drawSpectrum(ts) {
   const canvas = spectrumCanvas.value
   if (!canvas) return
   const playing = playerStore.isPlaying
+  // 30fps 限帧:视觉仍流畅,主线程占用减半
+  if (ts && ts - lastSpecTs < 33) {
+    spectrumRAF = requestAnimationFrame(drawSpectrum)
+    return
+  }
+  lastSpecTs = ts || 0
   // 不可见(隐藏/切tab)或未播放 → 停止绘制循环,避免空转耗 CPU
   const rect = canvas.getBoundingClientRect()
   if (rect.width === 0 || rect.height === 0 || !playing) {
@@ -680,6 +689,16 @@ function drawSpectrum() {
   const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
   const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff'
   const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
+  // 渐变缓存:key = 颜色+高度,复用渐变对象
+  const gkey = (c.r + ',' + c.g + ',' + c.b) + '@' + height
+  if (gradCache.key !== gkey) {
+    const g = ctx.createLinearGradient(0, height, 0, 0)
+    g.addColorStop(0, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.18)')
+    g.addColorStop(0.7, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.85)')
+    g.addColorStop(1, 'rgba(' + Math.min(255, c.r + 80) + ',' + Math.min(255, c.g + 80) + ',' + Math.min(255, c.b + 80) + ',1)')
+    gradCache = { key: gkey, grad: g }
+  }
+  const grad = gradCache.grad
 
   for (let i = 0; i < BAR_COUNT; i++) {
     let target = 0
@@ -706,10 +725,8 @@ function drawSpectrum() {
     g.addColorStop(0, `rgba(${c.r},${c.g},${c.b},0.18)`)
     g.addColorStop(0.7, `rgba(${c.r},${c.g},${c.b},0.85)`)
     g.addColorStop(1, `rgba(${Math.min(255, c.r + 80)},${Math.min(255, c.g + 80)},${Math.min(255, c.b + 80)},1)`)
-    ctx.fillStyle = g
-    ctx.beginPath()
-    ctx.roundRect(x, y, barW, barH, [barW / 2, barW / 2, 0, 0])
-    ctx.fill()
+    ctx.fillStyle = grad
+    ctx.fillRect(x, y, barW, barH)
     // 峰值亮点(白色小圆点)
     if (barPeaks[i] > 2 && playing) {
       ctx.fillStyle = 'rgba(255,255,255,0.85)'
