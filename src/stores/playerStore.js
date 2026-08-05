@@ -1035,46 +1035,28 @@ export const usePlayerStore = defineStore('player', () => {
     saveQueueState()
   }
 
-  // ===== 变调(变速不变调):ScriptProcessor + SoundTouch 实时管线 =====
+  // ===== 变调(变速不变调):AudioWorklet + SoundTouch(独立线程,不卡主线程) =====
+  let _pitchWorkletLoaded = false
   function createPitchNode() {
     if (!_audioCtx || _pitchNode) return _pitchNode
+    if (!_audioCtx.audioWorklet) return null
     try {
-      const st = new SoundTouch()
-      st.tempo = 1
-      st.rate = 1
-      st.pitchSemitones = pitch.value
-      const sp = _audioCtx.createScriptProcessor(2048, 2, 2)
-      sp.onaudioprocess = (e) => {
-        try {
-          const inL = e.inputBuffer.getChannelData(0)
-          const inR = e.inputBuffer.getChannelData(1)
-          const n = inL.length
-          // L/R 交错喂入 SoundTouch
-          const interleaved = new Float32Array(n * 2)
-          for (let i = 0; i < n; i++) { interleaved[i * 2] = inL[i]; interleaved[i * 2 + 1] = inR[i] }
-          st.inputBuffer.putSamples(interleaved, 0, n)
-          // 触发管道处理(内部按需消费输入缓冲)
-          st.process()
-          const outL = e.outputBuffer.getChannelData(0)
-          const outR = e.outputBuffer.getChannelData(1)
-          outL.fill(0); outR.fill(0)
-          let written = 0
-          while (st.outputBuffer.frameCount > 0 && written < n) {
-            const avail = Math.min(n - written, st.outputBuffer.frameCount)
-            const tmp = new Float32Array(avail * 2)
-            st.outputBuffer.extract(tmp, 0, avail)
-            for (let i = 0; i < avail; i++) {
-              outL[written + i] = tmp[i * 2]
-              outR[written + i] = tmp[i * 2 + 1]
-            }
-            st.outputBuffer.receive(avail)
-            written += avail
-          }
-        } catch {}
-      }
-      _pitchNode = sp
-      _pitchST = st
-      return sp
+      const url = 'pitch-worklet.js' // Vite public → 根路径(打包后 dist/pitch-worklet.js)
+      const load = () => _audioCtx.audioWorklet.addModule(url).then(() => {
+        _pitchWorkletLoaded = true
+        const node = new AudioWorkletNode(_audioCtx, 'pitch-shift-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 1,
+          outputChannelCount: [2]
+        })
+        node.port.postMessage({ type: 'pitch', value: pitch.value })
+        _pitchNode = node
+        // worklet 就绪后重接音频链,让变调生效
+        rebuildAudioChain()
+      }).catch(e => console.error('[变调] worklet 加载失败:', e.message))
+      if (_pitchWorkletLoaded) load()
+      else _audioCtx.audioWorklet.addModule(url).catch(() => {}).then(load).catch(() => {})
+      return _pitchNode
     } catch (e) {
       console.error('[变调] 初始化失败:', e.message)
       return null
@@ -1099,7 +1081,7 @@ export const usePlayerStore = defineStore('player', () => {
     const v = Math.max(-12, Math.min(12, Math.round(semitones)))
     if (v === pitch.value) return
     pitch.value = v
-    if (_pitchST) _pitchST.pitchSemitones = v
+    if (_pitchNode && _pitchNode.port) _pitchNode.port.postMessage({ type: 'pitch', value: v })
     applyPitchToAudio()
     rebuildAudioChain()
     saveSettings()
