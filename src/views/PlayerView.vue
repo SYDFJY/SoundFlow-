@@ -59,8 +59,10 @@
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
         </div>
       </div>
+      </transition>
 
-      <!-- 歌词模式 -->
+      <!-- 歌词模式(独立 transition:transition 只允许单子元素,两个 v-show 必须分开) -->
+      <transition name="mode-fade">
       <div v-show="activeTab !== 'cover'" class="lyric-mode">
         <div class="lyric-left">
           <div class="disc-small" :class="{ spinning: playerStore.isPlaying }">
