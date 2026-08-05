@@ -41,7 +41,6 @@
       </div>
 
       <!-- 封面模式 -->
-      <transition name="mode-fade" mode="out-in">
       <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
@@ -71,22 +70,22 @@
           </div>
         </div>
         <div class="lyric-right">
+          <!-- 歌词来源切换等竖排按钮:absolute 固定右侧栏右上,不随歌词滚动(fixed 受 transform 影响失效,sticky 占位遮挡) -->
+          <div class="lyric-source-switch">
+            <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
+            <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
+            <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
+            <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" title="歌词对齐(居中/左)" @click="toggleLyricAlign">对齐</button>
+            <button class="ls-btn" :class="{ active: lyricEffect }" title="歌词特效(远近模糊/发光)" @click="lyricEffect = !lyricEffect; localStorage.setItem('soundflow_lyric_effect', lyricEffect ? '1' : '0')">✨</button>
+            <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
+            <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
+            <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
+          </div>
+          <!-- 歌词颜色面板:跟随按钮组左侧 -->
+          <div v-if="showColorPanel" class="color-panel" @click.stop>
+            <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
+          </div>
           <div class="lyrics-scroll" ref="lyricsPanel">
-            <!-- 歌词来源切换:本地 / 网易云 / LRCLIB -->
-            <div class="lyric-source-switch">
-              <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
-              <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
-              <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
-              <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" title="歌词对齐(居中/左)" @click="toggleLyricAlign">对齐</button>
-              <button class="ls-btn" :class="{ active: lyricEffect }" title="歌词特效(远近模糊/发光)" @click="lyricEffect = !lyricEffect; localStorage.setItem('soundflow_lyric_effect', lyricEffect ? '1' : '0')">✨</button>
-              <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
-              <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
-              <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
-            </div>
-            <!-- 歌词颜色面板 -->
-            <div v-if="showColorPanel" class="color-panel" @click.stop>
-              <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
-            </div>
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">
               {{ playerStore.lyricOrigin }}歌词
               <button v-if="playerStore.lyricOrigin === '本地'" class="ls-del-btn" title="删除本地歌词" @click="deleteLocalLyric">🗑</button>
@@ -138,7 +137,6 @@
           </div>
         </div>
       </div>
-      </transition>
 
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
       <canvas v-show="activeTab === 'cover'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
@@ -1158,13 +1156,14 @@ async function searchLyric() {
 .song-artist-sm { font-size: var(--font-size-base); color: rgba(255,255,255,0.5); }
 
 .lyric-right {
+  position: relative;
   flex: 1; display: flex; align-items: center; overflow: hidden;
 }
 
 .lyrics-scroll {
   position: relative;
   width: 100%; height: 100%;
-  overflow-y: auto; padding: 0 40px;
+  overflow-y: auto; padding: 0 64px 0 40px;
   scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
@@ -1228,10 +1227,10 @@ async function searchLyric() {
   border-radius: 10px;
 }
 .lyric-source-switch {
-  position: fixed;
-  top: 130px;
-  right: 10px;
-  transform: none;
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
   z-index: 40;
   display: flex;
   flex-direction: column;
@@ -1283,7 +1282,7 @@ async function searchLyric() {
 
 /* 歌词颜色面板 */
 .color-panel {
-  position: fixed;
+  position: absolute;
   top: 50%;
   right: 58px;
   transform: translateY(-50%);

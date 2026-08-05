@@ -280,10 +280,28 @@
           </div>
         </div>
         <div class="setting-item" v-if="customFonts.length">
-          <div class="setting-label"><span class="label-text">已导入字体</span></div>
-          <div v-for="(f, i) in customFonts" :key="f.url" class="custom-font-row">
-            <span class="font-name">{{ f.name }}</span>
-            <button class="setting-btn font-remove" @click="removeCustomFont(i)">删除</button>
+          <div class="setting-label"><span class="label-text">字体文件夹字体(点击应用)</span></div>
+          <div class="font-pick-grid">
+            <button
+              v-for="(f, i) in customFonts"
+              :key="f.url"
+              class="font-pick-card"
+              :class="{ active: currentFont.includes(f.name) }"
+              :style="{ fontFamily: '\"' + f.name + '\"' }"
+              @click="selectFont('&quot;' + f.name + '&quot;')"
+            >{{ f.name }}</button>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label font-collapse" @click="fontExpanded = !fontExpanded">
+            <span class="label-text">已导入字体({{ customFonts.length }})</span>
+            <span class="collapse-arrow">{{ fontExpanded ? '▾' : '▸' }}</span>
+          </div>
+          <div v-show="fontExpanded" class="font-expand-list">
+            <div v-for="(f, i) in customFonts" :key="f.url" class="custom-font-row">
+              <span class="font-name" :style="{ fontFamily: '\"' + f.name + '\"' }">{{ f.name }}</span>
+              <button class="setting-btn font-remove" @click="removeCustomFont(i)">删除</button>
+            </div>
           </div>
         </div>
       </div>
@@ -647,6 +665,7 @@ const systemFonts = [
 ]
 const currentFont = ref(localStorage.getItem('soundflow_font_family') || systemFonts[0].value)
 const customFonts = ref(JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]'))
+const fontExpanded = ref(false) // 已导入字体区展开/收起
 
 function selectFont(family) {
   currentFont.value = family
@@ -879,6 +898,19 @@ select {
 .custom-font-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
 .font-name { font-size: var(--font-size-sm); color: var(--text-primary); }
 .font-remove { padding: 3px 10px; font-size: var(--font-size-xs); }
+/* 字体文件夹字体选择网格 */
+.font-pick-grid { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px 2px; }
+.font-pick-card {
+  padding: 8px 14px; font-size: 14px; color: var(--text-primary);
+  background: var(--bg-card, rgba(255,255,255,0.06)); border: 1px solid var(--border-color);
+  border-radius: 8px; cursor: pointer; transition: all 0.15s; max-width: 100%;
+}
+.font-pick-card:hover { border-color: var(--color-primary); }
+.font-pick-card.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+/* 已导入字体展开区(可滑动) */
+.font-collapse { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; }
+.collapse-arrow { color: var(--text-secondary); font-size: var(--font-size-sm); transition: transform 0.2s; }
+.font-expand-list { max-height: 200px; overflow-y: auto; border-top: 1px dashed var(--border-color); margin-top: 6px; padding: 2px 4px; }
 .font-size-row { display: flex; align-items: center; gap: 10px; }
 .font-size-row input[type="range"] { width: 180px; }
 
