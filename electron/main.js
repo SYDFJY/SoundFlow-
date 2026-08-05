@@ -497,21 +497,21 @@ function createMiniWindow() {
 }
 
 // ========== 桌面歌词窗口 ==========
+// ========== 桌面歌词窗口(独立 lyric.html,参考蓝韵音乐) ==========
 function createLyricWindow() {
-  if (lyricWindow) { lyricWindow.show(); return }
+  if (lyricWindow && !lyricWindow.isDestroyed()) { lyricWindow.show(); return }
 
   const pos = storageData.lyricPos || null
-  // 记忆的尺寸过大(异常/旧值)时回退默认;用户后续拖动会重新记忆
-  let size = storageData.lyricSize || { width: 560, height: 90 }
-  if (!size || size.width > 1000 || size.height > 320) size = { width: 560, height: 90 }
+  const size = storageData.lyricSize || { width: 480, height: 260 }
   lyricWindow = new BrowserWindow({
-    width: size.width || 560,
-    height: size.height || 90,
-    frame: false,
+    width: size.width || 480,
+    height: size.height || 260,
     transparent: true,
+    frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: true,
+    minimizable: false,
     hasShadow: false,
     ...(pos ? { x: pos.x, y: pos.y } : {}),
     webPreferences: {
@@ -522,10 +522,9 @@ function createLyricWindow() {
   })
 
   if (isDev) {
-    lyricWindow.loadURL('http://localhost:5173/#/lyric')
+    lyricWindow.loadURL('http://localhost:5173/lyric.html')
   } else {
-    const distFile = path.join(__dirname, '..', 'dist', 'index.html').replace(/\\/g, '/')
-    lyricWindow.loadURL('file:///' + distFile + '#/lyric')
+    lyricWindow.loadFile(path.join(__dirname, '..', 'dist', 'lyric.html'))
   }
 
   // 加载完成后重放最近一次歌词数据(否则打开时无歌词)
@@ -1225,47 +1224,67 @@ function setupIPC() {
     else createMiniWindow()
   })
 
-  // ========== 桌面歌词 ==========
-  // 主窗口按钮三态:1=打开(解锁) → 2=锁定(穿透) → 0=关闭
-  ipcMain.on('lyric:toggle', (event, state) => {
-    if (state === 1) {
-      // 打开(解锁)
-      lyricLocked = false
-      createLyricWindow()
-      setLyricLocked(false)
-    } else if (state === 2) {
-      // 锁定(穿透)
-      setLyricLocked(true)
+  // ========== 桌面歌词(参考蓝韵:独立 lyric.html) ==========
+  // 按钮 toggle:开/关
+  ipcMain.on('lyric:toggle', () => {
+    if (lyricWindow && !lyricWindow.isDestroyed()) {
+      lyricWindow.close(); lyricWindow = null
     } else {
-      // 0 = 关闭
-      if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
+      createLyricWindow()
     }
   })
 
-  // 歌词窗口内:锁定/解锁
+  // 歌词窗口内:锁定 = 点击穿透
   ipcMain.on('lyric:lock', (event, locked) => {
     setLyricLocked(!!locked)
   })
 
-  // 歌词窗口关闭按钮
+  // 置顶切换
+  ipcMain.on('lyric:pin', (event, pinned) => {
+    if (lyricWindow && !lyricWindow.isDestroyed()) lyricWindow.setAlwaysOnTop(!!pinned)
+  })
+
+  // 歌词窗口关闭
   ipcMain.on('lyric:close', () => {
     if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
   })
 
-  // 主窗口推送播放/歌词数据到歌词窗口
+  // 主窗口推送歌词数据到歌词窗口(lines + 当前句索引)
   ipcMain.on('lyric:update', (event, data) => {
     lastLyricData = data
-    if (lyricWindow) lyricWindow.webContents.send('lyric:update', data)
+    if (lyricWindow && !lyricWindow.isDestroyed()) {
+      lyricWindow.webContents.send('lyric:update', data)
+    }
   })
 
-  // 歌词窗口请求样式(主窗口存一份,重启保留)
-  ipcMain.on('lyric:style', (event, style) => {
+  // 主窗口推送当前句索引(时间轴推进,节流由渲染端控制)
+  ipcMain.on('lyric:index', (event, idx) => {
+    if (lyricWindow && !lyricWindow.isDestroyed()) {
+      lyricWindow.webContents.send('lyric:index', idx)
+    }
+  })
+
+  // 歌词窗口:点击歌词行跳转 → 转发主窗口
+  ipcMain.on('lyric:seek', (event, time) => {
+    if (mainWindow) mainWindow.webContents.send('lyric:seek', time)
+  })
+
+  // 歌词窗口:保存歌词到文件
+  ipcMain.on('lyric:save', async (event, text) => {
     try {
-      storageData.lyricStyle = style
-      saveStorage(true)
+      const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
+      const { canceled, filePath } = await dialog.showSaveDialog(win, {
+        title: '保存歌词文件',
+        defaultPath: 'lyrics.lrc',
+        filters: [{ name: 'LRC 歌词', extensions: ['lrc'] }]
+      })
+      if (!canceled && filePath) {
+        const fs = require('fs')
+        fs.writeFileSync(filePath, text, 'utf-8')
+        if (lyricWindow) lyricWindow.webContents.send('lyric:save-done', true)
+      }
     } catch {}
   })
-  ipcMain.handle('lyric:get-style', () => storageData.lyricStyle || null)
 
   ipcMain.on('mini:update', (event, data) => {
     if (miniWindow) miniWindow.webContents.send('mini:update', data)

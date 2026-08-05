@@ -1,5 +1,5 @@
 <template>
-  <div class="app" :class="[`theme-${appStore.theme}`, { 'app-lyric': isLyricWindow }]">
+  <div class="app" :class="[`theme-${appStore.theme}`]">
     <!-- 播放器全屏模式：不显示侧边栏、顶部栏、底部播放栏 -->
     <template v-if="isFullscreen">
       <router-view v-slot="{ Component }">
@@ -52,10 +52,8 @@ const playerStore = usePlayerStore()
 
 // 播放器页面和歌词悬浮窗全屏显示
 const isFullscreen = computed(() => {
-  return route.path === '/player' || route.path === '/mini' || route.path === '/lyric'
+  return route.path === '/player' || route.path === '/mini'
 })
-// 桌面歌词窗口:壳全透明(背景透出到系统桌面)
-const isLyricWindow = computed(() => route.path === '/lyric')
 
 let _autoSaveTimer = null
 
@@ -105,6 +103,10 @@ function onGlobalKey(e) {
 
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKey)
+  // 桌面歌词窗口点击歌词行 → 跳转播放进度
+  if (window.electronAPI && window.electronAPI.on) {
+    window.electronAPI.on('lyric:seek', (time) => { playerStore.seek(time) })
+  }
   appStore.loadSettings()
   musicStore.restoreLibrary()
   musicStore.initPlayListener()
@@ -199,10 +201,6 @@ onUnmounted(() => {
   flex-direction: column;
   background: var(--bg-primary);
   overflow: hidden;
-}
-/* 桌面歌词窗口:整个壳透明,透出系统桌面 */
-.app.app-lyric {
-  background: transparent !important;
 }
 
 .app-body {

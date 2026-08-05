@@ -69,12 +69,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleMiniWindow: () => ipcRenderer.send('mini:toggle'),
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
   // 桌面歌词
-  lyricToggle: (state) => ipcRenderer.send('lyric:toggle', state),
+  // 桌面歌词(独立 lyric.html)
+  lyricToggle: () => ipcRenderer.send('lyric:toggle'),
   lyricLock: (locked) => ipcRenderer.send('lyric:lock', locked),
+  lyricPin: (pinned) => ipcRenderer.send('lyric:pin', pinned),
   lyricClose: () => ipcRenderer.send('lyric:close'),
+  lyricSeek: (time) => ipcRenderer.send('lyric:seek', time),
+  lyricSave: (text) => ipcRenderer.send('lyric:save', text),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
-  setLyricStyle: (style) => ipcRenderer.send('lyric:style', style),
-  getLyricStyle: () => ipcRenderer.invoke('lyric:get-style'),
+  sendLyricIndex: (idx) => ipcRenderer.send('lyric:index', idx),
 
   // 歌单导入导出
   exportPlaylist: (name, data) => ipcRenderer.invoke('export-playlist', name, data),
@@ -82,7 +85,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'app:before-close', 'update-available', 'external-command']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)
@@ -95,7 +98,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:close', 'lyric:update', 'lyric:style']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:pin', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }

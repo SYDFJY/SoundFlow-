@@ -636,18 +636,28 @@ export const usePlayerStore = defineStore('player', () => {
   function sendLyricUpdate() {
     if (!window.electronAPI || !window.electronAPI.sendLyricUpdate) return
     try {
+      const lines = JSON.parse(JSON.stringify(lyrics.value)).map(l => ({ time: l.time, text: l.text }))
       window.electronAPI.sendLyricUpdate({
         title: currentSong.value?.title || '',
         artist: currentSong.value?.artist || '',
-        lyrics: JSON.parse(JSON.stringify(lyrics.value)),
+        lines,
+        currentIdx: currentLyricIndex.value,
         currentTime: currentTime.value || 0,
         playing: isPlaying.value
       })
+      // 同步当前句索引
+      if (window.electronAPI.sendLyricIndex) window.electronAPI.sendLyricIndex(currentLyricIndex.value)
     } catch {}
   }
   watch(currentSong, () => sendLyricUpdate())
   watch(lyrics, () => sendLyricUpdate())
   watch(isPlaying, () => sendLyricUpdate())
+  // 当前句索引变化 → 推送桌面歌词高亮(节流:歌词切换频率本身低)
+  watch(currentLyricIndex, (idx) => {
+    if (window.electronAPI && window.electronAPI.sendLyricIndex) {
+      window.electronAPI.sendLyricIndex(idx)
+    }
+  })
 
   // ========== 系统媒体控制 (MediaSession / SMTC) ==========
   // Windows 通知栏 / 音量浮层 / 锁屏上的播放控件,相当于 Android 的 MediaSession
@@ -906,11 +916,11 @@ export const usePlayerStore = defineStore('player', () => {
     saveSettings()
   }
 
-  // 桌面歌词:打开(解锁) → 锁定 → 关闭 循环
+  // 桌面歌词:开/关(锁定等操作在歌词窗口右键菜单)
   function cycleDesktopLyric() {
-    desktopLyricState.value = (desktopLyricState.value + 1) % 3
+    desktopLyricState.value = desktopLyricState.value === 0 ? 1 : 0
     if (window.electronAPI && window.electronAPI.lyricToggle) {
-      window.electronAPI.lyricToggle(desktopLyricState.value)
+      window.electronAPI.lyricToggle()
     }
   }
 
