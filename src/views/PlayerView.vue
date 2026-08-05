@@ -1076,9 +1076,9 @@ async function searchLyric() {
   to { opacity: 1; transform: translateY(0); }
 }
 /* tab 切换过渡 */
-.mode-fade-enter-active, .mode-fade-leave-active { transition: opacity 0.22s ease, transform 0.22s ease; }
-.mode-fade-enter-from { opacity: 0; transform: translateY(10px); }
-.mode-fade-leave-to { opacity: 0; transform: translateY(-10px); }
+.mode-fade-enter-active, .mode-fade-leave-active { transition: opacity 0.15s ease; }
+.mode-fade-enter-from { opacity: 0; }
+.mode-fade-leave-to { opacity: 0; }
 .disc-ring.spinning { animation: spin 20s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
