@@ -7,6 +7,8 @@ export default {
   'nav.artists': '歌手',
   'nav.albums': '专辑',
   'nav.folders': '文件夹',
+  'nav.stats': '统计',
+  'nav.recommend': '推荐',
   'nav.history': '播放历史',
   'nav.settings': '设置',
   'nav.library': '我的音乐',

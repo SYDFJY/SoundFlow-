@@ -16,6 +16,14 @@
           <History :size="16" />
           <span>{{ t('nav.history') }}</span>
         </router-link>
+        <router-link to="/stats" class="menu-item" :class="{ active: $route.path === '/stats' }">
+          <BarChart3 :size="16" />
+          <span>{{ t('nav.stats') }}</span>
+        </router-link>
+        <router-link to="/recommend" class="menu-item" :class="{ active: $route.path === '/recommend' }">
+          <Sparkles :size="16" />
+          <span>{{ t('nav.recommend') }}</span>
+        </router-link>
       </div>
 
       <div class="menu-section">
@@ -108,7 +116,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import Sortable from 'sortablejs'
-import { Home, Heart, History, Users, Disc3, ListMusic, FolderPlus } from '@lucide/vue'
+import { Home, Heart, History, Users, Disc3, ListMusic, FolderPlus, BarChart3, Sparkles } from '@lucide/vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 

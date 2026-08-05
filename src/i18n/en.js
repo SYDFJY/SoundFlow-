@@ -7,6 +7,8 @@ export default {
   'nav.artists': 'Artists',
   'nav.albums': 'Albums',
   'nav.folders': 'Folders',
+  'nav.stats': 'Stats',
+  'nav.recommend': 'For You',
   'nav.history': 'History',
   'nav.settings': 'Settings',
   'nav.library': 'My Music',
