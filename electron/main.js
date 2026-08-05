@@ -1122,6 +1122,7 @@ function setupIPC() {
     // 并发翻译(每批 5 行并行),显著快于串行
     const CONCURRENCY = 5
     let nextIdx = 0
+    let quotaHit = false
     async function worker() {
       while (true) {
         const i = nextIdx++
@@ -1133,13 +1134,20 @@ function setupIPC() {
           const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
           if (!res.ok) continue
           const data = await res.json()
-          results[i] = (data?.responseData?.translatedText || '').trim()
+          const text = (data?.responseData?.translatedText || '').trim()
+          // MyMemory 免费配额耗尽(WARNING)标记,整段返回配额错误
+          if (text.includes('MYMEMORY WARNING')) {
+            quotaHit = true
+            continue
+          }
+          results[i] = text
         } catch {
           // 单行失败留空,不影响其他行
         }
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, lines.length) }, worker))
+    if (quotaHit && results.every(r => !r)) return { error: 'quota' }
     return results
   })
 

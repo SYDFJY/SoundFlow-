@@ -651,6 +651,12 @@ export const usePlayerStore = defineStore('player', () => {
       })
       // 竞态保护:翻译期间可能已切歌
       if (currentSong.value !== reqSong) return
+      // 免费配额耗尽:友好提示 + 引导配置 DeepSeek
+      if (result && result.error === 'quota') {
+        translations.value = []
+        if (window.$toast) window.$toast?.('翻译服务今日免费额度已用完,可在 设置→歌词 中填写 DeepSeek Key 继续翻译', 'warning')
+        return
+      }
       translations.value = Array.isArray(result) ? result : []
       _translationCache.set(song.path, translations.value)
       _saveTransCache()
