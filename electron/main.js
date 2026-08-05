@@ -1218,18 +1218,18 @@ function setupIPC() {
   })
 
   // ========== 桌面歌词 ==========
-  // 主窗口按钮三态:打开(解锁) → 锁定 → 关闭
+  // 主窗口按钮三态:1=打开(解锁) → 2=锁定(穿透) → 0=关闭
   ipcMain.on('lyric:toggle', (event, state) => {
-    if (state === 0) {
+    if (state === 1) {
       // 打开(解锁)
       lyricLocked = false
       createLyricWindow()
       setLyricLocked(false)
-    } else if (state === 1) {
+    } else if (state === 2) {
       // 锁定(穿透)
       setLyricLocked(true)
     } else {
-      // 关闭
+      // 0 = 关闭
       if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
     }
   })
