@@ -400,7 +400,7 @@ function setupPvPanelsClickOutside() {
 function onPvPanelDocClick(e) {
   // 面板内 / 触发按钮上点击不关闭
   if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .vol-pop, .rate-panel, .pitch-panel') ||
-      e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, [data-queue-toggle]')) return
+      e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, [data-queue-toggle], .ls-btn')) return
   showQueuePanel.value = false
   showEqPanel.value = false
   showBgPanel.value = false
