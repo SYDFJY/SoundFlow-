@@ -31,6 +31,7 @@ let mainWindow = null
 let miniWindow = null
 let lyricWindow = null
 let lyricLocked = false
+let lastLyricData = null
 let tray = null
 
 // ========== 存储 ==========
@@ -500,10 +501,10 @@ function createLyricWindow() {
   if (lyricWindow) { lyricWindow.show(); return }
 
   const pos = storageData.lyricPos || null
-  const size = storageData.lyricSize || { width: 700, height: 130 }
+  const size = storageData.lyricSize || { width: 560, height: 90 }
   lyricWindow = new BrowserWindow({
-    width: size.width || 700,
-    height: size.height || 130,
+    width: size.width || 560,
+    height: size.height || 90,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -524,6 +525,11 @@ function createLyricWindow() {
     const distFile = path.join(__dirname, '..', 'dist', 'index.html').replace(/\\/g, '/')
     lyricWindow.loadURL('file:///' + distFile + '#/lyric')
   }
+
+  // 加载完成后重放最近一次歌词数据(否则打开时无歌词)
+  lyricWindow.webContents.once('did-finish-load', () => {
+    if (lastLyricData) lyricWindow.webContents.send('lyric:update', lastLyricData)
+  })
 
   // 位置/大小记忆(拖动/缩放后保存,重启恢复)
   let posSaveTimer = null
@@ -1246,6 +1252,7 @@ function setupIPC() {
 
   // 主窗口推送播放/歌词数据到歌词窗口
   ipcMain.on('lyric:update', (event, data) => {
+    lastLyricData = data
     if (lyricWindow) lyricWindow.webContents.send('lyric:update', data)
   })
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="app" :class="[`theme-${appStore.theme}`]">
+  <div class="app" :class="[`theme-${appStore.theme}`, { 'app-lyric': isLyricWindow }]">
     <!-- 播放器全屏模式：不显示侧边栏、顶部栏、底部播放栏 -->
     <template v-if="isFullscreen">
       <router-view v-slot="{ Component }">
@@ -54,6 +54,8 @@ const playerStore = usePlayerStore()
 const isFullscreen = computed(() => {
   return route.path === '/player' || route.path === '/mini' || route.path === '/lyric'
 })
+// 桌面歌词窗口:壳全透明(背景透出到系统桌面)
+const isLyricWindow = computed(() => route.path === '/lyric')
 
 let _autoSaveTimer = null
 
@@ -197,6 +199,10 @@ onUnmounted(() => {
   flex-direction: column;
   background: var(--bg-primary);
   overflow: hidden;
+}
+/* 桌面歌词窗口:整个壳透明,透出系统桌面 */
+.app.app-lyric {
+  background: transparent !important;
 }
 
 .app-body {
