@@ -83,6 +83,7 @@
           </div>
           <!-- 歌词颜色面板:跟随按钮组左侧 -->
           <div v-if="showColorPanel" class="color-panel" @click.stop>
+            <div class="color-panel-title">歌词颜色</div>
             <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
           </div>
           <div class="lyrics-scroll" ref="lyricsPanel">
@@ -1287,15 +1288,19 @@ async function searchLyric() {
   top: 50%;
   right: 58px;
   transform: translateY(-50%);
-  z-index: 40;
+  z-index: 999;
   display: flex;
   flex-direction: column;
   gap: 8px;
   padding: 10px 8px;
-  background: rgba(16, 18, 26, 0.95);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(16, 18, 26, 0.97);
+  border: 1px solid rgba(255,255,255,0.14);
   border-radius: 12px;
   box-shadow: 0 12px 36px rgba(0,0,0,0.5);
+}
+.color-panel-title {
+  font-size: 11px; color: rgba(255,255,255,0.7); text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 2px;
 }
 .color-dot {
   width: 22px; height: 22px; border-radius: 50%;
