@@ -15,6 +15,17 @@ export const usePlayerStore = defineStore('player', () => {
   const isMuted = ref(false)
   const _preMuteVolume = ref(0.8) // 静音前的音量
   const playMode = ref('list')
+  // 切歌通知卡片状态(应用内,替代系统横幅)
+  const songNotify = ref({ visible: false, title: '', artist: '', coverUrl: '' })
+  let songNotifyTimer = null
+  function showSongNotify(song) {
+    try {
+      if (!song || localStorage.getItem('soundflow_song_notify') !== '1') return
+      songNotify.value = { visible: true, title: song.title || '', artist: song.artist || '', coverUrl: song.coverUrl || '' }
+      clearTimeout(songNotifyTimer)
+      songNotifyTimer = setTimeout(() => { songNotify.value.visible = false }, 4000)
+    } catch {}
+  }
   const lyrics = ref([])
   const currentLyricIndex = ref(-1)
   const playbackRate = ref(1.0)
@@ -537,14 +548,8 @@ export const usePlayerStore = defineStore('player', () => {
     currentSong.value = song
     isBuffering.value = true
 
-    // 切歌系统通知(设置开关,默认关)
-    if (window.electronAPI?.send) {
-      try {
-        if (localStorage.getItem('soundflow_song_notify') === '1') {
-          window.electronAPI.send('notify-song', { title: song.title || '', artist: song.artist || '' })
-        }
-      } catch {}
-    }
+    // 切歌通知(设置开关,默认关):应用内卡片(封面+歌名+歌手),替代系统横幅
+    showSongNotify(song)
 
     // 是否允许恢复记忆:非手动选择 且 非随机模式 且 该歌有记忆记录
     _pendingRestore = !fromBeginning && playMode.value !== 'random'
@@ -1385,6 +1390,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   return {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
+    songNotify,
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
     showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,

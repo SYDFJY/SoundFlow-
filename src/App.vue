@@ -29,6 +29,7 @@
       <PlayerBar />
     </template>
     <ToastHost />
+    <SongNotifyCard />
     <!-- 快捷键帮助面板 -->
     <teleport to="body">
       <div v-if="showShortcutHelp" class="shortcut-help-mask" @click.self="showShortcutHelp = false">
@@ -79,6 +80,7 @@ import TopBar from '@/components/TopBar.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import PlayerBar from '@/components/PlayerBar.vue'
 import ToastHost from '@/components/ToastHost.vue'
+import SongNotifyCard from '@/components/SongNotifyCard.vue'
 import { toast, toastState } from '@/composables/useToast'
 
 // 全局 Toast 入口:任意组件/普通 JS 均可 window.$toast(...)
