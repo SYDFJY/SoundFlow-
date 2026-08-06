@@ -616,6 +616,7 @@ function createMainWindow() {
   mainWindow.on('close', (e) => {
     // 退出流程中直接放行
     if (app.isQuitting) return
+    log.info('[exit] mainWindow close 事件,closeAction=' + (storageData.closeAction || 'minimize'))
     // 先阻止默认关闭,根据用户设置决定:exit 真退出 / minimize 隐藏到托盘
     e.preventDefault()
     // 用主进程已持久化的 closeAction 判断(渲染进程通过 storeSet('closeAction') 同步),避免 sendSync 阻塞
@@ -635,6 +636,7 @@ function createMainWindow() {
   })
 
   mainWindow.on('closed', () => {
+    log.info('[exit] mainWindow closed')
     mainWindow = null
     if (miniWindow) { miniWindow.close(); miniWindow = null }
     if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
@@ -2148,6 +2150,7 @@ ipcMain.handle('check-updates', async () => {
 })
 
 app.whenReady().then(async () => {
+  log.info('[exit] app ready,启动初始化开始')
   await ensureParseFile()
   detectFFprobe()
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
@@ -2174,7 +2177,14 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  log.info('[exit] window-all-closed → quit')
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 退出追踪:任何退出路径都留日志(排查间歇性闪退)
+app.on('before-quit', () => log.info('[exit] before-quit'))
+app.on('child-process-gone', (e, details) => {
+  log.error('[exit] child-process-gone', details && details.type, details && details.reason, details && details.exitCode)
 })
 
 app.on('activate', () => {
