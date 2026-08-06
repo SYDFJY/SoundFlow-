@@ -70,23 +70,11 @@ let tray = null
 // Windows 上锁可能因上次异常退出未及时释放而误判"已有实例",直接退出会表现为闪退。
 // 因此:失败 → 等 2s 重试 → 仍失败则继续运行(宁可多实例,不可闪退)
 const gotLock = app.requestSingleInstanceLock()
-let isPrimaryInstance = true
 if (!gotLock) {
-  isPrimaryInstance = false
-  setTimeout(() => {
-    try {
-      if (app.requestSingleInstanceLock()) {
-        isPrimaryInstance = true
-        log.info('[单实例] 重试获得锁成功')
-      } else {
-        log.warn('[单实例] 重试仍拿不到锁,继续运行(可能已有其他实例)')
-        isPrimaryInstance = true
-      }
-    } catch (_) {
-      log.warn('[单实例] 锁检查异常,继续运行')
-      isPrimaryInstance = true
-    }
-  }, 2000)
+  // 已有实例在运行:立即退出(不初始化、不闪窗口)。
+  // 第一实例会收到 second-instance 事件并唤起主窗口,用户无感。
+  // Windows 进程退出时锁句柄自动释放,不存在残留误判导致"无实例却退出"。
+  process.exit(0)
 } else {
   app.on('second-instance', () => {
     if (mainWindow) {
