@@ -9,6 +9,8 @@ const os = require('os')
 const crypto = require('crypto')
 const { execFile } = require('child_process')
 const log = require('electron-log')
+// 高分屏支持:强制开启(默认即 1,显式声明防止个别环境被降级;零运行时负担)
+app.commandLine.appendSwitch('high-dpi-support', '1')
 // 禁用 GPU 硬件加速:Windows 上 GPU/合成器崩溃是无痕闪退(无日志/无崩溃事件)的头号原因,
 // 尤其在透明窗口、封面大图解码、频谱动画场景;软件合成换取稳定性
 app.disableHardwareAcceleration()
@@ -309,8 +311,8 @@ const coverUrlCache = new Map()
 function coverDir() { return path.join(app.getPath('userData'), 'covers') }
 function coverPathFor(songPath) {
   const hash = crypto.createHash('md5').update(songPath).digest('hex').slice(0, 16)
-  // 文件名带尺寸标记:封面从 256px 升级到 512px 后旧缓存自动失效
-  return path.join(coverDir(), hash + '-512.jpg')
+  // 文件名带尺寸标记:封面从 512px 升级到 768px 后旧缓存自动失效
+  return path.join(coverDir(), hash + '-768.jpg')
 }
 
 // 把封面字节写为文件,返回 file:// URL;失败返回 null
@@ -323,8 +325,8 @@ function saveCoverFile(songPath, buffer) {
     let img = nativeImage.createFromBuffer(buffer)
     if (img.isEmpty()) return null
     const size = img.getSize()
-    // 封面 512px:播放页大圆盘与背景清晰不糊
-    if (size.width > 512) img = img.resize({ width: 512 })
+    // 封面 768px:播放页大圆盘与背景封面更清晰(仅播放时加载 1 张,负担极小)
+    if (size.width > 768) img = img.resize({ width: 768 })
     fs.writeFileSync(fp, img.toJPEG(88))
     return `file:///${fp.replace(/\\/g, '/')}`
   } catch (e) {
