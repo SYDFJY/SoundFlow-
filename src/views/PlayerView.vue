@@ -314,8 +314,8 @@
                 <h3>保存为预设</h3>
                 <input v-model="saveEqName" class="eq-name-input" placeholder="输入预设名称,如:我的最爱" @keyup.enter="confirmSaveEq" />
                 <div class="eq-save-actions">
-                  <button class="sec-btn" @click="showSaveEqModal = false">取消</button>
-                  <button class="sec-btn" @click="confirmSaveEq">保存</button>
+                  <button class="btn--ghost btn--sm" @click="showSaveEqModal = false">取消</button>
+                  <button class="btn btn--sm" @click="confirmSaveEq">保存</button>
                 </div>
               </div>
             </div>

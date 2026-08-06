@@ -26,14 +26,14 @@
           <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
         </button>
-        <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev')">
+        <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + ' (Ctrl+←)'">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
         </button>
-        <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
+        <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="(playerStore.isPlaying ? '暂停' : '播放') + ' (空格)'">
           <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
         </button>
-        <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next')">
+        <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + ' (Ctrl+→)'">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
         </button>
         <!-- 倍速(自定义面板) -->
@@ -60,7 +60,8 @@
       </div>
       <div class="player-progress">
         <span class="time-current">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
-        <div class="progress-bar" ref="progressBar" @mousedown="onProgressMouseDown" @click="onProgressClick">
+        <div class="progress-bar" ref="progressBar" @mousedown="onProgressMouseDown" @click="onProgressClick" @mousemove="onProgressHover" @mouseleave="hoverTime = null">
+          <div class="progress-hover-time" v-show="hoverTime !== null" :style="{ left: hoverX + 'px' }">{{ hoverTime }}</div>
           <div class="progress-track">
             <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
             <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
@@ -104,8 +105,8 @@
       </button>
 
       <!-- 音量:点击弹出竖直滑块 -->
-      <div class="volume-control">
-        <button class="right-btn" :class="{ active: volExpanded }" @click="volExpanded = !volExpanded" :title="t('player.volume')">
+      <div class="volume-control" @wheel.prevent="onVolWheel">
+        <button class="right-btn" :class="{ active: volExpanded }" :title="t('player.volume')" @click="volExpanded = !volExpanded">
           <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
           <svg v-else-if="playerStore.volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
@@ -113,6 +114,10 @@
         <transition name="vol-fade">
           <div v-if="volExpanded" class="vol-pop">
             <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+            <button class="vol-mute" :title="playerStore.isMuted ? '取消静音' : '静音'" @click="playerStore.toggleMute()">
+              <svg v-if="playerStore.isMuted" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+              <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+            </button>
           </div>
         </transition>
       </div>
@@ -274,7 +279,10 @@ const isFav = computed(() => playerStore.currentSong ? musicStore.isFavorite(pla
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
 const playModeLabel = computed(() => {
   const labels = { list: '列表播放', repeat: '列表循环', repeatOne: '单曲循环', random: '随机播放' }
-  return labels[playerStore.playMode] || ''
+  const order = ['list', 'repeat', 'repeatOne', 'random']
+  const cur = playerStore.playMode
+  const next = order[(order.indexOf(cur) + 1) % order.length]
+  return `当前：${labels[cur] || ''} → 点击切换：${labels[next] || ''}`
 })
 
 function toggleFav() {
@@ -294,6 +302,17 @@ function onProgressClick(e) {
   playerStore.seek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * playerStore.duration)
 }
 
+// 进度条悬停时间预览
+const hoverTime = ref(null)
+const hoverX = ref(0)
+function onProgressHover(e) {
+  if (!progressBar.value || !playerStore.duration) return
+  const rect = progressBar.value.getBoundingClientRect()
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+  hoverTime.value = playerStore.formatTime(ratio * playerStore.duration)
+  hoverX.value = Math.min(Math.max(e.clientX - rect.left, 24), rect.width - 24)
+}
+
 function onProgressMouseDown(e) {
   onProgressClick(e)
   const onMove = (ev) => onProgressClick(ev)
@@ -304,6 +323,10 @@ function onProgressMouseDown(e) {
 
 const volExpanded = ref(false)
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
+function onVolWheel(e) {
+  const delta = e.deltaY > 0 ? -0.05 : 0.05
+  playerStore.setVolume(Math.min(1, Math.max(0, playerStore.volume + delta)))
+}
 
 function setTimer(minutes) {
   playerStore.setSleepTimer(minutes)
@@ -356,6 +379,19 @@ function setCustomTimer() {
 .ctrl-btn svg { width: 18px; height: 18px; }
 .mode-icon { font-size: var(--font-size-lg); }
 .rate-btn { width: auto; padding: 0 8px; border-radius: var(--radius-sm); font-size: var(--font-size-xs); font-weight: 600; color: var(--color-primary); min-width: 36px; }
+.progress-hover-time {
+  position: absolute;
+  bottom: 22px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font-size: 11px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
 .ctrl-btn--play { width: 40px; height: 40px; background: var(--color-primary); color: white !important; }
 .ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); }
 .ctrl-btn--play svg { width: 20px; height: 20px; }
@@ -386,7 +422,15 @@ function setCustomTimer() {
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35);
   z-index: 60;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
+.vol-mute {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.vol-mute:hover { background: var(--bg-hover); color: var(--text-primary); }
 .vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
 .vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
 .vol-slider {

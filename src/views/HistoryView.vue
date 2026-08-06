@@ -1,7 +1,7 @@
 <template>
   <div class="history-view">
     <div class="view-header">
-      <button class="back-btn" @click="$router.push('/stats')">← 返回统计</button>
+      <button class="btn--ghost" @click="$router.push('/stats')">← 返回统计</button>
       <div class="header-left">
         <h1 class="header-title">{{ t('history.title') }}</h1>
       </div>
@@ -10,7 +10,7 @@
           <button class="tab-btn" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">播放记录</button>
           <button class="tab-btn" :class="{ active: activeTab === 'ranking' }" @click="activeTab = 'ranking'">{{ t('history.ranking') }}</button>
         </div>
-        <button v-if="activeTab === 'history' && musicStore.history.length" class="clear-btn" @click="clearHistory">清空</button>
+        <button v-if="activeTab === 'history' && musicStore.history.length" class="btn--ghost btn--sm btn--danger" @click="clearHistory">清空</button>
       </div>
     </div>
 
@@ -53,8 +53,8 @@
     <!-- 播放排行 -->
     <div v-else class="view-content">
       <div class="ranking-controls">
-        <button class="rank-btn" :class="{ active: rankMode === 'count' }" @click="rankMode = 'count'">{{ t('history.byCount') }}</button>
-        <button class="rank-btn" :class="{ active: rankMode === 'recent' }" @click="rankMode = 'recent'">{{ t('history.byRecent') }}</button>
+        <button class="chip" :class="{ active: rankMode === 'count' }" @click="rankMode = 'count'">{{ t('history.byCount') }}</button>
+        <button class="chip" :class="{ active: rankMode === 'recent' }" @click="rankMode = 'recent'">{{ t('history.byRecent') }}</button>
       </div>
       <div class="ranking-list" v-if="rankedSongs.length > 0">
         <div v-for="(item, idx) in rankedSongs" :key="item.path" class="rank-item" @dblclick="playAt(idx)">

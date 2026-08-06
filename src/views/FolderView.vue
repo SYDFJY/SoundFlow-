@@ -5,22 +5,22 @@
       <div class="section-header">
         <h2 class="section-title">🎵 音乐扫描目录</h2>
         <span class="section-count">{{ musicStore.scanFolders.length }} 个</span>
-        <button class="add-btn" @click="addFolder">添加目录</button>
+        <button class="btn" @click="addFolder">添加目录</button>
       </div>
       <div v-if="musicStore.scanFolders.length === 0" class="empty-state">
         <div class="empty-icon">📁</div>
         <div class="empty-text">还没有添加音乐扫描目录</div>
-        <button class="add-btn" @click="addFolder">添加目录</button>
+        <button class="btn" @click="addFolder">添加目录</button>
       </div>
       <div v-else class="folder-list">
         <div v-for="folder in musicStore.scanFolders" :key="folder" class="folder-item">
           <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
           <span class="folder-path text-ellipsis">{{ folder }}</span>
           <div class="folder-actions">
-            <button class="folder-btn" @click="refreshFolder(folder)" title="刷新">
+            <button class="icon-btn" @click="refreshFolder(folder)" title="刷新">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             </button>
-            <button class="folder-btn folder-btn--danger" @click="removeFolder(folder)" title="移除">
+            <button class="icon-btn icon-btn--danger" @click="removeFolder(folder)" title="移除">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -33,7 +33,7 @@
       <div class="section-header">
         <h2 class="section-title">📝 歌词文件夹</h2>
         <span class="section-count">{{ musicStore.lyricFolders.length }} 个</span>
-        <button class="add-btn" @click="addLyricFolder">添加歌词文件夹</button>
+        <button class="btn" @click="addLyricFolder">添加歌词文件夹</button>
       </div>
       <div v-if="musicStore.lyricFolders.length === 0" class="empty-state">
         <div class="empty-icon">📄</div>
@@ -44,10 +44,10 @@
           <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
           <span class="folder-path text-ellipsis">{{ folder }}</span>
           <div class="folder-actions">
-            <button class="folder-btn" @click="openLyricFolder(folder)" title="打开">
+            <button class="icon-btn" @click="openLyricFolder(folder)" title="打开">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </button>
-            <button class="folder-btn folder-btn--danger" @click="removeLyricFolder(folder)" title="移除">
+            <button class="icon-btn icon-btn--danger" @click="removeLyricFolder(folder)" title="移除">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -60,7 +60,7 @@
       <div class="section-header">
         <h2 class="section-title">🔤 字体文件夹</h2>
         <span class="section-count">{{ fontCount }} 个已导入字体</span>
-        <button class="add-btn" @click="openFontsDir">打开字体文件夹</button>
+        <button class="btn" @click="openFontsDir">打开字体文件夹</button>
       </div>
       <div class="folder-hint">
         从字体文件夹导入的字体存放在应用数据目录(userData/fonts),在设置页可自由选择使用。
@@ -149,6 +149,6 @@ async function openFontsDir() {
   border-radius: 6px; color: var(--text-secondary); background: none; border: none; cursor: pointer;
 }
 .folder-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
-.folder-btn--danger:hover { color: var(--color-danger); }
+.icon-btn--danger:hover { color: var(--color-danger); background: rgba(255, 77, 79, 0.12); }
 .folder-hint { font-size: var(--font-size-sm); color: var(--text-tertiary); padding: 4px 2px; }
 </style>

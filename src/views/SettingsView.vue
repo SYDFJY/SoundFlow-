@@ -40,8 +40,9 @@
             <span class="label-text">启动自动续播</span>
             <span class="label-desc">打开应用后自动继续播放上次的歌曲</span>
           </div>
-          <button class="setting-btn" :class="{ active: appStore.autoPlay }" @click="toggleAutoPlay">
-            {{ appStore.autoPlay ? '已开启 ✓' : '已关闭' }}
+          <button class="switch" :class="{ on: appStore.autoPlay }" @click="toggleAutoPlay">
+            <span class="switch-track"></span>
+            <span>{{ appStore.autoPlay ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div class="setting-item">
@@ -49,8 +50,9 @@
             <span class="label-text">跟随系统深色模式</span>
             <span class="label-desc">系统切换深色/浅色时自动切换主题(手动选主题将关闭此功能)</span>
           </div>
-          <button class="setting-btn" :class="{ active: appStore.followSystemTheme }" @click="appStore.setFollowSystemTheme(!appStore.followSystemTheme)">
-            {{ appStore.followSystemTheme ? '已开启 ✓' : '已关闭' }}
+          <button class="switch" :class="{ on: appStore.followSystemTheme }" @click="appStore.setFollowSystemTheme(!appStore.followSystemTheme)">
+            <span class="switch-track"></span>
+            <span>{{ appStore.followSystemTheme ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div class="setting-item">
@@ -59,9 +61,9 @@
             <span class="label-desc">切歌提示方式:应用内右下角卡片 / 系统通知横幅(默认卡片)</span>
           </div>
           <div class="notify-options">
-            <button class="theme-btn" :class="{ active: songNotify === 'off' }" @click="setSongNotify('off')">关闭</button>
-            <button class="theme-btn" :class="{ active: songNotify === 'card' }" @click="setSongNotify('card')">应用内卡片</button>
-            <button class="theme-btn" :class="{ active: songNotify === 'system' }" @click="setSongNotify('system')">系统横幅</button>
+            <button class="chip" :class="{ active: songNotify === 'off' }" @click="setSongNotify('off')">关闭</button>
+            <button class="chip" :class="{ active: songNotify === 'card' }" @click="setSongNotify('card')">应用内卡片</button>
+            <button class="chip" :class="{ active: songNotify === 'system' }" @click="setSongNotify('system')">系统横幅</button>
           </div>
         </div>
         <div class="setting-item">
@@ -69,8 +71,8 @@
             <span class="label-text">{{ t('settings.language') }}</span>
             <span class="label-desc">Language / 界面语言</span>
           </div>          <div class="lang-options">
-            <button class="theme-btn" :class="{ active: currentLang === 'zh' }" @click="switchLang('zh')">简体中文</button>
-            <button class="theme-btn" :class="{ active: currentLang === 'en' }" @click="switchLang('en')">English</button>
+            <button class="chip" :class="{ active: currentLang === 'zh' }" @click="switchLang('zh')">简体中文</button>
+            <button class="chip" :class="{ active: currentLang === 'en' }" @click="switchLang('en')">English</button>
           </div>
         </div>
         <div class="setting-item">
@@ -79,8 +81,8 @@
             <span class="label-desc">Theme import / export</span>
           </div>
           <div class="theme-io-btns">
-            <button class="sec-btn" @click="exportTheme">导出当前主题</button>
-            <button class="sec-btn" @click="importTheme">导入主题</button>
+            <button class="btn--ghost" @click="exportTheme">导出当前主题</button>
+            <button class="btn--ghost" @click="importTheme">导入主题</button>
           </div>
         </div>
       </div>
@@ -93,8 +95,9 @@
             <span class="label-text">响度均衡</span>
             <span class="label-desc">ReplayGain — 换歌音量均衡(开启后后台分析,可能占用少量 CPU)</span>
           </div>
-          <button class="sec-btn" :class="{ 'on': playerStore.replayGainEnabled }" @click="toggleReplayGain">
-            {{ playerStore.replayGainEnabled ? '已开启' : '已关闭' }}
+          <button class="switch" :class="{ on: playerStore.replayGainEnabled }" @click="toggleReplayGain">
+            <span class="switch-track"></span>
+            <span>{{ playerStore.replayGainEnabled ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
       </div>
@@ -126,7 +129,7 @@
             <span class="label-text">倍速播放</span>
           </div>
           <div class="rate-options">
-            <button v-for="r in rates" :key="r" class="rate-btn" :class="{ active: playerStore.playbackRate === r }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
+            <button v-for="r in rates" :key="r" class="chip chip--sm" :class="{ active: playerStore.playbackRate === r }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
           </div>
         </div>
       </div>
@@ -139,7 +142,7 @@
             <span class="label-text">扫描目录</span>
             <span class="label-desc">{{ musicStore.scanFolders.length }} 个目录</span>
           </div>
-          <button class="setting-btn" @click="addFolder">添加目录</button>
+          <button class="btn" @click="addFolder">添加目录</button>
         </div>
         <div v-for="folder in musicStore.scanFolders" :key="folder" class="folder-item">
           <span class="folder-path text-ellipsis">{{ folder }}</span>
@@ -150,8 +153,9 @@
             <span class="label-text">自动刷新曲库</span>
             <span class="label-desc">监听扫描目录,新增/删除文件自动同步(事件驱动,无后台轮询)</span>
           </div>
-          <button class="sec-btn" :class="{ 'on': folderWatchOn }" @click="toggleFolderWatch">
-            {{ folderWatchOn ? '已开启' : '已关闭' }}
+          <button class="switch" :class="{ on: folderWatchOn }" @click="toggleFolderWatch">
+            <span class="switch-track"></span>
+            <span>{{ folderWatchOn ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
       </div>
@@ -164,7 +168,10 @@
             <span class="label-text">在线歌词</span>
             <span class="label-desc">本地无 .lrc 时自动从所选来源获取同步歌词（需联网）</span>
           </div>
-          <button class="setting-btn" @click="toggleOnlineLyric">{{ onlineLyric ? '已开启' : '已关闭' }}</button>
+          <button class="switch" :class="{ on: onlineLyric }" @click="toggleOnlineLyric">
+            <span class="switch-track"></span>
+            <span>{{ onlineLyric ? '已开启' : '已关闭' }}</span>
+          </button>
         </div>
         <div class="setting-item" v-if="onlineLyric">
           <div class="setting-label">
@@ -172,7 +179,7 @@
             <span class="label-desc">LRCLIB 免费开放；QQ 音乐中文覆盖广；网易云中文较全；自动 = LRCLIB 优先，失败再 QQ 音乐 → 网易云</span>
           </div>
           <div class="lyric-source-group">
-            <button v-for="opt in lyricSources" :key="opt.value" class="source-btn" :class="{ active: lyricSource === opt.value }" @click="setLyricSource(opt.value)">{{ opt.label }}</button>
+            <button v-for="opt in lyricSources" :key="opt.value" class="chip" :class="{ active: lyricSource === opt.value }" @click="setLyricSource(opt.value)">{{ opt.label }}</button>
           </div>
         </div>
         <div class="setting-item">
@@ -181,8 +188,8 @@
             <span class="label-desc">MyMemory 免费（并发，稍慢）；DeepSeek 整首一次翻译（快、质量好，需 API Key）</span>
           </div>
           <div class="lyric-source-group">
-            <button class="source-btn" :class="{ active: translateService === 'mymemory' }" @click="setTranslateService('mymemory')">MyMemory</button>
-            <button class="source-btn" :class="{ active: translateService === 'deepseek' }" @click="setTranslateService('deepseek')">DeepSeek</button>
+            <button class="chip" :class="{ active: translateService === 'mymemory' }" @click="setTranslateService('mymemory')">MyMemory</button>
+            <button class="chip" :class="{ active: translateService === 'deepseek' }" @click="setTranslateService('deepseek')">DeepSeek</button>
           </div>
           <div v-if="translateService === 'deepseek'" class="deepseek-key-row">
             <input v-model="deepseekKey" :type="showDeepseekKey ? 'text' : 'password'" class="deepseek-key-input" :placeholder="deepseekKey ? '已配置(输入可更换)' : '输入 DeepSeek API Key(仅保存在本地)'" @blur="saveDeepseekKey" />
@@ -195,14 +202,14 @@
             <span class="label-text">歌词文件夹</span>
             <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲</span>
           </div>
-          <button class="setting-btn" @click="addLyricFolder">添加文件夹</button>
+          <button class="btn" @click="addLyricFolder">添加文件夹</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">批量下载歌词</span>
             <span class="label-desc">遍历曲库所有歌曲，将没有本地 .lrc 的歌从在线来源（LRCLIB / QQ 音乐 / 网易云）下载到歌词文件夹</span>
           </div>
-          <button class="setting-btn" :disabled="batchLyric.running" @click="batchDownloadLyrics">
+          <button class="btn" :disabled="batchLyric.running" @click="batchDownloadLyrics">
             {{ batchLyric.running ? `下载中 ${batchLyric.done}/${batchLyric.total}` : '开始批量下载' }}
           </button>
         </div>
@@ -232,8 +239,8 @@
                 <div class="done-row muted">用时 {{ batchLyric.elapsed }} · 完成时间 {{ batchLyric.finishedAt }}</div>
                 <div class="done-folder" :title="batchLyric.folder">下载到：{{ batchLyric.folder }}</div>
                 <div class="done-btns">
-                  <button class="setting-btn" @click="openLyricFolder">📂 打开歌词文件夹</button>
-                  <button class="done-close" @click="batchLyric.showResult = false">关闭</button>
+                  <button class="btn" @click="openLyricFolder">📂 打开歌词文件夹</button>
+                  <button class="btn--ghost btn--sm" @click="batchLyric.showResult = false">关闭</button>
                 </div>
               </div>
             </div>
@@ -257,8 +264,9 @@
             <span class="label-text">均衡器 / 音效</span>
             <span class="label-desc">10 段 EQ + 预设 + 重低音 + 空间声场(Web Audio 实时处理)</span>
           </div>
-          <button class="setting-btn" :class="{ active: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
-            {{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}
+          <button class="switch" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
+            <span class="switch-track"></span>
+            <span>{{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div v-if="playerStore.eqSettings.enabled" class="eq-area">
@@ -299,8 +307,8 @@
             <option v-for="f in systemFonts" :key="f.value" :value="f.value">{{ f.label }}</option>
             <option v-for="f in customFonts" :key="f.url" :value="'&quot;' + f.name + '&quot;'">{{ f.name }}（自定义）</option>
           </select>
-          <button class="setting-btn" @click="importFont">导入字体</button>
-          <button class="setting-btn" @click="importFontFolder">字体文件夹</button>
+          <button class="btn" @click="importFont">导入字体</button>
+          <button class="btn" @click="importFontFolder">字体文件夹</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -332,7 +340,7 @@
           <div v-show="fontExpanded" class="font-expand-list">
             <div v-for="(f, i) in customFonts" :key="f.url" class="custom-font-row">
               <span class="font-name" :style='{ fontFamily: "\"" + f.name + "\"" }'>{{ f.name }}</span>
-              <button class="setting-btn font-remove" @click="removeCustomFont(i)">删除</button>
+              <button class="btn font-remove" @click="removeCustomFont(i)">删除</button>
             </div>
           </div>
         </div>
@@ -345,7 +353,7 @@
           <div class="setting-label">
             <span class="label-text">{{ d.label }}</span>
           </div>
-          <button class="setting-btn" :class="{ recording: recordingKey === d.key }" @click="startRecord(d.key)" @keydown="onRecordKey">
+          <button class="btn" :class="{ recording: recordingKey === d.key }" @click="startRecord(d.key)" @keydown="onRecordKey">
             {{ recordingKey === d.key ? '按新快捷键…' : (shortcuts[d.key] || '未设置') }}
           </button>
         </div>
@@ -354,7 +362,7 @@
             <span class="label-text">恢复默认快捷键</span>
             <span class="label-desc">空格播放/暂停、Ctrl+←/→ 切歌、Ctrl+↑/↓ 音量</span>
           </div>
-          <button class="setting-btn" @click="resetShortcuts">恢复默认</button>
+          <button class="btn" @click="resetShortcuts">恢复默认</button>
         </div>
       </div>
 
@@ -366,7 +374,10 @@
             <span class="label-text">开机自启</span>
             <span class="label-desc">Start with Windows</span>
           </div>
-          <button class="sec-btn" :class="{ on: loginItem }" @click="toggleLoginItem">{{ loginItem ? '已开启' : '已关闭' }}</button>
+          <button class="switch" :class="{ on: loginItem }" @click="toggleLoginItem">
+            <span class="switch-track"></span>
+            <span>{{ loginItem ? '已开启' : '已关闭' }}</span>
+          </button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -409,14 +420,14 @@
             <span class="label-text">备份数据</span>
             <span class="label-desc">导出曲库、歌单、收藏、播放历史与设置到 JSON 文件，重装/换机不丢数据</span>
           </div>
-          <button class="setting-btn" :disabled="backupBusy" @click="exportBackup">{{ backupBusy ? '处理中…' : '导出备份' }}</button>
+          <button class="btn" :disabled="backupBusy" @click="exportBackup">{{ backupBusy ? '处理中…' : '导出备份' }}</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">导入备份</span>
             <span class="label-desc">从备份 JSON 恢复全部数据（将覆盖当前数据，导入后自动重启应用）</span>
           </div>
-          <button class="setting-btn" :disabled="backupBusy" @click="importBackup">{{ backupBusy ? '处理中…' : '导入备份' }}</button>
+          <button class="btn" :disabled="backupBusy" @click="importBackup">{{ backupBusy ? '处理中…' : '导入备份' }}</button>
         </div>
         <div v-if="backupMsg" class="setting-item">
           <span class="label-text" :style="{ color: backupOk ? 'var(--color-primary)' : 'var(--color-danger)' }">{{ backupMsg }}</span>
@@ -426,14 +437,14 @@
             <span class="label-text">存储占用</span>
             <span class="label-desc">封面缓存:{{ storageInfo.coversCount || 0 }} 张 · {{ storageInfo.coversSize ? (storageInfo.coversSize / 1048576).toFixed(1) : '0.0' }} MB（清理后播放歌曲时自动重新生成）</span>
           </div>
-          <button class="setting-btn" @click="clearCache" :disabled="cacheBusy">{{ cacheBusy ? '清理中…' : '清理封面缓存' }}</button>
+          <button class="btn" @click="clearCache" :disabled="cacheBusy">{{ cacheBusy ? '清理中…' : '清理封面缓存' }}</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">本地歌词管理</span>
             <span class="label-desc">查看歌曲本地歌词状态,删除不需要的歌词文件</span>
           </div>
-          <button class="setting-btn" @click="openLyricManager">打开管理</button>
+          <button class="btn" @click="openLyricManager">打开管理</button>
         </div>
       </div>
     </div>

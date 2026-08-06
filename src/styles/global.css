@@ -82,6 +82,152 @@ button {
 button:active { transform: scale(0.97); filter: brightness(0.94); }
 button { -webkit-tap-highlight-color: transparent; }
 
+/* ===== 公共按钮设计系统 =====
+   统一全项目按钮语义,各组件 scoped 重复实现逐步收敛到这些类。 */
+:root {
+  --btn-h: 34px;          /* 标准按钮高度 */
+  --btn-h-sm: 28px;       /* 小按钮 */
+  --btn-radius: 9px;      /* 按钮圆角(略小于 --radius-md 8 的 9px 取中) */
+  --focus-ring: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--color-primary); /* 键盘焦点环 */
+}
+
+/* 键盘可达性:Tab 聚焦时可见焦点环(鼠标点击不显示) */
+button:focus-visible,
+a:focus-visible,
+[role='button']:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* 禁用态统一 */
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+}
+
+/* 实心主色主按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--btn-h);
+  padding: 0 16px;
+  border-radius: var(--btn-radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: filter var(--transition-fast), transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.btn:hover { filter: brightness(1.08); box-shadow: 0 4px 12px var(--color-primary-alpha, rgba(43,134,216,0.35)); }
+.btn--sm { height: var(--btn-h-sm); padding: 0 12px; font-size: 12px; border-radius: 7px; }
+
+/* 描边次级按钮 */
+.btn--ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--btn-h);
+  padding: 0 16px;
+  border-radius: var(--btn-radius);
+  background: var(--bg-hover, rgba(128,128,128,0.08));
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color, rgba(128,128,128,0.25));
+  font-size: 13px;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.btn--ghost:hover { background: var(--bg-hover); color: var(--color-primary); border-color: var(--color-primary); }
+.btn--ghost.btn--sm { height: var(--btn-h-sm); padding: 0 12px; font-size: 12px; border-radius: 7px; }
+
+/* 危险按钮(文字红,悬停淡红底) */
+.btn--danger {
+  color: var(--color-danger, #ff4d4f);
+}
+.btn--danger:hover { background: rgba(255, 77, 79, 0.12); color: var(--color-danger, #ff4d4f); border-color: var(--color-danger, #ff4d4f); }
+
+/* 图标按钮(32px 方形/圆形,纯图标) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--btn-radius);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.icon-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.icon-btn--active, .icon-btn.active { background: var(--color-primary-alpha, rgba(43,134,216,0.15)); color: var(--color-primary); }
+.icon-btn--xs { width: 24px; height: 24px; border-radius: 6px; }
+
+/* 胶囊选项钮(单选组) */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--bg-hover, rgba(128,128,128,0.08));
+  color: var(--text-secondary);
+  font-size: 12px;
+  border: 1px solid transparent;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.chip:hover { color: var(--text-primary); }
+.chip.active {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 500;
+}
+.chip--sm { height: 26px; padding: 0 10px; font-size: 11px; }
+
+/* 拨杆开关 */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 4px 0 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.switch .switch-track {
+  position: relative;
+  width: 38px;
+  height: 21px;
+  border-radius: 999px;
+  background: var(--bg-hover, rgba(128,128,128,0.35));
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+.switch .switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform var(--transition-fast);
+}
+.switch.on { color: var(--text-primary); }
+.switch.on .switch-track { background: var(--color-primary); }
+.switch.on .switch-track::after { transform: translateX(17px); }
+
 /* 输入框 */
 input, select, textarea {
   font-family: inherit;

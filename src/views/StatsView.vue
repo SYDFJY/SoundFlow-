@@ -4,11 +4,11 @@
       <h1 class="header-title">听歌统计</h1>
       <div class="header-tools">
         <div class="range-switch">
-          <button class="range-btn" :class="{ active: timeRange === 'all' }" @click="setTimeRange('all')">全部</button>
-          <button class="range-btn" :class="{ active: timeRange === '30d' }" @click="setTimeRange('30d')">近30天</button>
+          <button class="chip" :class="{ active: timeRange === 'all' }" @click="setTimeRange('all')">全部</button>
+          <button class="chip" :class="{ active: timeRange === '30d' }" @click="setTimeRange('30d')">近30天</button>
         </div>
-        <button class="share-btn" @click="copyShare">📤 分享报告</button>
-        <button class="hist-btn" @click="router.push('/history')">🎵 播放记录与排行</button>
+        <button class="btn" @click="copyShare">📤 分享报告</button>
+        <button class="btn--ghost" @click="router.push('/history')">🎵 播放记录与排行</button>
       </div>
     </div>
 

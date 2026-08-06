@@ -6,15 +6,15 @@
         <span class="header-count">{{ t('home.count', { n: musicStore.totalCount }) }}</span>
       </div>
       <div class="header-right">
-        <button class="add-btn" @click="addFiles" title="添加文件">
+        <button class="btn btn--sm" @click="addFiles" title="添加文件">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           <span>{{ t('home.addFiles') }}</span>
         </button>
-        <button v-if="musicStore.totalCount > 0" class="add-btn dup-btn" @click="openDuplicates" title="查重">
+        <button v-if="musicStore.totalCount > 0" class="btn btn--sm dup-btn" @click="openDuplicates" title="查重">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14v5a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h5"/></svg>
           <span>{{ t('home.dup') }}</span>
         </button>
-        <button v-if="musicStore.totalCount > 0" class="add-btn dup-btn" @click="openMissingCheck" title="检测已移动或删除的歌曲">
+        <button v-if="musicStore.totalCount > 0" class="btn btn--sm dup-btn" @click="openMissingCheck" title="检测已移动或删除的歌曲">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
           <span>{{ t('home.missing') }}</span>
         </button>
