@@ -9,6 +9,9 @@ const os = require('os')
 const crypto = require('crypto')
 const { execFile } = require('child_process')
 const log = require('electron-log')
+// 禁用 GPU 硬件加速:Windows 上 GPU/合成器崩溃是无痕闪退(无日志/无崩溃事件)的头号原因,
+// 尤其在透明窗口、封面大图解码、频谱动画场景;软件合成换取稳定性
+app.disableHardwareAcceleration()
 // 日志配置:默认写入 userData/logs/main.log(上限 5MB)
 log.transports.file.maxSize = 5 * 1024 * 1024
 // 禁用控制台输出:从管道/后台启动时 stdout 已关闭,写 console 会触发 EPIPE → errorHandler 再写 → 无限循环阻塞主进程
