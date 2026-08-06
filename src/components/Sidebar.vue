@@ -202,10 +202,16 @@ function startResize(e) {
 }
 
 // 歌单封面:自定义封面优先,否则取歌单第一首歌的封面
+// 歌单封面(缓存:模板每行渲染会重复查全库)
+const _plCoverCache = new Map()
 function getPlaylistCover(pl) {
   if (pl.cover) return pl.cover
+  if (_plCoverCache.has(pl.id)) return _plCoverCache.get(pl.id)
   const songs = musicStore.getPlaylistSongs(pl.id)
-  return songs[0]?.coverUrl || ''
+  const cover = songs[0]?.coverUrl || ''
+  if (_plCoverCache.size > 200) _plCoverCache.clear()
+  _plCoverCache.set(pl.id, cover)
+  return cover
 }
 // 设置歌单封面(选图片 → 主进程复制到 userData/covers)
 async function setPlaylistCover() {

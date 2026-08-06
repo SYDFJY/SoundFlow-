@@ -322,14 +322,7 @@
           </div>
         </transition>
         <div class="progress-row">
-          <span class="time">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
-          <div class="progress-bar" @mousedown="onProgressMouseDown" @click="onProgressClick" ref="progressBar">
-            <div class="progress-track">
-              <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-              <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
-            </div>
-          </div>
-          <span class="time">{{ playerStore.formatTime(playerStore.duration) }}</span>
+          <ProgressBar />
         </div>
 
         <!-- 播放列表面板(打开自动定位当前歌曲) -->
@@ -382,6 +375,7 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { useMusicStore } from '@/stores/musicStore'
 import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
+import ProgressBar from '@/components/ProgressBar.vue'
 
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
@@ -627,6 +621,18 @@ function getThemeDarkBg() {
   } catch { return '#14161c' }
 }
 
+// 主题色缓存:rAF 绘制循环里避免每帧 getComputedStyle(强制样式计算),10s TTL 防主题切换后长期旧色
+let _accentCache = ''
+let _accentT = 0
+function getAccentColor() {
+  const now = Date.now()
+  if (!_accentCache || now - _accentT > 10000) {
+    try { _accentCache = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff' } catch { _accentCache = '#4096ff' }
+    _accentT = now
+  }
+  return _accentCache
+}
+
 const bgStyle = computed(() => {
   if (bgMode.value === 'theme') {
     return { backgroundColor: getThemeDarkBg() }
@@ -842,7 +848,7 @@ function drawEqCurve() {
   freqs.forEach(f => { ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, xOf(f), h - 7) })
   // 曲线(贝塞尔平滑)
   const pts = freqs.map((f, i) => ({ x: xOf(f), y: yOf(gains[i]) }))
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff'
+  const accent = getAccentColor()
   ctx.beginPath()
   ctx.moveTo(pts[0].x, pts[0].y)
   for (let i = 1; i < pts.length; i++) {
@@ -923,7 +929,7 @@ function drawSpectrum(ts) {
   const half = BAR_COUNT / 2
   const barW = (width - (BAR_COUNT - 1) * 3) / BAR_COUNT
   const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
-  const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff'
+  const accent = getAccentColor()
   const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
   // 渐变缓存:key = 颜色+高度,复用渐变对象
   const gkey = (c.r + ',' + c.g + ',' + c.b) + '@' + height
@@ -1091,9 +1097,12 @@ function splitLyricText(text) {
   return out
 }
 // 逐字渲染段:有增强时间戳直接用;无则按整行时长均分(英文逐词/中文逐字)
+// 缓存:同一行文本只切分一次(currentTime 4Hz 重渲染不再重复正则+数组分配)
+const _wordSegCache = new Map()
 function lyricWordSegments(line) {
   if (!line) return []
   if (line.words && line.words.length) return line.words
+  if (_wordSegCache.has(line.text)) return _wordSegCache.get(line.text)
   // 近似:按均分当前行到下一行之间的时长
   const cur = playerStore.lyrics[playerStore.currentLyricIndex]
   const next = playerStore.lyrics[playerStore.currentLyricIndex + 1]
@@ -1103,7 +1112,10 @@ function lyricWordSegments(line) {
   const tokens = splitLyricText(line.text)
   if (!tokens.length) return []
   const per = dur / tokens.length
-  return tokens.map((c, i) => ({ t: start + i * per, c }))
+  const out = tokens.map((c, i) => ({ t: start + i * per, c }))
+  if (_wordSegCache.size > 300) _wordSegCache.clear()
+  _wordSegCache.set(line.text, out)
+  return out
 }
 
 // 读取歌词文件夹配置(在线搜索下载优先存这里,避免散落在歌曲同目录)

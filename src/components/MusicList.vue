@@ -318,18 +318,24 @@ const virtualStart = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW
 const virtualEnd = computed(() => Math.min(props.songs.length, Math.ceil((scrollTop.value + viewportH.value) / ROW_H) + VIRTUAL_BUFFER))
 const virtualSongs = computed(() => props.songs.slice(virtualStart.value, virtualEnd.value))
 
+let _scrollRaf = null
 function onListScroll() {
-  const el = listBodyEl.value
-  if (el) {
-    scrollTop.value = el.scrollTop
-    viewportH.value = el.clientHeight
-  }
-  scheduleCoverLoad()
-  if (_scrollSaveTimer) return
-  _scrollSaveTimer = setTimeout(() => {
-    _scrollSaveTimer = null
-    try { localStorage.setItem(LIST_SCROLL_KEY, String(listBodyEl.value?.scrollTop || 0)) } catch {}
-  }, 300)
+  // rAF 合并:滚动事件高频触发,每帧最多更新一次可视区(减少虚拟列表重渲染)
+  if (_scrollRaf) return
+  _scrollRaf = requestAnimationFrame(() => {
+    _scrollRaf = null
+    const el = listBodyEl.value
+    if (el) {
+      scrollTop.value = el.scrollTop
+      viewportH.value = el.clientHeight
+    }
+    scheduleCoverLoad()
+    if (_scrollSaveTimer) return
+    _scrollSaveTimer = setTimeout(() => {
+      _scrollSaveTimer = null
+      try { localStorage.setItem(LIST_SCROLL_KEY, String(listBodyEl.value?.scrollTop || 0)) } catch {}
+    }, 300)
+  })
 }
 let _listResizeObserver = null
 function restoreListScroll() {

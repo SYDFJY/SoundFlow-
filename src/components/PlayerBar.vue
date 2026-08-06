@@ -58,17 +58,7 @@
           </transition>
         </div>
       </div>
-      <div class="player-progress">
-        <span class="time-current">{{ playerStore.formatTime(playerStore.currentTime) }}</span>
-        <div class="progress-bar" ref="progressBar" @mousedown="onProgressMouseDown" @click="onProgressClick" @mousemove="onProgressHover" @mouseleave="hoverTime = null">
-          <div class="progress-hover-time" v-show="hoverTime !== null" :style="{ left: hoverX + 'px' }">{{ hoverTime }}</div>
-          <div class="progress-track">
-            <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-            <div class="progress-thumb" :style="{ left: progressPercent + '%' }"></div>
-          </div>
-        </div>
-        <span class="time-total">{{ playerStore.formatTime(playerStore.duration) }}</span>
-      </div>
+      <ProgressBar class="player-progress" />
     </div>
 
     <!-- 右：工具按钮 -->
@@ -201,6 +191,7 @@ import { useRouter } from 'vue-router'
 import { usePlayerStore } from '@/stores/playerStore'
 import { t } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
+import ProgressBar from '@/components/ProgressBar.vue'
 
 const router = useRouter()
 const playerStore = usePlayerStore()

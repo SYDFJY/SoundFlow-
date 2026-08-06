@@ -317,6 +317,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onGlobalKey)
+  window.removeEventListener('pointerdown', onRipple, true)
+  window.removeEventListener('dragover', onDragOver)
+  window.removeEventListener('drop', onDrop)
+  window.removeEventListener('dragleave', onDragLeave)
   if (_autoSaveTimer) { clearInterval(_autoSaveTimer); _autoSaveTimer = null }
   playerStore.saveSettings()
   musicStore.saveToStorage(true)
