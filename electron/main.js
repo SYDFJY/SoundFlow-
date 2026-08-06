@@ -514,6 +514,20 @@ function setFolderWatchEnabled(enabled) {
 }
 
 // ========== 窗口创建 ==========
+// 应用图标:打包后优先 resources/icon.ico(extraResources 复制,asar 外可直接读取);
+// 开发模式 fallback build/icon.ico。asar 内路径 fs 读不到,故不用 __dirname 下的 build/icon.ico。
+function getAppIcon() {
+  try {
+    const pkgIcon = path.join(process.resourcesPath, 'icon.ico')
+    if (fs.existsSync(pkgIcon)) return pkgIcon
+  } catch (_) {}
+  try {
+    const devIcon = path.join(__dirname, '..', 'build', 'icon.ico')
+    if (fs.existsSync(devIcon)) return devIcon
+  } catch (_) {}
+  return undefined
+}
+
 function createMainWindow() {
   // 恢复上次窗口大小/位置(独立小文件,避免每次移动触发全量存储写盘)
   const winBoundsFile = path.join(app.getPath('userData'), 'window-bounds.json')
@@ -542,7 +556,7 @@ function createMainWindow() {
       webSecurity: false
     },
     show: false,
-    icon: (() => { try { const p = path.join(__dirname, '..', 'build', 'icon.ico'); return fs.existsSync(p) ? p : undefined } catch { return undefined } })()
+    icon: getAppIcon()
   })
 
   if (isDev) {

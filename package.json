@@ -41,12 +41,17 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
-      "build/thumb/**/*"
+      "build/thumb/**/*",
+      "build/icon.ico"
     ],
     "extraResources": [
       {
         "from": "C:/ffmpeg/bin/ffmpeg.exe",
         "to": "ffmpeg/ffmpeg.exe"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
       }
     ],
     "win": {
