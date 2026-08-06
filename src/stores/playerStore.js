@@ -28,7 +28,7 @@ export const usePlayerStore = defineStore('player', () => {
       mode = mode || 'card'
       if (mode === 'off') return
       if (mode === 'system') {
-        if (window.electronAPI?.send) window.electronAPI.send('notify-song', { title: song.title || '', artist: song.artist || '' })
+        if (window.electronAPI?.send) window.electronAPI.send('notify-song', { title: song.title || '', artist: song.artist || '', coverUrl: song.coverUrl || '' })
         return
       }
       songNotify.value = { visible: true, title: song.title || '', artist: song.artist || '', coverUrl: song.coverUrl || '' }

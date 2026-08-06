@@ -1754,7 +1754,7 @@ function setupIPC() {
     try {
       if (!info || !info.title) return
       if (!Notification.isSupported()) return
-      // 通知图标:显式传应用图标(Windows 通知若无 AUMID 关联图标会空白)
+      // 通知左上角小图标:应用 logo(无 AUMID 关联图标时兜底)
       let notifIcon
       try {
         const p = path.join(process.resourcesPath, 'icon.ico')
@@ -1767,11 +1767,28 @@ function setupIPC() {
       if (notifIcon && !notifIcon.isEmpty() && notifIcon.getSize().width > 32) {
         try { notifIcon = notifIcon.resize({ width: 32, height: 32 }) } catch (_) {}
       }
+      // 通知正文大图:歌曲封面(data: 或 file: 协议)
+      let coverImage
+      try {
+        const cv = info.coverUrl
+        if (cv) {
+          if (cv.startsWith('data:')) {
+            coverImage = nativeImage.createFromDataURL(cv)
+          } else if (cv.startsWith('file:')) {
+            const p = decodeURIComponent(cv.replace(/^file:\/\//, ''))
+            coverImage = nativeImage.createFromPath(p)
+          }
+          if (coverImage && !coverImage.isEmpty() && coverImage.getSize().width > 128) {
+            coverImage = coverImage.resize({ width: 128, height: 128 })
+          }
+        }
+      } catch (_) {}
       const n = new Notification({
         title: info.title,
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
         silent: true,
-        icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined
+        icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined,
+        image: coverImage && !coverImage.isEmpty() ? coverImage : undefined
       })
       n.show()
       n.on('click', () => {
