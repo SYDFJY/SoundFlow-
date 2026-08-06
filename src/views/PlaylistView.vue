@@ -106,13 +106,13 @@ const playlist = computed(() => musicStore.playlists.find(p => p.id === route.pa
 const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
 
 const sortedSongs = computed(() => musicStore.sortSongs(songs.value))
-function onReorder({ from, to }) {
+function onReorder({ from, to, pos }) {
   // 排序激活时拖拽会乱序,提示先回默认排序
   if (musicStore.sortField) {
     try { window.$toast?.('请先切换到「默认排序」再拖拽调整顺序', 'warning') } catch {}
     return
   }
-  musicStore.moveSongInPlaylist(route.params.id, from, to)
+  musicStore.moveSongInPlaylist(playlist.id, from, to, pos)
 }
 
 // 添加歌曲弹窗状态

@@ -320,15 +320,19 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 歌单内拖拽排序(按 path 定位,避免虚拟滚动索引错位)
-  function moveSongInPlaylist(playlistId, fromPath, toPath) {
+  function moveSongInPlaylist(playlistId, fromPath, toPath, pos = 'after') {
     const pl = playlists.value.find(p => p.id === playlistId)
     if (!pl) return
     const songs = [...pl.songs]
     const fi = songs.indexOf(fromPath)
-    const ti = songs.indexOf(toPath)
-    if (fi < 0 || ti < 0 || fi === ti) return
+    if (fi < 0) return
     const [item] = songs.splice(fi, 1)
-    songs.splice(ti, 0, item)
+    let ti = songs.indexOf(toPath)
+    if (ti < 0) {
+      songs.splice(0, 0, item)
+    } else {
+      songs.splice(pos === 'before' ? ti : ti + 1, 0, item)
+    }
     playlists.value = playlists.value.map(p => (p.id === playlistId ? { ...p, songs } : p))
     saveToStorage()
   }

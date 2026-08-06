@@ -37,6 +37,8 @@
 
     <!-- 列表(虚拟滚动:固定行高 56px,只渲染可视区 ±缓冲 的行,大列表 DOM 恒定) -->
     <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" @scroll="onListScroll">
+      <!-- 拖拽插入指示线 -->
+      <div class="drop-line" :style="{ top: dropLineTop + 'px', display: draggingPath ? 'block' : 'none' }"></div>
       <div class="list-spacer" :style="{ height: songs.length * ROW_H + 'px' }">
         <div class="list-virtual" :style="{ transform: 'translateY(' + virtualStart * ROW_H + 'px)' }">
           <div
@@ -44,7 +46,7 @@
             :key="song.path"
             class="list-row"
             :data-path="song.path"
-            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': jsDragTarget === song.path }"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': jsDragTarget === song.path, dragging: draggingPath === song.path }"
             @dblclick="playSong(virtualStart + i)"
             @contextmenu.prevent="showContextMenu($event, song)"
             @mousedown="onRowMouseDown($event, song)"
@@ -220,8 +222,13 @@ const props = defineProps({
 const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change', 'reorder'])
 // ===== JS 拖拽排序(HTML5 DnD 在 Electron 拖动不稳定,改用鼠标事件) =====
 // 拖到侧边栏歌单通过全局 dragSongPath 传递(useDragSong)
+// 拖拽排序完善版:源行浮起 + 目标插入线(before/after) + 自动滚动 + 虚拟滚动适配
 let jsDrag = null
 const jsDragTarget = ref(null)
+const draggingPath = ref(null)
+const jsDragPos = ref('after')
+const dropLineTop = ref(0)
+let jsAutoScrollTimer = null
 function onRowMouseDown(e, song) {
   if (e.button !== 0) return
   if (e.target.closest('button, input, a, .col-check, .row-actions')) return
@@ -233,24 +240,49 @@ function onDocDragMove(e) {
   if (!jsDrag) return
   if (!jsDrag.moved && (Math.abs(e.clientX - jsDrag.startX) > 6 || Math.abs(e.clientY - jsDrag.startY) > 6)) {
     jsDrag.moved = true
+    draggingPath.value = jsDrag.path
     setDragSong(jsDrag.path)
   }
-  if (jsDrag.moved) {
-    const el = document.elementFromPoint(e.clientX, e.clientY)
-    const row = el && el.closest('.list-row')
-    jsDragTarget.value = row ? row.getAttribute('data-path') : null
+  if (!jsDrag.moved) return
+  // 自动滚动:拖动接近可视区上下边缘
+  const body = listBodyEl.value
+  if (body) {
+    const r = body.getBoundingClientRect()
+    if (e.clientY < r.top + 32) {
+      if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop -= 14 }, 30)
+    } else if (e.clientY > r.bottom - 32) {
+      if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop += 14 }, 30)
+    } else if (jsAutoScrollTimer) {
+      clearInterval(jsAutoScrollTimer)
+      jsAutoScrollTimer = null
+    }
+  }
+  // 目标行 + 插入位置(行上半 → before,下半 → after)
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  const row = el && el.closest('.list-row')
+  if (row) {
+    jsDragTarget.value = row.getAttribute('data-path')
+    const rr = row.getBoundingClientRect()
+    jsDragPos.value = e.clientY < rr.top + rr.height / 2 ? 'before' : 'after'
+    // 插入线位置(相对列表可视区):virtualStart*ROW_H + 行在虚拟区内 offsetTop + (after ? ROW_H : 0)
+    dropLineTop.value = virtualStart.value * ROW_H + row.offsetTop + (jsDragPos.value === 'after' ? ROW_H : 0)
+  } else {
+    jsDragTarget.value = null
   }
 }
-function onDocDragUp(e) {
+function onDocDragUp() {
   document.removeEventListener('mousemove', onDocDragMove)
   document.removeEventListener('mouseup', onDocDragUp)
-  if (!jsDrag) return
-  if (jsDrag.moved && jsDragTarget.value && jsDragTarget.value !== jsDrag.path) {
-    emit('reorder', { from: jsDrag.path, to: jsDragTarget.value })
+  if (jsAutoScrollTimer) { clearInterval(jsAutoScrollTimer); jsAutoScrollTimer = null }
+  if (jsDrag) {
+    if (jsDrag.moved && jsDragTarget.value && jsDragTarget.value !== jsDrag.path) {
+      emit('reorder', { from: jsDrag.path, to: jsDragTarget.value, pos: jsDragPos.value })
+    }
   }
   clearDragSong()
   jsDrag = null
   jsDragTarget.value = null
+  draggingPath.value = null
 }
 
 const musicStore = useMusicStore()
@@ -725,6 +757,9 @@ watch(() => playerStore.currentSong?.path, (p) => {
 
 .list-body { flex: 1; overflow-y: auto; position: relative; }
 .list-spacer { position: relative; width: 100%; }
+.list-body { position: relative; }
+.drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--color-primary); border-radius: 2px; z-index: 30; pointer-events: none; box-shadow: 0 0 6px var(--color-primary); }
+.list-row.dragging { opacity: 0.45; transform: scale(0.98); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); z-index: 20; }
 .list-virtual { position: relative; width: 100%; will-change: transform; }
 
 /* 批量操作栏 */
