@@ -1216,12 +1216,27 @@ function setupIPC() {
 
   ipcMain.handle('read-lyric-file', async (event, audioPath, lyricFolders) => findLyricFile(audioPath, lyricFolders))
 
-  // 批量扫描歌词状态(歌词管理页用)
+  // 批量扫描歌词状态(歌词管理页用;预读文件名集合,避免每首歌重复读目录)
   ipcMain.handle('scan-lyric-status', async (event, songs, lyricFolders) => {
     const result = {}
     if (!Array.isArray(songs)) return result
+    const lrcNames = new Set()
+    for (const folder of lyricFolders || []) {
+      try {
+        for (const f of fs.readdirSync(folder)) {
+          if (f.toLowerCase().endsWith('.lrc')) lrcNames.add(normalizeName(path.basename(f, '.lrc')))
+        }
+      } catch (_) {}
+    }
     for (const s of songs) {
-      try { result[s.path] = !!(await findLyricFile(s.path, lyricFolders)) } catch { result[s.path] = false }
+      try {
+        const ext = path.extname(s.path)
+        const base = path.basename(s.path, ext)
+        // 同目录同名 .lrc
+        const sameDir = s.path.substring(0, s.path.length - ext.length) + '.lrc'
+        const has = fs.existsSync(sameDir) || lrcNames.has(normalizeName(base))
+        result[s.path] = has
+      } catch { result[s.path] = false }
     }
     return result
   })

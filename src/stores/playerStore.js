@@ -89,13 +89,6 @@ export const usePlayerStore = defineStore('player', () => {
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
-      // AB 循环:到达 B 点跳回 A;小于 A 点(如手动拖回)也拉回 A
-      if (abActive.value && abA.value != null && abB.value != null && duration.value > 0) {
-        if (currentTime.value >= abB.value || currentTime.value < abA.value) {
-          audio.value.currentTime = abA.value
-          currentTime.value = abA.value
-        }
-      }
       // 节流同步迷你播放器
       const now = Date.now()
       if (window.electronAPI && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
@@ -656,10 +649,6 @@ export const usePlayerStore = defineStore('player', () => {
     const song = playQueue.value[index]
     currentSong.value = song
     isBuffering.value = true
-    // AB 循环区间随歌曲重置
-    abA.value = null
-    abB.value = null
-    abActive.value = false
 
     // 切歌通知(设置开关,默认关):应用内卡片(封面+歌名+歌手),替代系统横幅
     showSongNotify(song)
@@ -1244,28 +1233,6 @@ export const usePlayerStore = defineStore('player', () => {
     sendLyricUpdate()
   }
 
-  // AB 循环:设置 A/B 点,在区间内循环
-  const abA = ref(null)
-  const abB = ref(null)
-  const abActive = ref(false)
-  function setAbPoint(point) {
-    if (!currentSong.value || duration.value <= 0) return
-    if (point === 'A') {
-      abA.value = currentTime.value
-      if (abB.value == null || abB.value <= abA.value) abB.value = duration.value
-      abActive.value = true
-    } else if (point === 'B') {
-      abB.value = currentTime.value
-      if (abA.value == null || abA.value >= abB.value) abA.value = 0
-      abActive.value = true
-    }
-  }
-  function clearAb() {
-    abA.value = null
-    abB.value = null
-    abActive.value = false
-  }
-
   function setPlayMode(mode) { playMode.value = mode }
 
   // 切换播放方式:进入随机模式时打乱队列(当前歌曲保持原位),退出时恢复原始顺序
@@ -1533,7 +1500,6 @@ export const usePlayerStore = defineStore('player', () => {
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, removeFromQueue, moveInQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
-    abA, abB, abActive, setAbPoint, clearAb,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     loadLyrics,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
