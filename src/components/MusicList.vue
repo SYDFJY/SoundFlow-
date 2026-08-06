@@ -259,6 +259,7 @@ function onDocDragMove(e) {
     }
   }
   // 目标行 + 插入位置(行上半 → before,下半 → after)
+  // 记忆最后有效目标:真实拖动松手常在行间隙,兜底用最近一次命中
   const el = document.elementFromPoint(e.clientX, e.clientY)
   const row = el && el.closest('.list-row')
   if (row) {
@@ -267,17 +268,31 @@ function onDocDragMove(e) {
     jsDragPos.value = e.clientY < rr.top + rr.height / 2 ? 'before' : 'after'
     // 插入线位置(相对列表可视区):virtualStart*ROW_H + 行在虚拟区内 offsetTop + (after ? ROW_H : 0)
     dropLineTop.value = virtualStart.value * ROW_H + row.offsetTop + (jsDragPos.value === 'after' ? ROW_H : 0)
+  } else if (body && e.clientY > body.getBoundingClientRect().top && e.clientY < body.getBoundingClientRect().bottom) {
+    // 鼠标在列表可视区内但落在间隙:保留最后目标(不置 null)
   } else {
     jsDragTarget.value = null
   }
 }
-function onDocDragUp() {
+function onDocDragUp(e) {
   document.removeEventListener('mousemove', onDocDragMove)
   document.removeEventListener('mouseup', onDocDragUp)
   if (jsAutoScrollTimer) { clearInterval(jsAutoScrollTimer); jsAutoScrollTimer = null }
   if (jsDrag) {
-    if (jsDrag.moved && jsDragTarget.value && jsDragTarget.value !== jsDrag.path) {
-      emit('reorder', { from: jsDrag.path, to: jsDragTarget.value, pos: jsDragPos.value })
+    // 兜底:松手在间隙时,用坐标找最近行
+    let target = jsDragTarget.value
+    if (jsDrag.moved && !target) {
+      const rows = [...document.querySelectorAll('.list-row')]
+      let best = null, bestDist = 1e9
+      for (const r of rows) {
+        const b = r.getBoundingClientRect()
+        const dist = Math.abs(e.clientY - (b.top + b.height / 2))
+        if (dist < bestDist) { bestDist = dist; best = r.getAttribute('data-path') }
+      }
+      if (best && bestDist < 60) target = best
+    }
+    if (jsDrag.moved && target && target !== jsDrag.path) {
+      emit('reorder', { from: jsDrag.path, to: target, pos: jsDragPos.value })
     }
   }
   clearDragSong()

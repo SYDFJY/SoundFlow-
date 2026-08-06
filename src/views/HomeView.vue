@@ -51,6 +51,7 @@
         :empty-text="listEmptyText"
         @play="onPlay"
         @sort="musicStore.setSortField"
+        @reorder="onReorder"
         @play-all="playAll"
         @context-action="onContextAction"
         @selection-change="onSelectionChange"
@@ -205,8 +206,10 @@ function onDrop(e) {
   }
 }
 
-function playAll() {
-  const songs = musicStore.filteredSongs
+function onReorder({ from, to, pos }) {
+  musicStore.moveSong(from, to, pos)
+}
+function playAll() {  const songs = musicStore.filteredSongs
   if (songs.length > 0) {
     playerStore.setPlayQueue(songs.map(s => ({ ...s })), 0)
   }

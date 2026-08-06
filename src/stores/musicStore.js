@@ -41,6 +41,23 @@ export const useMusicStore = defineStore('music', () => {
       const saved = localStorage.getItem('soundflow_library')
       if (saved) songs.value = JSON.parse(saved)
 
+      // 全局手动排序(Home 拖拽):按保存顺序重排,新歌曲追加末尾
+      const order = localStorage.getItem('soundflow_song_order')
+      if (order) {
+        try {
+          const arr = JSON.parse(order)
+          const byPath = new Map(songs.value.map(s => [s.path, s]))
+          const seen = new Set()
+          const ordered = []
+          for (const p of arr) {
+            const s = byPath.get(p)
+            if (s && !seen.has(p)) { ordered.push(s); seen.add(p) }
+          }
+          for (const s of songs.value) if (!seen.has(s.path)) ordered.push(s)
+          songs.value = ordered
+        } catch {}
+      }
+
       const fav = localStorage.getItem('soundflow_favorites')
       if (fav) _syncFavorites(JSON.parse(fav))
 
@@ -337,6 +354,20 @@ export const useMusicStore = defineStore('music', () => {
     saveToStorage()
   }
 
+  // 全局手动排序(Home 拖拽):持久化 soundflow_song_order
+  function moveSong(fromPath, toPath, pos = 'after') {
+    const arr = [...songs.value]
+    const fi = arr.findIndex(s => s.path === fromPath)
+    if (fi < 0) return
+    const [item] = arr.splice(fi, 1)
+    const ti = arr.findIndex(s => s.path === toPath)
+    if (ti < 0) arr.unshift(item)
+    else arr.splice(pos === 'before' ? ti : ti + 1, 0, item)
+    songs.value = arr
+    saveToStorage()
+    try { localStorage.setItem('soundflow_song_order', JSON.stringify(arr.map(s => s.path))) } catch {}
+  }
+
   function getPlaylistSongs(playlistId) {
     const pl = playlists.value.find(p => p.id === playlistId)
     if (!pl) return []
@@ -548,7 +579,7 @@ export const useMusicStore = defineStore('music', () => {
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
-    addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, getPlaylistSongs,
+    addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, getPlaylistSongs,
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles, importDropped,
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, clearHistory,
