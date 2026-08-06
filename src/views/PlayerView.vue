@@ -650,7 +650,7 @@ async function importLocalLyric() {
   }
 }
 
-// 歌词来源切换(本地 / 网易云 / LRCLIB),右上角三选一
+// 歌词来源切换(本地 / 网易云 / LRCLIB / QQ音乐 / 自动),右侧竖排按钮
 const lyricSourceOptions = [
   { value: 'auto', label: '自动' },
   { value: 'netease', label: '网易云' },
@@ -1076,7 +1076,7 @@ async function searchLyric() {
         searchLyricMsg.value = '⚠️ 获取成功但保存失败'
       }
     } else {
-      searchLyricMsg.value = '未找到歌词,可切换歌词来源(LRCLIB/网易云)或稍后重试'
+      searchLyricMsg.value = '未找到歌词,可切换歌词来源(LRCLIB/QQ音乐/网易云)或稍后重试'
     }
   } catch (e) {
     searchLyricMsg.value = '搜索失败,请检查网络'

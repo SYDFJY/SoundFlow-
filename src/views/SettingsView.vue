@@ -167,7 +167,7 @@
         <div class="setting-item" v-if="onlineLyric">
           <div class="setting-label">
             <span class="label-text">歌词来源</span>
-            <span class="label-desc">LRCLIB 免费开放；网易云中文歌词较全；自动 = LRCLIB 优先，失败再网易云</span>
+            <span class="label-desc">LRCLIB 免费开放；QQ 音乐中文覆盖广；网易云中文较全；自动 = LRCLIB 优先，失败再 QQ 音乐 → 网易云</span>
           </div>
           <div class="lyric-source-group">
             <button v-for="opt in lyricSources" :key="opt.value" class="source-btn" :class="{ active: lyricSource === opt.value }" @click="setLyricSource(opt.value)">{{ opt.label }}</button>
@@ -198,7 +198,7 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">批量下载歌词</span>
-            <span class="label-desc">遍历曲库所有歌曲，将没有本地 .lrc 的歌从在线来源（LRCLIB/网易云）下载到歌词文件夹</span>
+            <span class="label-desc">遍历曲库所有歌曲，将没有本地 .lrc 的歌从在线来源（LRCLIB / QQ 音乐 / 网易云）下载到歌词文件夹</span>
           </div>
           <button class="setting-btn" :disabled="batchLyric.running" @click="batchDownloadLyrics">
             {{ batchLyric.running ? `下载中 ${batchLyric.done}/${batchLyric.total}` : '开始批量下载' }}
@@ -928,6 +928,20 @@ select {
   border-radius: var(--radius-md);
   font-size: var(--font-size-sm);
 }
+/* 次级按钮:有边框描边的按钮样式(用于主题导入导出/响度均衡/文件夹监控等开关) */
+.sec-btn {
+  padding: 6px 16px;
+  background: var(--bg-card, rgba(255,255,255,0.08));
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sec-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.sec-btn.on { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.sec-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .lyric-source-group { display: flex; gap: 6px; }
 .source-btn {
   padding: 6px 14px;
