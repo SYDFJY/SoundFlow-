@@ -1529,7 +1529,7 @@ async function searchLyric() {
 .eq-panel {
   position: absolute; bottom: 76px; right: 20px;
   width: min(640px, 92vw); max-height: min(480px, 80vh);
-  background: var(--bg-secondary, rgba(18, 20, 30, 0.98));
+  background: rgba(18, 20, 30, 0.98);
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 16px; box-shadow: 0 16px 44px rgba(0,0,0,0.55);
   display: flex; flex-direction: column; z-index: 40; overflow: hidden;
@@ -1646,7 +1646,7 @@ async function searchLyric() {
 }
 .pitch-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
   border-radius: 10px; padding: 10px 14px; width: 200px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
 }
@@ -1705,7 +1705,7 @@ async function searchLyric() {
 
 .rate-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
   border-radius: 10px; padding: 10px 14px; width: 210px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
 }
