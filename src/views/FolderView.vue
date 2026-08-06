@@ -17,10 +17,10 @@
           <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
           <span class="folder-path text-ellipsis">{{ folder }}</span>
           <div class="folder-actions">
-            <button class="icon-btn" @click="refreshFolder(folder)" title="刷新">
+            <button class="icon-btn icon-btn--xs" @click="refreshFolder(folder)" title="刷新">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
             </button>
-            <button class="icon-btn icon-btn--danger" @click="removeFolder(folder)" title="移除">
+            <button class="icon-btn icon-btn--xs icon-btn--danger" @click="removeFolder(folder)" title="移除">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -44,10 +44,10 @@
           <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
           <span class="folder-path text-ellipsis">{{ folder }}</span>
           <div class="folder-actions">
-            <button class="icon-btn" @click="openLyricFolder(folder)" title="打开">
+            <button class="icon-btn icon-btn--xs" @click="openLyricFolder(folder)" title="打开">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             </button>
-            <button class="icon-btn icon-btn--danger" @click="removeLyricFolder(folder)" title="移除">
+            <button class="icon-btn icon-btn--xs icon-btn--danger" @click="removeLyricFolder(folder)" title="移除">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -137,6 +137,7 @@ async function openFontsDir() {
 .folder-icon { width: 18px; height: 18px; color: var(--color-primary); flex-shrink: 0; }
 .folder-path { flex: 1; font-size: var(--font-size-sm); color: var(--text-primary); }
 .folder-actions { display: flex; gap: 4px; }
+.folder-actions .icon-btn--xs svg { width: 15px; height: 15px; }
 .icon-btn--danger:hover { color: var(--color-danger); background: rgba(255, 77, 79, 0.12); }
 .folder-hint { font-size: var(--font-size-sm); color: var(--text-tertiary); padding: 4px 2px; }
 </style>
