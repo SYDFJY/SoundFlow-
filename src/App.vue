@@ -199,8 +199,7 @@ function onGlobalKey(e) {
 function onRipple(e) {
   const btn = e.target.closest('.btn, .btn--ghost, .chip, .icon-btn, .ctrl-btn')
   if (!btn || btn.disabled) return
-  if (btn.classList.contains('ripple-host')) return // 已有
-  btn.classList.add('ripple-host')
+  if (!btn.classList.contains('ripple-host')) btn.classList.add('ripple-host')
   const rect = btn.getBoundingClientRect()
   const size = Math.max(rect.width, rect.height) * 2
   const ink = document.createElement('span')
