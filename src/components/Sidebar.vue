@@ -52,11 +52,9 @@
           :key="pl.id"
           :to="`/playlist/${pl.id}`"
           class="menu-item"
+          :data-playlist-id="pl.id"
           :class="{ active: $route.path === `/playlist/${pl.id}`, 'drag-over': dragPlaylistTarget === pl.id }"
           @contextmenu.prevent="showPlaylistMenu($event, pl)"
-          @dragover.prevent="dragPlaylistTarget = pl.id"
-          @dragleave="onPlaylistDragLeave(pl.id)"
-          @drop.prevent="onPlaylistDrop(pl, $event)"
         >
           <img v-if="getPlaylistCover(pl)" :src="getPlaylistCover(pl)" class="pl-cover" />
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
@@ -124,22 +122,26 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import Sortable from 'sortablejs'
 import { Home, Heart, Users, Disc3, ListMusic, FolderPlus, BarChart3, Sparkles } from '@lucide/vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { dragSongPath, clearDragSong } from '@/composables/useDragSong'
 import { t } from '@/i18n'
 
 const musicStore = useMusicStore()
-// 拖歌入歌单(从歌曲列表拖拽到侧边栏歌单项)
+// 拖歌入歌单(JS 拖拽:全局 dragSongPath + document mouseup 检测歌单项)
 const dragPlaylistTarget = ref(null)
-function onPlaylistDragLeave(id) {
-  if (dragPlaylistTarget.value === id) dragPlaylistTarget.value = null
+function onDocDragUp(e) {
+  if (!dragSongPath.value) return
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  const plItem = el && el.closest('.menu-item[data-playlist-id]')
+  if (plItem) {
+    const id = plItem.getAttribute('data-playlist-id')
+    const pl = musicStore.playlists.find(p => p.id === id)
+    musicStore.addSongToPlaylist(id, dragSongPath.value)
+    try { window.$toast?.('已添加到歌单「' + (pl ? pl.name : '') + '」', 'success') } catch {}
+  }
+  clearDragSong()
 }
-function onPlaylistDrop(pl, e) {
-  dragPlaylistTarget.value = null
-  let songPath = null
-  try { songPath = e.dataTransfer?.getData('text/plain') } catch {}
-  if (!songPath || !pl) return
-  if (musicStore.addSongToPlaylist) musicStore.addSongToPlaylist(pl.id, songPath)
-  try { window.$toast?.('已添加到歌单「' + pl.name + '」', 'success') } catch {}
-}
+onMounted(() => document.addEventListener('mouseup', onDocDragUp))
+onUnmounted(() => document.removeEventListener('mouseup', onDocDragUp))
 // 迷你统计:今日播放次数(基于播放历史时间戳)+ 累计播放
 const todayPlays = computed(() => {
   const today = new Date().toDateString()

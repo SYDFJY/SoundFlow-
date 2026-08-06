@@ -43,15 +43,11 @@
             v-for="(song, i) in virtualSongs"
             :key="song.path"
             class="list-row"
-            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': dragTargetPath === song.path }"
+            :data-path="song.path"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': jsDragTarget === song.path }"
             @dblclick="playSong(virtualStart + i)"
             @contextmenu.prevent="showContextMenu($event, song)"
-            draggable="true"
-            @dragstart="onRowDragStart(song, $event)"
-            @dragover.prevent="dragTargetPath = song.path"
-            @dragleave="onRowDragLeave(song)"
-            @drop.prevent="onRowDrop(song)"
-            @dragend="dragTargetPath = null; dragPath = null"
+            @mousedown="onRowMouseDown($event, song)"
           >
             <div v-if="batchOn" class="col-check" @click.stop>
               <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
@@ -212,6 +208,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import { setDragSong, clearDragSong } from '@/composables/useDragSong'
 
 const props = defineProps({
   songs: { type: Array, default: () => [] },
@@ -221,23 +218,39 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change', 'reorder'])
-// 拖拽排序状态(按 path,虚拟滚动安全)
-let dragPath = null
-const dragTargetPath = ref(null)
-function onRowDragStart(song, e) {
-  dragPath = song.path
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    try { e.dataTransfer.setData('text/plain', song.path) } catch {}
+// ===== JS 拖拽排序(HTML5 DnD 在 Electron 拖动不稳定,改用鼠标事件) =====
+// 拖到侧边栏歌单通过全局 dragSongPath 传递(useDragSong)
+let jsDrag = null
+const jsDragTarget = ref(null)
+function onRowMouseDown(e, song) {
+  if (e.button !== 0) return
+  if (e.target.closest('button, input, a, .col-check, .row-actions')) return
+  jsDrag = { path: song.path, startX: e.clientX, startY: e.clientY, moved: false }
+  document.addEventListener('mousemove', onDocDragMove)
+  document.addEventListener('mouseup', onDocDragUp)
+}
+function onDocDragMove(e) {
+  if (!jsDrag) return
+  if (!jsDrag.moved && (Math.abs(e.clientX - jsDrag.startX) > 6 || Math.abs(e.clientY - jsDrag.startY) > 6)) {
+    jsDrag.moved = true
+    setDragSong(jsDrag.path)
+  }
+  if (jsDrag.moved) {
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    const row = el && el.closest('.list-row')
+    jsDragTarget.value = row ? row.getAttribute('data-path') : null
   }
 }
-function onRowDragLeave(song) {
-  if (dragTargetPath.value === song.path) dragTargetPath.value = null
-}
-function onRowDrop(song) {
-  if (dragPath && dragPath !== song.path) emit('reorder', { from: dragPath, to: song.path })
-  dragPath = null
-  dragTargetPath.value = null
+function onDocDragUp(e) {
+  document.removeEventListener('mousemove', onDocDragMove)
+  document.removeEventListener('mouseup', onDocDragUp)
+  if (!jsDrag) return
+  if (jsDrag.moved && jsDragTarget.value && jsDragTarget.value !== jsDrag.path) {
+    emit('reorder', { from: jsDrag.path, to: jsDragTarget.value })
+  }
+  clearDragSong()
+  jsDrag = null
+  jsDragTarget.value = null
 }
 
 const musicStore = useMusicStore()

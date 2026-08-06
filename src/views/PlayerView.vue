@@ -344,15 +344,10 @@
             <div class="queue-list" ref="queueListEl">
               <div v-if="playerStore.playQueue.length === 0" class="queue-empty">队列为空</div>
               <div v-for="(song, idx) in playerStore.playQueue" :key="song.path + '-' + idx"
-                class="queue-item" :class="{ active: idx === playerStore.currentIndex, 'drag-over': dragQueueTarget === idx }"
+                class="queue-item" :class="{ active: idx === playerStore.currentIndex, 'drag-over': queueDragTarget === idx }"
                 :ref="el => { if (idx === playerStore.currentIndex) activeQueueEl = el }"
                 @click="playerStore.playIndex(idx)"
-                draggable="true"
-                @dragstart="onQueueDragStart(idx, $event)"
-                @dragover.prevent="dragQueueTarget = idx"
-                @dragleave="onQueueDragLeave(idx)"
-                @drop.prevent="onQueueDrop(idx)"
-                @dragend="dragQueueTarget = null; dragQueueIdx = null">
+                @mousedown="onQueueMouseDown($event, idx)">
                 <span class="queue-idx">{{ idx + 1 }}</span>
                 <div class="queue-info">
                   <div class="queue-name text-ellipsis">{{ song.title }}</div>
@@ -458,25 +453,48 @@ function deleteCustom(name) {
   playerStore.deleteCustomEqPreset(name)
   try { window.$toast?.('已删除预设「' + name + '」', 'success') } catch {}
 }
-// 队列拖拽排序
-const dragQueueIdx = ref(null)
-const dragQueueTarget = ref(null)
-function onQueueDragStart(idx, e) {
-  dragQueueIdx.value = idx
-  dragQueueTarget.value = idx
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move'
-    try { e.dataTransfer.setData('text/plain', String(idx)) } catch {}
+// 队列 JS 拖拽排序(HTML5 DnD 在 Electron 不稳定,改用鼠标事件)
+let queueDrag = null
+const queueDragTarget = ref(null)
+function onQueueMouseDown(e, idx) {
+  if (e.button !== 0) return
+  if (e.target.closest('button')) return
+  queueDrag = { idx, startX: e.clientX, startY: e.clientY, moved: false }
+  document.addEventListener('mousemove', onQueueDocMove)
+  document.addEventListener('mouseup', onQueueDocUp)
+}
+function onQueueDocMove(e) {
+  if (!queueDrag) return
+  if (!queueDrag.moved && (Math.abs(e.clientX - queueDrag.startX) > 6 || Math.abs(e.clientY - queueDrag.startY) > 6)) {
+    queueDrag.moved = true
+  }
+  if (queueDrag.moved) {
+    const el = document.elementFromPoint(e.clientX, e.clientY)
+    const row = el && el.closest('.queue-item')
+    if (row) {
+      const idx = [...row.parentElement.children].indexOf(row)
+      queueDragTarget.value = idx >= 0 ? idx : null
+    }
   }
 }
+function onQueueDocUp() {
+  document.removeEventListener('mousemove', onQueueDocMove)
+  document.removeEventListener('mouseup', onQueueDocUp)
+  if (!queueDrag) return
+  if (queueDrag.moved && queueDragTarget.value !== null && queueDragTarget.value !== queueDrag.idx) {
+    playerStore.moveInQueue(queueDrag.idx, queueDragTarget.value)
+  }
+  queueDrag = null
+  queueDragTarget.value = null
+}
 function onQueueDragLeave(idx) {
-  if (dragQueueTarget.value === idx) dragQueueTarget.value = null
+  if (queueDragTarget.value === idx) queueDragTarget.value = null
 }
 function onQueueDrop(idx) {
-  const from = dragQueueIdx.value
+  const from = queueDrag ? queueDrag.idx : null
   if (from !== null && from !== idx) playerStore.moveInQueue(from, idx)
-  dragQueueIdx.value = null
-  dragQueueTarget.value = null
+  queueDrag = null
+  queueDragTarget.value = null
 }
 const eqGroups = [
   { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical', 'bass'] },
