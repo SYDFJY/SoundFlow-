@@ -194,6 +194,15 @@ function closeWindow() { window.electronAPI?.closeWindow() }
 .logo-text { font-size: var(--font-size-lg); font-weight: 700; color: var(--color-primary); letter-spacing: -0.5px; }
 
 .nav-buttons { display: flex; gap: 4px; }
+/* 顶栏图标按钮偏小号(28px),与 32px 全局 icon-btn 区分 */
+.topbar .icon-btn,
+.topbar-actions .icon-btn,
+.icon-btn.nav-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+}
+.topbar .icon-btn svg { width: 16px; height: 16px; }
 .nav-btn {
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
