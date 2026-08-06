@@ -1366,6 +1366,7 @@ async function searchLyric() {
 }
 .lyric-source-switch.collapsed .ls-btn:not(.ls-collapse) { display: none; }
 .ls-collapse { font-size: 13px; }
+.lyric-source-switch {
   padding: 4px 3px;
 }
 .ls-btn {
