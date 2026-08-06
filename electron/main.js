@@ -1754,10 +1754,24 @@ function setupIPC() {
     try {
       if (!info || !info.title) return
       if (!Notification.isSupported()) return
+      // 通知图标:显式传应用图标(Windows 通知若无 AUMID 关联图标会空白)
+      let notifIcon
+      try {
+        const p = path.join(process.resourcesPath, 'icon.ico')
+        if (fs.existsSync(p)) notifIcon = nativeImage.createFromPath(p)
+        if (!notifIcon || notifIcon.isEmpty()) {
+          const dev = path.join(__dirname, '..', 'build', 'icon.ico')
+          if (fs.existsSync(dev)) notifIcon = nativeImage.createFromPath(dev)
+        }
+      } catch (_) {}
+      if (notifIcon && !notifIcon.isEmpty() && notifIcon.getSize().width > 32) {
+        try { notifIcon = notifIcon.resize({ width: 32, height: 32 }) } catch (_) {}
+      }
       const n = new Notification({
         title: info.title,
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
-        silent: true
+        silent: true,
+        icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined
       })
       n.show()
       n.on('click', () => {
