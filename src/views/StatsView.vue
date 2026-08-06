@@ -161,7 +161,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
@@ -214,27 +214,27 @@ const totalHours = computed(() => Math.round(rangeSongs.value.reduce((a, s) => a
 const artistCount = computed(() => new Set(rangeSongs.value.map(s => s.artist).filter(Boolean)).size)
 const favCount = computed(() => musicStore.favoriteSongs.length)
 
-// 总览数字滚动动画(500ms ease-out,rAF)
-function useCountUp(target) {
-  const val = ref(0)
-  let raf = null
-  watch(target, (t) => {
-    if (raf) cancelAnimationFrame(raf)
-    const from = val.value
-    const start = performance.now()
-    const step = (now) => {
-      const p = Math.min(1, (now - start) / 500)
-      val.value = Math.round(from + (t - from) * (1 - Math.pow(1 - p, 3)))
-      if (p < 1) raf = requestAnimationFrame(step)
-    }
-    raf = requestAnimationFrame(step)
-  }, { immediate: true })
-  return val
+// 总览数字滚动动画(500ms ease-out,rAF;onMounted 后执行,避免 setup 期 watch immediate 的 TDZ)
+const totalPlaysAnim = ref(0)
+const totalHoursAnim = ref(0)
+const artistCountAnim = ref(0)
+const favCountAnim = ref(0)
+function animateNumber(to, animRef) {
+  const from = animRef.value
+  const start = performance.now()
+  const step = (now) => {
+    const p = Math.min(1, (now - start) / 500)
+    animRef.value = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)))
+    if (p < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
 }
-const totalPlaysAnim = useCountUp(totalPlays)
-const totalHoursAnim = useCountUp(totalHours)
-const artistCountAnim = useCountUp(artistCount)
-const favCountAnim = useCountUp(favCount)
+onMounted(() => {
+  animateNumber(totalPlays.value, totalPlaysAnim)
+  animateNumber(totalHours.value, totalHoursAnim)
+  animateNumber(artistCount.value, artistCountAnim)
+  animateNumber(favCount.value, favCountAnim)
+})
 
 // 近 7 天趋势(按 history 时间戳聚合)
 const weekTrend = computed(() => {
