@@ -327,7 +327,7 @@
 
         <!-- 播放列表面板(打开自动定位当前歌曲) -->
         <transition name="queue-slide">
-          <div v-if="showQueuePanel" class="queue-panel">
+          <div v-if="showQueuePanel" class="queue-panel" :style="{ width: queueW + 'px', height: queueH + 'px' }">
             <div class="queue-header">
               <span class="queue-title">播放列表</span>
               <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
@@ -349,6 +349,8 @@
                 <button class="queue-remove" @click.stop="playerStore.removeFromQueue(idx)" title="移除">✕</button>
               </div>
             </div>
+            <!-- 右下角缩放手柄 -->
+            <div class="queue-resize" @mousedown="onQueueResizeStart" title="拖动调整大小"></div>
           </div>
         </transition>
 
@@ -410,6 +412,32 @@ const activeLyricEl = ref(null)
 
 // 播放列表面板
 const showQueuePanel = ref(false)
+// 队列面板自由伸缩(尺寸记忆到 localStorage,min 260×240 / max 不超视口)
+const queueW = ref(parseInt(localStorage.getItem('soundflow_queue_w')) || 320)
+const queueH = ref(parseInt(localStorage.getItem('soundflow_queue_h')) || 380)
+function onQueueResizeStart(e) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  e.stopPropagation()
+  const startX = e.clientX
+  const startY = e.clientY
+  const sw = queueW.value
+  const sh = queueH.value
+  const onMove = (ev) => {
+    queueW.value = Math.min(Math.max(sw + (ev.clientX - startX), 260), Math.min(560, window.innerWidth - 60))
+    queueH.value = Math.min(Math.max(sh + (ev.clientY - startY), 240), window.innerHeight - 150)
+  }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    try {
+      localStorage.setItem('soundflow_queue_w', String(queueW.value))
+      localStorage.setItem('soundflow_queue_h', String(queueH.value))
+    } catch {}
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 const queueListEl = ref(null)
 let queueSortable = null
 // 队列拖拽排序(Sortable 直接绑定 DOM,元素渲染时才创建;结束回调重排+修正索引)
@@ -1551,8 +1579,6 @@ async function searchLyric() {
   position: absolute;
   bottom: 76px;
   right: 20px;
-  width: min(320px, 88vw);
-  max-height: min(380px, 70vh);
   display: flex;
   flex-direction: column;
   background: rgba(18, 20, 28, 0.94);
@@ -1574,7 +1600,17 @@ async function searchLyric() {
 .save-queue-mask { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
 .save-queue-card { width: 320px; padding: 20px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); }
 .save-queue-card h3 { margin: 0 0 12px; font-size: 16px; }
-.queue-list { position: relative; flex: 1; overflow-y: auto; padding: 6px; max-height: 320px; }
+.queue-list { position: relative; flex: 1; overflow-y: auto; padding: 6px; }
+.queue-resize {
+  position: absolute; right: 2px; bottom: 2px;
+  width: 14px; height: 14px;
+  cursor: nwse-resize;
+  opacity: 0.35;
+  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.55) 50%);
+  transition: opacity var(--transition-fast);
+  z-index: 5;
+}
+.queue-resize:hover { opacity: 1; }
 .queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: var(--font-size-sm); padding: 30px 0; }
 .queue-item {
   display: flex; align-items: center; gap: 10px;
@@ -1725,9 +1761,10 @@ async function searchLyric() {
   background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
   border-radius: 10px; padding: 10px 14px; width: 200px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
+  color: rgba(255,255,255,0.85);
 }
 .pitch-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
-.pitch-value { color: var(--color-primary, #4096ff); font-weight: 700; }
+.pitch-value { color: #6ec6ff; font-weight: 700; }
 .pitch-panel input[type="range"],
 .rate-panel input[type="range"] {
   width: 100%; -webkit-appearance: none; appearance: none; height: 6px;
@@ -1749,9 +1786,9 @@ async function searchLyric() {
 .pitch-preset {
   flex: 1; min-width: 42px; padding: 3px 0; font-size: var(--font-size-sm, 12px);
   border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
-  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+  background: transparent; color: rgba(255,255,255,0.78); cursor: pointer; transition: all 0.15s;
 }
-.pitch-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.pitch-preset:hover { border-color: #6ec6ff; color: #6ec6ff; }
 .pitch-preset.active {
   background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff);
   box-shadow: 0 0 0 1px var(--color-primary, #4096ff);
@@ -1760,18 +1797,18 @@ async function searchLyric() {
 .pitch-mode-btn {
   flex: 1; padding: 3px 0; font-size: var(--font-size-sm, 11px);
   border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
-  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+  background: transparent; color: rgba(255,255,255,0.78); cursor: pointer; transition: all 0.15s;
 }
-.pitch-mode-btn:hover { border-color: var(--color-primary, #4096ff); }
+.pitch-mode-btn:hover { border-color: #6ec6ff; }
 .pitch-mode-btn.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
-.pitch-mode-hint { font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-bottom: 6px; text-align: center; }
+.pitch-mode-hint { font-size: 10px; color: rgba(255,255,255,0.5); margin-bottom: 6px; text-align: center; }
 .voice-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .voice-preset {
   flex: 1 1 30%; min-width: 58px; padding: 4px 0; font-size: var(--font-size-sm, 11px);
   border: 1px dashed var(--border-color, rgba(255,255,255,0.25)); border-radius: 6px;
-  background: transparent; color: var(--text-secondary, #ccc); cursor: pointer; transition: all 0.15s;
+  background: transparent; color: rgba(255,255,255,0.65); cursor: pointer; transition: all 0.15s;
 }
-.voice-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.voice-preset:hover { border-color: #6ec6ff; color: #6ec6ff; }
 .voice-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); box-shadow: 0 0 0 1px var(--color-primary, #4096ff); }
 .rate-control { position: relative; display: flex; align-items: center; }
 /* 播放控制组对称定位(置于末尾确保优先级,覆盖上面相对定位):
@@ -1784,22 +1821,23 @@ async function searchLyric() {
   background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
   border-radius: 10px; padding: 10px 14px; width: 210px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
+  color: rgba(255,255,255,0.85);
 }
 .rate-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .rate-preset {
   flex: 1; min-width: 38px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
   border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
-  background: transparent; color: var(--text-primary, #fff); cursor: pointer; transition: all 0.15s;
+  background: transparent; color: rgba(255,255,255,0.78); cursor: pointer; transition: all 0.15s;
 }
-.rate-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.rate-preset:hover { border-color: #6ec6ff; color: #6ec6ff; }
 .rate-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
-.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin-top: 2px; padding: 0 2px; }
+.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 2px; padding: 0 2px; }
 .pitch-value--active { color: #fff; background: var(--color-primary, #4096ff); border-radius: 4px; padding: 0 6px; }
 .pitch-actions { display: flex; justify-content: center; margin-top: 8px; }
 .pitch-reset {
   font-size: var(--font-size-sm, 12px); padding: 3px 14px;
   border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 6px;
-  background: transparent; color: var(--text-primary, #fff); cursor: pointer;
+  background: transparent; color: rgba(255,255,255,0.78); cursor: pointer;
 }
 .pitch-reset:hover { background: rgba(255,255,255,0.1); }
 </style>

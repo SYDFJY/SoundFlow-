@@ -523,7 +523,7 @@ export const useMusicStore = defineStore('music', () => {
       if (missing.length > 0) {
         console.warn(`[检测] 启动检测到 ${missing.length} 首歌曲文件已失效,可在首页清理`)
         if (window.$toast) {
-          window.$toast.warning(`检测到 ${missing.length} 首歌曲文件已失效,可在首页一键清理`)
+          window.$toast(`检测到 ${missing.length} 首歌曲文件已失效,可在首页一键清理`, 'warning')
         }
       }
     } catch (e) {

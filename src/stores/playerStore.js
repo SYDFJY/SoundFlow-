@@ -1363,6 +1363,11 @@ export const usePlayerStore = defineStore('player', () => {
     if (window.electronAPI && window.electronAPI.lyricToggle) {
       window.electronAPI.lyricToggle()
     }
+    // 播放中点开桌面歌词:立即推送当前歌词(此前被 sendLyricUpdate 的 state===0 守卫拦截,要等下次切歌才显示)
+    // 延迟 300ms 给主进程建窗时间;窗口加载后主进程还会重放 lastLyricData 兜底
+    if (desktopLyricState.value === 1) {
+      setTimeout(() => sendLyricUpdate(), 300)
+    }
   }
 
   function setPlaybackRate(rate) {

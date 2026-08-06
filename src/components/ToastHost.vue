@@ -49,7 +49,24 @@ function dismiss(id) {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(8px);
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
+/* 类型配色:左侧 4px 色条 + 淡色背景点缀 */
+.toast-item::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 4px;
+}
+.toast-success::before { background: #52c41a; }
+.toast-success { background: rgba(82, 196, 26, 0.14); }
+.toast-error::before { background: #ff4d4f; }
+.toast-error { background: rgba(255, 77, 79, 0.14); }
+.toast-info::before { background: #4096ff; }
+.toast-info { background: rgba(64, 150, 255, 0.14); }
+.toast-warning::before { background: #fadb14; }
+.toast-warning { background: rgba(250, 173, 20, 0.14); }
 .toast-icon {
   width: 22px;
   height: 22px;

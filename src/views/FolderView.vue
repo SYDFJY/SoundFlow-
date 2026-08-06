@@ -5,12 +5,12 @@
       <div class="section-header">
         <h2 class="section-title">🎵 音乐扫描目录</h2>
         <span class="section-count">{{ musicStore.scanFolders.length }} 个</span>
-        <button class="btn" @click="addFolder">添加目录</button>
+        <button class="btn btn--sm" @click="addFolder">添加目录</button>
       </div>
       <div v-if="musicStore.scanFolders.length === 0" class="empty-state">
         <div class="empty-icon">📁</div>
         <div class="empty-text">还没有添加音乐扫描目录</div>
-        <button class="btn" @click="addFolder">添加目录</button>
+        <button class="btn btn--sm" @click="addFolder">添加目录</button>
       </div>
       <div v-else class="folder-list">
         <div v-for="folder in musicStore.scanFolders" :key="folder" class="folder-item">
@@ -33,7 +33,7 @@
       <div class="section-header">
         <h2 class="section-title">📝 歌词文件夹</h2>
         <span class="section-count">{{ musicStore.lyricFolders.length }} 个</span>
-        <button class="btn" @click="addLyricFolder">添加歌词文件夹</button>
+        <button class="btn btn--sm" @click="addLyricFolder">添加歌词文件夹</button>
       </div>
       <div v-if="musicStore.lyricFolders.length === 0" class="empty-state">
         <div class="empty-icon">📄</div>
@@ -60,7 +60,7 @@
       <div class="section-header">
         <h2 class="section-title">🔤 字体文件夹</h2>
         <span class="section-count">{{ fontCount }} 个已导入字体</span>
-        <button class="btn" @click="openFontsDir">打开字体文件夹</button>
+        <button class="btn btn--sm" @click="openFontsDir">打开字体文件夹</button>
       </div>
       <div class="folder-hint">
         从字体文件夹导入的字体存放在应用数据目录(userData/fonts),在设置页可自由选择使用。
@@ -125,13 +125,6 @@ async function openFontsDir() {
 .section-header { display: flex; align-items: center; gap: 12px; }
 .section-title { margin: 0; font-size: 16px; color: var(--text-primary); }
 .section-count { font-size: 12px; color: var(--text-tertiary); }
-.add-btn {
-  margin-left: auto; padding: 7px 16px;
-  background: var(--color-primary); color: #fff;
-  border-radius: var(--radius-md); font-size: var(--font-size-sm);
-  transition: all 0.2s;
-}
-.add-btn:hover { background: var(--color-primary-light); }
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 0; color: var(--text-secondary); }
 .empty-icon { font-size: 34px; }
 .empty-text { font-size: var(--font-size-sm); }
@@ -144,11 +137,6 @@ async function openFontsDir() {
 .folder-icon { width: 18px; height: 18px; color: var(--color-primary); flex-shrink: 0; }
 .folder-path { flex: 1; font-size: var(--font-size-sm); color: var(--text-primary); }
 .folder-actions { display: flex; gap: 4px; }
-.folder-btn {
-  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-  border-radius: 6px; color: var(--text-secondary); background: none; border: none; cursor: pointer;
-}
-.folder-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .icon-btn--danger:hover { color: var(--color-danger); background: rgba(255, 77, 79, 0.12); }
 .folder-hint { font-size: var(--font-size-sm); color: var(--text-tertiary); padding: 4px 2px; }
 </style>
