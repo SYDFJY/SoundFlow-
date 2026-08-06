@@ -12,6 +12,18 @@ const log = require('electron-log')
 // 禁用 GPU 硬件加速:Windows 上 GPU/合成器崩溃是无痕闪退(无日志/无崩溃事件)的头号原因,
 // 尤其在透明窗口、封面大图解码、频谱动画场景;软件合成换取稳定性
 app.disableHardwareAcceleration()
+
+// ===== 强制退出追踪(electron-log 是异步写盘,强杀时日志可能丢失;这里同步写独立文件)=====
+const exitTracePath = path.join(app.getPath('userData'), 'logs', 'exit-trace.log')
+function exitTrace(msg) {
+  try { fs.appendFileSync(exitTracePath, `${new Date().toLocaleString()} ${msg}\n`) } catch (_) {}
+}
+// Node 的 exit 事件:任何退出路径(含 process.exit)都会触发,同步落盘
+process.on('exit', () => exitTrace('[process-exit] 主进程退出'))
+process.on('beforeExit', () => exitTrace('[beforeExit]'))
+// SIGTERM/SIGINT(部分外部终止场景)
+process.on('SIGTERM', () => { exitTrace('[SIGTERM]'); process.exit(0) })
+process.on('SIGINT', () => { exitTrace('[SIGINT]'); process.exit(0) })
 // 日志配置:默认写入 userData/logs/main.log(上限 5MB)
 log.transports.file.maxSize = 5 * 1024 * 1024
 // 禁用控制台输出:从管道/后台启动时 stdout 已关闭,写 console 会触发 EPIPE → errorHandler 再写 → 无限循环阻塞主进程
