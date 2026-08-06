@@ -736,8 +736,8 @@ export const usePlayerStore = defineStore('player', () => {
         return true
       }
 
-      // auto:本地优先,命中即返回
-      if (source === 'auto' && lrcText && onlineEnabled) {
+      // auto:本地优先,命中即返回(不受"在线歌词"开关影响)
+      if (source === 'auto' && lrcText) {
         showLyrics(lrcText, '本地')
         return
       }
