@@ -71,7 +71,10 @@
         </div>
         <div class="lyric-right">
           <!-- 歌词来源切换等竖排按钮:absolute 固定右侧栏右上,不随歌词滚动(fixed 受 transform 影响失效,sticky 占位遮挡) -->
-          <div class="lyric-source-switch">
+          <div class="lyric-source-switch" :class="{ collapsed: lyricSidebarCollapsed }">
+            <!-- 收起/展开按钮:收起时侧边栏缩成小竖条 -->
+            <button class="ls-btn ls-collapse" :title="lyricSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'" @click="lyricSidebarCollapsed = !lyricSidebarCollapsed; localStorage.setItem('soundflow_lyric_sidebar', lyricSidebarCollapsed ? '1' : '0')">{{ lyricSidebarCollapsed ? '«' : '»' }}</button>
+            <template v-if="!lyricSidebarCollapsed">
             <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
             <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
             <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
@@ -80,6 +83,7 @@
             <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
             <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
             <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
+            </template>
           </div>
           <!-- 歌词颜色面板:跟随按钮组左侧 -->
           <div v-if="showColorPanel" class="color-panel" @click.stop>
@@ -695,6 +699,8 @@ const lyricSourceOptions = [
   { value: 'qq', label: 'QQ音乐' }
 ]
 const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
+// 歌词右侧栏收起状态(持久化)
+const lyricSidebarCollapsed = ref(localStorage.getItem('soundflow_lyric_sidebar') === '1')
 
 // 歌词字号(可调,localStorage 持久化)
 const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_size')) || 18)
@@ -1351,6 +1357,15 @@ async function searchLyric() {
   gap: 4px;
   background: rgba(0,0,0,0.35);
   border-radius: 12px;
+  transition: all 0.2s ease;
+}
+/* 收起态:缩成小竖条,只显示展开按钮 */
+.lyric-source-switch.collapsed {
+  gap: 0;
+  background: rgba(0,0,0,0.22);
+}
+.lyric-source-switch.collapsed .ls-btn:not(.ls-collapse) { display: none; }
+.ls-collapse { font-size: 13px; }
   padding: 4px 3px;
 }
 .ls-btn {
