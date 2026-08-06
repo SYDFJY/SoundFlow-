@@ -52,8 +52,8 @@ onBeforeUnmount(() => clearTimeout(hideTimer))
 <style scoped>
 .song-notify {
   position: fixed;
-  top: 64px;
   right: 16px;
+  bottom: 96px;
   z-index: 9998;
   display: flex;
   align-items: center;

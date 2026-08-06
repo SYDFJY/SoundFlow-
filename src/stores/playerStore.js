@@ -20,7 +20,17 @@ export const usePlayerStore = defineStore('player', () => {
   let songNotifyTimer = null
   function showSongNotify(song) {
     try {
-      if (!song || localStorage.getItem('soundflow_song_notify') !== '1') return
+      if (!song) return
+      // 模式:off 关闭 / card 应用内卡片 / system 系统横幅(兼容旧值 1=card, 0=off)
+      let mode = localStorage.getItem('soundflow_song_notify')
+      if (mode === '1') mode = 'card'
+      else if (mode === '0') mode = 'off'
+      mode = mode || 'card'
+      if (mode === 'off') return
+      if (mode === 'system') {
+        if (window.electronAPI?.send) window.electronAPI.send('notify-song', { title: song.title || '', artist: song.artist || '' })
+        return
+      }
       songNotify.value = { visible: true, title: song.title || '', artist: song.artist || '', coverUrl: song.coverUrl || '' }
       clearTimeout(songNotifyTimer)
       songNotifyTimer = setTimeout(() => { songNotify.value.visible = false }, 4000)

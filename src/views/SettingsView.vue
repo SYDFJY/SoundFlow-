@@ -55,12 +55,14 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">切歌系统通知</span>
-            <span class="label-desc">切换歌曲时在系统通知中心弹出提示(默认关闭)</span>
+            <span class="label-text">切歌通知</span>
+            <span class="label-desc">切歌提示方式:应用内右下角卡片 / 系统通知横幅(默认卡片)</span>
           </div>
-          <button class="setting-btn" :class="{ active: songNotify }" @click="toggleSongNotify">
-            {{ songNotify ? '已开启 ✓' : '已关闭' }}
-          </button>
+          <div class="notify-options">
+            <button class="theme-btn" :class="{ active: songNotify === 'off' }" @click="setSongNotify('off')">关闭</button>
+            <button class="theme-btn" :class="{ active: songNotify === 'card' }" @click="setSongNotify('card')">应用内卡片</button>
+            <button class="theme-btn" :class="{ active: songNotify === 'system' }" @click="setSongNotify('system')">系统横幅</button>
+          </div>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -697,10 +699,11 @@ const systemFonts = [
 const currentFont = ref(localStorage.getItem('soundflow_font_family') || systemFonts[0].value)
 const customFonts = ref(JSON.parse(localStorage.getItem('soundflow_custom_fonts') || '[]'))
 const fontExpanded = ref(false) // 已导入字体区展开/收起
-const songNotify = ref(localStorage.getItem('soundflow_song_notify') === '1')
-function toggleSongNotify() {
-  songNotify.value = !songNotify.value
-  localStorage.setItem('soundflow_song_notify', songNotify.value ? '1' : '0')
+const songNotify = ref(localStorage.getItem('soundflow_song_notify') || 'card')
+function setSongNotify(v) {
+  songNotify.value = v
+  localStorage.setItem('soundflow_song_notify', v)
+  try { window.$toast?.('切歌通知已切换为「' + (v === 'off' ? '关闭' : v === 'card' ? '应用内卡片' : '系统横幅') + '」', 'success') } catch {}
 }
 function toggleAutoPlay() {
   appStore.autoPlay = !appStore.autoPlay

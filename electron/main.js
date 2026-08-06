@@ -1749,16 +1749,20 @@ function setupIPC() {
 
   // 文件夹监控开关(自动刷新曲库)
   ipcMain.on('set-folder-watch', (event, enabled) => setFolderWatchEnabled(!!enabled))
-  // 切歌系统通知(开关在设置页,渲染进程控制)
+  // 切歌系统通知(模式 system 时由渲染进程触发;需 AUMID 关联快捷方式才能弹出)
   ipcMain.on('notify-song', (event, info) => {
     try {
       if (!info || !info.title) return
+      if (!Notification.isSupported()) return
       const n = new Notification({
         title: info.title,
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
         silent: true
       })
       n.show()
+      n.on('click', () => {
+        try { if (mainWindow) { mainWindow.show(); mainWindow.focus() } } catch (_) {}
+      })
     } catch {}
   })
   ipcMain.handle('get-folder-watch', () => !!storageData.folderWatch)
