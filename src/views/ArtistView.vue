@@ -31,7 +31,7 @@
           <div class="detail-header">
             <div class="detail-avatar">{{ selectedArtist.name[0] }}</div>
             <div class="detail-info">
-              <h2>{{ selectedArtist.name }}</h2>
+              <h2 class="detail-title">{{ selectedArtist.name }}</h2>
               <span>{{ selectedArtist.count }} 首歌曲</span>
             </div>
             <button class="play-all-btn" @click="playArtist">
@@ -124,7 +124,11 @@ function playArtistDirect(name) {
   font-size: 32px; font-weight: 700; color: white;
 }
 .artist-cover { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-.artist-name { font-size: var(--font-size-base); font-weight: 500; color: var(--text-primary); text-align: center; }
+.artist-name {
+  font-size: var(--font-size-base); font-weight: 500; color: var(--text-primary); text-align: center;
+  width: 100%; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .artist-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: var(--text-tertiary); }
@@ -135,8 +139,11 @@ function playArtistDirect(name) {
 .detail-card { background: var(--bg-secondary); border-radius: var(--radius-xl); width: 700px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
 .detail-header { display: flex; align-items: center; gap: 16px; padding: 24px; border-bottom: 1px solid var(--border-color); }
 .detail-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary-alpha), var(--color-primary)); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: white; flex-shrink: 0; }
-.detail-info { flex: 1; }
-.detail-info h2 { font-size: 20px; color: var(--text-primary); }
+.detail-info { flex: 1; min-width: 0; }
+.detail-info .detail-title {
+  font-size: 20px; color: var(--text-primary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
 .detail-info span { font-size: var(--font-size-sm); color: var(--text-secondary); }
 .play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--color-primary); color: white; border-radius: var(--radius-md); font-size: var(--font-size-sm); }
 .play-all-btn svg { width: 14px; height: 14px; }
