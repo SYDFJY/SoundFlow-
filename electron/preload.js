@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lyricClickThrough: (on) => ipcRenderer.send('lyric:click-through', on),
   lyricPin: (pinned) => ipcRenderer.send('lyric:pin', pinned),
   lyricClose: () => ipcRenderer.send('lyric:close'),
+  lyricDragMove: (dx, dy) => ipcRenderer.send('lyric:drag-move', dx, dy),
+  lyricResize: (w, h) => ipcRenderer.send('lyric:resize', w, h),
   lyricSeek: (time) => ipcRenderer.send('lyric:seek', time),
   lyricSave: (text) => ipcRenderer.send('lyric:save', text),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),

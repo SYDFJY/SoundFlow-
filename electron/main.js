@@ -843,6 +843,15 @@ function createTray() {
     { label: '上一曲', click: () => { if (mainWindow) mainWindow.webContents.send('tray-command', 'prev') } },
     { label: '下一曲', click: () => { if (mainWindow) mainWindow.webContents.send('tray-command', 'next') } },
     { type: 'separator' },
+    { label: '恢复歌词交互(取消点击穿透)', click: () => {
+      if (lyricWindow && !lyricWindow.isDestroyed()) {
+        try {
+          lyricWindow.setIgnoreMouseEvents(false)
+          lyricWindow.webContents.send('lyric:through', false)
+        } catch (_) {}
+      }
+    } },
+    { type: 'separator' },
     { label: '退出', click: () => { app.isQuitting = true; app.quit() } }
   ])
 
@@ -1811,6 +1820,23 @@ function setupIPC() {
   // 歌词窗口关闭
   ipcMain.on('lyric:close', () => {
     if (lyricWindow) { lyricWindow.close(); lyricWindow = null }
+  })
+
+  // 歌词窗口拖动(JS 拖拽,增量移动)
+  ipcMain.on('lyric:drag-move', (event, dx, dy) => {
+    if (!lyricWindow || lyricWindow.isDestroyed() || lyricLocked) return
+    try {
+      const [x, y] = lyricWindow.getPosition()
+      lyricWindow.setPosition(Math.round(x + dx), Math.round(y + dy))
+    } catch (_) {}
+  })
+
+  // 歌词窗口缩放(右下角拖拽柄)
+  ipcMain.on('lyric:resize', (event, w, h) => {
+    if (!lyricWindow || lyricWindow.isDestroyed()) return
+    try {
+      lyricWindow.setSize(Math.max(220, Math.round(w)), Math.max(60, Math.round(h)))
+    } catch (_) {}
   })
 
   // 主窗口推送歌词数据到歌词窗口(lines + 当前句索引)

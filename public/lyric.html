@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <style>
 *{margin:0;padding:0;box-sizing:border-box;user-select:none}
-html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:drag}
+html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:no-drag}
 #app{position:relative;height:100%;background:rgba(0,0,0,0.05);border-radius:10px;overflow:hidden}
 #lyric{height:100%;overflow-y:auto;padding:22px 12px 10px;scroll-behavior:smooth}
 #lyric::-webkit-scrollbar{width:3px}
@@ -79,8 +79,7 @@ function loadSettings(){
     if(s.locked!==undefined) locked=s.locked
     app.style.background=`rgba(0,0,0,${bgAlpha})`
     applyFont();applyColor()
-    // 锁定 = 禁止拖动(位置锁定),不是点击穿透
-    document.documentElement.style.webkitAppRegion = locked ? 'no-drag' : 'drag'
+    // 锁定 = 禁止拖动(JS 拖拽由 locked 变量控制,不再用 webkitAppRegion)
   }catch{}
 }
 function saveSettings(){
@@ -224,7 +223,6 @@ function handleAction(a){
   }
   else if(a==='lock'){
     locked=!locked
-    document.documentElement.style.webkitAppRegion = locked ? 'no-drag' : 'drag'
     api.lyricLock(locked)
     showToast(locked?'已锁定位置(不可移动,右键可解锁)':'已解锁(可自由移动)');saveSettings()
   }
@@ -255,14 +253,59 @@ function handleAction(a){
   else if(a==='reset'){
     fontSize=14;bgAlpha=0.05;lyricColor='#4d94ff';locked=false
     app.style.background=`rgba(0,0,0,${bgAlpha})`
-    document.documentElement.style.webkitAppRegion = 'drag'
     applyFont();applyColor();saveSettings()
     showToast('所有设置已重置')
   }
 }
 
+// ===== 窗口拖动 + 缩放(JS 实现:任意位置按住即拖,>4px 判定为拖动) =====
+let dragState = null
+let sizeState = null
+let suppressClick = false
+
+document.addEventListener('mousedown', e => {
+  if (locked) return
+  if (e.button !== 0) return
+  if (e.target.closest('#size-handle')) return
+  dragState = { x: e.screenX, y: e.screenY, moved: false }
+})
+document.addEventListener('mousemove', e => {
+  if (dragState) {
+    const dx = e.screenX - dragState.x, dy = e.screenY - dragState.y
+    if (!dragState.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      dragState.moved = true
+      suppressClick = true
+    }
+    if (dragState.moved && api && api.lyricDragMove) {
+      api.lyricDragMove(dx, dy)
+      dragState.x = e.screenX
+      dragState.y = e.screenY
+    }
+  }
+  if (sizeState) {
+    const dw = e.screenX - sizeState.x, dh = e.screenY - sizeState.y
+    if (api && api.lyricResize) api.lyricResize(Math.max(220, sizeState.w + dw), Math.max(60, sizeState.h + dh))
+  }
+})
+document.addEventListener('mouseup', () => {
+  dragState = null
+  sizeState = null
+})
+// 拖动/缩放后消费一次 click,避免误触歌词/菜单
+document.addEventListener('click', e => {
+  if (suppressClick) { e.stopPropagation(); suppressClick = false }
+}, true)
+
+// 右下角缩放柄
+$('#size-handle').addEventListener('mousedown', e => {
+  e.stopPropagation()
+  if (e.button !== 0) return
+  sizeState = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight }
+})
+
 // ===== 双击歌词行跳转 =====
-lyric.addEventListener('dblclick',e=>{
+lyric.addEventListener('dblclick', e => {
+  if (suppressClick) { suppressClick = false; return }
   const el=e.target.closest('.line')
   if(!el) return
   const idx=parseInt(el.dataset.i)
