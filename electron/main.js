@@ -1754,7 +1754,7 @@ function setupIPC() {
     try {
       if (!info || !info.title) return
       if (!Notification.isSupported()) return
-      // 通知左上角小图标:应用 logo(无 AUMID 关联图标时兜底)
+      // 系统横幅:左上角应用 logo + 歌名 + 歌手(Windows 11 折叠 toast 无法显示封面,保持简洁)
       let notifIcon
       try {
         const p = path.join(process.resourcesPath, 'icon.ico')
@@ -1767,29 +1767,11 @@ function setupIPC() {
       if (notifIcon && !notifIcon.isEmpty() && notifIcon.getSize().width > 32) {
         try { notifIcon = notifIcon.resize({ width: 32, height: 32 }) } catch (_) {}
       }
-      // 通知正文大图:歌曲封面(data: 用 nativeImage;file: 直接传路径字符串更可靠)
-      let coverImage
-      let coverPath = null
-      try {
-        const cv = info.coverUrl
-        if (cv) {
-          if (cv.startsWith('data:')) {
-            coverImage = nativeImage.createFromDataURL(cv)
-            if (coverImage && !coverImage.isEmpty() && coverImage.getSize().width > 128) {
-              coverImage = coverImage.resize({ width: 128, height: 128 })
-            }
-          } else if (cv.startsWith('file:')) {
-            // file:///C:/... → C:/...(去协议+前导斜杠)
-            coverPath = decodeURIComponent(cv.replace(/^file:\/\//, '').replace(/^\//, ''))
-          }
-        }
-      } catch (_) {}
       const n = new Notification({
         title: info.title,
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
         silent: true,
-        icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined,
-        image: coverPath || (coverImage && !coverImage.isEmpty() ? coverImage : undefined)
+        icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined
       })
       n.show()
       n.on('click', () => {
