@@ -55,7 +55,8 @@
               <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
             </div>
             <div class="col-index">
-              <span class="index-num">{{ virtualStart + i + 1 }}</span>
+              <span v-if="isCurrentSong(song) && playerStore.isPlaying" class="eq-bars"><i></i><i></i><i></i></span>
+              <span v-else class="index-num">{{ virtualStart + i + 1 }}</span>
               <button class="play-icon" @click.stop="playSong(virtualStart + i)">
                 <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
               </button>
@@ -855,13 +856,17 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .list-row:hover .play-icon { display: flex; }
 .list-row.active .index-num { display: none; }
 .list-row.active .play-icon { display: flex; color: var(--color-primary); }
+.list-row.active .eq-bars { display: inline-flex; }
+.list-row.active .play-icon:not(:hover) { display: none; }
+.list-row:hover .eq-bars { display: none; }
 
 .col-title {
   flex: 1; min-width: 0;
   display: flex; align-items: center; gap: 10px;
 }
 .song-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; background: var(--bg-hover); }
-.song-cover img { width: 100%; height: 100%; object-fit: cover; }
+.song-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease; }
+.list-row:hover .song-cover img { transform: scale(1.1); }
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .song-name { font-size: var(--font-size-base); color: var(--text-primary); }
 .song-format { font-size: 10px; color: var(--text-tertiary); background: var(--bg-hover); padding: 1px 4px; border-radius: 3px; align-self: flex-start; }
@@ -899,7 +904,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   gap: 12px;
   color: var(--text-tertiary);
 }
-.empty-icon { font-size: 48px; }
+.empty-icon { font-size: 48px; animation: float-y 2.6s ease-in-out infinite; display: inline-block; }
 .empty-text { font-size: var(--font-size-base); }
 
 :deep(mark) {

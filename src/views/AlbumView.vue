@@ -107,7 +107,7 @@ function playAlbumDirect(album) {
 
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
 .album-card { cursor: pointer; transition: all var(--transition-normal); border-radius: var(--radius-lg); padding: 12px; }
-.album-card:hover { background: var(--bg-card); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.album-card:hover { background: var(--bg-card); box-shadow: var(--shadow-md); transform: translateY(-3px); }
 .album-play {
   position: absolute; right: 8px; bottom: 8px;
   width: 36px; height: 36px; border-radius: 50%;
@@ -120,7 +120,8 @@ function playAlbumDirect(album) {
 .album-play svg { width: 18px; height: 18px; }
 
 .album-cover { position: relative; width: 100%; aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; margin-bottom: 8px; box-shadow: var(--shadow-sm); }
-.album-cover img { width: 100%; height: 100%; object-fit: cover; }
+.album-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.25s ease; }
+.album-card:hover .album-cover img { transform: scale(1.06); }
 .cover-placeholder { width: 100%; height: 100%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; }
 .cover-placeholder-lg { width: 100px; height: 100px; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-size: 48px; border-radius: var(--radius-md); }
 
@@ -129,7 +130,7 @@ function playAlbumDirect(album) {
 .album-count { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: var(--text-tertiary); }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-icon { font-size: 48px; margin-bottom: 12px; animation: float-y 2.6s ease-in-out infinite; display: inline-block; }
 .empty-text { font-size: var(--font-size-base); }
 
 .detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }

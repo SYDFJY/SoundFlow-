@@ -10,8 +10,10 @@
     </div>
     <!-- 播放器全屏模式：不显示侧边栏、顶部栏、底部播放栏 -->
     <template v-if="isFullscreen">
-      <router-view v-slot="{ Component }">
-        <component :is="Component" />
+      <router-view v-slot="{ Component, route }">
+        <transition name="page-fade">
+          <component :is="Component" :key="route.path" />
+        </transition>
       </router-view>
     </template>
 
@@ -21,8 +23,10 @@
       <div class="app-body">
         <Sidebar />
         <main class="main-content">
-          <router-view v-slot="{ Component }">
-            <component :is="Component" />
+          <router-view v-slot="{ Component, route }">
+            <transition name="page-fade">
+              <component :is="Component" :key="route.path" />
+            </transition>
           </router-view>
         </main>
       </div>
@@ -191,8 +195,27 @@ function onGlobalKey(e) {
   }
 }
 
+// 按钮涟漪:点击公共按钮类时注入水波纹(pointerdown 委托,GPU 动画)
+function onRipple(e) {
+  const btn = e.target.closest('.btn, .btn--ghost, .chip, .icon-btn, .ctrl-btn')
+  if (!btn || btn.disabled) return
+  if (btn.classList.contains('ripple-host')) return // 已有
+  btn.classList.add('ripple-host')
+  const rect = btn.getBoundingClientRect()
+  const size = Math.max(rect.width, rect.height) * 2
+  const ink = document.createElement('span')
+  ink.className = 'ripple-ink'
+  ink.style.width = ink.style.height = size + 'px'
+  ink.style.left = (e.clientX - rect.left - size / 2) + 'px'
+  ink.style.top = (e.clientY - rect.top - size / 2) + 'px'
+  btn.appendChild(ink)
+  setTimeout(() => ink.remove(), 480)
+}
+
 onMounted(() => {
   window.addEventListener('keydown', onGlobalKey)
+  // 按钮涟漪(全局委托:公共按钮类点击注入水波纹)
+  window.addEventListener('pointerdown', onRipple, true)
   // 拖放导入:文件/文件夹拖入窗口
   window.addEventListener('dragover', onDragOver)
   window.addEventListener('drop', onDrop)
@@ -302,6 +325,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 页面淡入过渡(只 enter,不 out-in,避免旧版卡顿) */
+.page-fade-enter-active { transition: opacity 0.22s ease; }
+.page-fade-enter-from { opacity: 0; }
 .app {
   width: 100vw;
   height: 100vh;

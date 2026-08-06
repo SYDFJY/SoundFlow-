@@ -15,19 +15,19 @@
     <!-- 总览卡 -->
     <div class="stat-cards">
       <div class="stat-card">
-        <div class="stat-num">{{ totalPlays }}</div>
+        <div class="stat-num">{{ totalPlaysAnim }}</div>
         <div class="stat-label">累计播放</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num">{{ totalHours }}<span class="stat-unit"> 小时</span></div>
+        <div class="stat-num">{{ totalHoursAnim }}<span class="stat-unit"> 小时</span></div>
         <div class="stat-label">累计时长</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num">{{ artistCount }}</div>
+        <div class="stat-num">{{ artistCountAnim }}</div>
         <div class="stat-label">常听歌手</div>
       </div>
       <div class="stat-card">
-        <div class="stat-num">{{ favCount }}</div>
+        <div class="stat-num">{{ favCountAnim }}</div>
         <div class="stat-label">收藏歌曲</div>
       </div>
     </div>
@@ -161,7 +161,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
@@ -213,6 +213,28 @@ const totalPlays = computed(() => rangeSongs.value.reduce((a, s) => a + s._playC
 const totalHours = computed(() => Math.round(rangeSongs.value.reduce((a, s) => a + (s.duration || 0) * s._playCount, 0) / 3600))
 const artistCount = computed(() => new Set(rangeSongs.value.map(s => s.artist).filter(Boolean)).size)
 const favCount = computed(() => musicStore.favoriteSongs.length)
+
+// 总览数字滚动动画(500ms ease-out,rAF)
+function useCountUp(target) {
+  const val = ref(0)
+  let raf = null
+  watch(target, (t) => {
+    if (raf) cancelAnimationFrame(raf)
+    const from = val.value
+    const start = performance.now()
+    const step = (now) => {
+      const p = Math.min(1, (now - start) / 500)
+      val.value = Math.round(from + (t - from) * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+  }, { immediate: true })
+  return val
+}
+const totalPlaysAnim = useCountUp(totalPlays)
+const totalHoursAnim = useCountUp(totalHours)
+const artistCountAnim = useCountUp(artistCount)
+const favCountAnim = useCountUp(favCount)
 
 // 近 7 天趋势(按 history 时间戳聚合)
 const weekTrend = computed(() => {

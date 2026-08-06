@@ -104,7 +104,7 @@ function playArtistDirect(name) {
   padding: 16px; border-radius: var(--radius-lg);
   cursor: pointer; transition: all var(--transition-normal);
 }
-.artist-card:hover { background: var(--bg-card); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.artist-card:hover { background: var(--bg-card); box-shadow: var(--shadow-md); transform: translateY(-3px); }
 
 .artist-avatar { position: relative; width: 80px; height: 80px; border-radius: 50%; overflow: visible; }
 .artist-play {
@@ -132,7 +132,7 @@ function playArtistDirect(name) {
 .artist-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: var(--text-tertiary); }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
+.empty-icon { font-size: 48px; margin-bottom: 12px; animation: float-y 2.6s ease-in-out infinite; display: inline-block; }
 .empty-text { font-size: var(--font-size-base); }
 
 .detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }

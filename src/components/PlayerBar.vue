@@ -30,8 +30,8 @@
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
         </button>
         <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="(playerStore.isPlaying ? '暂停' : '播放') + ' (空格)'">
-          <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          <svg :key="'play-on'" v-if="playerStore.isPlaying" class="pop-anim" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          <svg :key="'play-off'" v-else class="pop-anim" viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
         </button>
         <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + ' (Ctrl+→)'">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>

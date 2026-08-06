@@ -44,7 +44,15 @@
 
     <!-- 歌曲列表 -->
     <div class="view-content">
+      <!-- 首次扫描/加载骨架屏 -->
+      <div v-if="musicStore.isScanning && musicStore.totalCount === 0" class="skeleton-list">
+        <div v-for="n in 8" :key="n" class="skeleton-row">
+          <div class="skeleton skeleton-cover"></div>
+          <div class="skeleton skeleton-line" :style="{ width: (40 + (n * 7) % 40) + '%' }"></div>
+        </div>
+      </div>
       <MusicList
+        v-else
         :songs="musicStore.filteredSongs"
         :sort-field="musicStore.sortField"
         :batch-mode="batchMode"
@@ -378,8 +386,11 @@ function removeSelected() {
 
 .view-content { flex: 1; overflow: hidden; }
 
-.scan-overlay {
-  position: fixed;
+.skeleton-list { padding: 4px 12px; display: flex; flex-direction: column; gap: 10px; }
+.skeleton-row { display: flex; align-items: center; gap: 12px; height: 44px; }
+.skeleton-cover { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
+.skeleton-line { height: 14px; border-radius: 4px; }
+.scan-overlay {  position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.3);
   display: flex; align-items: center; justify-content: center;
