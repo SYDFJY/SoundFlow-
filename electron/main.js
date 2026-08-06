@@ -1834,6 +1834,7 @@ function setupIPC() {
   // 歌词窗口缩放(右下角拖拽柄)
   ipcMain.on('lyric:resize', (event, w, h) => {
     if (!lyricWindow || lyricWindow.isDestroyed()) return
+    log.info('[歌词] resize 触发: ' + Math.round(w) + 'x' + Math.round(h))
     try {
       lyricWindow.setSize(Math.max(220, Math.round(w)), Math.max(60, Math.round(h)))
     } catch (_) {}

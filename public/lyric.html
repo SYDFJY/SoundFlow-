@@ -266,25 +266,29 @@ let suppressClick = false
 document.addEventListener('mousedown', e => {
   if (locked) return
   if (e.button !== 0) return
-  if (e.target.closest('#size-handle')) return
+  // 只在精确落在缩放柄热区(12px)时才进入缩放模式,其余一律视为拖动
+  const hd = e.target.closest('#size-handle')
+  if (hd) {
+    sizeState = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight }
+    return
+  }
   dragState = { x: e.screenX, y: e.screenY, moved: false }
 })
 document.addEventListener('mousemove', e => {
   if (dragState) {
-    const dx = e.screenX - dragState.x, dy = e.screenY - dragState.y
-    if (!dragState.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+    // 用 movementX/Y(相对上一事件的位移),不受窗口移动/坐标跳变影响
+    const mx = e.movementX || 0, my = e.movementY || 0
+    if (!dragState.moved && (Math.abs(mx) > 4 || Math.abs(my) > 4)) {
       dragState.moved = true
       suppressClick = true
     }
     if (dragState.moved && api && api.lyricDragMove) {
-      api.lyricDragMove(dx, dy)
-      dragState.x = e.screenX
-      dragState.y = e.screenY
+      api.lyricDragMove(mx, my)
     }
   }
   if (sizeState) {
-    const dw = e.screenX - sizeState.x, dh = e.screenY - sizeState.y
-    if (api && api.lyricResize) api.lyricResize(Math.max(220, sizeState.w + dw), Math.max(60, sizeState.h + dh))
+    const mx = e.movementX || 0, my = e.movementY || 0
+    if (api && api.lyricResize) api.lyricResize(Math.max(220, sizeState.w + mx), Math.max(60, sizeState.h + my))
   }
 })
 document.addEventListener('mouseup', () => {
