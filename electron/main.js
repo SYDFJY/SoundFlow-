@@ -1754,24 +1754,12 @@ function setupIPC() {
     try {
       if (!info || !info.title) return
       if (!Notification.isSupported()) return
-      // 系统横幅:左上角应用 logo + 歌名 + 歌手(Windows 11 折叠 toast 无法显示封面,保持简洁)
-      let notifIcon
-      try {
-        const p = path.join(process.resourcesPath, 'icon.ico')
-        if (fs.existsSync(p)) notifIcon = nativeImage.createFromPath(p)
-        if (!notifIcon || notifIcon.isEmpty()) {
-          const dev = path.join(__dirname, '..', 'build', 'icon.ico')
-          if (fs.existsSync(dev)) notifIcon = nativeImage.createFromPath(dev)
-        }
-      } catch (_) {}
-      if (notifIcon && !notifIcon.isEmpty() && notifIcon.getSize().width > 32) {
-        try { notifIcon = notifIcon.resize({ width: 32, height: 32 }) } catch (_) {}
-      }
+      // 不传 icon:完全依赖 AUMID(开始菜单快捷方式已注册 com.soundflow.music),
+      // Windows 自动在通知左上角显示唯一的应用图标;传 icon 会与 AUMID 图标叠加成两个
       const n = new Notification({
         title: info.title,
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
-        silent: true,
-        icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined
+        silent: true
       })
       n.show()
       n.on('click', () => {
