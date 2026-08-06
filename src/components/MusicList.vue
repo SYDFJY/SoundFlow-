@@ -232,6 +232,7 @@ let jsAutoScrollTimer = null
 function onRowMouseDown(e, song) {
   if (e.button !== 0) return
   if (e.target.closest('button, input, a, .col-check, .row-actions')) return
+  e.preventDefault() // 阻止拖动时文本选择(会破坏 elementFromPoint 命中)
   jsDrag = { path: song.path, startX: e.clientX, startY: e.clientY, moved: false }
   document.addEventListener('mousemove', onDocDragMove)
   document.addEventListener('mouseup', onDocDragUp)
@@ -759,7 +760,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .list-spacer { position: relative; width: 100%; }
 .list-body { position: relative; }
 .drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--color-primary); border-radius: 2px; z-index: 30; pointer-events: none; box-shadow: 0 0 6px var(--color-primary); }
-.list-row.dragging { opacity: 0.45; transform: scale(0.98); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); z-index: 20; }
+.list-row.dragging { opacity: 0.45; transform: scale(0.98); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); z-index: 20; pointer-events: none; }
 .list-virtual { position: relative; width: 100%; will-change: transform; }
 
 /* 批量操作栏 */
@@ -809,6 +810,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   margin: 0 4px;
   cursor: default;
   transition: background var(--transition-fast);
+  user-select: none;
 }
 .list-row.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.22)); outline: 1px dashed var(--color-primary); }
 .list-row[draggable="true"] { cursor: grab; }
