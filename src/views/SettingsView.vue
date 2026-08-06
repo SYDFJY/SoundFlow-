@@ -421,6 +421,43 @@
         <div v-if="backupMsg" class="setting-item">
           <span class="label-text" :style="{ color: backupOk ? 'var(--color-primary)' : 'var(--color-danger)' }">{{ backupMsg }}</span>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">存储占用</span>
+            <span class="label-desc">封面缓存:{{ storageInfo.coversCount || 0 }} 张 · {{ storageInfo.coversSize ? (storageInfo.coversSize / 1048576).toFixed(1) : '0.0' }} MB（清理后播放歌曲时自动重新生成）</span>
+          </div>
+          <button class="setting-btn" @click="clearCache" :disabled="cacheBusy">{{ cacheBusy ? '清理中…' : '清理封面缓存' }}</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">本地歌词管理</span>
+            <span class="label-desc">查看歌曲本地歌词状态,删除不需要的歌词文件</span>
+          </div>
+          <button class="setting-btn" @click="openLyricManager">打开管理</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 本地歌词管理弹窗 -->
+  <div v-if="lyricMgrOpen" class="save-queue-mask" @click.self="lyricMgrOpen = false">
+    <div class="save-queue-card lyric-mgr-card">
+      <h3>本地歌词管理</h3>
+      <div class="lyric-mgr-stats" v-if="!lyricMgrBusy">
+        共 {{ filteredSongs.length }} 首 · <span style="color:var(--color-primary)">有歌词 {{ withLyricCount }}</span> · <span style="color:#ff8f8f">缺失 {{ filteredSongs.length - withLyricCount }}</span>
+      </div>
+      <div class="lyric-mgr-stats" v-else>正在扫描歌词状态…</div>
+      <input v-model="lyricMgrSearch" class="eq-name-input" placeholder="搜索歌曲 / 歌手…" />
+      <div class="lyric-mgr-list">
+        <div v-for="s in filteredSongs" :key="s.path" class="lyric-mgr-row">
+          <div class="lyric-mgr-info">
+            <div class="lyric-mgr-title text-ellipsis">{{ s.title }}</div>
+            <div class="lyric-mgr-artist text-ellipsis">{{ s.artist }}</div>
+          </div>
+          <span class="lyric-mgr-status" :class="{ ok: lyricStatus[s.path] }">{{ lyricStatus[s.path] ? '✓ 有' : '✗ 无' }}</span>
+          <button v-if="lyricStatus[s.path]" class="lyric-mgr-del" @click="deleteMgrLyric(s)" title="删除本地歌词">🗑</button>
+        </div>
+        <div v-if="!filteredSongs.length" class="rank-empty">无匹配歌曲</div>
       </div>
     </div>
   </div>
@@ -512,6 +549,64 @@ const playerStore = usePlayerStore()
 
 // ===== 数据备份 / 导入 =====
 const backupBusy = ref(false)
+// 存储占用与清理
+const storageInfo = ref({ coversCount: 0, coversSize: 0 })
+const cacheBusy = ref(false)
+async function loadStorageInfo() {
+  try {
+    if (window.electronAPI?.getStorageInfo) storageInfo.value = await window.electronAPI.getStorageInfo()
+  } catch {}
+}
+loadStorageInfo()
+async function clearCache() {
+  if (cacheBusy.value) return
+  cacheBusy.value = true
+  try {
+    const r = await window.electronAPI?.clearCoverCache?.()
+    try { window.$toast?.(`已清理 ${r?.removed || 0} 个封面缓存文件`, 'success') } catch {}
+  } catch {
+    try { window.$toast?.('清理失败', 'error') } catch {}
+  }
+  cacheBusy.value = false
+  loadStorageInfo()
+}
+
+// 本地歌词管理
+const lyricMgrOpen = ref(false)
+const lyricMgrSearch = ref('')
+const lyricStatus = ref({})
+const lyricMgrBusy = ref(false)
+const filteredSongs = computed(() => {
+  const q = lyricMgrSearch.value.trim().toLowerCase()
+  const list = musicStore.songs || []
+  if (!q) return list
+  return list.filter(s => (s.title || '').toLowerCase().includes(q) || (s.artist || '').toLowerCase().includes(q))
+})
+const withLyricCount = computed(() => filteredSongs.value.filter(s => lyricStatus.value[s.path]).length)
+async function scanLyricStatusAll() {
+  if (!window.electronAPI?.scanLyricStatus || !musicStore.songs.length) return
+  lyricMgrBusy.value = true
+  try {
+    const songs = musicStore.songs.slice(0, 500).map(s => ({ path: s.path }))
+    const r = await window.electronAPI.scanLyricStatus(songs, [...musicStore.lyricFolders])
+    lyricStatus.value = r || {}
+  } catch {}
+  lyricMgrBusy.value = false
+}
+async function openLyricManager() {
+  lyricMgrOpen.value = true
+  await scanLyricStatusAll()
+}
+async function deleteMgrLyric(s) {
+  if (!window.electronAPI?.deleteLyricFile) return
+  try {
+    await window.electronAPI.deleteLyricFile(s.path, [...musicStore.lyricFolders])
+    lyricStatus.value[s.path] = false
+    try { window.$toast?.('已删除「' + s.title + '」的本地歌词', 'success') } catch {}
+  } catch {
+    try { window.$toast?.('删除失败', 'error') } catch {}
+  }
+}
 const backupMsg = ref('')
 const backupOk = ref(false)
 async function exportBackup() {
@@ -1056,4 +1151,18 @@ select {
 .settings-search input:focus { border-color: var(--color-primary); }
 .search-clear { background: none; border: none; color: var(--text-tertiary); cursor: pointer; margin-left: -26px; font-size: 13px; }
 .search-clear:hover { color: var(--text-primary); }
+/* 歌词管理弹窗(复用 save-queue 弹窗类需自带定义) */
+.lyric-mgr-card { width: 460px; max-width: 90vw; max-height: 72vh; display: flex; flex-direction: column; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); padding: 18px; }
+.lyric-mgr-card h3 { margin: 0 0 10px; font-size: 16px; }
+.lyric-mgr-stats { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.lyric-mgr-list { flex: 1; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.lyric-mgr-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; }
+.lyric-mgr-row:hover { background: var(--bg-hover); }
+.lyric-mgr-info { flex: 1; min-width: 0; }
+.lyric-mgr-title { font-size: 13px; color: var(--text-primary); }
+.lyric-mgr-artist { font-size: 11px; color: var(--text-secondary); }
+.lyric-mgr-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255,143,143,0.15); color: #ff8f8f; flex-shrink: 0; }
+.lyric-mgr-status.ok { background: rgba(80,220,140,0.15); color: #50dc8c; }
+.lyric-mgr-del { background: none; border: none; cursor: pointer; font-size: 13px; opacity: 0.6; }
+.lyric-mgr-del:hover { opacity: 1; }
 </style>

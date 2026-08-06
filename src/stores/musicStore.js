@@ -319,6 +319,20 @@ export const useMusicStore = defineStore('music', () => {
     saveToStorage()
   }
 
+  // 歌单内拖拽排序(按 path 定位,避免虚拟滚动索引错位)
+  function moveSongInPlaylist(playlistId, fromPath, toPath) {
+    const pl = playlists.value.find(p => p.id === playlistId)
+    if (!pl) return
+    const songs = [...pl.songs]
+    const fi = songs.indexOf(fromPath)
+    const ti = songs.indexOf(toPath)
+    if (fi < 0 || ti < 0 || fi === ti) return
+    const [item] = songs.splice(fi, 1)
+    songs.splice(ti, 0, item)
+    playlists.value = playlists.value.map(p => (p.id === playlistId ? { ...p, songs } : p))
+    saveToStorage()
+  }
+
   function getPlaylistSongs(playlistId) {
     const pl = playlists.value.find(p => p.id === playlistId)
     if (!pl) return []
@@ -530,7 +544,7 @@ export const useMusicStore = defineStore('music', () => {
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
-    addSongToPlaylist, removeSongFromPlaylist, getPlaylistSongs,
+    addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, getPlaylistSongs,
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles, importDropped,
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, clearHistory,

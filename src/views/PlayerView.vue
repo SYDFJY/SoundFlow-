@@ -344,9 +344,15 @@
             <div class="queue-list" ref="queueListEl">
               <div v-if="playerStore.playQueue.length === 0" class="queue-empty">队列为空</div>
               <div v-for="(song, idx) in playerStore.playQueue" :key="song.path + '-' + idx"
-                class="queue-item" :class="{ active: idx === playerStore.currentIndex }"
+                class="queue-item" :class="{ active: idx === playerStore.currentIndex, 'drag-over': dragQueueTarget === idx }"
                 :ref="el => { if (idx === playerStore.currentIndex) activeQueueEl = el }"
-                @click="playerStore.playIndex(idx)">
+                @click="playerStore.playIndex(idx)"
+                draggable="true"
+                @dragstart="onQueueDragStart(idx, $event)"
+                @dragover.prevent="dragQueueTarget = idx"
+                @dragleave="onQueueDragLeave(idx)"
+                @drop.prevent="onQueueDrop(idx)"
+                @dragend="dragQueueTarget = null; dragQueueIdx = null">
                 <span class="queue-idx">{{ idx + 1 }}</span>
                 <div class="queue-info">
                   <div class="queue-name text-ellipsis">{{ song.title }}</div>
@@ -451,6 +457,26 @@ function confirmSaveEq() {
 function deleteCustom(name) {
   playerStore.deleteCustomEqPreset(name)
   try { window.$toast?.('已删除预设「' + name + '」', 'success') } catch {}
+}
+// 队列拖拽排序
+const dragQueueIdx = ref(null)
+const dragQueueTarget = ref(null)
+function onQueueDragStart(idx, e) {
+  dragQueueIdx.value = idx
+  dragQueueTarget.value = idx
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    try { e.dataTransfer.setData('text/plain', String(idx)) } catch {}
+  }
+}
+function onQueueDragLeave(idx) {
+  if (dragQueueTarget.value === idx) dragQueueTarget.value = null
+}
+function onQueueDrop(idx) {
+  const from = dragQueueIdx.value
+  if (from !== null && from !== idx) playerStore.moveInQueue(from, idx)
+  dragQueueIdx.value = null
+  dragQueueTarget.value = null
 }
 const eqGroups = [
   { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical', 'bass'] },
@@ -1524,6 +1550,9 @@ async function searchLyric() {
   padding: 8px 10px; border-radius: 8px; cursor: pointer;
   transition: background 0.15s;
 }
+.queue-item.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.25)); outline: 1px dashed var(--color-primary); }
+.queue-item[draggable="true"] { cursor: grab; }
+.queue-item[draggable="true"]:active { cursor: grabbing; }
 .queue-item:hover { background: rgba(255,255,255,0.07); }
 .queue-item.active { background: var(--color-primary-alpha); }
 .queue-item.queue-ghost { opacity: 0.45; background: var(--color-primary-alpha); }

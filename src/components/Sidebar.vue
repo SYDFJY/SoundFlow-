@@ -52,8 +52,11 @@
           :key="pl.id"
           :to="`/playlist/${pl.id}`"
           class="menu-item"
-          :class="{ active: $route.path === `/playlist/${pl.id}` }"
+          :class="{ active: $route.path === `/playlist/${pl.id}`, 'drag-over': dragPlaylistTarget === pl.id }"
           @contextmenu.prevent="showPlaylistMenu($event, pl)"
+          @dragover.prevent="dragPlaylistTarget = pl.id"
+          @dragleave="onPlaylistDragLeave(pl.id)"
+          @drop.prevent="onPlaylistDrop(pl, $event)"
         >
           <img v-if="getPlaylistCover(pl)" :src="getPlaylistCover(pl)" class="pl-cover" />
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
@@ -124,6 +127,19 @@ import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 
 const musicStore = useMusicStore()
+// 拖歌入歌单(从歌曲列表拖拽到侧边栏歌单项)
+const dragPlaylistTarget = ref(null)
+function onPlaylistDragLeave(id) {
+  if (dragPlaylistTarget.value === id) dragPlaylistTarget.value = null
+}
+function onPlaylistDrop(pl, e) {
+  dragPlaylistTarget.value = null
+  let songPath = null
+  try { songPath = e.dataTransfer?.getData('text/plain') } catch {}
+  if (!songPath || !pl) return
+  if (musicStore.addSongToPlaylist) musicStore.addSongToPlaylist(pl.id, songPath)
+  try { window.$toast?.('已添加到歌单「' + pl.name + '」', 'success') } catch {}
+}
 // 迷你统计:今日播放次数(基于播放历史时间戳)+ 累计播放
 const todayPlays = computed(() => {
   const today = new Date().toDateString()
@@ -265,6 +281,7 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .add-playlist-btn:hover { background: var(--bg-hover); color: var(--color-primary); }
 .add-playlist-btn svg { width: 14px; height: 14px; }
 .menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 20px; color: var(--text-secondary); text-decoration: none; transition: all var(--transition-fast); cursor: pointer; position: relative; }
+.menu-item.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.25)); outline: 1px dashed var(--color-primary); color: var(--text-primary); }
 .menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
 .menu-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 500; }
 .menu-item.menu-ghost { opacity: 0.45; background: var(--color-primary-alpha); }

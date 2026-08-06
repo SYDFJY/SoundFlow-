@@ -546,7 +546,6 @@ export const usePlayerStore = defineStore('player', () => {
       const oi = _originalQueue.findIndex(s => s.path === removedPath)
       if (oi >= 0) _originalQueue.splice(oi, 1)
     }
-
     if (wasCurrent) {
       if (playQueue.value.length === 0) {
         // 队列空了,停止播放
@@ -558,6 +557,23 @@ export const usePlayerStore = defineStore('player', () => {
       }
     } else if (index < currentIndex.value) {
       currentIndex.value--
+    }
+    saveQueueState()
+  }
+
+  // 队列拖拽排序(调整顺序,维护 currentIndex 引用)
+  function moveInQueue(from, to) {
+    const q = playQueue.value
+    if (from < 0 || from >= q.length || to < 0 || to >= q.length || from === to) return
+    const [item] = q.splice(from, 1)
+    q.splice(to, 0, item)
+    const cur = currentIndex.value
+    if (cur === from) currentIndex.value = to
+    else if (from < cur && to >= cur) currentIndex.value = cur - 1
+    else if (from > cur && to <= cur) currentIndex.value = cur + 1
+    // 同步原始队列顺序
+    if (_originalQueue.length === q.length) {
+      _originalQueue = q.map(s => ({ ...s }))
     }
     saveQueueState()
   }
@@ -1483,7 +1499,7 @@ export const usePlayerStore = defineStore('player', () => {
     pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
-    initAudio, setPlayQueue, insertNext, removeFromQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
+    initAudio, setPlayQueue, insertNext, removeFromQueue, moveInQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     loadLyrics,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,

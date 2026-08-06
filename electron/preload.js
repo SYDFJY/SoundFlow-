@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 歌词
   readLyricFile: (audioPath, lyricFolders) => ipcRenderer.invoke('read-lyric-file', audioPath, lyricFolders),
+  scanLyricStatus: (songs, lyricFolders) => ipcRenderer.invoke('scan-lyric-status', songs, lyricFolders),
   selectLyricFile: () => ipcRenderer.invoke('select-lyric-file'),
   bindLyricFile: (audioPath, lrcPath) => ipcRenderer.invoke('bind-lyric-file', audioPath, lrcPath),
   deleteLyricFile: (audioPath, lyricFolders) => ipcRenderer.invoke('delete-lyric-file', audioPath, lyricFolders),
@@ -58,6 +59,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFileLocation: (filePath) => ipcRenderer.invoke('open-file-location', filePath),
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   getFontsDir: () => ipcRenderer.invoke('get-fonts-dir'),
+  getStorageInfo: () => ipcRenderer.invoke('get-storage-info'),
+  clearCoverCache: () => ipcRenderer.invoke('clear-cover-cache'),
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   selectFontFolder: () => ipcRenderer.invoke('select-font-folder'),

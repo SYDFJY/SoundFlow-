@@ -28,7 +28,7 @@
       </div>
     </div>
     <div class="view-content">
-      <MusicList :songs="sortedSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" empty-text="歌单为空，点击上方「添加歌曲」按钮" />
+      <MusicList :songs="sortedSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" @reorder="onReorder" empty-text="歌单为空，点击上方「添加歌曲」按钮" />
     </div>
 
     <!-- 添加歌曲弹窗 -->
@@ -106,6 +106,14 @@ const playlist = computed(() => musicStore.playlists.find(p => p.id === route.pa
 const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
 
 const sortedSongs = computed(() => musicStore.sortSongs(songs.value))
+function onReorder({ from, to }) {
+  // 排序激活时拖拽会乱序,提示先回默认排序
+  if (musicStore.sortField) {
+    try { window.$toast?.('请先切换到「默认排序」再拖拽调整顺序', 'warning') } catch {}
+    return
+  }
+  musicStore.moveSongInPlaylist(route.params.id, from, to)
+}
 
 // 添加歌曲弹窗状态
 const showAddDialog = ref(false)

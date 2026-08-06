@@ -43,9 +43,15 @@
             v-for="(song, i) in virtualSongs"
             :key="song.path"
             class="list-row"
-            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path) }"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': dragTargetPath === song.path }"
             @dblclick="playSong(virtualStart + i)"
             @contextmenu.prevent="showContextMenu($event, song)"
+            draggable="true"
+            @dragstart="onRowDragStart(song, $event)"
+            @dragover.prevent="dragTargetPath = song.path"
+            @dragleave="onRowDragLeave(song)"
+            @drop.prevent="onRowDrop(song)"
+            @dragend="dragTargetPath = null; dragPath = null"
           >
             <div v-if="batchOn" class="col-check" @click.stop>
               <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
@@ -214,7 +220,25 @@ const props = defineProps({
   emptyText: { type: String, default: '暂无歌曲' }
 })
 
-const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change'])
+const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change', 'reorder'])
+// 拖拽排序状态(按 path,虚拟滚动安全)
+let dragPath = null
+const dragTargetPath = ref(null)
+function onRowDragStart(song, e) {
+  dragPath = song.path
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    try { e.dataTransfer.setData('text/plain', song.path) } catch {}
+  }
+}
+function onRowDragLeave(song) {
+  if (dragTargetPath.value === song.path) dragTargetPath.value = null
+}
+function onRowDrop(song) {
+  if (dragPath && dragPath !== song.path) emit('reorder', { from: dragPath, to: song.path })
+  dragPath = null
+  dragTargetPath.value = null
+}
 
 const musicStore = useMusicStore()
 
@@ -734,11 +758,13 @@ watch(() => playerStore.currentSong?.path, (p) => {
   align-items: center;
   height: 56px;
   padding: 0 16px;
-  border-radius: var(--radius-md);
   margin: 0 4px;
   cursor: default;
   transition: background var(--transition-fast);
 }
+.list-row.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.22)); outline: 1px dashed var(--color-primary); }
+.list-row[draggable="true"] { cursor: grab; }
+.list-row[draggable="true"]:active { cursor: grabbing; }
 .list-row:hover { background: var(--bg-hover); }
 .list-row.active { background: var(--color-primary-alpha); }
 .list-row.selected { background: rgba(22, 119, 230, 0.06); }

@@ -949,6 +949,34 @@ function setupIPC() {
   // 字体文件夹路径(文件夹页打开用)
   ipcMain.handle('get-fonts-dir', () => path.join(app.getPath('userData'), 'fonts'))
 
+  // 存储占用统计(封面缓存)
+  ipcMain.handle('get-storage-info', async () => {
+    const dir = coverDir()
+    let size = 0, count = 0
+    try {
+      const files = fs.readdirSync(dir)
+      count = files.length
+      for (const f of files) {
+        try { size += fs.statSync(path.join(dir, f)).size } catch {}
+      }
+    } catch (_) {}
+    return { coversSize: size, coversCount: count }
+  })
+
+  // 清理封面缓存(封面会按需重新生成)
+  ipcMain.handle('clear-cover-cache', async () => {
+    const dir = coverDir()
+    let removed = 0
+    try {
+      const files = fs.readdirSync(dir)
+      for (const f of files) {
+        try { fs.unlinkSync(path.join(dir, f)); removed++ } catch {}
+      }
+    } catch (_) {}
+    try { coverUrlCache.clear() } catch (_) {}
+    return { removed }
+  })
+
   // 文件属性:大小/修改时间(属性弹窗用)
   ipcMain.handle('get-file-info', async (event, filePath) => {
     try {
@@ -1135,7 +1163,9 @@ function setupIPC() {
     }
   })
 
-  ipcMain.handle('read-lyric-file', async (event, audioPath, lyricFolders) => {    const ext = path.extname(audioPath)
+  // 查找本地歌词(同目录同名 → 歌词文件夹匹配),返回文本或 null
+  async function findLyricFile(audioPath, lyricFolders) {
+    const ext = path.extname(audioPath)
     const base = path.basename(audioPath, ext)
     // 1. 同目录同名
     const sameDirLrc = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
@@ -1182,6 +1212,18 @@ function setupIPC() {
       }
     }
     return null
+  }
+
+  ipcMain.handle('read-lyric-file', async (event, audioPath, lyricFolders) => findLyricFile(audioPath, lyricFolders))
+
+  // 批量扫描歌词状态(歌词管理页用)
+  ipcMain.handle('scan-lyric-status', async (event, songs, lyricFolders) => {
+    const result = {}
+    if (!Array.isArray(songs)) return result
+    for (const s of songs) {
+      try { result[s.path] = !!(await findLyricFile(s.path, lyricFolders)) } catch { result[s.path] = false }
+    }
+    return result
   })
 
   // 在线歌词(LRCLIB):按 歌名/歌手/时长 搜索同步歌词,返回 LRC 文本
