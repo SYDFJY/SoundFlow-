@@ -1767,19 +1767,20 @@ function setupIPC() {
       if (notifIcon && !notifIcon.isEmpty() && notifIcon.getSize().width > 32) {
         try { notifIcon = notifIcon.resize({ width: 32, height: 32 }) } catch (_) {}
       }
-      // 通知正文大图:歌曲封面(data: 或 file: 协议)
+      // 通知正文大图:歌曲封面(data: 用 nativeImage;file: 直接传路径字符串更可靠)
       let coverImage
+      let coverPath = null
       try {
         const cv = info.coverUrl
         if (cv) {
           if (cv.startsWith('data:')) {
             coverImage = nativeImage.createFromDataURL(cv)
+            if (coverImage && !coverImage.isEmpty() && coverImage.getSize().width > 128) {
+              coverImage = coverImage.resize({ width: 128, height: 128 })
+            }
           } else if (cv.startsWith('file:')) {
-            const p = decodeURIComponent(cv.replace(/^file:\/\//, ''))
-            coverImage = nativeImage.createFromPath(p)
-          }
-          if (coverImage && !coverImage.isEmpty() && coverImage.getSize().width > 128) {
-            coverImage = coverImage.resize({ width: 128, height: 128 })
+            // file:///C:/... → C:/...(去协议+前导斜杠)
+            coverPath = decodeURIComponent(cv.replace(/^file:\/\//, '').replace(/^\//, ''))
           }
         }
       } catch (_) {}
@@ -1788,7 +1789,7 @@ function setupIPC() {
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
         silent: true,
         icon: notifIcon && !notifIcon.isEmpty() ? notifIcon : undefined,
-        image: coverImage && !coverImage.isEmpty() ? coverImage : undefined
+        image: coverPath || (coverImage && !coverImage.isEmpty() ? coverImage : undefined)
       })
       n.show()
       n.on('click', () => {
