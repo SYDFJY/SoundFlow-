@@ -1152,7 +1152,8 @@ async function searchLyric() {
     const res = await window.electronAPI.searchOnlineLyric({
       title: song.title,
       artist: song.artist || '',
-      duration: song.duration || 0
+      duration: song.duration || 0,
+      source: lyricSource === 'local' ? 'auto' : lyricSource
     })
     if (res?.lyrics) {
       const saved = await window.electronAPI.saveLyricFile(song.path, res.lyrics, lyricFoldersForSave())

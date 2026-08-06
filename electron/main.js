@@ -1487,11 +1487,18 @@ function setupIPC() {
 
   // 手动搜索下载(用户点击):同样 LRCLIB → 网易云
   ipcMain.handle('search-lyric-online', async (event, info) => {
-    // LRCLIB 优先,未命中/失败回退网易云;网络异常统一返回 null(由调用方区分)
+    // 按用户选择的歌词源取词;auto/lrclib 优先 LRCLIB,未命中回退 QQ → 网易云
+    const src = info?.source || 'auto'
+    if (src === 'netease') return await fetchNetEaseLyric(info)
+    if (src === 'qq') return await fetchQQMusicLyric(info)
+    if (src === 'local') return null
     const r1 = await fetchLRCLIB(info)
     if (r1 && !r1.error) return r1
-    const r2 = await fetchNetEaseLyric(info)
+    const r2 = await fetchQQMusicLyric(info)
     if (r2 && !r2.error) return r2
+    const r3 = await fetchNetEaseLyric(info)
+    if (r3 && !r3.error) return r3
+    if (r1 && r1.error && r2 && r2.error && r3 && r3.error) return { error: 'network' }
     return null
   })
 

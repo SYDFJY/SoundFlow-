@@ -930,7 +930,8 @@ async function batchDownloadLyrics() {
           skipped++
         } else {
           const res = await window.electronAPI.searchOnlineLyric({
-            title: s.title, artist: s.artist || '', duration: s.duration || 0
+            title: s.title, artist: s.artist || '', duration: s.duration || 0,
+            source: lyricSource.value === 'local' ? 'auto' : lyricSource.value
           })
           if (res && res.lyrics) {
             const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
