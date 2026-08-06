@@ -26,6 +26,9 @@
           <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
         </button>
+        <!-- AB 循环:点 A 设起点,点 B 设终点(已激活时点 B 清除) -->
+        <button class="ctrl-btn ab-btn" :class="{ active: playerStore.abActive }" :title="'AB循环 · 设置起点 A(当前 ' + playerStore.formatTime(playerStore.currentTime) + ')'" @click="playerStore.setAbPoint('A')">A</button>
+        <button class="ctrl-btn ab-btn" :class="{ active: playerStore.abActive }" :title="playerStore.abActive ? 'AB循环已开启,点击清除' : 'AB循环 · 设置终点 B(当前 ' + playerStore.formatTime(playerStore.currentTime) + ')'" @click="playerStore.abActive ? playerStore.clearAb() : playerStore.setAbPoint('B')">B</button>
         <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev')">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
         </button>
@@ -355,6 +358,8 @@ function setCustomTimer() {
 .ctrl-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .ctrl-btn svg { width: 18px; height: 18px; }
 .mode-icon { font-size: var(--font-size-lg); }
+.ab-btn { width: 22px; height: 22px; font-size: 11px; font-weight: 700; border-radius: 6px; }
+.ab-btn.active { background: var(--color-primary); color: #fff; }
 .rate-btn { width: auto; padding: 0 8px; border-radius: var(--radius-sm); font-size: var(--font-size-xs); font-weight: 600; color: var(--color-primary); min-width: 36px; }
 .ctrl-btn--play { width: 40px; height: 40px; background: var(--color-primary); color: white !important; }
 .ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); }
