@@ -2221,23 +2221,25 @@ app.on('will-quit', () => {
   }
 })
 
-// 多实例处理(锁已在文件开头申请;这里只处理 second-instance 事件与协议唤起)
-app.on('second-instance', (event, argv) => {
-  // 外部唤起 soundflow:// URL
-  const url = (argv || []).find(a => typeof a === 'string' && a.startsWith('soundflow://'))
-  if (url) handleExternalUrl(url)
-  if (mainWindow) {
-    try {
+// 阻止多实例
+const gotTheLock = app.requestSingleInstanceLock()
+if (!gotTheLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (event, argv) => {
+    // 外部唤起 soundflow:// URL
+    const url = (argv || []).find(a => typeof a === 'string' && a.startsWith('soundflow://'))
+    if (url) handleExternalUrl(url)
+    if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()
-      mainWindow.show()
       mainWindow.focus()
-    } catch (_) {}
-  }
-})
+    }
+  })
 
-// 注册自定义协议 soundflow://(打包安装后生效)
-try { app.setAsDefaultProtocolClient('soundflow') } catch (_) {}
+  // 注册自定义协议 soundflow://(打包安装后生效)
+  try { app.setAsDefaultProtocolClient('soundflow') } catch (_) {}
 
-// 启动参数携带 soundflow:// URL(协议唤起时由系统带参启动)
-const bootUrl = process.argv.find(a => typeof a === 'string' && a.startsWith('soundflow://'))
-if (bootUrl) setTimeout(() => handleExternalUrl(bootUrl), 1800)
+  // 启动参数携带 soundflow:// URL(协议唤起时由系统带参启动)
+  const bootUrl = process.argv.find(a => typeof a === 'string' && a.startsWith('soundflow://'))
+  if (bootUrl) setTimeout(() => handleExternalUrl(bootUrl), 1800)
+}
