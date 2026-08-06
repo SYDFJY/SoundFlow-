@@ -62,6 +62,24 @@ function detectFFmpegLoudness() {
 let lastLyricData = null
 let tray = null
 
+// ========== 单实例锁 ==========
+// 防多实例并行写同一 userData(数据损坏/闪退);第二个实例直接退出并唤起主窗口
+const gotLock = app.requestSingleInstanceLock()
+if (!gotLock) {
+  // 立即退出,不走后续初始化(避免第二实例闪窗口/碰同一数据文件)
+  process.exit(0)
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      try {
+        if (mainWindow.isMinimized()) mainWindow.restore()
+        mainWindow.show()
+        mainWindow.focus()
+      } catch (_) {}
+    }
+  })
+}
+
 // ========== 存储 ==========
 let storageData = {}
 let storagePath
