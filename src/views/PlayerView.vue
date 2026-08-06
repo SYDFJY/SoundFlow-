@@ -272,6 +272,17 @@
             <div v-if="playerStore.eqSettings.enabled" class="eq-body">
               <!-- 频响曲线预览 -->
               <canvas ref="eqCurveCanvas" class="eq-curve"></canvas>
+              <!-- 自定义预设 -->
+              <div v-if="playerStore.customEqPresets.length" class="eq-group">
+                <div class="eq-group-name">我的预设</div>
+                <div class="eq-presets">
+                  <button v-for="p in playerStore.customEqPresets" :key="p.name" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === 'custom:' + p.name }" @click="playerStore.applyCustomEqPreset(p.name)">
+                    {{ p.name }}
+                    <span class="eq-preset-del" @click.stop="deleteCustom(p.name)" title="删除">✕</span>
+                  </button>
+                </div>
+              </div>
+              <button class="eq-save-btn" @click="openSaveEq">💾 保存当前设置为预设</button>
               <div v-for="g in eqGroups" :key="g.name" class="eq-group">
                 <div class="eq-group-name">{{ g.name }}</div>
                 <div class="eq-presets">
@@ -293,6 +304,17 @@
               </div>
             </div>
             <div v-else class="eq-off">开启音效后,可调节均衡器、预设、重低音与空间声场</div>
+            <!-- 保存自定义预设弹窗 -->
+            <div v-if="showSaveEqModal" class="save-queue-mask" @click.self="showSaveEqModal = false">
+              <div class="save-queue-card">
+                <h3>保存为预设</h3>
+                <input v-model="saveEqName" class="eq-name-input" placeholder="输入预设名称,如:我的最爱" @keyup.enter="confirmSaveEq" />
+                <div class="eq-save-actions">
+                  <button class="sec-btn" @click="showSaveEqModal = false">取消</button>
+                  <button class="sec-btn" @click="confirmSaveEq">保存</button>
+                </div>
+              </div>
+            </div>
           </div>
         </transition>
         <div class="progress-row">
@@ -413,12 +435,27 @@ const activeQueueEl = ref(null)
 
 // 音效面板
 const showEqPanel = ref(false)
+// 自定义预设保存弹窗
+const showSaveEqModal = ref(false)
+const saveEqName = ref('')
+function openSaveEq() { saveEqName.value = ''; showSaveEqModal.value = true }
+function confirmSaveEq() {
+  const r = playerStore.saveCustomEqPreset(saveEqName.value)
+  try { window.$toast?.(r.msg, r.ok ? 'success' : 'warning') } catch {}
+  if (r.ok) showSaveEqModal.value = false
+}
+function deleteCustom(name) {
+  playerStore.deleteCustomEqPreset(name)
+  try { window.$toast?.('已删除预设「' + name + '」', 'success') } catch {}
+}
 const eqGroups = [
-  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical'] },
-  { name: '低频', keys: ['bass'] },
-  { name: '人声', keys: ['vocal', 'aiVocal'] },
+  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical', 'bass'] },
+  { name: '风格', keys: ['electronic', 'hiphop', 'metal', 'blues', 'folk', 'dance'] },
+  { name: '人声', keys: ['vocal', 'aiVocal', 'ktv', 'podcast'] },
   { name: '环绕', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
   { name: '律动', keys: ['dj', 'live'] },
+  { name: '场景', keys: ['movie', 'tape', 'bathroom'] },
+  { name: '趣味', keys: ['telephone', 'acg'] },
   { name: '更多', keys: ['auto', 'chinese'] }
 ]
 
@@ -1492,9 +1529,10 @@ async function searchLyric() {
 .eq-panel {
   position: absolute; bottom: 76px; right: 20px;
   width: min(640px, 92vw); max-height: min(480px, 80vh);
-  background: rgba(16, 18, 26, 0.96);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px; box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+  background: var(--bg-secondary, rgba(18, 20, 30, 0.86));
+  backdrop-filter: blur(18px) saturate(1.3);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 16px; box-shadow: 0 16px 44px rgba(0,0,0,0.55);
   display: flex; flex-direction: column; z-index: 40; overflow: hidden;
 }
 .eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
@@ -1505,11 +1543,35 @@ async function searchLyric() {
 .eq-group { display: flex; flex-direction: column; gap: 5px; }
 .eq-group-name { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
 .eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; border-radius: var(--radius-md); background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); transition: all var(--transition-fast); }
-.eq-preset-btn.active { background: var(--color-primary); color: #fff; }
+.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); transition: all var(--transition-fast); border: 1px solid transparent; cursor: pointer; }
+.eq-preset-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9); }
+.eq-preset-btn.active { background: var(--color-primary); color: #fff; box-shadow: 0 0 12px var(--color-primary-alpha, rgba(64,150,255,0.55)); }
+.eq-preset-del { margin-left: 4px; opacity: 0.6; font-size: 10px; }
+.eq-preset-del:hover { opacity: 1; color: #ff6b6b; }
+.eq-save-btn { margin: 8px 0 2px; padding: 5px 12px; font-size: var(--font-size-xs); border-radius: 999px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.65); border: 1px dashed rgba(255,255,255,0.25); cursor: pointer; transition: all var(--transition-fast); }
+.eq-save-btn:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.eq-name-input { width: 100%; padding: 8px 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.06); color: var(--text-primary); outline: none; }
+.eq-save-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
 .eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
 .eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 100px; }
+/* 滑杆美化:渐变轨道 + 发光圆点手柄 */
+.eq-slider-col input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+.eq-slider-col input[type="range"]::-webkit-slider-runnable-track {
+  width: 6px; border-radius: 3px;
+  background: linear-gradient(to top, var(--color-primary, #4096ff), rgba(64,150,255,0.15));
+}
+.eq-slider-col input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--color-primary, #4096ff);
+  box-shadow: 0 0 8px var(--color-primary-alpha, rgba(64,150,255,0.8));
+  margin-left: -4px; margin-top: 4px;
+}
+.eq-gain { font-size: 10px; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; min-height: 13px; }
+/* 拖动滑杆时 dB 值高亮放大(气泡感) */
+.eq-slider-col:focus-within .eq-gain { color: var(--color-primary); font-weight: 700; transform: scale(1.2); }
+.eq-slider-col .eq-gain { transition: all 0.15s; }
 .eq-gain { font-size: 10px; color: rgba(255,255,255,0.4); }
 .eq-freq { font-size: 10px; color: rgba(255,255,255,0.4); }
 .eq-extra { display: flex; align-items: center; gap: 8px; }

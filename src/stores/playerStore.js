@@ -160,7 +160,24 @@ export const usePlayerStore = defineStore('player', () => {
     power: { name: '澎湃外放', gains: [3, 3, 2, 0, 0, 1, 2, 3, 4, 4], bass: 3, treble: 2, mid: 0, width: 1.25, reverb: 0.3, comp: 0.2 },
     surroundHQ: { name: '臻享环绕', gains: [2, 1, 0, -1, -1, 0, 1, 2, 3, 4], bass: 1, treble: 1, mid: 0, width: 1.7, reverb: 0.5, comp: 0 },
     stage: { name: '臻境声场', gains: [1, 0, 0, 0, 0, 0, 1, 2, 3, 3], bass: 0, treble: 1, mid: 0, width: 1.5, reverb: 0.6, comp: 0 },
-    aiVocal: { name: '大模型临境人声', gains: [-2, -1, 0, 2, 4, 5, 4, 2, 1, 0], bass: -1, treble: 1, mid: 3, width: 1.05, reverb: 0.12, comp: 0.15 }
+    aiVocal: { name: '大模型临境人声', gains: [-2, -1, 0, 2, 4, 5, 4, 2, 1, 0], bass: -1, treble: 1, mid: 3, width: 1.05, reverb: 0.12, comp: 0.15 },
+    // ===== 新增(风格) =====
+    electronic: { name: '电子', gains: [4, 4, 3, 1, 0, 1, 3, 4, 5, 5], bass: 4, treble: 3, mid: 0, width: 1.2, reverb: 0.2, comp: 0.25 },
+    hiphop: { name: '嘻哈', gains: [6, 6, 5, 3, 1, 0, 1, 2, 3, 3], bass: 8, treble: 1, mid: 0, width: 1.15, reverb: 0.1, comp: 0.3 },
+    metal: { name: '金属', gains: [3, 2, 1, -1, -1, 1, 3, 5, 6, 6], bass: 2, treble: 5, mid: 0, width: 1.1, reverb: 0.08, comp: 0.35 },
+    blues: { name: '蓝调', gains: [4, 3, 2, 1, 0, 1, 2, 1, 0, -1], bass: 3, treble: 0, mid: 1, width: 1.05, reverb: 0.15, comp: 0.1 },
+    folk: { name: '民谣', gains: [2, 2, 1, 1, 0, 0, 1, 2, 2, 1], bass: 1, treble: 1, mid: 1, width: 1, reverb: 0.12, comp: 0 },
+    dance: { name: '舞曲', gains: [5, 5, 4, 2, 0, 0, 2, 3, 4, 5], bass: 6, treble: 3, mid: 0, width: 1.3, reverb: 0.18, comp: 0.3 },
+    // ===== 新增(人声) =====
+    ktv: { name: 'KTV', gains: [-2, -1, 0, 2, 4, 5, 4, 2, 1, 0], bass: 1, treble: 1, mid: 4, width: 1.1, reverb: 0.35, comp: 0.1 },
+    podcast: { name: '播客', gains: [0, 0, 1, 3, 4, 3, 2, 1, 0, -1], bass: 0, treble: 1, mid: 4, width: 1, reverb: 0.05, comp: 0.15 },
+    // ===== 新增(场景) =====
+    movie: { name: '电影', gains: [2, 2, 1, 0, -1, 0, 1, 2, 3, 3], bass: 3, treble: 1, mid: 0, width: 1.6, reverb: 0.45, comp: 0.2 },
+    tape: { name: '复古磁带', gains: [3, 3, 2, 1, 0, -1, -2, -3, -4, -5], bass: 3, treble: -3, mid: 0, width: 1, reverb: 0.15, comp: 0.2 },
+    bathroom: { name: '浴室', gains: [1, 1, 0, 0, 0, 0, 0, 1, 1, 1], bass: 0, treble: 0, mid: 0, width: 1.4, reverb: 0.8, comp: 0 },
+    // ===== 新增(趣味) =====
+    telephone: { name: '电话', gains: [-8, -6, -3, 3, 5, 6, 4, 0, -4, -8], bass: -6, treble: 0, mid: 4, width: 0.8, reverb: 0, comp: 0.1 },
+    acg: { name: 'ACG', gains: [-1, 0, 1, 2, 3, 4, 4, 3, 2, 2], bass: 0, treble: 2, mid: 2, width: 1.1, reverb: 0.15, comp: 0.1 }
   }
   const eqSettings = ref(loadEqSettings())
 
@@ -175,6 +192,48 @@ export const usePlayerStore = defineStore('player', () => {
   }
   function saveEqSettings() {
     try { localStorage.setItem('soundflow_eq', JSON.stringify(eqSettings.value)) } catch {}
+  }
+
+  // ===== 自定义预设保存/删除 =====
+  const customEqPresets = ref([])
+  function loadCustomEqPresets() {
+    try {
+      const arr = JSON.parse(localStorage.getItem('soundflow_custom_eq_presets') || '[]')
+      customEqPresets.value = Array.isArray(arr) ? arr : []
+    } catch { customEqPresets.value = [] }
+  }
+  loadCustomEqPresets()
+  function saveCustomEqPreset(name) {
+    const n = (name || '').trim()
+    if (!n) return { ok: false, msg: '预设名称不能为空' }
+    if (customEqPresets.value.some(p => p.name === n)) return { ok: false, msg: '已存在同名预设' }
+    const s = eqSettings.value
+    const p = { name: n, gains: [...s.gains], bass: s.bass, treble: s.treble, mid: s.mid, width: s.width, reverb: s.reverb, comp: s.comp }
+    customEqPresets.value.push(p)
+    try { localStorage.setItem('soundflow_custom_eq_presets', JSON.stringify(customEqPresets.value)) } catch {}
+    return { ok: true, msg: `已保存自定义预设「${n}」` }
+  }
+  function deleteCustomEqPreset(name) {
+    customEqPresets.value = customEqPresets.value.filter(p => p.name !== name)
+    if (eqSettings.value.preset === 'custom:' + name) {
+      eqSettings.value.preset = 'flat'
+      setEqPreset('flat')
+    }
+    try { localStorage.setItem('soundflow_custom_eq_presets', JSON.stringify(customEqPresets.value)) } catch {}
+  }
+  function applyCustomEqPreset(name) {
+    const p = customEqPresets.value.find(x => x.name === name)
+    if (!p) return
+    eqSettings.value.preset = 'custom:' + name
+    eqSettings.value.gains = [...p.gains]
+    eqSettings.value.bass = p.bass
+    eqSettings.value.treble = p.treble
+    eqSettings.value.mid = p.mid
+    eqSettings.value.width = p.width
+    eqSettings.value.reverb = p.reverb
+    eqSettings.value.comp = p.comp
+    saveEqSettings()
+    rebuildAudioChain()
   }
 
   // Web Audio 节点
@@ -226,6 +285,15 @@ export const usePlayerStore = defineStore('player', () => {
   function rebuildAudioChain() {
     if (!_audioCtx || !_mediaSourceNode) return
     try {
+      // 切换重建时静音过渡:先快速降到 0(防爆音),重建完成后再平滑升回
+      const smooth = _fadeGain && _audioCtx
+      if (smooth) {
+        try {
+          _fadeGain.gain.cancelScheduledValues(_audioCtx.currentTime)
+          _fadeGain.gain.setValueAtTime(_fadeGain.gain.value, _audioCtx.currentTime)
+          _fadeGain.gain.linearRampToValueAtTime(0, _audioCtx.currentTime + 0.04)
+        } catch (_) {}
+      }
       // 断开旧连接
       _mediaSourceNode.disconnect()
       if (_fadeGain) { try { _fadeGain.disconnect() } catch {} }
@@ -341,6 +409,14 @@ export const usePlayerStore = defineStore('player', () => {
       }
       // 频谱分析:从链尾(或直通点)分接,不连 destination
       try { prev.connect(_analyser) } catch {}
+      // 重建完成,平滑恢复音量(防爆音过渡结束)
+      if (_fadeGain) {
+        try {
+          _fadeGain.gain.cancelScheduledValues(_audioCtx.currentTime)
+          _fadeGain.gain.setValueAtTime(Math.max(0, _fadeGain.gain.value), _audioCtx.currentTime)
+          _fadeGain.gain.linearRampToValueAtTime(1, _audioCtx.currentTime + 0.12)
+        } catch (_) {}
+      }
     } catch (e) {
       console.error('[音效] 重建链失败:', e.message)
     }
@@ -1416,6 +1492,7 @@ export const usePlayerStore = defineStore('player', () => {
     loadSettings, saveSettings, playSingle, toggleQueue,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
+    customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,
     getSpectrumData,
     initMediaSession
   }
