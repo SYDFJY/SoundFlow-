@@ -141,7 +141,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save', 'notify-song']
+    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'mini:bg-changed', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save', 'notify-song']
     if (validChannels.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }

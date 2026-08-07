@@ -704,6 +704,9 @@ function createMiniWindow() {
   if (miniWindow) { miniWindow.focus(); return }
 
   const pos = storageData.miniPos || null
+  // 迷你窗背景模式(设置页可改):transparent 模式不设 backgroundColor(绕开白底 bug),其余不透明
+  const miniBg = { mode: storageData.miniBgMode || 'dark', color: storageData.miniBgColor || '#161b22' }
+  const miniTransparent = miniBg.mode === 'transparent'
   miniWindow = new BrowserWindow({
     width: 320,
     height: 80,
@@ -711,7 +714,9 @@ function createMiniWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
-    backgroundColor: '#161b22', // 不透明矩形:彻底绕开 transparent 渲染白底问题
+    ...(miniTransparent
+      ? { transparent: true }
+      : { backgroundColor: miniBg.mode === 'white' ? '#ffffff' : miniBg.color }),
     ...(pos ? { x: pos.x, y: pos.y } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -1974,6 +1979,23 @@ function setupIPC() {
   ipcMain.on('mini:toggle', () => {
     if (miniWindow) { miniWindow.close(); miniWindow = null }
     else createMiniWindow()
+  })
+
+  // 迷你窗背景模式变化:持久化 + 迷你窗开着则重建(窗口参数随模式)
+  ipcMain.on('mini:bg-changed', (event, cfg) => {
+    if (!cfg || !cfg.mode) return
+    storageData.miniBgMode = cfg.mode
+    storageData.miniBgColor = cfg.color || storageData.miniBgColor || '#161b22'
+    saveStorage()
+    if (miniWindow && !miniWindow.isDestroyed()) {
+      const pos = miniWindow.getPosition()
+      miniWindow.close()
+      miniWindow = null
+      setTimeout(() => {
+        if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
+        createMiniWindow()
+      }, 250)
+    }
   })
 
   // ========== 桌面歌词(参考蓝韵:独立 lyric.html) ==========

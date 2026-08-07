@@ -141,6 +141,32 @@
         </div>
       </div>
 
+      <!-- 迷你播放器背景 -->
+      <div class="settings-section">
+        <h3 class="section-title">迷你播放器背景</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">背景样式</span>
+            <span class="label-desc">文字颜色随背景亮度自动适配;透明模式小窗无底色</span>
+          </div>
+          <div class="mini-bg-options">
+            <button class="chip chip--sm" :class="{ active: miniBgMode === 'dark' }" @click="setMiniBgMode('dark')">深色</button>
+            <button class="chip chip--sm" :class="{ active: miniBgMode === 'white' }" @click="setMiniBgMode('white')">白色</button>
+            <button class="chip chip--sm" :class="{ active: miniBgMode === 'custom' }" @click="setMiniBgMode('custom')">自定义</button>
+            <button class="chip chip--sm" :class="{ active: miniBgMode === 'transparent' }" @click="setMiniBgMode('transparent')">透明</button>
+          </div>
+        </div>
+        <div class="setting-item" v-if="miniBgMode === 'custom'">
+          <div class="setting-label">
+            <span class="label-text">自定义颜色</span>
+          </div>
+          <div class="setting-control">
+            <input type="color" :value="miniBgColor" @input="e => setMiniBgMode('custom', e.target.value)" class="color-input" />
+            <span class="volume-val">{{ miniBgColor }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- 扫描设置 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.library') }}</h3>
@@ -734,6 +760,18 @@ const closeAction = computed({
 })
 const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
 
+// ===== 迷你播放器背景(深色/白色/自定义/透明) =====
+const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
+const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
+function setMiniBgMode(mode, color) {
+  miniBgMode.value = mode
+  if (color) miniBgColor.value = color
+  localStorage.setItem('soundflow_mini_bg_mode', mode)
+  localStorage.setItem('soundflow_mini_bg_color', miniBgColor.value)
+  // 通知主进程:迷你窗开着则重建(带新窗口参数)
+  try { window.electronAPI?.send('mini:bg-changed', { mode, color: miniBgColor.value }) } catch (_) {}
+}
+
 const themeOptions = [
   { value: 'light', label: '海盐蓝', color: '#edf4fa' },
   { value: 'green', label: '薄荷清绿', color: '#edf7f2' },
@@ -1099,6 +1137,8 @@ select {
 .theme-btn span { font-size: var(--font-size-xs); color: var(--text-secondary); }
 
 .rate-options { display: flex; gap: 4px; }
+.mini-bg-options { display: flex; gap: 4px; }
+.color-input { width: 40px; height: 28px; padding: 0; border: 1px solid var(--border-color); border-radius: 6px; background: none; cursor: pointer; }
 .rate-btn {
   padding: 4px 10px;
   font-size: var(--font-size-xs);
