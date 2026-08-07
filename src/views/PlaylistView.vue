@@ -9,6 +9,14 @@
         </div>
       </div>
       <div class="header-right">
+        <button class="add-songs-btn" @click="renamePlaylist" title="重命名歌单">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          <span>重命名</span>
+        </button>
+        <button class="add-songs-btn pl-del" @click="deletePlaylist" title="删除歌单">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          <span>删除歌单</span>
+        </button>
         <button class="add-songs-btn" @click="exportPlaylistM3u">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           <span>导出</span>
@@ -28,7 +36,7 @@
       </div>
     </div>
     <div class="view-content">
-      <MusicList :songs="sortedSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" @reorder="onReorder" empty-text="歌单为空，点击上方「添加歌曲」按钮" />
+      <MusicList :songs="sortedSongs" :sort-field="musicStore.sortField" playlist-context @sort="musicStore.setSortField" @reorder="onReorder" @context-action="onContextAction" empty-text="歌单为空，点击上方「添加歌曲」按钮" />
     </div>
 
     <!-- 添加歌曲弹窗 -->
@@ -87,12 +95,13 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 
 const route = useRoute()
+const router = useRouter()
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
 
@@ -106,13 +115,35 @@ const playlist = computed(() => musicStore.playlists.find(p => p.id === route.pa
 const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
 
 const sortedSongs = computed(() => musicStore.sortSongs(songs.value))
-function onReorder({ from, to, pos }) {
-  // 排序激活时拖拽会乱序,提示先回默认排序
+function onReorder({ from, to, pos }) {  // 排序激活时拖拽会乱序,提示先回默认排序
   if (musicStore.sortField) {
     try { window.$toast?.('请先切换到「默认排序」再拖拽调整顺序', 'warning') } catch {}
     return
   }
   musicStore.moveSongInPlaylist(playlist.id, from, to, pos)
+}
+
+// 右键"移除"→ 从歌单移除(不从曲库删除)
+function onContextAction(action, song) {
+  if (action === 'remove-from-playlist' && song) {
+    musicStore.removeFromPlaylist(route.params.id, song.path)
+    window.$toast?.('已从歌单移除(歌曲仍在曲库)', 'success')
+  }
+}
+
+function renamePlaylist() {
+  const name = prompt('重命名歌单', playlist.value?.name || '')
+  if (name && name.trim() && name.trim() !== playlist.value?.name) {
+    musicStore.renamePlaylist(route.params.id, name.trim())
+    window.$toast?.('歌单已重命名', 'success')
+  }
+}
+
+function deletePlaylist() {
+  if (!confirm(`确定删除歌单「${playlist.value?.name || ''}」？歌曲不会从曲库删除`)) return
+  musicStore.deletePlaylist(route.params.id)
+  window.$toast?.('歌单已删除', 'success')
+  router.push('/home')
 }
 
 // 添加歌曲弹窗状态
@@ -232,6 +263,8 @@ async function importPlaylist() {
 
 .add-songs-btn, .play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .add-songs-btn { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); }
+.pl-del { color: var(--color-danger) !important; }
+.pl-del:hover { background: rgba(255, 77, 79, 0.1) !important; }
 .add-songs-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .add-songs-btn svg { width: 16px; height: 16px; }
 .play-all-btn { background: var(--color-primary); color: white; }

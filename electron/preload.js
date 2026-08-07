@@ -75,6 +75,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 窗口控制
   minimizeWindow: () => ipcRenderer.send('minimize-window'),
   maximizeWindow: () => ipcRenderer.send('maximize-window'),
+  onWindowState: (cb) => {
+    const h = (_e, max) => cb(!!max)
+    ipcRenderer.on('window-state', h)
+    return () => ipcRenderer.removeListener('window-state', h)
+  },
   closeWindow: () => ipcRenderer.send('close-window'),
 
   // 迷你播放器
@@ -123,7 +128,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'mini:state', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'mini:state', 'window-state', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

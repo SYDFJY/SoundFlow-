@@ -1,5 +1,5 @@
 <template>
-  <header class="topbar">
+  <header class="topbar" @dblclick="onTopbarDblClick">
     <div class="topbar-left">
       <div class="logo" @click="$router.push('/home')">
         <img class="logo-icon" src="/icon.jpg" alt="logo" />
@@ -59,8 +59,9 @@
         <button class="win-btn" @click="minimizeWindow">
           <svg viewBox="0 0 12 12"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.5"/></svg>
         </button>
-        <button class="win-btn" @click="maximizeWindow">
-          <svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        <button class="win-btn" @click="maximizeWindow" :title="isMaximized ? '还原' : '最大化'">
+          <svg v-if="isMaximized" viewBox="0 0 12 12"><rect x="1.5" y="3.5" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 3.5V1.5h8v8h-2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+          <svg v-else viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
         </button>
         <button class="win-btn win-btn--close" @click="closeWindow">
           <svg viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -157,6 +158,20 @@ function goForward() { router.forward() }
 function minimizeWindow() { window.electronAPI?.minimizeWindow() }
 function maximizeWindow() { window.electronAPI?.maximizeWindow() }
 function closeWindow() { window.electronAPI?.closeWindow() }
+// 双击标题栏空白区:最大化/还原
+function onTopbarDblClick(e) {
+  if (e.target.closest('button, a, input, .theme-dropdown-wrapper, .window-controls')) return
+  maximizeWindow()
+}
+// 最大化状态(切换图标)
+const isMaximized = ref(false)
+let _offWinState = null
+onMounted(() => {
+  _offWinState = window.electronAPI?.onWindowState?.((max) => { isMaximized.value = max })
+})
+onUnmounted(() => {
+  if (_offWinState) _offWinState()
+})
 </script>
 
 <style scoped>

@@ -100,10 +100,6 @@
             <span>{{ playerStore.replayGainEnabled ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
-      </div>
-
-      <div class="settings-section">
-        <h3 class="section-title">{{ t('settings.playback') }}</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">默认音量</span>
@@ -419,11 +415,7 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">手动备份</span>
-            <span class="label-desc">导出/导入完整数据备份,可用于换机迁移或数据损坏后恢复</span>
-          </div>
-          <div class="setting-actions" style="display: flex; gap: 8px;">
-            <button class="btn btn--sm" @click="exportData">导出数据</button>
-            <button class="btn--ghost btn--sm" @click="importData">导入数据</button>
+            <span class="label-desc">导出/导入完整数据备份(下方「数据」区),可用于换机迁移或数据损坏后恢复</span>
           </div>
         </div>
       </div>

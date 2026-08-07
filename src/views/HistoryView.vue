@@ -17,32 +17,38 @@
     <!-- 播放记录 -->
     <div v-if="activeTab === 'history'" class="view-content">
       <div class="history-list" v-if="historyEntries.length > 0">
-        <div
-          v-for="(entry, idx) in historyEntries"
-          :key="entry.path + '-' + entry.time"
-          class="history-row"
-          @dblclick="playHistory(idx)"
-        >
-          <div class="history-index">
-            <span class="index-num">{{ idx + 1 }}</span>
-            <button class="play-icon" @click.stop="playHistory(idx)">
-              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
-            </button>
+        <template v-for="group in historyGroups" :key="group.label">
+          <div class="history-group-label">{{ group.label }}</div>
+          <div
+            v-for="entry in group.items"
+            :key="entry.path + '-' + entry.time"
+            class="history-row"
+            @dblclick="playHistory(historyEntries.indexOf(entry))"
+          >
+            <div class="history-index">
+              <span class="index-num">{{ historyEntries.indexOf(entry) + 1 }}</span>
+              <button class="play-icon" @click.stop="playHistory(historyEntries.indexOf(entry))">
+                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+              </button>
+            </div>
+            <div class="history-cover" v-if="entry.coverUrl">
+              <img :src="entry.coverUrl" />
+            </div>
+            <div class="history-info">
+              <div class="history-title text-ellipsis">{{ entry.title }}</div>
+              <div class="history-artist text-ellipsis">{{ entry.artist }}</div>
+            </div>
+            <div class="history-time">{{ formatTime(entry.time) }}</div>
+            <div class="history-actions">
+              <button class="action-btn" @click.stop="toggleFav(entry)" :class="{ active: isFav(entry) }" title="收藏">
+                <svg viewBox="0 0 24 24" :fill="isFav(entry) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+              </button>
+              <button class="action-btn action-btn--del" @click.stop="removeHistory(entry)" title="删除该条记录">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+              </button>
+            </div>
           </div>
-          <div class="history-cover" v-if="entry.coverUrl">
-            <img :src="entry.coverUrl" />
-          </div>
-          <div class="history-info">
-            <div class="history-title text-ellipsis">{{ entry.title }}</div>
-            <div class="history-artist text-ellipsis">{{ entry.artist }}</div>
-          </div>
-          <div class="history-time">{{ formatTime(entry.time) }}</div>
-          <div class="history-actions">
-            <button class="action-btn" @click.stop="toggleFav(entry)" :class="{ active: isFav(entry) }" title="收藏">
-              <svg viewBox="0 0 24 24" :fill="isFav(entry) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
-            </button>
-          </div>
-        </div>
+        </template>
       </div>
       <div v-else class="empty-state">
         <div class="empty-icon">📝</div>
@@ -136,6 +142,31 @@ function playHistory(idx) {
   playerStore.setPlayQueue(queue, idx)
 }
 
+// 播放记录按日期分组(今天/昨天/更早)
+function dayLabel(ts) {
+  const d = new Date(ts)
+  const today = new Date(); today.setHours(0, 0, 0, 0)
+  const yesterday = new Date(today.getTime() - 86400000)
+  const day = new Date(d); day.setHours(0, 0, 0, 0)
+  if (day.getTime() === today.getTime()) return '今天'
+  if (day.getTime() === yesterday.getTime()) return '昨天'
+  return '更早'
+}
+const historyGroups = computed(() => {
+  const groups = []
+  const map = {}
+  for (const entry of historyEntries.value) {
+    const label = dayLabel(entry.time)
+    if (!map[label]) { map[label] = []; groups.push({ label, items: map[label] }) }
+    map[label].push(entry)
+  }
+  return groups
+})
+function removeHistory(entry) {
+  musicStore.removeHistory(entry.path, entry.time)
+  window.$toast?.('已删除该条播放记录', 'info')
+}
+
 function playAt(idx) {
   const queue = rankedSongs.value.map(s => ({ ...s }))
   playerStore.setPlayQueue(queue, idx)
@@ -194,11 +225,20 @@ function clearHistory() {
 .history-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 16px;
-  border-radius: var(--radius-md);
-  cursor: default;
+  border-radius: var(--radius-md);  cursor: default;
   transition: background var(--transition-fast);
 }
 .history-row:hover { background: var(--bg-hover); }
+.history-group-label {
+  padding: 10px 16px 4px;
+  font-size: 12px; font-weight: 600;
+  color: var(--text-tertiary);
+  position: sticky; top: 0;
+  background: var(--bg-primary);
+  z-index: 1;
+}
+.action-btn--del { color: var(--text-tertiary); }
+.action-btn--del:hover { color: var(--color-danger); background: rgba(255, 77, 79, 0.12); }
 .history-row:hover .play-icon { display: flex; }
 .history-row:hover .history-actions { opacity: 1; }
 

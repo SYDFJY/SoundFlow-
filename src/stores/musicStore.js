@@ -375,6 +375,14 @@ export const useMusicStore = defineStore('music', () => {
     return pl.songs.map(p => songMap.get(p)).filter(Boolean)
   }
 
+  // 从歌单移除歌曲(不从曲库删除)
+  function removeFromPlaylist(playlistId, path) {
+    const pl = playlists.value.find(p => p.id === playlistId)
+    if (!pl) return
+    pl.songs = pl.songs.filter(p => p !== path)
+    saveToStorage()
+  }
+
   // 排序
   // 通用排序:供各视图列表使用(歌手/专辑/歌单/收藏)
   function sortSongs(list) {
@@ -541,6 +549,15 @@ export const useMusicStore = defineStore('music', () => {
   function clearHistory() {
     history.value = []
     saveToStorage()
+  }
+
+  // 删除单条播放记录
+  function removeHistory(path, time) {
+    const idx = history.value.findIndex(h => h.path === path && h.time === time)
+    if (idx >= 0) {
+      history.value.splice(idx, 1)
+      saveToStorage()
+    }
   }
 
   // 监听播放事件（从 playerStore 发出，避免循环依赖）

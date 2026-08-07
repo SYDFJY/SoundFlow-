@@ -256,7 +256,7 @@ export const useAppStore = defineStore('app', () => {
       '--bg-active': accentAlpha,
       '--text-primary': t1,
       '--text-secondary': t2,
-      '--text-tertiary': t2,
+      '--text-tertiary': /^#[0-9a-fA-F]{6}$/.test(t2) ? t2 + 'B3' : t2,
       '--border-color': hover,
       '--color-primary': accent,
       '--color-primary-light': accent,

@@ -57,12 +57,15 @@
         :sort-field="musicStore.sortField"
         :batch-mode="batchMode"
         :empty-text="listEmptyText"
+        :empty-actions="true"
         @play="onPlay"
         @sort="musicStore.setSortField"
         @reorder="onReorder"
         @play-all="playAll"
         @context-action="onContextAction"
         @selection-change="onSelectionChange"
+        @add-files="addFiles"
+        @add-folder="addFolder"
       />
     </div>
 
@@ -200,6 +203,12 @@ const dupTotalSongs = computed(() => dupGroups.value.reduce((sum, g) => sum + g.
 async function addFiles() {
   if (isElectron.value) {
     await musicStore.addFiles()
+  }
+}
+
+async function addFolder() {
+  if (isElectron.value) {
+    await musicStore.addFolder()
   }
 }
 

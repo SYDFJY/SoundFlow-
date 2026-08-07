@@ -579,9 +579,17 @@ function createMainWindow() {
   // 注意:Electron bug(issue #28319)——在隐藏状态下调用 setThumbarButtons 会导致按钮永久不显示
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
+    try { mainWindow.webContents.send('window-state', !!mainWindow.isMaximized()) } catch (_) {}
   })
   mainWindow.on('show', () => {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
+  })
+  // 最大化状态同步(供顶栏切换"最大化/还原"图标 + 双击标题栏)
+  mainWindow.on('maximize', () => {
+    try { mainWindow.webContents.send('window-state', true) } catch (_) {}
+  })
+  mainWindow.on('unmaximize', () => {
+    try { mainWindow.webContents.send('window-state', false) } catch (_) {}
   })
   // 自动备份:启动 6s 后(等曲库恢复)向渲染端要 localStorage 快照,合并 store 写入 backups/
   setTimeout(() => {

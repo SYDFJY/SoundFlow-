@@ -21,7 +21,12 @@
           <span class="rec-title text-ellipsis">{{ s.title }}</span>
           <span class="rec-artist text-ellipsis">{{ s.artist }}</span>
         </div>
-        <div v-if="!guessSongs.length" class="rec-empty">曲库歌曲太少,先导入一些歌曲吧</div>
+        <div v-if="!guessSongs.length" class="rec-empty">曲库歌曲太少,先导入一些歌曲吧
+          <div class="rec-empty-actions">
+            <button class="btn btn--sm" @click="musicStore.addFiles()">添加文件</button>
+            <button class="btn btn--ghost btn--sm" @click="musicStore.addFolder()">添加文件夹</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -187,4 +192,5 @@ function playSongs(list, idx) {
 .rec-title { font-size: 13px; font-weight: 500; }
 .rec-artist { font-size: 11px; opacity: 0.6; }
 .rec-empty { grid-column: 1 / -1; padding: 30px; text-align: center; opacity: 0.5; font-size: 13px; }
+.rec-empty-actions { display: flex; gap: 8px; justify-content: center; margin-top: 10px; opacity: 1; }
 </style>

@@ -428,7 +428,7 @@ function setCustomTimer() {
   -webkit-appearance: slider-vertical;
   appearance: slider-vertical;
   width: 4px; height: 100px;
-  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
+  background: var(--bg-hover); border-radius: 2px; outline: none;
 }
 .vol-slider::-webkit-slider-thumb {
   -webkit-appearance: none; width: 13px; height: 13px;

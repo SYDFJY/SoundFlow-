@@ -1,7 +1,7 @@
 <template>
   <div class="music-list">
     <!-- 工具栏 -->
-    <div class="list-toolbar">
+    <div class="list-toolbar" v-if="songs.length > 0">
       <div class="toolbar-left">
         <button class="toolbar-btn" @click="$emit('play-all')" title="播放全部">
           <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
@@ -23,15 +23,15 @@
     </div>
 
     <!-- 表头 -->
-    <div class="list-header">
+    <div class="list-header" v-if="songs.length > 0">
       <div v-if="batchOn" class="col-check">
         <input type="checkbox" :checked="allChecked" @change="toggleAll" />
       </div>
       <div class="col-index">#</div>
-      <div class="col-title">标题</div>
-      <div class="col-artist">歌手</div>
-      <div class="col-album">专辑</div>
-      <div class="col-duration">时长</div>
+      <div class="col-title sortable" @click="$emit('sort', 'title')">标题<span class="sort-arrow">{{ sortField === 'title' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
+      <div class="col-artist sortable" @click="$emit('sort', 'artist')">歌手<span class="sort-arrow">{{ sortField === 'artist' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
+      <div class="col-album sortable" @click="$emit('sort', 'album')">专辑<span class="sort-arrow">{{ sortField === 'album' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
+      <div class="col-duration sortable" @click="$emit('sort', 'duration')">时长<span class="sort-arrow">{{ sortField === 'duration' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
       <div class="col-actions"></div>
     </div>
 
@@ -90,6 +90,10 @@
     <div v-else class="list-empty">
       <div class="empty-icon">🎵</div>
       <div class="empty-text">{{ emptyText }}</div>
+      <div v-if="emptyActions" class="empty-actions">
+        <button class="btn btn--sm" @click="$emit('add-files')">添加文件</button>
+        <button class="btn btn--ghost btn--sm" @click="$emit('add-folder')">添加文件夹</button>
+      </div>
     </div>
 
     <!-- 批量操作栏 -->
@@ -217,10 +221,12 @@ const props = defineProps({
   songs: { type: Array, default: () => [] },
   sortField: { type: String, default: 'title' },
   batchMode: { type: Boolean, default: false },
-  emptyText: { type: String, default: '暂无歌曲' }
+  emptyText: { type: String, default: '暂无歌曲' },
+  emptyActions: { type: Boolean, default: false },
+  playlistContext: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change', 'reorder'])
+const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change', 'reorder', 'add-files', 'add-folder'])
 // ===== JS 拖拽排序(HTML5 DnD 在 Electron 拖动不稳定,改用鼠标事件) =====
 // 拖到侧边栏歌单通过全局 dragSongPath 传递(useDragSong)
 // 拖拽排序完善版:源行浮起 + 目标插入线(before/after) + 自动滚动 + 虚拟滚动适配
@@ -688,7 +694,11 @@ async function ctxBindLyric() {
 
 function ctxRemove() {
   if (ctxMenu.value.song) {
-    musicStore.removeSongs([ctxMenu.value.song.path])
+    if (props.playlistContext) {
+      emit('context-action', 'remove-from-playlist', ctxMenu.value.song)
+    } else {
+      musicStore.removeSongs([ctxMenu.value.song.path])
+    }
   }
   closeCtx()
 }
@@ -771,12 +781,16 @@ watch(() => playerStore.currentSong?.path, (p) => {
   display: flex;
   align-items: center;
   padding: 6px 16px;
+  margin: 0 4px;
   border-bottom: 1px solid var(--border-color);
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
   font-weight: 500;
   flex-shrink: 0;
 }
+.list-header .sortable { cursor: pointer; user-select: none; transition: color var(--transition-fast); }
+.list-header .sortable:hover { color: var(--text-primary); }
+.sort-arrow { margin-left: 2px; font-size: 10px; color: var(--color-primary); }
 
 .list-body { flex: 1; overflow-y: auto; position: relative; }
 .list-spacer { position: relative; width: 100%; }
@@ -839,7 +853,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .list-row[draggable="true"]:active { cursor: grabbing; }
 .list-row:hover { background: var(--bg-hover); }
 .list-row.active { background: var(--color-primary-alpha); }
-.list-row.selected { background: rgba(22, 119, 230, 0.06); }
+.list-row.selected { background: var(--color-primary-alpha); }
 
 .col-check { width: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .col-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
@@ -911,6 +925,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   color: var(--text-tertiary);
 }
 .empty-icon { font-size: 48px; animation: float-y 2.6s ease-in-out infinite; display: inline-block; }
+.empty-actions { display: flex; gap: 8px; margin-top: 4px; }
 .empty-text { font-size: var(--font-size-base); }
 
 :deep(mark) {
@@ -953,7 +968,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .ctx-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
 .ctx-sort-label { font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.4)); padding: 4px 12px 2px; }
 .ctx-sort-btn { width: 100%; padding: 5px 12px; font-size: 12px; color: var(--text-secondary, rgba(255,255,255,0.65)); text-align: left; background: none; border: none; cursor: pointer; }
-.ctx-sort-btn:hover { color: #fff; background: rgba(255,255,255,0.08); }
+.ctx-sort-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .ctx-sort-btn.active { color: var(--color-primary, #4096ff); }
 /* 文件属性弹窗 */
 .prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 10px 0 4px; }
@@ -976,7 +991,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .edit-modal label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
 .edit-modal input {
   width: 100%; margin-top: 4px; padding: 7px 10px;
-  background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+  background: var(--bg-hover); border: 1px solid var(--border-color);
   border-radius: 6px; color: var(--text-primary); font-size: 13px; outline: none;
 }
 .edit-modal input:focus { border-color: var(--color-primary); }
@@ -984,7 +999,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .edit-row label { flex: 1; }
 .edit-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
 .modal-btn { padding: 6px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; border: none; }
-.modal-btn.cancel { background: rgba(255,255,255,0.08); color: var(--text-secondary); }
+.modal-btn.cancel { background: var(--bg-hover); color: var(--text-secondary); }
 .modal-btn.confirm { background: var(--color-primary); color: #fff; }
 .modal-btn.confirm:disabled { opacity: 0.5; cursor: default; }
 </style>

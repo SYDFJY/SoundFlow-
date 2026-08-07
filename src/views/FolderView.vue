@@ -38,6 +38,7 @@
       <div v-if="musicStore.lyricFolders.length === 0" class="empty-state">
         <div class="empty-icon">📄</div>
         <div class="empty-text">还没有添加歌词文件夹(本地歌词存放位置)</div>
+        <button class="btn btn--sm" @click="addLyricFolder">添加歌词文件夹</button>
       </div>
       <div v-else class="folder-list">
         <div v-for="folder in musicStore.lyricFolders" :key="folder" class="folder-item">
