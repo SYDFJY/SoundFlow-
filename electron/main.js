@@ -747,9 +747,55 @@ function createMiniWindow() {
     }, 400)
   })
 
-  // 右键菜单:恢复主窗口 / 退出应用
+  // 右键菜单:背景模式 / 透明度 / 恢复主窗口 / 退出应用
   miniWindow.on('context-menu', () => {
+    const miniBg = { mode: storageData.miniBgMode || 'dark', color: storageData.miniBgColor || '#161b22', alpha: storageData.miniBgAlpha ?? 0.05 }
+    const presetColors = ['#161b22', '#1e90ff', '#2ecc71', '#e74c3c', '#f39c12']
+    // 应用背景模式并同步渲染端
+    const applyBg = (mode, color, alpha) => {
+      storageData.miniBgMode = mode
+      if (color) storageData.miniBgColor = color
+      if (typeof alpha === 'number') storageData.miniBgAlpha = alpha
+      saveStorage()
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', { mode, color: storageData.miniBgColor, alpha: storageData.miniBgAlpha }) } catch {}
+      if (miniWindow && !miniWindow.isDestroyed()) {
+        const pos = miniWindow.getPosition()
+        miniWindow.close()
+        miniWindow = null
+        setTimeout(() => {
+          if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
+          createMiniWindow()
+        }, 250)
+      }
+    }
     const menu = Menu.buildFromTemplate([
+      {
+        label: '背景模式 ▸',
+        submenu: [
+          { label: '深色', type: 'checkbox', checked: miniBg.mode === 'dark', click: () => applyBg('dark') },
+          { label: '白色', type: 'checkbox', checked: miniBg.mode === 'white', click: () => applyBg('white') },
+          {
+            label: '自定义色 ▸',
+            submenu: presetColors.map(c => ({
+              label: c,
+              type: 'checkbox',
+              checked: miniBg.mode === 'custom' && miniBg.color === c,
+              click: () => applyBg('custom', c)
+            }))
+          },
+          { label: '透明', type: 'checkbox', checked: miniBg.mode === 'transparent', click: () => applyBg('transparent') }
+        ]
+      },
+      {
+        label: '透明度 ▸',
+        submenu: [0.05, 0.2, 0.4, 0.6, 0.8].map(a => ({
+          label: Math.round(a * 100) + '%',
+          type: 'checkbox',
+          checked: Math.abs((miniBg.alpha || 0.05) - a) < 0.001,
+          click: () => applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, a)
+        }))
+      },
+      { type: 'separator' },
       {
         label: '恢复主窗口',
         click: () => {
@@ -1986,6 +2032,7 @@ function setupIPC() {
     if (!cfg || !cfg.mode) return
     storageData.miniBgMode = cfg.mode
     storageData.miniBgColor = cfg.color || storageData.miniBgColor || '#161b22'
+    if (typeof cfg.alpha === 'number') storageData.miniBgAlpha = cfg.alpha
     saveStorage()
     if (miniWindow && !miniWindow.isDestroyed()) {
       const pos = miniWindow.getPosition()

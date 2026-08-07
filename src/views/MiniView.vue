@@ -44,6 +44,7 @@ const progressPercent = computed(() => duration.value ? (currentTime.value / dur
 // ===== 迷你窗背景模式(深色/白色/自定义/透明),文字按背景亮度自适应 =====
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
 const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
+const miniBgAlpha = ref(parseFloat(localStorage.getItem('soundflow_mini_bg_alpha')) || 0.05)
 const bgIsLight = computed(() => {
   const c = miniBgColor.value.replace('#', '')
   if (c.length !== 6) return false
@@ -60,7 +61,7 @@ const isDarkText = computed(() => mainText.value === '#1c2430')
 const subText = computed(() => isDarkText.value ? 'rgba(28,36,48,0.62)' : 'rgba(255,255,255,0.55)')
 const dimText = computed(() => isDarkText.value ? 'rgba(28,36,48,0.4)' : 'rgba(255,255,255,0.35)')
 const playerBg = computed(() => {
-  if (miniBgMode.value === 'transparent') return 'transparent'
+  if (miniBgMode.value === 'transparent') return `rgba(0,0,0,${miniBgAlpha.value})` // 对齐悬浮歌词:窗口透明+低透明度黑底+内容清晰
   if (miniBgMode.value === 'white') return '#ffffff'
   if (miniBgMode.value === 'custom') return miniBgColor.value
   return '#161b22'
@@ -93,6 +94,13 @@ onMounted(() => {
       isPlaying.value = data.isPlaying || false
       currentTime.value = data.currentTime || 0
       duration.value = data.duration || 0
+    })
+    // 主进程右键菜单改背景/透明度 → 刷新本窗口样式
+    window.electronAPI.on('mini:bg-sync', (cfg) => {
+      if (!cfg) return
+      if (cfg.mode) miniBgMode.value = cfg.mode
+      if (cfg.color) miniBgColor.value = cfg.color
+      if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
     })
   }
 })
@@ -154,8 +162,9 @@ function restoreMain() {
   border-radius: 50%;
   color: var(--mc2, rgba(255,255,255,0.7));
   transition: all 0.15s ease;
+  background: rgba(0,0,0,0.25); /* 透明/浅色背景上按钮清晰可见 */
 }
-.mini-btn:hover { color: var(--mc, #fff); background: rgba(128,128,128,0.15); }
+.mini-btn:hover { color: var(--mc, #fff); background: rgba(0,0,0,0.4); }
 .mini-btn svg { width: 16px; height: 16px; }
 
 .mini-btn--play {

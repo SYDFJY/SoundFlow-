@@ -239,6 +239,14 @@ onMounted(() => {
     // 系统深色模式变化 → 主题跟随
     window.electronAPI.on('system-theme', (dark) => { appStore.applySystemTheme(!!dark) })
     window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
+    // 迷你窗右键菜单改背景/透明度 → 同步 localStorage(设置页)与全局状态
+    window.electronAPI.on('mini:bg-sync', (cfg) => {
+      if (!cfg) return
+      if (cfg.mode) localStorage.setItem('soundflow_mini_bg_mode', cfg.mode)
+      if (cfg.color) localStorage.setItem('soundflow_mini_bg_color', cfg.color)
+      if (typeof cfg.alpha === 'number') localStorage.setItem('soundflow_mini_bg_alpha', String(cfg.alpha))
+      document.dispatchEvent(new CustomEvent('mini-bg-synced', { detail: cfg }))
+    })
   }
   appStore.loadSettings()
   musicStore.restoreLibrary()

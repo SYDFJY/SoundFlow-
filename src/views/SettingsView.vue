@@ -165,6 +165,16 @@
             <span class="volume-val">{{ miniBgColor }}</span>
           </div>
         </div>
+        <div class="setting-item" v-if="miniBgMode === 'transparent'">
+          <div class="setting-label">
+            <span class="label-text">背景透明度</span>
+            <span class="label-desc">底深程度 5%–80%,文字与按钮始终清晰</span>
+          </div>
+          <div class="setting-control">
+            <input type="range" min="5" max="80" step="5" :value="Math.round(miniBgAlpha * 100)" @input="e => setMiniBgMode('transparent', null, parseInt(e.target.value) / 100)" />
+            <span class="volume-val">{{ Math.round(miniBgAlpha * 100) }}%</span>
+          </div>
+        </div>
       </div>
 
       <!-- 扫描设置 -->
@@ -763,14 +773,27 @@ const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
 // ===== 迷你播放器背景(深色/白色/自定义/透明) =====
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
 const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
-function setMiniBgMode(mode, color) {
+const miniBgAlpha = ref(parseFloat(localStorage.getItem('soundflow_mini_bg_alpha')) || 0.05)
+function setMiniBgMode(mode, color, alpha) {
   miniBgMode.value = mode
   if (color) miniBgColor.value = color
+  if (typeof alpha === 'number') miniBgAlpha.value = alpha
   localStorage.setItem('soundflow_mini_bg_mode', mode)
   localStorage.setItem('soundflow_mini_bg_color', miniBgColor.value)
+  localStorage.setItem('soundflow_mini_bg_alpha', String(miniBgAlpha.value))
   // 通知主进程:迷你窗开着则重建(带新窗口参数)
-  try { window.electronAPI?.send('mini:bg-changed', { mode, color: miniBgColor.value }) } catch (_) {}
+  try { window.electronAPI?.send('mini:bg-changed', { mode, color: miniBgColor.value, alpha: miniBgAlpha.value }) } catch (_) {}
 }
+// 迷你窗右键菜单修改后同步设置页状态
+onMounted(() => {
+  document.addEventListener('mini-bg-synced', (e) => {
+    const cfg = e.detail
+    if (!cfg) return
+    if (cfg.mode) miniBgMode.value = cfg.mode
+    if (cfg.color) miniBgColor.value = cfg.color
+    if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
+  })
+})
 
 const themeOptions = [
   { value: 'light', label: '海盐蓝', color: '#edf4fa' },
