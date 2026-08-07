@@ -170,7 +170,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
@@ -197,6 +197,14 @@ const dupSelected = ref(new Set())
 // 失效歌曲检测状态
 const showMissingDialog = ref(false)
 const missingSongs = ref([])
+
+// Esc 关闭查重/失效弹窗
+function onHomeEsc() {
+  showDupDialog.value = false
+  showMissingDialog.value = false
+}
+onMounted(() => document.addEventListener('soundflow:esc', onHomeEsc))
+onUnmounted(() => document.removeEventListener('soundflow:esc', onHomeEsc))
 
 const dupTotalSongs = computed(() => dupGroups.value.reduce((sum, g) => sum + g.length, 0))
 
@@ -271,6 +279,7 @@ function closeMissingDialog() {
 
 function removeMissingSongs() {
   if (missingSongs.value.length === 0) return
+  if (!confirm(`确定从曲库移除 ${missingSongs.value.length} 首失效歌曲？`)) return
   const paths = missingSongs.value.map(s => s.path)
   musicStore.removeSongs(paths)
   closeMissingDialog()
@@ -296,6 +305,7 @@ function keepOne(groupIdx) {
 
 function removeSelected() {
   if (dupSelected.value.size === 0) return
+  if (!confirm(`确定从曲库移除选中的 ${dupSelected.value.size} 首重复歌曲？`)) return
   const paths = [...dupSelected.value]
   musicStore.removeSongs(paths)
   // 刷新查重结果

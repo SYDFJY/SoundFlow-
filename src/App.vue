@@ -204,6 +204,9 @@ function onGlobalKey(e) {
     // ? 键:快捷键帮助面板
     e.preventDefault()
     showShortcutHelp.value = !showShortcutHelp.value
+  } else if (e.code === 'Escape') {
+    // Esc:广播关闭事件(右键菜单/弹窗/面板统一关闭)
+    document.dispatchEvent(new CustomEvent('soundflow:esc'))
   }
 }
 

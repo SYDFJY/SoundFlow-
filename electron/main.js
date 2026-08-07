@@ -868,6 +868,14 @@ function createTray() {
     { label: '上一曲', click: () => { if (mainWindow) mainWindow.webContents.send('tray-command', 'prev') } },
     { label: '下一曲', click: () => { if (mainWindow) mainWindow.webContents.send('tray-command', 'next') } },
     { type: 'separator' },
+    { label: '桌面歌词', type: 'checkbox', checked: false, click: (item) => {
+      if (item.checked) {
+        if (!lyricWindow || lyricWindow.isDestroyed()) createLyricWindow()
+        else { lyricWindow.show(); lyricWindow.focus() }
+      } else {
+        if (lyricWindow && !lyricWindow.isDestroyed()) lyricWindow.close()
+      }
+    } },
     { label: '恢复歌词交互(取消点击穿透)', click: () => {
       if (lyricWindow && !lyricWindow.isDestroyed()) {
         try {

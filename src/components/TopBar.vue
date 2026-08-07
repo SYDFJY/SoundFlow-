@@ -146,9 +146,6 @@ function closeDropdown() {
   showThemeDropdown.value = false
 }
 
-onMounted(() => document.addEventListener('click', closeDropdown))
-onUnmounted(() => document.removeEventListener('click', closeDropdown))
-
 function goBack() {
   // 历史栈为空时(如直接进入播放页)回退到主页,避免返回键失灵
   if (window.history.length > 1) router.back()
@@ -167,9 +164,12 @@ function onTopbarDblClick(e) {
 const isMaximized = ref(false)
 let _offWinState = null
 onMounted(() => {
+  document.addEventListener('click', closeDropdown)
   _offWinState = window.electronAPI?.onWindowState?.((max) => { isMaximized.value = max })
+  document.addEventListener('soundflow:esc', () => { showThemeDropdown.value = false })
 })
 onUnmounted(() => {
+  document.removeEventListener('click', closeDropdown)
   if (_offWinState) _offWinState()
 })
 </script>

@@ -54,6 +54,7 @@
           <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
+          <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
         </div>
       </div>
       <div v-else class="lyric-mode">
@@ -332,6 +333,7 @@
               <span class="queue-title">播放列表</span>
               <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
               <button v-if="playerStore.playQueue.length" class="queue-save" title="保存为歌单" @click="openSaveQueue">💾</button>
+              <button v-if="playerStore.playQueue.length" class="queue-save" title="清空队列" @click="clearQueueConfirm">🗑</button>
               <button class="queue-close" @click="showQueuePanel = false">✕</button>
             </div>
             <div class="queue-list" ref="queueListEl">
@@ -395,6 +397,11 @@ const saveQueueName = ref('')
 function openSaveQueue() {
   saveQueueName.value = ''
   saveQueueModal.value = true
+}
+function clearQueueConfirm() {
+  if (!confirm('确定清空播放列表？')) return
+  playerStore.stopPlayback()
+  window.$toast?.('播放列表已清空', 'success')
 }
 function confirmSaveQueue() {
   const name = saveQueueName.value.trim()
@@ -576,6 +583,15 @@ watch(() => playerStore.currentIndex, () => {
 })
 const activeTab = ref('cover')
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
+// 播放页信息行:比特率 · 采样率(数据来自 metadata 解析)
+const currentSongInfo = computed(() => {
+  const s = playerStore.currentSong
+  if (!s) return ''
+  const parts = []
+  if (s.bitrate) parts.push(s.bitrate + ' kbps')
+  if (s.sampleRate) parts.push((s.sampleRate / 1000).toFixed(1) + ' kHz')
+  return parts.join(' · ')
+})
 
 // 封面容灾:封面文件丢失时重新生成
 function onCoverError() {
@@ -1048,8 +1064,19 @@ function ensureSpectrumTimer() {
 watch(activeTab, (v) => {
   if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) startSpectrum()
 })
+// Esc 关闭播放页所有面板
+function onPvEsc() {
+  showQueuePanel.value = false
+  showEqPanel.value = false
+  showBgPanel.value = false
+  showColorPanel.value = false
+  volExpanded.value = false
+  showRatePanel.value = false
+  showPitchPanel.value = false
+}
 onMounted(() => {
   setupPvPanelsClickOutside()
+  document.addEventListener('soundflow:esc', onPvEsc)
   if (playerStore.isPlaying) { startSpectrum(); ensureSpectrumTimer() }
   // 进入播放页时若当前显示本地歌词,重新读取(删除/外部修改 .lrc 后能立即反映,避免残留旧歌词)
   if (playerStore.currentSong && playerStore.lyricOrigin === '本地') {
@@ -1060,6 +1087,7 @@ onUnmounted(() => {
   if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
   if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
   document.removeEventListener('click', onPvPanelDocClick)
+  document.removeEventListener('soundflow:esc', onPvEsc)
 })
 // 暂停时停止频谱 rAF(省 CPU),播放时恢复;定时器也随播放态启停
 watch(() => playerStore.isPlaying, (v) => {
@@ -1311,6 +1339,7 @@ async function searchLyric() {
 .song-title { font-size: clamp(18px, 3.4vh, 26px); font-weight: 700; color: white; margin-bottom: 8px; }
 .song-artist { font-size: var(--font-size-lg); color: rgba(255,255,255,0.6); }
 .song-album { font-size: var(--font-size-base); color: rgba(255,255,255,0.4); margin-top: 4px; }
+.song-info { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 6px; letter-spacing: 0.3px; }
 
 /* ===== 歌词模式 ===== */
 .lyric-mode {

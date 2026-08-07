@@ -36,7 +36,7 @@
     </div>
 
     <!-- 列表(虚拟滚动:固定行高 56px,只渲染可视区 ±缓冲 的行,大列表 DOM 恒定) -->
-    <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" @scroll="onListScroll">
+    <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" @scroll="onListScroll" tabindex="0" @keydown="onListKeydown" @click="clearKeyboardIdx">
       <!-- 拖拽插入指示线 -->
       <div class="drop-line" :style="{ top: dropLineTop + 'px', display: draggingPath ? 'block' : 'none' }"></div>
       <div class="list-spacer" :style="{ height: songs.length * ROW_H + 'px' }">
@@ -46,7 +46,7 @@
             :key="song.path"
             class="list-row"
             :data-path="song.path"
-            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': jsDragTarget === song.path, dragging: draggingPath === song.path }"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': jsDragTarget === song.path, dragging: draggingPath === song.path, 'keyboard-selected': keyboardIdx === virtualStart + i }"
             @dblclick="playSong(virtualStart + i)"
             @contextmenu.prevent="showContextMenu($event, song)"
             @mousedown="onRowMouseDown($event, song)"
@@ -313,7 +313,10 @@ const musicStore = useMusicStore()
 // 列表滚动位置记忆(切视图/切歌后恢复,大型曲库浏览体验)
 const listBodyEl = ref(null)
 let _scrollSaveTimer = null
-const LIST_SCROLL_KEY = 'soundflow_list_scroll'
+// 滚动位置按路由分 key,避免不同视图串扰
+import { useRoute } from 'vue-router'
+const _scrollRoute = useRoute()
+function scrollKey() { return 'soundflow_list_scroll_' + (_scrollRoute.path || 'home').replace(/[^\w-]/g, '_') }
 
 // ===== 虚拟滚动(固定行高 56px,只渲染可视区 ±8 行) =====
 const ROW_H = 56
@@ -339,7 +342,7 @@ function onListScroll() {
     if (_scrollSaveTimer) return
     _scrollSaveTimer = setTimeout(() => {
       _scrollSaveTimer = null
-      try { localStorage.setItem(LIST_SCROLL_KEY, String(listBodyEl.value?.scrollTop || 0)) } catch {}
+      try { localStorage.setItem(scrollKey(), String(listBodyEl.value?.scrollTop || 0)) } catch {}
     }, 300)
   })
 }
@@ -347,7 +350,7 @@ let _listResizeObserver = null
 function restoreListScroll() {
   requestAnimationFrame(() => {
     try {
-      const top = parseInt(localStorage.getItem(LIST_SCROLL_KEY) || '0')
+      const top = parseInt(localStorage.getItem(scrollKey()) || '0')
       if (listBodyEl.value && top > 0) listBodyEl.value.scrollTop = top
     } catch {}
   })
@@ -697,7 +700,10 @@ function ctxRemove() {
     if (props.playlistContext) {
       emit('context-action', 'remove-from-playlist', ctxMenu.value.song)
     } else {
+      // 与批量删除一致:先确认再删(删库操作不可逆)
+      if (!confirm(`确定从曲库移除「${ctxMenu.value.song.title}」？`)) { closeCtx(); return }
       musicStore.removeSongs([ctxMenu.value.song.path])
+      try { window.$toast?.('已从曲库移除', 'success') } catch {}
     }
   }
   closeCtx()
@@ -705,10 +711,41 @@ function ctxRemove() {
 
 function closeCtx() { ctxMenu.value.show = false }
 
+// 全局 Esc:关闭右键菜单与编辑/属性弹窗
+function onGlobalEsc() {
+  ctxMenu.value.show = false
+  editModal.value.show = false
+  propModal.value.show = false
+}
+// 键盘选歌:↑/↓ 移动选中,Enter 播放(焦点在列表容器时)
+const keyboardIdx = ref(-1)
+function onListKeydown(e) {
+  if (e.code === 'ArrowDown' || e.code === 'ArrowUp') {
+    e.preventDefault()
+    const n = props.songs.length
+    if (!n) return
+    keyboardIdx.value = keyboardIdx.value < 0 ? (e.code === 'ArrowDown' ? 0 : n - 1) : Math.min(n - 1, Math.max(0, keyboardIdx.value + (e.code === 'ArrowDown' ? 1 : -1)))
+    const idx = keyboardIdx.value
+    if (idx >= 0) {
+      const el = listBodyEl.value
+      if (el) {
+        const rowTop = idx * ROW_H
+        if (rowTop < el.scrollTop) el.scrollTop = rowTop
+        else if (rowTop + ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = rowTop + ROW_H - el.clientHeight
+      }
+    }
+  } else if (e.code === 'Enter' && keyboardIdx.value >= 0 && keyboardIdx.value < props.songs.length) {
+    e.preventDefault()
+    playSong(keyboardIdx.value)
+  }
+}
+function clearKeyboardIdx() { keyboardIdx.value = -1 }
+
 onMounted(() => {
   restoreListScroll()
   loadVisibleCovers()
   document.addEventListener('click', closeCtx)
+  document.addEventListener('soundflow:esc', onGlobalEsc)
   // 初始化视口高度 + 监听容器尺寸变化(窗口缩放/侧边栏拖拽)
   const el = listBodyEl.value
   if (el) {
@@ -721,6 +758,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
+  document.removeEventListener('soundflow:esc', onGlobalEsc)
   if (_listResizeObserver) { try { _listResizeObserver.disconnect() } catch {} }
 })
 // 当前歌曲变化时自动滚动到可视区(虚拟滚动:直接算 scrollTop,当前行不可见才滚动,不打断浏览)
@@ -853,6 +891,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .list-row[draggable="true"]:active { cursor: grabbing; }
 .list-row:hover { background: var(--bg-hover); }
 .list-row.active { background: var(--color-primary-alpha); }
+.list-row.keyboard-selected { outline: 1px solid var(--color-primary); outline-offset: -1px; }
 .list-row.selected { background: var(--color-primary-alpha); }
 
 .col-check { width: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }

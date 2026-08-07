@@ -42,10 +42,12 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 
 const musicStore = useMusicStore()
+const router = useRouter()
 const playerStore = usePlayerStore()
 const inputRef = ref(null)
 const query = ref(musicStore.searchQuery || '')
@@ -84,6 +86,8 @@ function selectSuggestion(item) {
   musicStore.setSearchQuery(item.title)
   showSuggestions.value = false
   playerStore.playSingle(item)
+  // 跳回首页歌曲列表,让搜索结果可见(避免在别的页面播放却看不到列表变化)
+  router.push('/home')
 }
 
 function onKeydown(e) {

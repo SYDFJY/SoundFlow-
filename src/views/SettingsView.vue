@@ -505,7 +505,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/appStore'
 import { t, i18n, setLang } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
@@ -648,6 +648,11 @@ const lyricMgrOpen = ref(false)
 const lyricMgrSearch = ref('')
 const lyricStatus = ref({})
 const lyricMgrBusy = ref(false)
+
+// Esc 关闭弹窗
+function onSettingsEsc() { lyricMgrOpen.value = false }
+onMounted(() => document.addEventListener('soundflow:esc', onSettingsEsc))
+onUnmounted(() => document.removeEventListener('soundflow:esc', onSettingsEsc))
 const filteredSongs = computed(() => {
   const q = lyricMgrSearch.value.trim().toLowerCase()
   const list = musicStore.songs || []

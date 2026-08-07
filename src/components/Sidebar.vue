@@ -131,6 +131,16 @@ import { t } from '@/i18n'
 const musicStore = useMusicStore()
 // 拖歌入歌单(JS 拖拽:全局 dragSongPath + document mouseup 检测歌单项)
 const dragPlaylistTarget = ref(null)
+// 拖动全程实时高亮目标歌单(原 .drag-over 样式从未生效的死代码修复)
+function onDocDragMove(e) {
+  if (!dragSongPath.value) {
+    if (dragPlaylistTarget.value !== null) dragPlaylistTarget.value = null
+    return
+  }
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  const plItem = el && el.closest('.menu-item[data-playlist-id]')
+  dragPlaylistTarget.value = plItem ? plItem.getAttribute('data-playlist-id') : null
+}
 function onDocDragUp(e) {
   if (!dragSongPath.value) return
   const el = document.elementFromPoint(e.clientX, e.clientY)
@@ -141,10 +151,17 @@ function onDocDragUp(e) {
     musicStore.addSongToPlaylist(id, dragSongPath.value)
     try { window.$toast?.('已添加到歌单「' + (pl ? pl.name : '') + '」', 'success') } catch {}
   }
+  dragPlaylistTarget.value = null
   clearDragSong()
 }
-onMounted(() => document.addEventListener('mouseup', onDocDragUp))
-onUnmounted(() => document.removeEventListener('mouseup', onDocDragUp))
+onMounted(() => {
+  document.addEventListener('mouseup', onDocDragUp)
+  document.addEventListener('mousemove', onDocDragMove)
+})
+onUnmounted(() => {
+  document.removeEventListener('mouseup', onDocDragUp)
+  document.removeEventListener('mousemove', onDocDragMove)
+})
 // 迷你统计:今日播放次数(基于播放历史时间戳)+ 累计播放
 const todayPlays = computed(() => {
   const today = new Date().toDateString()
