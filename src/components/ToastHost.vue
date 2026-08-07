@@ -52,7 +52,7 @@ function dismiss(id) {
   position: relative;
   overflow: hidden;
 }
-/* 类型配色:左侧 4px 色条 + 淡色背景点缀 */
+/* 类型配色:左侧 4px 色条(深浅主题均清晰,文字保持白字深底) */
 .toast-item::before {
   content: '';
   position: absolute;
@@ -60,13 +60,9 @@ function dismiss(id) {
   width: 4px;
 }
 .toast-success::before { background: #52c41a; }
-.toast-success { background: rgba(82, 196, 26, 0.14); }
 .toast-error::before { background: #ff4d4f; }
-.toast-error { background: rgba(255, 77, 79, 0.14); }
 .toast-info::before { background: #4096ff; }
-.toast-info { background: rgba(64, 150, 255, 0.14); }
 .toast-warning::before { background: #fadb14; }
-.toast-warning { background: rgba(250, 173, 20, 0.14); }
 .toast-icon {
   width: 22px;
   height: 22px;
