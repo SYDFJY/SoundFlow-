@@ -91,6 +91,11 @@
         </transition>
       </div>
 
+      <!-- 迷你播放器 -->
+      <button class="right-btn" @click="window.electronAPI?.toggleMiniWindow()" title="迷你播放器(独立小窗)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
+      </button>
+
       <!-- 桌面歌词 -->
       <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
