@@ -11,6 +11,7 @@ export const usePlayerStore = defineStore('player', () => {
   const isPlaying = ref(false)
   const currentTime = ref(0)
   const duration = ref(0)
+  const miniOpen = ref(false)
   const volume = ref(0.8)
   const isMuted = ref(false)
   const _preMuteVolume = ref(0.8) // 静音前的音量
@@ -91,7 +92,7 @@ export const usePlayerStore = defineStore('player', () => {
       currentTime.value = audio.value.currentTime
       // 节流同步迷你播放器
       const now = Date.now()
-      if (window.electronAPI && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
+      if (window.electronAPI && miniOpen.value && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
         _lastMiniIpcTime = now
         window.electronAPI.sendMiniUpdate({
           currentTime: currentTime.value,
@@ -469,6 +470,7 @@ export const usePlayerStore = defineStore('player', () => {
       rebuildAudioChain()
     }
   }
+  let _eqSaveTimer = null
   // EQ 拖动实时更新:节点已存在时直接改增益,避免每帧断开重建整条链(爆音/卡顿)
   function setEqGain(index, value) {
     eqSettings.value.gains[index] = value
@@ -478,7 +480,9 @@ export const usePlayerStore = defineStore('player', () => {
     } else {
       rebuildAudioChain()
     }
-    saveEqSettings()
+    // 拖动期间节流写 localStorage(避免每帧同步 IO)
+    if (_eqSaveTimer) clearTimeout(_eqSaveTimer)
+    _eqSaveTimer = setTimeout(() => { _eqSaveTimer = null; saveEqSettings() }, 400)
   }
   function setBass(v) {
     eqSettings.value.bass = v

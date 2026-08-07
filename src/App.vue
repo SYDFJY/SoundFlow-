@@ -235,6 +235,7 @@ onMounted(() => {
     })
     // 系统深色模式变化 → 主题跟随
     window.electronAPI.on('system-theme', (dark) => { appStore.applySystemTheme(!!dark) })
+    window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
   }
   appStore.loadSettings()
   musicStore.restoreLibrary()
@@ -317,13 +318,14 @@ onMounted(() => {
     })
   }
 
-  // 定期保存数据（含当前播放进度）
+  // 定期保存数据(含当前播放进度)—— 数据变化已有 2s 防抖,此处仅兜底:降频至 5 分钟 + 窗口隐藏时跳过
   _autoSaveTimer = setInterval(() => {
+    if (document.hidden) return
     try {
       playerStore.saveSettings()
       musicStore.saveToStorage(true)
     } catch (e) { console.error(e) }
-  }, 90000)
+  }, 300000)
 })
 
 onUnmounted(() => {

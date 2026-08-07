@@ -80,6 +80,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 迷你播放器
   toggleMiniWindow: () => ipcRenderer.send('mini:toggle'),
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
+  onMiniState: (cb) => {
+    const h = (_e, open) => cb(open)
+    ipcRenderer.on('mini:state', h)
+    return () => ipcRenderer.removeListener('mini:state', h)
+  },
   // 桌面歌词
   // 桌面歌词(独立 lyric.html)
   lyricToggle: () => ipcRenderer.send('lyric:toggle'),
@@ -118,7 +123,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'mini:state', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

@@ -1036,34 +1036,37 @@ function drawSpectrum(ts) {
 function startSpectrum() {
   if (spectrumCanvas.value) drawSpectrum()
 }
-// 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)
+// 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)—— 仅播放时存在,暂停/卸载即清
 let spectrumTimer = null
+function ensureSpectrumTimer() {
+  if (spectrumTimer) return
+  spectrumTimer = setInterval(() => {
+    if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
+  }, 1000)
+}
 // 切回封面 tab 立即恢复频谱(canvas 常驻 v-show,切回瞬间即可绘制,无挂载延迟)
 watch(activeTab, (v) => {
   if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) startSpectrum()
 })
 onMounted(() => {
   setupPvPanelsClickOutside()
-  if (playerStore.isPlaying) startSpectrum()
+  if (playerStore.isPlaying) { startSpectrum(); ensureSpectrumTimer() }
   // 进入播放页时若当前显示本地歌词,重新读取(删除/外部修改 .lrc 后能立即反映,避免残留旧歌词)
   if (playerStore.currentSong && playerStore.lyricOrigin === '本地') {
     playerStore.loadLyrics(playerStore.currentSong)
   }
-  spectrumTimer = setInterval(() => {
-    // 仅当 rAF 链意外断开时重启(切 tab 重建 canvas 场景),避免常驻空转
-    if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
-  }, 1000)
 })
 onUnmounted(() => {
   if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
   if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
   document.removeEventListener('click', onPvPanelDocClick)
 })
-// 暂停时停止频谱 rAF(省 CPU),播放时恢复
+// 暂停时停止频谱 rAF(省 CPU),播放时恢复;定时器也随播放态启停
 watch(() => playerStore.isPlaying, (v) => {
-  if (v) startSpectrum()
+  if (v) { startSpectrum(); ensureSpectrumTimer() }
   else {
     if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
+    if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
     if (spectrumCanvas.value) {
       const ctx = spectrumCanvas.value.getContext('2d')
       ctx.clearRect(0, 0, spectrumCanvas.value.width, spectrumCanvas.value.height)

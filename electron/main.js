@@ -686,6 +686,12 @@ function createMainWindow() {
   })
 }
 
+function notifyMiniState(open) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try { mainWindow.webContents.send('mini:state', open) } catch {}
+  }
+}
+
 function createMiniWindow() {
   if (miniWindow) { miniWindow.focus(); return }
 
@@ -747,7 +753,10 @@ function createMiniWindow() {
     menu.popup({ window: miniWindow })
   })
 
-  miniWindow.on('closed', () => { miniWindow = null })
+  miniWindow.on('closed', () => { miniWindow = null; notifyMiniState(false) })
+
+  notifyMiniState(true)
+  return miniWindow
 }
 
 // ========== 桌面歌词窗口 ==========
