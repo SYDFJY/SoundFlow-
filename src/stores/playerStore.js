@@ -91,9 +91,9 @@ export const usePlayerStore = defineStore('player', () => {
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
-      // 节流同步迷你播放器
+      // 节流同步迷你播放器(主进程在迷你窗未开时丢弃,渲染端不判断状态避免同步失效)
       const now = Date.now()
-      if (window.electronAPI && miniOpen.value && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
+      if (window.electronAPI && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
         _lastMiniIpcTime = now
         window.electronAPI.sendMiniUpdate({
           currentTime: currentTime.value,
