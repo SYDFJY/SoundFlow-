@@ -52,7 +52,7 @@
             @mousedown="onRowMouseDown($event, song)"
           >
             <div v-if="batchOn" class="col-check" @click.stop>
-              <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(song.path)" />
+              <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(virtualStart + i)" />
             </div>
             <div class="col-index">
               <span v-if="isCurrentSong(song) && playerStore.isPlaying" class="eq-bars"><i></i><i></i><i></i></span>
@@ -236,9 +236,24 @@ const draggingPath = ref(null)
 const jsDragPos = ref('after')
 const dropLineTop = ref(0)
 let jsAutoScrollTimer = null
+// Shift 范围多选的锚点(上次勾选/区间选中的行索引)
+let _shiftAnchor = -1
 function onRowMouseDown(e, song) {
   if (e.button !== 0) return
   if (e.target.closest('button, input, a, .col-check, .row-actions')) return
+  // Shift + 批量模式:从锚点到当前行区间选中(拖拽不生效)
+  if (e.shiftKey && props.batchMode) {
+    const targetIdx = props.songs.findIndex(s => s.path === song.path)
+    if (targetIdx >= 0 && _shiftAnchor >= 0) {
+      const [lo, hi] = _shiftAnchor <= targetIdx ? [_shiftAnchor, targetIdx] : [targetIdx, _shiftAnchor]
+      const s = new Set(selectedSet.value)
+      for (let i = lo; i <= hi; i++) s.add(props.songs[i]?.path)
+      selectedSet.value = s
+      emit('selection-change', [...s])
+      _shiftAnchor = targetIdx
+    }
+    return
+  }
   e.preventDefault() // 阻止拖动时文本选择(会破坏 elementFromPoint 命中)
   jsDrag = { path: song.path, startX: e.clientX, startY: e.clientY, moved: false }
   document.addEventListener('mousemove', onDocDragMove)
@@ -546,7 +561,10 @@ function saveBatchEdit() {
   batchEditModal.value.show = false
 }
 
-function toggleSelect(path) {
+function toggleSelect(idx) {
+  const path = props.songs[idx]?.path
+  if (!path) return
+  _shiftAnchor = idx
   const s = new Set(selectedSet.value)
   if (s.has(path)) s.delete(path)
   else s.add(path)

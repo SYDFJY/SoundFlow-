@@ -22,6 +22,7 @@
           <div class="bg-mode-btns">
             <button :class="{ active: bgMode === 'theme' }" @click="setBgMode('theme')">主题</button>
             <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">{{ t('playerView.cover') }}</button>
+            <button :class="{ active: bgMode === 'auto' }" @click="setBgMode('auto')">主色</button>
             <button :class="{ active: bgMode === 'color' }" @click="setBgMode('color')">纯色</button>
             <button :class="{ active: bgMode === 'gradient' }" @click="setBgMode('gradient')">渐变</button>
             <button :class="{ active: bgMode === 'image' }" @click="setBgMode('image')">图片</button>
@@ -41,8 +42,9 @@
       </div>
 
       <!-- 封面模式 -->
-      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
-        <div class="disc-area">
+      <transition name="mode-fade">
+        <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
+        <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
               <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
@@ -57,9 +59,11 @@
           <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
         </div>
       </div>
-      <div v-else class="lyric-mode">
+      </transition>
+      <transition name="mode-fade">
+        <div v-if="activeTab !== 'cover'" key="lyric" class="lyric-mode">
         <div class="lyric-left">
-          <div class="disc-small" :class="{ spinning: playerStore.isPlaying }">
+          <div class="disc-small" :class="{ spinning: playerStore.isPlaying }" title="返回封面" @click="activeTab = 'cover'">
             <div class="disc-cover-small">
               <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
               <div v-else class="cover-placeholder">🎵</div>
@@ -84,6 +88,8 @@
             <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
             <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
             <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
+            <button class="ls-btn ls-font" title="减小行距" @click="changeLyricGap(-0.15)">⭱</button>
+            <button class="ls-btn ls-font" title="增大行距" @click="changeLyricGap(0.15)">⭳</button>
             </template>
           </div>
           <!-- 歌词颜色面板:跟随按钮组左侧 -->
@@ -120,6 +126,7 @@
                 }"
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px',
+                  lineHeight: lyricLineGap,
                   color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99',
                   textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : '0 1px 8px rgba(0,0,0,.55)'
                 }"
@@ -145,6 +152,7 @@
           </div>
         </div>
       </div>
+      </transition>
 
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
       <canvas v-show="activeTab === 'cover'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
@@ -642,6 +650,43 @@ function setBgGradient(v) {
   localStorage.setItem('soundflow_player_bg_gradient', v)
 }
 
+// ===== 封面主色自动背景(auto 模式) =====
+const bgAccent = ref(null)
+const _dominantCache = new Map() // 按封面 URL 缓存主色,切歌不闪烁
+function getDominantColor(imgUrl) {
+  if (_dominantCache.has(imgUrl)) return Promise.resolve(_dominantCache.get(imgUrl))
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = 32; c.height = 32
+        const ctx = c.getContext('2d')
+        if (!ctx) return resolve(null)
+        ctx.drawImage(img, 0, 0, 32, 32)
+        const data = ctx.getImageData(0, 0, 32, 32).data
+        let r = 0, g = 0, b = 0, n = 0
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 128) continue
+          r += data[i]; g += data[i + 1]; b += data[i + 2]; n++
+        }
+        if (!n) throw new Error('empty')
+        const color = [Math.round(r / n), Math.round(g / n), Math.round(b / n)]
+        _dominantCache.set(imgUrl, color)
+        if (_dominantCache.size > 200) _dominantCache.clear()
+        resolve(color)
+      } catch { resolve(null) }
+    }
+    img.onerror = () => resolve(null)
+    img.src = imgUrl
+  })
+}
+// auto 模式下封面变化时异步取色(不阻塞渲染;失败保持深色)
+watch([() => bgMode.value, coverUrl], async () => {
+  if (bgMode.value !== 'auto' || !coverUrl.value) return
+  bgAccent.value = await getDominantColor(coverUrl.value)
+}, { immediate: true })
+
 // 导入自定义背景图片
 async function importBgImage() {
   if (!window.electronAPI) return
@@ -683,6 +728,16 @@ const bgStyle = computed(() => {
   }
   if (bgMode.value === 'color') {
     return { backgroundColor: bgColor.value }
+  }
+  if (bgMode.value === 'auto') {
+    // 封面主色自动背景:主色暗化渐变(取色失败回退深色)
+    if (bgAccent.value) {
+      const [r, g, b] = bgAccent.value
+      return {
+        backgroundImage: `linear-gradient(160deg, rgb(${Math.round(r / 2.6)},${Math.round(g / 2.6)},${Math.round(b / 2.6)}) 0%, rgb(${Math.round(r / 1.8)},${Math.round(g / 1.8)},${Math.round(b / 1.8)}) 45%, #0e1016 100%)`
+      }
+    }
+    return { backgroundColor: '#14161c' }
   }
   if (bgMode.value === 'gradient') {
     return { backgroundImage: bgGradient.value }
@@ -801,6 +856,13 @@ const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_si
 function changeLyricFont(delta) {
   lyricFontSize.value = Math.max(12, Math.min(36, lyricFontSize.value + delta))
   localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
+}
+
+// 歌词行距(1.3-2.4,持久化)
+const lyricLineGap = ref(parseFloat(localStorage.getItem('soundflow_lyric_gap')) || 1.6)
+function changeLyricGap(delta) {
+  lyricLineGap.value = Math.max(1.3, Math.min(2.4, Math.round((lyricLineGap.value + delta) * 100) / 100))
+  localStorage.setItem('soundflow_lyric_gap', String(lyricLineGap.value))
 }
 
 // 歌词颜色(8 色色板,持久化)

@@ -63,6 +63,7 @@ export const usePlayerStore = defineStore('player', () => {
   const MAX_CONSECUTIVE_ERRORS = 3
   // 本次加载是否允许恢复播放记忆(随机模式/用户手动选择时为 false)
   let _pendingRestore = false
+  let _restoreToastShown = false
   // 播完兜底:ended 事件可能因文件尾部异常不触发,停滞检测用
   let _endStallTimer = null
   let _endStallLast = -1
@@ -113,6 +114,14 @@ export const usePlayerStore = defineStore('player', () => {
         const saved = progressHistory.value[currentSong.value.path]
         if (saved && saved > 5 && saved < duration.value - 5) {
           audio.value.currentTime = saved
+          // 续播提示(仅本次恢复,不重复打扰)
+          try {
+            const f = formatTime(saved)
+            if (window.$toast && !_restoreToastShown) {
+              _restoreToastShown = true
+              window.$toast?.('已从上次进度 ' + f + ' 继续播放', 'info')
+            }
+          } catch {}
         }
       }
       _pendingRestore = false
@@ -521,6 +530,13 @@ export const usePlayerStore = defineStore('player', () => {
     const insertIdx = currentIndex.value + 1
     playQueue.value.splice(insertIdx, 0, { ...song })
     _originalQueue.push({ ...song }) // 同步原始队列
+    saveQueueState()
+  }
+
+  // 追加到播放列表末尾(拖歌曲到播放栏等场景)
+  function addToQueue(song) {
+    playQueue.value.push({ ...song })
+    _originalQueue.push({ ...song })
     saveQueueState()
   }
 
@@ -1558,7 +1574,7 @@ export const usePlayerStore = defineStore('player', () => {
     pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
-    initAudio, setPlayQueue, insertNext, removeFromQueue, moveInQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
+    initAudio, setPlayQueue, insertNext, addToQueue, removeFromQueue, moveInQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     loadLyrics,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,

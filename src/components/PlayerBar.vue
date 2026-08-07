@@ -1,5 +1,5 @@
 <template>
-  <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong }">
+  <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong, 'player-bar--drag': barDragOver }">
     <!-- 左：封面+信息 -->
     <div class="player-left">
       <div class="player-cover" @click="goToPlayer">
@@ -200,6 +200,7 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { t } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
 import ProgressBar from '@/components/ProgressBar.vue'
+import { dragSongPath, clearDragSong } from '@/composables/useDragSong'
 
 const router = useRouter()
 const playerStore = usePlayerStore()
@@ -254,8 +255,36 @@ function setupPbPanelsClickOutside() {
     }
   )
 }
-onMounted(() => { setupPbPanelsClickOutside() })
-onUnmounted(() => { document.removeEventListener('click', onQueueDocClick) })
+onMounted(() => {
+  setupPbPanelsClickOutside()
+  document.addEventListener('mousemove', onBarDragMove)
+  document.addEventListener('mouseup', onBarDragUp)
+})
+// 拖歌曲到播放栏:追加到播放列表(拖动时播放栏高亮提示)
+const barDragOver = ref(false)
+function onBarDragMove(e) {
+  if (!dragSongPath.value) { if (barDragOver.value) barDragOver.value = false; return }
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  barDragOver.value = !!(el && el.closest('.player-bar'))
+}
+function onBarDragUp(e) {
+  if (!dragSongPath.value) return
+  const el = document.elementFromPoint(e.clientX, e.clientY)
+  if (el && el.closest('.player-bar')) {
+    const song = musicStore.songs.find(s => s.path === dragSongPath.value)
+    if (song) {
+      playerStore.addToQueue(song)
+      try { window.$toast?.('已添加到播放列表', 'success') } catch {}
+    }
+  }
+  barDragOver.value = false
+  clearDragSong()
+}
+onUnmounted(() => {
+  document.removeEventListener('click', onQueueDocClick)
+  document.removeEventListener('mousemove', onBarDragMove)
+  document.removeEventListener('mouseup', onBarDragUp)
+})
 watch(() => playerStore.showQueue, (v) => {
   if (v) nextTick(scrollToActiveQueue)
 })
@@ -353,6 +382,7 @@ function setCustomTimer() {
   position: relative;
   z-index: 50;
 }
+.player-bar--drag { box-shadow: inset 0 0 0 2px var(--color-primary); }
 
 /* 左侧 */
 .player-left { display: flex; align-items: center; gap: 12px; width: 260px; flex-shrink: 0; }
