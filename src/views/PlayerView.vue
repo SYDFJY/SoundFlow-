@@ -1671,6 +1671,7 @@ async function searchLyric() {
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35);
   z-index: 60;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
 .vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
