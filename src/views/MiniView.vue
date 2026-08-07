@@ -58,6 +58,7 @@ onMounted(() => {
     window.electronAPI.on('mini:update', (data) => {
       title.value = data.title || ''
       artist.value = data.artist || ''
+      coverUrl.value = data.coverUrl || null
       isPlaying.value = data.isPlaying || false
       currentTime.value = data.currentTime || 0
       duration.value = data.duration || 0
