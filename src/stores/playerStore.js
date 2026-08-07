@@ -637,6 +637,10 @@ export const usePlayerStore = defineStore('player', () => {
       if (playQueue.value.length === 0) return
       currentIndex.value = (state.index >= 0 && state.index < playQueue.value.length) ? state.index : 0
       currentSong.value = playQueue.value[currentIndex.value]
+      // 启动即预加载当前歌曲歌词(未播放时播放页/桌面歌词也能显示;失败静默,不阻塞启动)
+      if (currentSong.value) {
+        loadLyrics(currentSong.value).catch(() => {})
+      }
     } catch {}
   }
 

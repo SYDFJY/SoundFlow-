@@ -1078,8 +1078,8 @@ onMounted(() => {
   setupPvPanelsClickOutside()
   document.addEventListener('soundflow:esc', onPvEsc)
   if (playerStore.isPlaying) { startSpectrum(); ensureSpectrumTimer() }
-  // 进入播放页时若当前显示本地歌词,重新读取(删除/外部修改 .lrc 后能立即反映,避免残留旧歌词)
-  if (playerStore.currentSong && playerStore.lyricOrigin === '本地') {
+  // 进入播放页时若歌词尚未加载(未播放过/切源后),补一次读取;本地歌词删除/外部修改后也能立即反映
+  if (playerStore.currentSong && playerStore.lyrics.length === 0) {
     playerStore.loadLyrics(playerStore.currentSong)
   }
 })
