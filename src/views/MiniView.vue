@@ -87,13 +87,10 @@ function restoreMain() {
 </script>
 
 <style scoped>
-/* 迷你窗为透明窗口:必须把 html/body 设为透明,否则圆角外露白角 */
-:global(html), :global(body) { background: transparent !important; }
 .mini-player {
   width: 320px;
   height: 80px;
-  background: rgba(22, 27, 34, 0.96);
-  border-radius: 14px;
+  background: #161b22;
   display: flex;
   align-items: center;
   padding: 10px 12px;

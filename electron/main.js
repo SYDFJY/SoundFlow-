@@ -708,11 +708,10 @@ function createMiniWindow() {
     width: 320,
     height: 80,
     frame: false,
-    transparent: true,
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
-    // 注意:transparent 窗口不要设置 backgroundColor(Electron 已知 bug 会渲染白底),歌词窗同款配置透明正常
+    backgroundColor: '#161b22', // 不透明矩形:彻底绕开 transparent 渲染白底问题
     ...(pos ? { x: pos.x, y: pos.y } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
