@@ -67,18 +67,21 @@
       <div class="tool-wrapper">
         <button class="right-btn" :class="{ active: playerStore.sleepTimerMinutes !== 0 }" @click="showTimer = !showTimer" :title="t('settings.sleepTimer')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <span v-if="playerStore.sleepTimerRemaining > 0" class="timer-badge">{{ playerStore.formatTimerDisplay(playerStore.sleepTimerRemaining) }}</span>
+          <span v-if="playerStore.sleepTimerMinutes !== 0" class="timer-badge">{{ playerStore.sleepTimerMinutes === -1 ? '本曲后' : playerStore.formatTimerDisplay(playerStore.sleepTimerRemaining) }}</span>
         </button>
         <transition name="popup">
           <div v-if="showTimer" class="popup-panel timer-panel" @click.stop>
             <div class="popup-title">{{ t('settings.sleepTimer') }}</div>
-            <button v-for="m in timerOptions" :key="m.value" class="popup-item" :class="{ active: playerStore.sleepTimerMinutes === m.value }" @click="setTimer(m.value)">
-              {{ m.label }}
+            <!-- 播完当前曲目停止 -->
+            <button class="popup-item" :class="{ active: playerStore.sleepTimerMinutes === -1 }" @click="setTimer(-1)">
+              ⏭️ 播完当前曲目停止
             </button>
+            <div class="popup-divider"></div>
+            <!-- 自定义分钟(无需预设) -->
             <div class="custom-timer">
-              <span class="custom-label">{{ t('settings.custom') }}</span>
+              <span class="custom-label">{{ t('settings.custom') }} 分钟</span>
               <div class="custom-input-row">
-                <input v-model.number="customMinutes" type="number" min="1" max="999" class="custom-input" placeholder="分钟" @keydown.enter="setCustomTimer" />
+                <input v-model.number="customMinutes" type="number" min="1" max="999" class="custom-input" placeholder="自定义分钟" @keydown.enter="setCustomTimer" />
                 <button class="custom-confirm" @click="setCustomTimer" :disabled="!customMinutes || customMinutes < 1">{{ t('common.confirm') }}</button>
               </div>
             </div>
@@ -96,14 +99,19 @@
 
       <!-- 音量:点击弹出竖直滑块 -->
       <div class="volume-control" @wheel.prevent="onVolWheel">
-        <button class="right-btn" :class="{ active: volExpanded }" :title="t('player.volume')" @click="volExpanded = !volExpanded">
+        <button class="right-btn" :class="{ active: volExpanded }" :title="t('player.volume') + ' ' + Math.round(playerStore.volume * 100) + '%'" @click="volExpanded = !volExpanded">
           <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
           <svg v-else-if="playerStore.volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
         </button>
         <transition name="vol-fade">
           <div v-if="volExpanded" class="vol-pop">
+            <div class="vol-pct">{{ Math.round(playerStore.volume * 100) }}%</div>
             <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+            <div class="vol-input-row">
+              <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
+              <span class="vol-input-unit">%</span>
+            </div>
             <button class="vol-mute" :title="playerStore.isMuted ? '取消静音' : '静音'" @click="playerStore.toggleMute()">
               <svg v-if="playerStore.isMuted" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
               <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
@@ -255,16 +263,6 @@ watch(() => playerStore.currentIndex, () => {
   if (playerStore.showQueue) nextTick(scrollToActiveQueue)
 })
 
-const timerOptions = [
-  { value: 15, label: '15 分钟后' },
-  { value: 30, label: '30 分钟后' },
-  { value: 45, label: '45 分钟后' },
-  { value: 60, label: '60 分钟后' },
-  { value: 90, label: '90 分钟后' },
-  { value: 120, label: '120 分钟后' },
-  { value: -1, label: '播完当前歌曲停止' }
-]
-
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
 const isFav = computed(() => playerStore.currentSong ? musicStore.isFavorite(playerStore.currentSong.path) : false)
 const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
@@ -313,7 +311,16 @@ function onProgressMouseDown(e) {
 }
 
 const volExpanded = ref(false)
+const volInput = ref(Math.round(playerStore.volume * 100))
+watch(() => playerStore.volume, (v) => { volInput.value = Math.round(v * 100) })
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
+// 自定义音量:数字输入(1-100),Enter/失焦确认
+function confirmVolInput() {
+  let v = Math.round(volInput.value)
+  if (isNaN(v)) v = Math.round(playerStore.volume * 100)
+  volInput.value = Math.min(100, Math.max(0, v))
+  playerStore.setVolume(volInput.value / 100)
+}
 function onVolWheel(e) {
   const delta = e.deltaY > 0 ? -0.05 : 0.05
   playerStore.setVolume(Math.min(1, Math.max(0, playerStore.volume + delta)))
@@ -415,6 +422,15 @@ function setCustomTimer() {
   z-index: 60;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
+.vol-pct { font-size: 13px; font-weight: 700; color: var(--color-primary); }
+.vol-input-row { display: flex; align-items: center; gap: 2px; }
+.vol-input {
+  width: 48px; padding: 3px 6px;
+  background: var(--bg-hover); border: 1px solid var(--border-color);
+  border-radius: 6px; color: var(--text-primary); font-size: 12px; text-align: center; outline: none;
+}
+.vol-input:focus { border-color: var(--color-primary); }
+.vol-input-unit { font-size: 11px; color: var(--text-tertiary); }
 .vol-mute {
   display: inline-flex; align-items: center; justify-content: center;
   width: 22px; height: 22px; border-radius: 50%;

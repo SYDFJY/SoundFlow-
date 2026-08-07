@@ -650,6 +650,9 @@ export const usePlayerStore = defineStore('player', () => {
     initAudio()
     if (index < 0 || index >= playQueue.value.length) return
 
+    // 手动/自动切歌:清除"播完当前曲目停止"挂起(用户已接管,不再意外停止)
+    if (sleepTimerMinutes.value === -1) clearSleepTimer()
+
     // 保存当前歌曲进度
     saveCurrentProgress()
 
@@ -1475,9 +1478,10 @@ export const usePlayerStore = defineStore('player', () => {
       sleepTimerRemaining.value--
       if (sleepTimerRemaining.value <= 0) {
         clearSleepTimer()
+        // 到点不立即暂停:切换为"播完当前曲目停止"(-1),当前歌自然结束时才停
         if (audio.value && isPlaying.value) {
-          audio.value.pause()
-          isPlaying.value = false
+          sleepTimerMinutes.value = -1
+          try { window.$toast?.('定时到点,播完当前曲目后停止', 'info') } catch {}
         }
       }
     }, 1000)
