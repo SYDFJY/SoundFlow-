@@ -716,7 +716,8 @@ function createMiniWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      webSecurity: false // 允许加载本地 file:// 封面(与主窗口一致)
     }
   })
 
