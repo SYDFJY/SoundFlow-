@@ -355,17 +355,36 @@ const diversityScore = computed(() => {
 })
 // 分享文案
 const shareText = computed(() => {
-  const t1 = topSongs.value[0]
-  const a1 = topArtists.value[0]
+  const t3 = topSongs.value.slice(0, 3)
+  const a3 = topArtists.value.slice(0, 3)
+  const al3 = topAlbums.value.slice(0, 3)
+  const hist = rangeHistory.value
+  // 单日播放峰值
+  const dayMap = {}
+  for (const h of hist) {
+    const d = new Date(h.time).toDateString()
+    dayMap[d] = (dayMap[d] || 0) + 1
+  }
+  const peakDay = Object.entries(dayMap).sort((a, b) => b[1] - a[1])[0]
+  // 深夜(22点-5点)听歌占比
+  const night = hist.filter(h => { const hh = new Date(h.time).getHours(); return hh >= 22 || hh < 5 }).length
+  const total = hist.length || 1
+  // 曲库覆盖度
+  const playedPaths = new Set(hist.map(h => h.path))
+  const coverPct = musicStore.songs.length ? Math.round(playedPaths.size / musicStore.songs.length * 100) : 0
+  const f = funFacts.value
   return [
     '🎧 我的听歌报告',
-    `累计播放 ${totalPlays.value} 次 · ${totalHours.value} 小时`,
-    `常听歌手 ${artistCount.value} 位 · 收藏 ${favCount.value} 首`,
-    `最爱单曲:《${t1 ? t1.title : '-'}》${t1 ? t1._playCount : ''} 次`,
-    `最爱歌手:${a1 ? a1.name : '-'}`,
-    `最常听时段:${funFacts.value.lateHour} · 听歌多元化 ${diversityScore.value}/100`,
+    `累计播放 ${totalPlays.value} 次 · ${totalHours.value} 小时 · 收藏 ${favCount.value} 首`,
+    `🎵 最爱单曲:${t3.map((s, i) => `${i + 1}.《${s.title}》${s._playCount}次`).join(' ')}`,
+    `👤 最爱歌手:${a3.map((a, i) => `${i + 1}.${a.name}`).join(' ')}`,
+    `💿 最爱专辑:${al3.map((a, i) => `${i + 1}.${a.name}`).join(' ')}`,
+    `🕐 常听时段:${f.lateHour} · 深夜听歌 ${night} 次(${Math.round(night / total * 100)}%)`,
+    peakDay ? `📅 单日最高 ${peakDay[1]} 次(${peakDay[0]})` : '',
+    `🌐 曲库覆盖 ${coverPct}% · 听歌多元化 ${diversityScore.value}/100`,
+    f.first ? `🎂 最早播放:《${f.first.title || f.first}》` : '',
     '—— SoundFlow 声流音乐'
-  ].join('\n')
+  ].filter(Boolean).join('\n')
 })
 function copyShare() {
   try {

@@ -15,7 +15,7 @@
         </button>
         <button class="add-songs-btn" @click="importPlaylist">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          <span>导入</span>
+          <span>导入歌曲</span>
         </button>
         <button class="add-songs-btn" @click="showAddDialog = true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -192,7 +192,7 @@ async function exportPlaylistM3u() {
   if (ok) window.$toast?.('歌单已导出 ✓', 'success')
 }
 
-// 导入歌单(.m3u / .json):匹配曲库路径,建新歌单
+// 导入歌单(.m3u / .json):匹配曲库路径,导入到当前歌单(不再新建歌单)
 async function importPlaylist() {
   const r = await window.electronAPI.importM3u()
   if (!r) return
@@ -207,9 +207,17 @@ async function importPlaylist() {
   }
   const matched = paths.filter(p => known.has(p))
   if (!matched.length) { window.$toast?.('导入的歌单中没有匹配到曲库中的歌曲(需为绝对路径)', 'warning'); return }
-  const id = musicStore.createPlaylist(name + ' ' + new Date().toLocaleDateString())
-  for (const p of matched) musicStore.addSongToPlaylist(id, p)
-  window.$toast?.(`已导入 ${matched.length} 首歌曲 ✓`, 'success')
+  // 导入到当前歌单(route.params.id);歌单不存在时兜底新建
+  const plId = route.params.id
+  const target = musicStore.playlists.find(p => p.id === plId)
+  if (target) {
+    for (const p of matched) musicStore.addSongToPlaylist(plId, p)
+    window.$toast?.(`已导入 ${matched.length} 首到「${target.name}」✓`, 'success')
+  } else {
+    const id = musicStore.createPlaylist(name + ' ' + new Date().toLocaleDateString())
+    for (const p of matched) musicStore.addSongToPlaylist(id, p)
+    window.$toast?.(`已导入 ${matched.length} 首(新歌单「${name}」)✓`, 'success')
+  }
 }
 </script>
 

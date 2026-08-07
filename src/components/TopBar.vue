@@ -103,7 +103,6 @@ const themeList = [
   { value: 'blue', label: '深海蓝', color: '#172330' },
   { value: 'red', label: '极夜红', color: '#2a171a' },
   { value: 'purple', label: '暗玫紫', color: '#272036' },
-  { value: 'liquid', label: '液态玻璃', color: '#101828' },
   { value: 'c_light', label: '经典浅色', color: '#f5f7fa' },
   { value: 'c_dark', label: '经典深色', color: '#0d1117' },
   { value: 'c_blue', label: '经典藏青', color: '#0a1628' },
