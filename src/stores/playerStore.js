@@ -80,6 +80,18 @@ export const usePlayerStore = defineStore('player', () => {
   const MINI_IPC_INTERVAL = 500 // ms
 
   // 初始化音频
+  // 同步迷你播放器(暂停/切歌时立即调用,不等 timeupdate;forcePlaying 用于事件未派发时强制状态)
+  function sendMiniUpdate(forcePlaying) {
+    if (!window.electronAPI) return
+    window.electronAPI.sendMiniUpdate({
+      currentTime: currentTime.value,
+      duration: duration.value,
+      title: currentSong.value?.title || '',
+      artist: currentSong.value?.artist || '',
+      coverUrl: currentSong.value?.coverUrl || null,
+      isPlaying: typeof forcePlaying === 'boolean' ? forcePlaying : isPlaying.value
+    })
+  }
   function initAudio() {
     if (audio.value) return
     audio.value = new Audio()
@@ -95,14 +107,7 @@ export const usePlayerStore = defineStore('player', () => {
       const now = Date.now()
       if (window.electronAPI && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
         _lastMiniIpcTime = now
-        window.electronAPI.sendMiniUpdate({
-          currentTime: currentTime.value,
-          duration: duration.value,
-          title: currentSong.value?.title || '',
-          artist: currentSong.value?.artist || '',
-          coverUrl: currentSong.value?.coverUrl || null,
-          isPlaying: isPlaying.value
-        })
+        sendMiniUpdate()
       }
     })
 
@@ -708,6 +713,7 @@ export const usePlayerStore = defineStore('player', () => {
     ensureReplayGain(song.path)
     isBuffering.value = false
     loadLyrics(song)
+    sendMiniUpdate(true) // 切歌立即同步迷你窗(标题/封面/状态)
 
     // 通过事件通知 musicStore 记录播放（避免循环依赖）
     window.dispatchEvent(new CustomEvent('soundflow:play', { detail: { path: song.path } }))
@@ -1141,13 +1147,18 @@ export const usePlayerStore = defineStore('player', () => {
   function togglePlay() {
     initAudio()
     if (!audio.value) return
-    if (isPlaying.value) { audio.value.pause(); return }
+    if (isPlaying.value) {
+      audio.value.pause()
+      sendMiniUpdate(false) // 暂停:立即同步迷你窗播放按钮(不等 timeupdate)
+      return
+    }
     // 恢复队列/停止后:有当前歌曲但 audio 无 src → 重新加载再播放
     if (currentSong.value && !audio.value.src) {
       loadAndPlay(currentIndex.value)
       return
     }
     fadeIn(); audio.value.play().catch(() => {})
+    sendMiniUpdate(true) // 恢复播放:立即同步迷你窗
   }
 
   function playIndex(index) {

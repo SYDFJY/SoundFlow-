@@ -92,16 +92,14 @@ function restoreMain() {
 .mini-player {
   width: 320px;
   height: 80px;
-  background: rgba(22, 27, 34, 0.95);
-  backdrop-filter: blur(20px);
-  border-radius: 12px;
+  background: rgba(22, 27, 34, 0.96);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   padding: 10px 12px;
   position: relative;
   overflow: hidden;
   -webkit-app-region: drag;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 }
 
 .mini-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
