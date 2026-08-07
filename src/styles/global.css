@@ -481,3 +481,14 @@ input[type="text"]:focus, input[type="search"]:focus {
 .theme-liquid .theme-option { color: #dbe6f5; }
 .theme-liquid .theme-option:hover { background: rgba(255, 255, 255, 0.1); }
 .theme-liquid .theme-option.active { color: #6ec6ff; }
+
+/* 音量弹层:百分比 + 自定义输入(播放栏/播放页共用) */
+.vol-pct { font-size: 13px; font-weight: 700; color: var(--color-primary); }
+.vol-input-row { display: flex; align-items: center; gap: 2px; }
+.vol-input {
+  width: 48px; padding: 3px 6px;
+  background: var(--bg-hover); border: 1px solid var(--border-color);
+  border-radius: 6px; color: var(--text-primary); font-size: 12px; text-align: center; outline: none;
+}
+.vol-input:focus { border-color: var(--color-primary); }
+.vol-input-unit { font-size: 11px; color: var(--text-tertiary); }

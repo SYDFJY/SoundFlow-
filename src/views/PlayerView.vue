@@ -251,7 +251,12 @@
               </button>
               <transition name="vol-fade">
                 <div v-if="volExpanded" class="vol-pop">
+                  <div class="vol-pct">{{ Math.round(playerStore.volume * 100) }}%</div>
                   <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+                  <div class="vol-input-row">
+                    <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
+                    <span class="vol-input-unit">%</span>
+                  </div>
                 </div>
               </transition>
             </div>
@@ -805,6 +810,15 @@ function onProgressMouseDown(e) {
 }
 
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
+// 自定义音量:数字输入(1-100),Enter/失焦确认(与播放栏一致)
+const volInput = ref(Math.round(playerStore.volume * 100))
+watch(() => playerStore.volume, (v) => { volInput.value = Math.round(v * 100) })
+function confirmVolInput() {
+  let v = Math.round(volInput.value)
+  if (isNaN(v)) v = Math.round(playerStore.volume * 100)
+  volInput.value = Math.min(100, Math.max(0, v))
+  playerStore.setVolume(volInput.value / 100)
+}
 
 // 点击歌词跳转到对应播放进度
 function seekToLine(line) {
