@@ -906,6 +906,8 @@ function updateThumbarButtons(state) {
 }
 function doSetThumbar(state) {
   if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
+  try { fs.appendFileSync(path.join(process.env.TEMP || '.', 'sf-thumb-diag.log'), new Date().toISOString().slice(11,19) + ' doSetThumbar state=' + state + ' visible=' + mainWindow.isVisible() + '\n') } catch {}
+
   // 窗口不可见时设置会触发 Electron bug(#28319),按钮会永久不显示,必须等窗口显示后再设
   if (!mainWindow.isVisible()) return
   const send = (cmd) => {
@@ -918,9 +920,16 @@ function doSetThumbar(state) {
     { tooltip: '下一曲', icon: getThumbIcon('next.png'), click: () => send('next') }
   ]
   try {
-    // 先清空再设置:强制 Windows 刷新按钮图标(避免重复 setThumbarButtons 图标不更新的已知问题)
+    // 先清空再设置,延迟分步:强制 Windows 刷新按钮图标
+    // (同步连续调用可能被 Windows 合并导致图标不更新,Electron 34 下更明显)
     mainWindow.setThumbarButtons([])
-    mainWindow.setThumbarButtons(buttons)
+    setTimeout(() => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+          mainWindow.setThumbarButtons(buttons)
+        }
+      } catch (e2) { console.error('[任务栏] 重设缩略图按钮失败:', e2.message) }
+    }, 100)
   } catch (e) { console.error('[任务栏] 设置缩略图按钮失败:', e.message) }
 }
 
@@ -2032,6 +2041,7 @@ function setupIPC() {
   // SMTC 播放状态 → 更新任务栏缩略图按钮 + 防休眠
   let _powerSaveId = null
   ipcMain.on('smtc:playback-state', (event, state) => {
+    try { fs.appendFileSync(path.join(process.env.TEMP || '.', 'sf-thumb-diag.log'), new Date().toISOString().slice(11,19) + ' RECV state=' + state + '\n') } catch {}
     updateThumbarButtons(state === 'playing' ? 'playing' : 'paused')
     // 播放时阻止系统休眠/熄屏
     try {
