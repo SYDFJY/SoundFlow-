@@ -583,6 +583,14 @@ function createMainWindow() {
   mainWindow.on('show', () => {
     setTimeout(() => updateThumbarButtons(lastThumbState), 300)
   })
+  // 自动备份:启动 6s 后(等曲库恢复)向渲染端要 localStorage 快照,合并 store 写入 backups/
+  setTimeout(() => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('backup-request')
+      }
+    } catch (_) {}
+  }, 6000)
 
   // 窗口大小/位置记忆:拖动或缩放后节流保存到独立小文件(不触发全量存储写盘)
   let winBoundsTimer = null
@@ -1587,6 +1595,62 @@ function setupIPC() {
       changed = true
     }
     if (changed) saveStorage()
+  })
+
+  // ========== 数据安全:导出 / 导入 / 自动备份 ==========
+  // 导出全部数据(渲染端 localStorage + 主进程 store)保存为用户选择的文件
+  ipcMain.handle('export-data-file', async (event, localStorageData) => {
+    try {
+      const { dialog } = require('electron')
+      const defaultName = `soundflow-备份-${new Date().toISOString().slice(0, 10)}.json`
+      const r = await dialog.showSaveDialog(mainWindow, {
+        title: '导出 SoundFlow 数据备份',
+        defaultPath: path.join(app.getPath('documents'), defaultName),
+        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
+      })
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true }
+      const payload = {
+        app: 'soundflow', version: 1, exportedAt: new Date().toISOString(),
+        localStorage: localStorageData || {}, store: storageData
+      }
+      fs.writeFileSync(r.filePath, JSON.stringify(payload, null, 2), 'utf8')
+      return { ok: true, path: r.filePath }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+  // 读取备份文件并返回内容(渲染端负责写入 localStorage + store)
+  ipcMain.handle('import-data-file', async () => {
+    try {
+      const { dialog } = require('electron')
+      const r = await dialog.showOpenDialog(mainWindow, {
+        title: '导入 SoundFlow 数据备份',
+        properties: ['openFile'],
+        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
+      })
+      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true }
+      const raw = fs.readFileSync(r.filePaths[0], 'utf8')
+      const payload = JSON.parse(raw)
+      if (!payload || payload.app !== 'soundflow') return { ok: false, error: '不是有效的 SoundFlow 备份文件' }
+      return { ok: true, localStorage: payload.localStorage || {}, store: payload.store || {} }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+  // 自动备份:启动后请求渲染端 localStorage 快照,合并 store 写入 backups/,保留最近 10 份
+  ipcMain.on('backup-data', (event, localStorageData) => {
+    try {
+      const backupDir = path.join(app.getPath('userData'), 'backups')
+      fs.mkdirSync(backupDir, { recursive: true })
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+      const dest = path.join(backupDir, `soundflow-${ts}.json`)
+      const payload = {
+        app: 'soundflow', version: 1, type: 'auto-backup', exportedAt: new Date().toISOString(),
+        localStorage: localStorageData || {}, store: storageData
+      }
+      fs.writeFileSync(dest, JSON.stringify(payload), 'utf8')
+      // 保留最近 10 份
+      const files = fs.readdirSync(backupDir).filter(f => f.startsWith('soundflow-') && f.endsWith('.json')).sort()
+      while (files.length > 10) {
+        try { fs.unlinkSync(path.join(backupDir, files.shift())) } catch {}
+      }
+    } catch (_) {}
   })
   ipcMain.handle('store-delete', (event, key) => {
     delete storageData[key]

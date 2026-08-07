@@ -390,6 +390,27 @@
         </div>
       </div>
 
+      <!-- 数据安全 -->
+      <div class="settings-section">
+        <h3 class="section-title">🛡️ 数据安全</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">自动备份</span>
+            <span class="label-desc">每次启动自动备份全部数据(收藏/歌单/设置/播放记录),保留最近 10 份,存放于用户数据目录 backups/ 文件夹</span>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">手动备份</span>
+            <span class="label-desc">导出/导入完整数据备份,可用于换机迁移或数据损坏后恢复</span>
+          </div>
+          <div class="setting-actions" style="display: flex; gap: 8px;">
+            <button class="btn btn--sm" @click="exportData">导出数据</button>
+            <button class="btn--ghost btn--sm" @click="importData">导入数据</button>
+          </div>
+        </div>
+      </div>
+
       <!-- 关于 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.about') }}</h3>
@@ -517,6 +538,37 @@ const loginItem = ref(false)
 async function loadLoginItem() {
   try { if (window.electronAPI && window.electronAPI.getLoginItem) loginItem.value = await window.electronAPI.getLoginItem() } catch {}
 }
+// 导出全部数据(收藏/歌单/设置/播放记录)到用户选择的文件
+async function exportData() {
+  if (!window.electronAPI?.exportDataFile) return
+  try {
+    const data = {}
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      data[k] = localStorage.getItem(k)
+    }
+    const r = await window.electronAPI.exportDataFile(data)
+    if (r?.ok) window.$toast?.(`✅ 数据已导出到:\n${r.path}`, 'success', 4200)
+    else if (r && !r.canceled) window.$toast?.('导出失败: ' + (r.error || '未知错误'), 'error')
+  } catch (e) { window.$toast?.('导出失败: ' + e.message, 'error') }
+}
+// 导入数据备份(写入 localStorage + store,重启生效)
+async function importData() {
+  if (!window.electronAPI?.importDataFile) return
+  try {
+    const r = await window.electronAPI.importDataFile()
+    if (!r) return
+    if (!r.ok) { if (!r.canceled) window.$toast?.(r.error || '导入失败', 'error'); return }
+    for (const [k, v] of Object.entries(r.localStorage || {})) {
+      try { localStorage.setItem(k, v) } catch {}
+    }
+    if (Object.keys(r.store || {}).length && window.electronAPI.storeSetBulk) {
+      await window.electronAPI.storeSetBulk(r.store).catch(() => {})
+    }
+    window.$toast?.('✅ 数据已导入,请重启应用生效', 'success', 4200)
+  } catch (e) { window.$toast?.('导入失败: ' + e.message, 'error') }
+}
+
 async function toggleLoginItem() {
   const v = !loginItem.value
   loginItem.value = v

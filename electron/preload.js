@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storeGet: (key) => ipcRenderer.invoke('store-get', key),
   storeSet: (key, value) => ipcRenderer.invoke('store-set', key, value),
   storeSetBulk: (payload) => ipcRenderer.invoke('store-set-bulk', payload),
+  exportDataFile: (localStorageData) => ipcRenderer.invoke('export-data-file', localStorageData),
+  importDataFile: () => ipcRenderer.invoke('import-data-file'),
+  backupData: (localStorageData) => ipcRenderer.send('backup-data', localStorageData),
   storeDelete: (key) => ipcRenderer.invoke('store-delete', key),
 
   // 应用
@@ -115,7 +118,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

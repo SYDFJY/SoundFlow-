@@ -222,6 +222,17 @@ onMounted(() => {
   // 桌面歌词窗口点击歌词行 → 跳转播放进度
   if (window.electronAPI && window.electronAPI.on) {
     window.electronAPI.on('lyric:seek', (time) => { playerStore.seek(time) })
+    // 自动备份请求:收集 localStorage 全量快照回传主进程写入 backups/
+    window.electronAPI.on('backup-request', () => {
+      try {
+        const data = {}
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i)
+          data[k] = localStorage.getItem(k)
+        }
+        if (window.electronAPI.backupData) window.electronAPI.backupData(data)
+      } catch (_) {}
+    })
     // 系统深色模式变化 → 主题跟随
     window.electronAPI.on('system-theme', (dark) => { appStore.applySystemTheme(!!dark) })
   }
