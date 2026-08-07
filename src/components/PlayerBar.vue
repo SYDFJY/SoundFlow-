@@ -92,7 +92,7 @@
       </div>
 
       <!-- 迷你播放器 -->
-      <button class="right-btn" @click="window.electronAPI?.toggleMiniWindow()" title="迷你播放器(独立小窗)">
+      <button class="right-btn" @click="toggleMini" title="迷你播放器(独立小窗)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
       </button>
 
@@ -364,6 +364,7 @@ function setTimer(minutes) {
   playerStore.setSleepTimer(minutes)
   showTimer.value = false
 }
+function toggleMini() { window.electronAPI?.toggleMiniWindow() }
 
 function setCustomTimer() {
   const m = customMinutes.value

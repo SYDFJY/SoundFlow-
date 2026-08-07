@@ -244,7 +244,7 @@
             </button>
 
             <!-- 迷你播放器 -->
-            <button class="ctrl-btn ctrl-btn--small" @click="window.electronAPI?.toggleMiniWindow()" title="迷你播放器(独立小窗)">
+            <button class="ctrl-btn ctrl-btn--small" @click="toggleMini" title="迷你播放器(独立小窗)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
             </button>
 
@@ -824,6 +824,7 @@ function confirmVolInput() {
   volInput.value = Math.min(100, Math.max(0, v))
   playerStore.setVolume(volInput.value / 100)
 }
+function toggleMini() { window.electronAPI?.toggleMiniWindow() }
 
 // 点击歌词跳转到对应播放进度
 function seekToLine(line) {
