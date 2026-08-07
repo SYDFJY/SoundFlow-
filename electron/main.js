@@ -769,8 +769,18 @@ function createMiniWindow() {
 
 // ========== 桌面歌词窗口 ==========
 // ========== 桌面歌词窗口(独立 lyric.html,参考蓝韵音乐) ==========
+// 向主窗口同步桌面歌词开关状态(播放栏歌词按钮 active 跟随;托盘打开/关闭也走这里)
+function syncLyricState(state) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lyric-state-sync', state)
+  } catch (_) {}
+}
 function createLyricWindow() {
-  if (lyricWindow && !lyricWindow.isDestroyed()) { lyricWindow.show(); return }
+  if (lyricWindow && !lyricWindow.isDestroyed()) {
+    lyricWindow.show()
+    syncLyricState(1)
+    return
+  }
 
   const pos = storageData.lyricPos || null
   // 记忆的尺寸;超出合理范围(旧版本残留)时回退默认
@@ -828,8 +838,9 @@ function createLyricWindow() {
   lyricWindow.on('closed', () => {
     lyricWindow = null
     // 通知渲染进程归零桌面歌词状态(窗口被系统/其他方式关闭时同步按钮状态)
-    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('lyric-state-sync', 0) } catch {}
+    syncLyricState(0)
   })
+  syncLyricState(1)
 }
 
 // 锁定 = 点击穿透(不挡桌面操作);解锁恢复交互

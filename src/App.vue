@@ -10,14 +10,6 @@
     </div>
     <!-- 播放器全屏模式：不显示侧边栏、顶部栏、底部播放栏 -->
     <template v-if="isFullscreen">
-      <div v-if="isElectron" class="fs-window-controls">
-        <button class="fs-win-btn" @click="minimizeWindow" title="最小化">
-          <svg viewBox="0 0 12 12"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.5"/></svg>
-        </button>
-        <button class="fs-win-btn fs-win-btn--close" @click="closeWindow" title="关闭">
-          <svg viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
-        </button>
-      </div>
       <router-view v-slot="{ Component, route }">
         <transition name="page-fade">
           <component :is="Component" :key="route.path" />
@@ -91,10 +83,6 @@ import { usePlayerStore } from '@/stores/playerStore'
 import TopBar from '@/components/TopBar.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import PlayerBar from '@/components/PlayerBar.vue'
-
-const isElectron = computed(() => !!window.electronAPI)
-function minimizeWindow() { window.electronAPI?.minimizeWindow() }
-function closeWindow() { window.electronAPI?.closeWindow() }
 import ToastHost from '@/components/ToastHost.vue'
 import SongNotifyCard from '@/components/SongNotifyCard.vue'
 import { toast, toastState } from '@/composables/useToast'
@@ -359,22 +347,6 @@ onUnmounted(() => {
 /* 页面淡入过渡(只 enter,不 out-in,避免旧版卡顿) */
 .page-fade-enter-active { transition: opacity 0.22s ease; }
 .page-fade-enter-from { opacity: 0; }
-/* 全屏模式(播放页)浮动窗口控制按钮 */
-.fs-window-controls {
-  position: fixed; top: 12px; right: 12px; z-index: 999;
-  display: flex; gap: 6px;
-}
-.fs-win-btn {
-  width: 34px; height: 34px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(8px);
-  color: rgba(255, 255, 255, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-.fs-win-btn:hover { background: rgba(15, 23, 42, 0.8); color: #fff; }
-.fs-win-btn--close:hover { background: rgba(255, 77, 79, 0.75); color: #fff; }
 .app {
   width: 100vw;
   height: 100vh;
