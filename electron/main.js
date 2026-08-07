@@ -1971,7 +1971,6 @@ function setupIPC() {
 
   // 迷你播放器
   ipcMain.on('mini:toggle', () => {
-    try { require('fs').appendFileSync(require('path').join(process.env.TEMP || '.', 'mini-diag.log'), new Date().toISOString().slice(11,19) + ' mini:toggle miniWindow=' + (miniWindow ? 'open' : 'null') + '\n') } catch {}
     if (miniWindow) { miniWindow.close(); miniWindow = null }
     else createMiniWindow()
   })
