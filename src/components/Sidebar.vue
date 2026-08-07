@@ -57,6 +57,9 @@
           @contextmenu.prevent="showPlaylistMenu($event, pl)"
         >
           <img v-if="getPlaylistCover(pl)" :src="getPlaylistCover(pl)" class="pl-cover" />
+          <div v-else-if="getPlaylistCovers(pl).length" class="pl-cover-grid">
+            <img v-for="(c, ci) in getPlaylistCovers(pl)" :key="ci" :src="c" />
+          </div>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           <span class="text-ellipsis">{{ pl.name }}</span>
           <span class="menu-count">{{ pl.songs.length }}</span>
@@ -213,6 +216,20 @@ function getPlaylistCover(pl) {
   _plCoverCache.set(pl.id, cover)
   return cover
 }
+// 无封面歌单:前 4 首歌曲封面(拼图用,带缓存)
+const _plCoversCache = new Map()
+function getPlaylistCovers(pl) {
+  if (_plCoversCache.has(pl.id)) return _plCoversCache.get(pl.id)
+  const songs = musicStore.getPlaylistSongs(pl.id)
+  const covers = []
+  for (const s of songs) {
+    if (s.coverUrl && covers.length < 4) covers.push(s.coverUrl)
+    if (covers.length >= 4) break
+  }
+  if (_plCoversCache.size > 200) _plCoversCache.clear()
+  _plCoversCache.set(pl.id, covers)
+  return covers
+}
 // 设置歌单封面(选图片 → 主进程复制到 userData/covers)
 async function setPlaylistCover() {
   const pl = contextMenu.value?.playlist
@@ -299,6 +316,12 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .menu-badge { font-size: 11px; background: var(--color-primary); color: white; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
 .menu-count { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
 .pl-cover { width: 20px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; margin-right: 2px; }
+.pl-cover-grid {
+  width: 20px; height: 20px; flex-shrink: 0; margin-right: 2px;
+  display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+  gap: 1px; border-radius: 4px; overflow: hidden; background: var(--bg-hover);
+}
+.pl-cover-grid img { width: 100%; height: 100%; object-fit: cover; }
 .pl-order { display: none; font-size: var(--font-size-xs); color: var(--text-tertiary); padding: 0 2px; cursor: pointer; }
 .menu-item:hover .pl-order { display: inline; }
 .pl-order:hover { color: var(--color-primary); }

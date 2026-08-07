@@ -135,7 +135,7 @@
     <!-- 右键菜单 -->
     <transition name="fade">
       <div v-if="ctxMenu.show" class="context-menu" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }">
-        <button @click="ctxPlay"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg> 播放</button>
+        <button @click="ctxPlay"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg> 播放 <span class="ctx-shortcut">空格</span></button>
         <button @click="ctxEditInfo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> 编辑信息</button>
         <button @click="ctxPlayNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/></svg> 下一首播放</button>
         <button @click="ctxToggleFav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</button>
@@ -945,6 +945,10 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .context-menu button:hover { background: var(--bg-hover); }
 .context-menu button svg { width: 16px; height: 16px; flex-shrink: 0; }
 .context-menu button.danger { color: var(--color-danger); }
+.ctx-shortcut {
+  margin-left: auto; padding-left: 12px;
+  font-size: 11px; color: var(--text-tertiary);
+}
 .context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
 .ctx-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
 .ctx-sort-label { font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.4)); padding: 4px 12px 2px; }

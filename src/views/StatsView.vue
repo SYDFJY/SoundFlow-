@@ -7,7 +7,7 @@
           <button class="chip" :class="{ active: timeRange === 'all' }" @click="setTimeRange('all')">全部</button>
           <button class="chip" :class="{ active: timeRange === '30d' }" @click="setTimeRange('30d')">近30天</button>
         </div>
-        <button class="btn" @click="copyShare">📤 分享报告</button>
+        <button class="btn" @click="reportOpen = true">📤 听歌报告</button>
         <button class="btn--ghost" @click="router.push('/history')">🎵 播放记录与排行</button>
       </div>
     </div>
@@ -157,6 +157,56 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- 听歌报告弹窗 -->
+  <div v-if="reportOpen" class="report-mask" @click.self="reportOpen = false">
+    <div class="report-card">
+      <button class="report-close" @click="reportOpen = false" title="关闭">✕</button>
+      <div class="report-head">🎧 我的听歌报告</div>
+      <div class="report-range">
+        <button class="chip chip--sm" :class="{ active: reportRange === 'all' }" @click="reportRange = 'all'">全部</button>
+        <button class="chip chip--sm" :class="{ active: reportRange === '30d' }" @click="reportRange = '30d'">近30天</button>
+        <button class="chip chip--sm" :class="{ active: reportRange === '7d' }" @click="reportRange = '7d'">本周</button>
+      </div>
+      <div class="report-stats">
+        <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放次数</div></div>
+        <div class="rs-item"><div class="rs-num">{{ reportHours }}</div><div class="rs-label">听歌时长(时)</div></div>
+        <div class="rs-item"><div class="rs-num">{{ reportCoverPct }}%</div><div class="rs-label">曲库覆盖</div></div>
+      </div>
+      <div v-if="reportTopSongs.length" class="report-sec">
+        <div class="rs-title">🎵 最爱单曲</div>
+        <div v-for="(s, i) in reportTopSongs" :key="s.path" class="rs-row">
+          <span class="rs-rank" :class="{ gold: i === 0 }">{{ i + 1 }}</span>
+          <span class="rs-name text-ellipsis">{{ s.title }}</span>
+          <span class="rs-count">{{ s._playCount }}次</span>
+        </div>
+      </div>
+      <div v-if="reportTopArtists.length" class="report-sec">
+        <div class="rs-title">👤 最爱歌手</div>
+        <div v-for="(a, i) in reportTopArtists" :key="a.name" class="rs-row">
+          <span class="rs-rank" :class="{ gold: i === 0 }">{{ i + 1 }}</span>
+          <span class="rs-name text-ellipsis">{{ a.name }}</span>
+          <span class="rs-count">{{ a.count }}次</span>
+        </div>
+      </div>
+      <div v-if="reportTopAlbums.length" class="report-sec">
+        <div class="rs-title">💿 最爱专辑</div>
+        <div v-for="(a, i) in reportTopAlbums" :key="a.name" class="rs-row">
+          <span class="rs-rank" :class="{ gold: i === 0 }">{{ i + 1 }}</span>
+          <span class="rs-name text-ellipsis">{{ a.name }}</span>
+          <span class="rs-count">{{ a.count }}次</span>
+        </div>
+      </div>
+      <div class="report-sec rs-facts">
+        <span>🕐 常听时段 {{ funFacts.lateHour }}</span>
+        <span>🌙 深夜 {{ reportNight }} 次</span>
+        <span v-if="reportPeak">📅 峰值 {{ reportPeak }}</span>
+      </div>
+      <div class="report-actions">
+        <button class="btn btn--sm" @click="copyShare">复制文本分享</button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -354,8 +404,7 @@ const diversityScore = computed(() => {
   return Math.round(playedArtists.size / allArtists.size * 100)
 })
 // 分享文案
-const shareText = computed(() => {
-  const t3 = topSongs.value.slice(0, 3)
+const shareText = computed(() => {  const t3 = topSongs.value.slice(0, 3)
   const a3 = topArtists.value.slice(0, 3)
   const al3 = topAlbums.value.slice(0, 3)
   const hist = rangeHistory.value
@@ -395,6 +444,74 @@ function copyShare() {
   }
 }
 
+// ========== 听歌报告弹窗(全部 / 近30天 / 本周) ==========
+const reportOpen = ref(false)
+const reportRange = ref('all')
+// 本周(近 7 天)历史
+const weekHistory = computed(() => {
+  const cutoff = Date.now() - 7 * 86400000
+  return musicStore.history.filter(h => h.time && h.time >= cutoff)
+})
+// 报告数据源:按选择的档位
+const reportHistory = computed(() => (reportRange.value === '7d' ? weekHistory.value : rangeHistory.value))
+const reportSongsAgg = computed(() => {
+  // 历史条目只有 path/title/artist/time,时长与专辑从曲库补齐
+  const songMap = new Map(musicStore.songs.map(s => [s.path, s]))
+  const map = new Map()
+  for (const h of reportHistory.value) {
+    const s = songMap.get(h.path)
+    const key = h.path
+    const cur = map.get(key) || {
+      path: key,
+      title: h.title || s?.title || '',
+      artist: h.artist || s?.artist || '',
+      album: s?.album,
+      duration: s?.duration || 0,
+      _playCount: 0
+    }
+    cur._playCount++
+    map.set(key, cur)
+  }
+  return [...map.values()]
+})
+const reportTopSongs = computed(() => [...reportSongsAgg.value].sort((a, b) => b._playCount - a._playCount).slice(0, 3))
+const reportTopArtists = computed(() => {
+  const m = new Map()
+  for (const s of reportSongsAgg.value) {
+    if (!s.artist) continue
+    m.set(s.artist, (m.get(s.artist) || 0) + s._playCount)
+  }
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }))
+})
+const reportTopAlbums = computed(() => {
+  const m = new Map()
+  for (const s of reportSongsAgg.value) {
+    if (!s.album) continue
+    m.set(s.album, (m.get(s.album) || 0) + s._playCount)
+  }
+  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }))
+})
+const reportTotal = computed(() => reportHistory.value.length)
+const reportHours = computed(() => {
+  const secs = reportHistory.value.reduce((a, h) => a + (h.duration || 0), 0)
+  return Math.round(secs / 3600)
+})
+const reportCoverPct = computed(() => {
+  const played = new Set(reportHistory.value.map(h => h.path))
+  return musicStore.songs.length ? Math.round(played.size / musicStore.songs.length * 100) : 0
+})
+const reportNight = computed(() => reportHistory.value.filter(h => { const hh = new Date(h.time).getHours(); return hh >= 22 || hh < 5 }).length)
+const reportPeak = computed(() => {
+  const m = new Map()
+  for (const h of reportHistory.value) {
+    const d = new Date(h.time).toDateString()
+    m.set(d, (m.get(d) || 0) + 1)
+  }
+  let best = [null, 0]
+  for (const [d, c] of m) if (c > best[1]) best = [d, c]
+  return best[1] ? `${best[1]}次(${best[0].slice(4)})` : ''
+})
+
 function playTop(idx) {
   const queue = rangeSongs.value.map(s => ({ ...s }))
   playerStore.setPlayQueue(queue, idx)
@@ -402,6 +519,57 @@ function playTop(idx) {
 </script>
 
 <style scoped>
+/* 听歌报告弹窗 */
+.report-mask {
+  position: fixed; inset: 0; z-index: 400;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+}
+.report-card {
+  position: relative;
+  width: 400px; max-width: 92vw; max-height: 82vh; overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 20px 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+}
+.report-close {
+  position: absolute; top: 12px; right: 12px;
+  width: 26px; height: 26px; border-radius: 50%;
+  color: var(--text-tertiary); font-size: 14px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.report-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+.report-head { font-size: 18px; font-weight: 700; color: var(--color-primary); margin-bottom: 12px; }
+.report-range { display: flex; gap: 6px; margin-bottom: 14px; }
+.report-stats { display: flex; gap: 8px; margin-bottom: 14px; }
+.rs-item {
+  flex: 1; text-align: center; padding: 12px 4px;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: 12px;
+}
+.rs-num { font-size: 22px; font-weight: 700; color: var(--color-primary); }
+.rs-label { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.report-sec { margin-bottom: 12px; }
+.rs-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
+.rs-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 8px; font-size: 13px;
+}
+.rs-row:hover { background: var(--bg-hover); }
+.rs-rank {
+  width: 18px; height: 18px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%; font-size: 11px; font-weight: 700;
+  background: var(--bg-hover); color: var(--text-tertiary);
+}
+.rs-rank.gold { background: rgba(250, 173, 20, 0.18); color: #fadb14; }
+.rs-name { flex: 1; min-width: 0; color: var(--text-primary); }
+.rs-count { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
+.rs-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-secondary); }
+.report-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
 .stats-view { padding: 20px 24px; overflow-y: auto; height: 100%; }
 .view-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
 .header-title { font-size: 22px; font-weight: 700; }

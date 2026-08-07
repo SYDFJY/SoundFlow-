@@ -1151,6 +1151,27 @@ export const usePlayerStore = defineStore('player', () => {
     loadAndPlay(idx)
   }
 
+  // 播放结束行为('next' 自动下一曲 / 'stop' 播完停止 / 'fade' 淡出后继续),设置页可改
+  const endAction = ref(localStorage.getItem('soundflow_end_action') || 'next')
+  function setEndAction(v) {
+    endAction.value = v
+    try { localStorage.setItem('soundflow_end_action', v) } catch {}
+  }
+  // 淡出后执行回调(0.8s 渐降音量,结束恢复)
+  function fadeOutThen(cb) {
+    const vol = audio.value ? audio.value.volume : 1
+    const steps = 12
+    let i = 0
+    const timer = setInterval(() => {
+      i++
+      if (audio.value) audio.value.volume = Math.max(0, vol * (1 - i / steps))
+      if (i >= steps) {
+        clearInterval(timer)
+        if (audio.value) audio.value.volume = vol
+        cb()
+      }
+    }, 70)
+  }
   function onSongEnd() {
     // 定时器：播完当前停止
     if (sleepTimerMinutes.value === -1) {
@@ -1158,6 +1179,26 @@ export const usePlayerStore = defineStore('player', () => {
       isPlaying.value = false
       return
     }
+    if (endAction.value === 'stop') {
+      // 播完停止:停在曲目末尾,不再继续
+      if (audio.value) audio.value.pause()
+      isPlaying.value = false
+      return
+    }
+    if (endAction.value === 'fade') {
+      // 淡出后按播放模式继续
+      fadeOutThen(() => {
+        if (playMode.value === 'repeatOne') {
+          audio.value.currentTime = 0
+          fadeIn()
+          audio.value.play().catch(() => {})
+        } else {
+          playNext()
+        }
+      })
+      return
+    }
+    // 默认:自动下一曲
     if (playMode.value === 'repeatOne') {
       audio.value.currentTime = 0
       fadeIn()
@@ -1499,6 +1540,7 @@ export const usePlayerStore = defineStore('player', () => {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
     songNotify,
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
+    endAction, setEndAction,
     showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
     pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,

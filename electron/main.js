@@ -906,7 +906,6 @@ function updateThumbarButtons(state) {
 }
 function doSetThumbar(state) {
   if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
-  try { fs.appendFileSync(path.join(process.env.TEMP || '.', 'sf-thumb-diag.log'), new Date().toISOString().slice(11,19) + ' doSetThumbar state=' + state + ' visible=' + mainWindow.isVisible() + '\n') } catch {}
 
   // 窗口不可见时设置会触发 Electron bug(#28319),按钮会永久不显示,必须等窗口显示后再设
   if (!mainWindow.isVisible()) return
@@ -1004,6 +1003,25 @@ function setupIPC() {
     }
   })
 
+  // 有界并发执行:扫描/解析大曲库时避免串行等待,同时防止并发过多抢占 CPU/IO 卡死主进程
+  async function runConcurrent(items, limit, worker) {
+    const results = new Array(items.length)
+    let idx = 0
+    const runners = []
+    const n = Math.min(limit, items.length)
+    for (let i = 0; i < n; i++) {
+      runners.push((async () => {
+        while (true) {
+          const cur = idx++
+          if (cur >= items.length) break
+          try { results[cur] = await worker(items[cur]) } catch { results[cur] = null }
+        }
+      })())
+    }
+    await Promise.all(runners)
+    return results.filter(Boolean)
+  }
+
   // 拖放导入:文件/文件夹混合,复用扫描逻辑
   ipcMain.handle('import-dropped', async (event, paths) => {
     const audioPaths = []
@@ -1014,31 +1032,29 @@ function setupIPC() {
         else if (st.isFile() && AUDIO_EXTS.has(path.extname(p).toLowerCase())) audioPaths.push(p)
       } catch {}
     }
-    const results = []
-    for (const filePath of audioPaths) {
+    return runConcurrent(audioPaths, 4, async (filePath) => {
       try {
         const meta = await parseMetadata(filePath)
-        results.push({ path: filePath, ...meta })
+        return { path: filePath, ...meta }
       } catch (e) {
         console.error('[拖放导入] 解析失败:', filePath, e.message)
+        return null
       }
-    }
-    return results
+    })
   })
 
-  // 扫描文件夹
+  // 扫描文件夹(4 并发解析,大曲库提速数倍)
   ipcMain.handle('scan-folder', async (event, folderPath) => {
     const files = await scanFolderRecursive(folderPath)
-    const results = []
-    for (const filePath of files) {
+    return runConcurrent(files, 4, async (filePath) => {
       try {
         const meta = await parseMetadata(filePath)
-        results.push({ path: filePath, ...meta })
+        return { path: filePath, ...meta }
       } catch (e) {
         console.error('[扫描] 解析失败:', filePath, e.message)
+        return null
       }
-    }
-    return results
+    })
   })
 
   // 扫描单个文件
@@ -2041,7 +2057,6 @@ function setupIPC() {
   // SMTC 播放状态 → 更新任务栏缩略图按钮 + 防休眠
   let _powerSaveId = null
   ipcMain.on('smtc:playback-state', (event, state) => {
-    try { fs.appendFileSync(path.join(process.env.TEMP || '.', 'sf-thumb-diag.log'), new Date().toISOString().slice(11,19) + ' RECV state=' + state + '\n') } catch {}
     updateThumbarButtons(state === 'playing' ? 'playing' : 'paused')
     // 播放时阻止系统休眠/熄屏
     try {

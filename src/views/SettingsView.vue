@@ -115,6 +115,17 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">播放结束</span>
+            <span class="label-desc">一首歌播完后的行为</span>
+          </div>
+          <div class="setting-control" style="display: flex; gap: 6px; flex-wrap: wrap;">
+            <button class="chip chip--sm" :class="{ active: playerStore.endAction === 'next' }" @click="playerStore.setEndAction('next')">自动下一曲</button>
+            <button class="chip chip--sm" :class="{ active: playerStore.endAction === 'stop' }" @click="playerStore.setEndAction('stop')">播完停止</button>
+            <button class="chip chip--sm" :class="{ active: playerStore.endAction === 'fade' }" @click="playerStore.setEndAction('fade')">淡出后继续</button>
+          </div>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">播放模式</span>
           </div>
           <select :value="playerStore.playMode" @change="playerStore.setPlayMode($event.target.value)">
@@ -349,6 +360,12 @@
       <!-- 快捷键 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.shortcuts') }}</h3>
+        <div class="shortcut-overview">
+          <div v-for="d in shortcutDefs" :key="d.key" class="sc-item">
+            <kbd>{{ shortcuts[d.key] || '未设置' }}</kbd>
+            <span class="sc-label">{{ d.label }}</span>
+          </div>
+        </div>
         <div class="setting-item" v-for="d in shortcutDefs" :key="d.key">
           <div class="setting-label">
             <span class="label-text">{{ d.label }}</span>
@@ -1031,9 +1048,23 @@ async function batchDownloadLyrics() {
 .settings-section { margin-bottom: 24px; }
 .section-title { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
 
+/* 快捷键总览:键帽卡片 */
+.shortcut-overview {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 10px 14px; margin-bottom: 8px;
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+.sc-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+.sc-item kbd {
+  min-width: 34px; text-align: center;
+  padding: 3px 8px;
+  background: var(--bg-hover); border: 1px solid var(--border-color);
+  border-bottom-width: 2px; border-radius: 5px;
+  font-family: inherit; font-size: 11px; color: var(--text-primary);
+}
 .setting-item {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px;
+  display: flex; align-items: center; justify-content: space-between;  padding: 12px 16px;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
