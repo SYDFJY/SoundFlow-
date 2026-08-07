@@ -42,8 +42,7 @@
       </div>
 
       <!-- 封面模式 -->
-      <transition name="mode-fade">
-        <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
+      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
@@ -59,9 +58,7 @@
           <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
         </div>
       </div>
-      </transition>
-      <transition name="mode-fade">
-        <div v-if="activeTab !== 'cover'" key="lyric" class="lyric-mode">
+      <div v-if="activeTab !== 'cover'" key="lyric" class="lyric-mode">
         <div class="lyric-left">
           <div class="disc-small" :class="{ spinning: playerStore.isPlaying }" title="返回封面" @click="activeTab = 'cover'">
             <div class="disc-cover-small">
@@ -152,7 +149,6 @@
           </div>
         </div>
       </div>
-      </transition>
 
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
       <canvas v-show="activeTab === 'cover'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
@@ -1379,10 +1375,7 @@ async function searchLyric() {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-/* tab 切换过渡 */
-.mode-fade-enter-active, .mode-fade-leave-active { transition: opacity 0.16s cubic-bezier(.4,0,.2,1); }
-.mode-fade-enter-from { opacity: 0; }
-.mode-fade-leave-to { opacity: 0; }
+/* tab 切换过渡(已移除,保留样式无引用) */
 .disc-ring.spinning { animation: spin 20s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
