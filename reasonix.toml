@@ -1,2 +1,0 @@
-[permissions]
-allow = ["Bash=cd /e/SoundFlow && git log --oneline -20 2>/dev/null; echo \"---BRANCH---\"; git branch -a 2>/dev/null; echo \"---STATUS---\"; git status --short 2>/dev/null | head -30", "Bash=cd /e/SoundFlow && for f in src/views/*.vue src/components/*.vue; do echo \"=== $f ===\"; grep -E '^\\s*(const |let |function |import |<template>|</template>|<script)' \"$f\" | head -30; done 2>/dev/null | head -250"]
