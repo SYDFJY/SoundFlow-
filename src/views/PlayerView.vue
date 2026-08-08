@@ -174,60 +174,43 @@
             <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
             </button>
-            <!-- 倍速(自定义) -->
-            <div class="rate-control">
-              <button class="ctrl-btn ctrl-btn--small" @click="showRatePanel = !showRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
-                {{ playerStore.playbackRate }}x
-              </button>
-              <transition name="vol-fade">
-                <div v-if="showRatePanel" class="rate-panel" @click.stop>
-                  <div class="pitch-header">
-                    <span>播放速度</span>
-                    <span class="pitch-value">{{ playerStore.playbackRate }}x</span>
-                  </div>
-                  <input type="range" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
-                  <div class="rate-presets">
-                    <button v-for="r in RATE_PRESETS" :key="r" class="rate-preset" :class="{ active: Math.abs(playerStore.playbackRate - r) < 0.001 }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
-                  </div>
-                  <div class="pitch-actions">
-                    <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">重置 1x</button>
-                  </div>
-                </div>
-              </transition>
-            </div>
-
-            <!-- 变调(升降调) -->
+            <!-- 音调与速度(变调+倍速合一,双滑杆+数字输入自由组合) -->
             <div class="pitch-control">
-              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 || playerStore.playbackRate !== 1 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>
-                <span v-if="playerStore.pitch !== 0" class="pitch-badge">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }}</span>
+                <span v-if="playerStore.pitch !== 0 || playerStore.playbackRate !== 1" class="pitch-badge">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} · {{ playerStore.playbackRate }}x</span>
               </button>
               <transition name="vol-fade">
                 <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
                   <div class="pitch-header">
-                    <span>{{ t('playerView.pitch') }}</span>
-                    <span class="pitch-value" :class="{ 'pitch-value--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
-                  </div>
-                  <!-- 常用预设:一键切换音高 -->
-                  <div class="pitch-presets">
-                    <button v-for="p in PITCH_PRESETS" :key="p.v" class="pitch-preset" :class="{ active: playerStore.pitch === p.v }" @click="playerStore.setPitch(p.v)">{{ p.label }}</button>
+                    <span>音调与速度</span>
                   </div>
                   <!-- 变调模式:变速不变调 / 变速变调 -->
                   <div class="pitch-mode">
                     <button class="pitch-mode-btn" :class="{ active: !playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(false)">变速不变调</button>
                     <button class="pitch-mode-btn" :class="{ active: playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(true)">变速变调</button>
                   </div>
-                  <div class="pitch-mode-hint">{{ playerStore.pitchShiftTempo ? '速度与音高同步变化(卡带/花栗鼠效果)' : '音高变化,速度不变' }}</div>
-                  <!-- 网络流行音色:一键组合音高+变速 -->
-                  <div class="voice-presets">
-                    <button v-for="v in VOICE_PRESETS" :key="v.label" class="voice-preset" :class="{ active: playerStore.pitch === v.pitch && playerStore.pitchShiftTempo === v.tempo }" @click="applyVoice(v)">{{ v.label }}</button>
+                  <div class="pitch-mode-hint">{{ playerStore.pitchShiftTempo ? '调音高自动联动速度(卡带/黑胶效果);也可单独调速度' : '音高与速度完全独立调节' }}</div>
+
+                  <!-- 音高:滑杆 + 数字输入 -->
+                  <div class="pitch-row">
+                    <span class="pitch-row-label">音调</span>
+                    <span class="pitch-row-val">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
+                    <input type="range" class="h-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
+                    <input v-model.number="pitchInput" type="number" min="-12" max="12" class="vol-input no-spinner" @keydown.enter="confirmPitchInput" @blur="confirmPitchInput" />
                   </div>
-                  <input type="range" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
-                  <div class="pitch-scale">
-                    <span>-12</span><span>0</span><span>+12</span>
+
+                  <!-- 速度:滑杆 + 数字输入 -->
+                  <div class="pitch-row">
+                    <span class="pitch-row-label">速度</span>
+                    <span class="pitch-row-val">{{ playerStore.playbackRate }}x</span>
+                    <input type="range" class="h-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
+                    <input v-model.number="rateInput" type="number" min="0.25" max="3" step="0.05" class="vol-input no-spinner" @keydown.enter="confirmRateInput" @blur="confirmRateInput" />
                   </div>
+
                   <div class="pitch-actions">
-                    <button class="pitch-reset" @click="playerStore.setPitch(0)">{{ t('playerView.pitchReset') }}</button>
+                    <button class="pitch-reset" @click="playerStore.setPitch(0)">音调重置 0</button>
+                    <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">速度重置 1x</button>
                   </div>
                 </div>
               </transition>
@@ -244,22 +227,22 @@
             </button>
 
             <!-- 迷你播放器 -->
-            <button class="ctrl-btn ctrl-btn--small" @click="toggleMini" title="迷你播放器(独立小窗)">
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.miniOpen }" @click="toggleMini" title="迷你播放器(独立小窗)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
             </button>
 
             <!-- 音量(默认收起,点击图标展开滑块) -->
-            <div class="volume-control" :class="{ expanded: volExpanded }">
-              <button class="vol-btn" @click="volExpanded = !volExpanded" :title="t('player.volume')">
+            <div class="volume-control" :class="{ expanded: playerStore.volPanelOpen }">
+              <button class="vol-btn" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen" :title="t('player.volume')">
                 <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
                 <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
               </button>
               <transition name="vol-fade">
-                <div v-if="volExpanded" class="vol-pop">
+                <div v-if="playerStore.volPanelOpen" class="vol-pop">
                   <div class="vol-pct">{{ Math.round(playerStore.volume * 100) }}%</div>
-                  <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+                  <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" @pointerdown="volDragStart" @pointerup="volDragEnd" />
                   <div class="vol-input-row">
-                    <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
+                    <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input no-spinner" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
                     <span class="vol-input-unit">%</span>
                   </div>
                 </div>
@@ -317,9 +300,11 @@
               </div>
               <div class="eq-extra">
                 <span class="label-text">重低音</span>
-                <input type="range" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
+                <span class="eq-extra-val">{{ playerStore.eqSettings.bass > 0 ? '+' : '' }}{{ playerStore.eqSettings.bass }} dB</span>
+                <input type="range" class="h-slider" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
                 <span class="label-text">声场</span>
-                <input type="range" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
+                <span class="eq-extra-val">{{ Math.round(playerStore.eqSettings.reverb * 100) }}%</span>
+                <input type="range" class="h-slider" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
               </div>
             </div>
             <div v-else class="eq-off">开启音效后,可调节均衡器、预设、重低音与空间声场</div>
@@ -561,7 +546,7 @@ let _pvPanelWatch = null
 function setupPvPanelsClickOutside() {
   if (_pvPanelWatch) return
   _pvPanelWatch = watch(
-    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, volExpanded, showRatePanel, showPitchPanel],
+    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showPitchPanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onPvPanelDocClick)
       else document.removeEventListener('click', onPvPanelDocClick)
@@ -569,6 +554,8 @@ function setupPvPanelsClickOutside() {
   )
 }
 function onPvPanelDocClick(e) {
+  // 音量滑杆拖动中(pointer 移出弹层)不关闭
+  if (_volDragging) { _volDragging = false; return }
   // 面板内 / 触发按钮上点击不关闭
   if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .vol-pop, .rate-panel, .pitch-panel') ||
       e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, [data-queue-toggle], .ls-btn')) return
@@ -576,8 +563,7 @@ function onPvPanelDocClick(e) {
   showEqPanel.value = false
   showBgPanel.value = false
   showColorPanel.value = false
-  volExpanded.value = false
-  showRatePanel.value = false
+  playerStore.volPanelOpen = false
   showPitchPanel.value = false
 }
 
@@ -815,6 +801,10 @@ function onProgressMouseDown(e) {
 }
 
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
+// 音量滑杆拖动标记:pointer 移出弹层时 click-outside 不误关弹层
+let _volDragging = false
+function volDragStart() { _volDragging = true }
+function volDragEnd() { setTimeout(() => { _volDragging = false }, 50) }
 // 自定义音量:数字输入(1-100),Enter/失焦确认(与播放栏一致)
 const volInput = ref(Math.round(playerStore.volume * 100))
 watch(() => playerStore.volume, (v) => { volInput.value = Math.round(v * 100) })
@@ -901,35 +891,27 @@ function setLyricColor(v) {
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
-const volExpanded = ref(false) // 音量滑块默认收起
-const PITCH_PRESETS = [
-  { v: 0, label: '原声' },
-  { v: -3, label: '男声' },
-  { v: 4, label: '女声' },
-  { v: 7, label: '童声' },
-  { v: -2, label: '降' },
-  { v: 2, label: '升' }
-]
-const showRatePanel = ref(false) // 倍速面板默认收起
-const RATE_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3]
-// 网络流行音色:音高 + 变速组合(变速变调时速度 ×2^(pitch/12),模拟各类变声)
-const VOICE_PRESETS = [
-  { label: '原声', pitch: 0, tempo: false },
-  { label: '萝莉音', pitch: 7, tempo: true },
-  { label: '御姐音', pitch: 4, tempo: false },
-  { label: '花栗鼠', pitch: 8, tempo: true },
-  { label: '曼波配音', pitch: 5, tempo: true },
-  { label: '大叔音', pitch: -6, tempo: true },
-  { label: '耄耋(老人)', pitch: -4, tempo: true },
-  { label: '大狗叫', pitch: -9, tempo: true },
-  { label: '慢速深沉', pitch: -5, tempo: true },
-  { label: 'DJ电音', pitch: 2, tempo: false }
-]
-function applyVoice(v) {
-  playerStore.setPitchShiftTempo(v.tempo)
-  playerStore.setPitch(v.pitch)
+// 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
+const showPitchPanel = ref(false) // 音调与速度面板默认收起
+// 音调/速度数字输入(Enter/失焦确认)
+const pitchInput = ref(playerStore.pitch)
+const rateInput = ref(playerStore.playbackRate)
+watch(() => playerStore.pitch, (v) => { pitchInput.value = v })
+watch(() => playerStore.playbackRate, (v) => { rateInput.value = v })
+function confirmPitchInput() {
+  let v = Math.round(Number(pitchInput.value))
+  if (isNaN(v)) v = playerStore.pitch
+  v = Math.max(-12, Math.min(12, v))
+  pitchInput.value = v
+  playerStore.setPitch(v)
 }
-const showPitchPanel = ref(false) // 变调面板默认收起
+function confirmRateInput() {
+  let v = Number(rateInput.value)
+  if (isNaN(v) || v <= 0) v = playerStore.playbackRate
+  v = Math.max(0.25, Math.min(3, v))
+  rateInput.value = v
+  playerStore.setPlaybackRate(v)
+}
 
 // 频响曲线可视化:随 EQ 滑块实时绘制
 const eqCurveCanvas = ref(null)
@@ -1148,8 +1130,7 @@ function onPvEsc() {
   showEqPanel.value = false
   showBgPanel.value = false
   showColorPanel.value = false
-  volExpanded.value = false
-  showRatePanel.value = false
+  playerStore.volPanelOpen = false
   showPitchPanel.value = false
 }
 onMounted(() => {
@@ -1794,8 +1775,9 @@ async function searchLyric() {
 .eq-gain { font-size: 10px; color: rgba(255,255,255,0.4); }
 .eq-freq { font-size: 10px; color: rgba(255,255,255,0.4); }
 .eq-extra { display: flex; align-items: center; gap: 8px; }
-.eq-extra .label-text { min-width: 48px; }
-.eq-extra input[type="range"] { width: 100px; }
+.eq-extra .label-text { min-width: 48px; color: rgba(255,255,255,0.75); font-size: var(--font-size-xs); }
+.eq-extra-val { min-width: 42px; font-size: 11px; color: var(--color-primary, #4096ff); font-weight: 700; font-variant-numeric: tabular-nums; }
+.eq-extra input[type="range"] { width: 110px; }
 
 .ctrl-btn {
   width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
@@ -1941,7 +1923,12 @@ async function searchLyric() {
 .rate-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
 .pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 2px; padding: 0 2px; }
 .pitch-value--active { color: #fff; background: var(--color-primary, #4096ff); border-radius: 4px; padding: 0 6px; }
-.pitch-actions { display: flex; justify-content: center; margin-top: 8px; }
+.pitch-row { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; }
+.pitch-row-label { min-width: 28px; font-size: var(--font-size-xs, 12px); color: rgba(255,255,255,0.72); }
+.pitch-row-val { min-width: 34px; text-align: center; font-size: 11px; color: #6ec6ff; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pitch-row input[type="range"].h-slider { flex: 1; min-width: 0; }
+.pitch-row .vol-input { width: 44px; }
+.pitch-actions { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
 .pitch-reset {
   font-size: var(--font-size-sm, 12px); padding: 3px 14px;
   border: 1px solid var(--border-color, rgba(255,255,255,0.15)); border-radius: 6px;

@@ -92,7 +92,7 @@
       </div>
 
       <!-- 迷你播放器 -->
-      <button class="right-btn" @click="toggleMini" title="迷你播放器(独立小窗)">
+      <button class="right-btn" :class="{ active: playerStore.miniOpen }" @click="toggleMini" title="迷你播放器(独立小窗)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
       </button>
 
@@ -104,17 +104,17 @@
 
       <!-- 音量:点击弹出竖直滑块 -->
       <div class="volume-control" @wheel.prevent="onVolWheel">
-        <button class="right-btn" :class="{ active: volExpanded }" :title="t('player.volume') + ' ' + Math.round(playerStore.volume * 100) + '%'" @click="volExpanded = !volExpanded">
+        <button class="right-btn" :class="{ active: playerStore.volPanelOpen }" :title="t('player.volume') + ' ' + Math.round(playerStore.volume * 100) + '%'" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen">
           <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
           <svg v-else-if="playerStore.volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
         </button>
         <transition name="vol-fade">
-          <div v-if="volExpanded" class="vol-pop">
+          <div v-if="playerStore.volPanelOpen" class="vol-pop">
             <div class="vol-pct">{{ Math.round(playerStore.volume * 100) }}%</div>
-            <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" />
+            <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" @pointerdown="volDragStart" @pointerup="volDragEnd" />
             <div class="vol-input-row">
-              <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
+              <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input no-spinner" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
               <span class="vol-input-unit">%</span>
             </div>
             <button class="vol-mute" :title="playerStore.isMuted ? '取消静音' : '静音'" @click="playerStore.toggleMute()">
@@ -239,11 +239,13 @@ function scrollToActiveQueue() {
   list.scrollTop = Math.max(0, target)
 }
 function onQueueDocClick(e) {
+  // 音量滑杆拖动中(pointer 移出弹层)不关闭
+  if (_volDragging) { _volDragging = false; return }
   // 面板内 / 触发按钮上点击不关闭
   if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel, .pb-rate-panel') ||
       e.target.closest('.right-btn, .rate-btn, [data-queue-toggle]')) return
   playerStore.showQueue = false
-  volExpanded.value = false
+  playerStore.volPanelOpen = false
   showEqPanel.value = false
   showTimer.value = false
   showPbRatePanel.value = false
@@ -253,7 +255,7 @@ let _pbPanelWatch = null
 function setupPbPanelsClickOutside() {
   if (_pbPanelWatch) return
   _pbPanelWatch = watch(
-    [() => playerStore.showQueue, volExpanded, showEqPanel, showTimer, showPbRatePanel],
+    [() => playerStore.showQueue, () => playerStore.volPanelOpen, showEqPanel, showTimer, showPbRatePanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onQueueDocClick)
       else document.removeEventListener('click', onQueueDocClick)
@@ -344,10 +346,13 @@ function onProgressMouseDown(e) {
   document.addEventListener('mouseup', onUp)
 }
 
-const volExpanded = ref(false)
 const volInput = ref(Math.round(playerStore.volume * 100))
 watch(() => playerStore.volume, (v) => { volInput.value = Math.round(v * 100) })
 function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
+// 音量滑杆拖动标记:pointer 移出弹层时 click-outside 不误关弹层
+let _volDragging = false
+function volDragStart() { _volDragging = true }
+function volDragEnd() { setTimeout(() => { _volDragging = false }, 50) }
 // 自定义音量:数字输入(1-100),Enter/失焦确认
 function confirmVolInput() {
   let v = Math.round(volInput.value)

@@ -12,6 +12,8 @@ export const usePlayerStore = defineStore('player', () => {
   const currentTime = ref(0)
   const duration = ref(0)
   const miniOpen = ref(false)
+  // 音量弹层开关(播放栏/播放页共享:一处打开另一处自动关闭)
+  const volPanelOpen = ref(false)
   const volume = ref(0.8)
   const isMuted = ref(false)
   const _preMuteVolume = ref(0.8) // 静音前的音量
@@ -1393,23 +1395,22 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 应用倍速+变调到 audio
-  function applyPitchToAudio() {
+  function applyPitchToAudio(fromPitchChange) {
     if (!audio.value) return
     try {
-      if (pitchShiftTempo.value) {
-        // 变速变调:速度与音高同步变化(×2^(pitch/12)),preservesPitch=false
-        audio.value.preservesPitch = false
+      // 速度始终独立:playbackRate 只做速度(音高始终经 SoundTouch worklet 处理)
+      audio.value.preservesPitch = true
+      audio.value.playbackRate = playbackRate.value
+      // 变速变调模式:调音高时自动联动速度(黑胶/卡带:音高↑速度↑);
+      // 手动调速度(fromPitchChange=false)则直接生效,音高保持 → 自由组合(如 1.3x + -3st)
+      if (pitchShiftTempo.value && fromPitchChange) {
         audio.value.playbackRate = playbackRate.value * Math.pow(2, pitch.value / 12)
-      } else {
-        // 变速不变调:只改倍速,音高由 SoundTouch 管线处理
-        audio.value.preservesPitch = true
-        audio.value.playbackRate = playbackRate.value
       }
     } catch {}
   }
 
   function applyPitch() {
-    applyPitchToAudio()
+    applyPitchToAudio(false) // 切换模式本身不触发联动
     rebuildAudioChain() // 变调 ≠ 0 时插入 SoundTouch 节点,= 0 时旁路
   }
 
@@ -1418,7 +1419,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (v === pitch.value) return
     pitch.value = v
     if (_pitchNode && _pitchNode.port) _pitchNode.port.postMessage({ type: 'pitch', value: v })
-    applyPitchToAudio()
+    applyPitchToAudio(true) // 变速变调模式联动速度
     rebuildAudioChain()
     schedulePitchSave()
   }
@@ -1451,7 +1452,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function setPlaybackRate(rate) {
     playbackRate.value = rate
-    applyPitchToAudio() // 只改速度,不重建音频链
+    applyPitchToAudio(false) // 手动调速度直接生效(变速变调模式也不乘音高系数,音高保持)
   }
 
   function cyclePlaybackRate() {
@@ -1579,6 +1580,7 @@ export const usePlayerStore = defineStore('player', () => {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
     songNotify,
     duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
+    volPanelOpen, miniOpen,
     endAction, setEndAction,
     showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
