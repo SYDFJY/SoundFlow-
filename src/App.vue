@@ -214,7 +214,24 @@ function onRipple(e) {
   setTimeout(() => ink.remove(), 480)
 }
 
-onMounted(() => {
+onMounted(async () => {
+  // 启动预填数据(异步):主进程权威数据 → localStorage,替代原 preload sendSync 同步阻塞
+  // 必须在 restoreLibrary/restoreQueue 之前,保证首次读取就是最新数据
+  if (window.electronAPI && window.electronAPI.getPreloadedData) {
+    try {
+      const _d = await window.electronAPI.getPreloadedData()
+      if (_d) {
+        if (_d.songs && _d.songs.length) localStorage.setItem('soundflow_library', JSON.stringify(_d.songs))
+        if (_d.theme) localStorage.setItem('soundflow_theme', _d.theme)
+        if (_d.history && _d.history.length) localStorage.setItem('soundflow_history', JSON.stringify(_d.history))
+        if (_d.playCounts && Object.keys(_d.playCounts).length > 0) localStorage.setItem('soundflow_play_counts', JSON.stringify(_d.playCounts))
+        if (_d.favorites && _d.favorites.length) localStorage.setItem('soundflow_favorites', JSON.stringify(_d.favorites))
+        if (_d.playlists && _d.playlists.length) localStorage.setItem('soundflow_playlists', JSON.stringify(_d.playlists))
+        if (_d.scanFolders && _d.scanFolders.length) localStorage.setItem('soundflow_scan_folders', JSON.stringify(_d.scanFolders))
+        if (_d.lyricFolders && _d.lyricFolders.length) localStorage.setItem('soundflow_lyric_folders', JSON.stringify(_d.lyricFolders))
+      }
+    } catch (_) {}
+  }
   window.addEventListener('keydown', onGlobalKey)
   // 按钮涟漪(全局委托:公共按钮类点击注入水波纹)
   window.addEventListener('pointerdown', onRipple, true)

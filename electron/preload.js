@@ -3,24 +3,13 @@
  */
 const { contextBridge, ipcRenderer } = require('electron')
 
-// 启动时同步预填 localStorage
-;(function preloadFromDisk() {
-  try {
-    const _d = ipcRenderer.sendSync('get-preloaded-data')
-    if (_d) {
-      if (_d.songs && _d.songs.length) localStorage.setItem('soundflow_library', JSON.stringify(_d.songs))
-      if (_d.theme) localStorage.setItem('soundflow_theme', _d.theme)
-      if (_d.history && _d.history.length) localStorage.setItem('soundflow_history', JSON.stringify(_d.history))
-      if (_d.playCounts && Object.keys(_d.playCounts).length > 0) localStorage.setItem('soundflow_play_counts', JSON.stringify(_d.playCounts))
-      if (_d.favorites && _d.favorites.length) localStorage.setItem('soundflow_favorites', JSON.stringify(_d.favorites))
-      if (_d.playlists && _d.playlists.length) localStorage.setItem('soundflow_playlists', JSON.stringify(_d.playlists))
-      if (_d.scanFolders && _d.scanFolders.length) localStorage.setItem('soundflow_scan_folders', JSON.stringify(_d.scanFolders))
-      if (_d.lyricFolders && _d.lyricFolders.length) localStorage.setItem('soundflow_lyric_folders', JSON.stringify(_d.lyricFolders))
-    }
-  } catch (_) {}
-})()
+// 启动预填数据改为异步拉取(preload 不再 sendSync 同步阻塞渲染进程启动;
+// 渲染端 App.vue onMounted 最先 await getPreloadedData() 后回填 localStorage)
+// 原 sendSync 同步序列化整库(数百首歌 + 历史 + 播放次数)会卡住首屏数百毫秒
 
 contextBridge.exposeInMainWorld('electronAPI', {
+  // 启动预填数据(异步,替代原 sendSync)
+  getPreloadedData: () => ipcRenderer.invoke('get-preloaded-data'),
   // 文件扫描
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: () => ipcRenderer.invoke('select-files'),

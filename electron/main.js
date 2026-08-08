@@ -2288,9 +2288,9 @@ function setupIPC() {
     }
   })
 
-  // 预加载数据
-  ipcMain.on('get-preloaded-data', (event) => {
-    event.returnValue = {
+  // 预加载数据(异步 invoke,不再 sendSync 同步阻塞渲染进程启动)
+  ipcMain.handle('get-preloaded-data', (event) => {
+    return {
       songs: storageData.library || [],
       theme: storageData.theme || 'light',
       history: storageData.history || [],
