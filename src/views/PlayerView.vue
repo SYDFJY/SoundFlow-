@@ -187,9 +187,9 @@
                   <div class="pitch-row">
                     <span class="pitch-row-label">速度</span>
                     <span class="pitch-row-val">{{ playerStore.playbackRate }}x</span>
-                    <input type="range" class="h-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
                     <input v-model.number="rateInput" type="number" min="0.25" max="3" step="0.05" class="vol-input no-spinner" @keydown.enter="confirmRateInput" @blur="confirmRateInput" />
                   </div>
+                  <input type="range" class="h-slider pitch-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
                   <div class="pitch-actions">
                     <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">重置 1x</button>
                   </div>
@@ -209,13 +209,13 @@
                     <span>音调</span>
                     <span class="pitch-value" :class="{ 'pitch-value--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
                   </div>
-                  <!-- 音高:滑杆 + 数字输入(与倍速独立同时生效) -->
+                  <!-- 音高:滑杆独占一行全宽(方便调节)+ 数字输入(与倍速独立同时生效) -->
                   <div class="pitch-row">
                     <span class="pitch-row-label">音调</span>
                     <span class="pitch-row-val">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
-                    <input type="range" class="h-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
                     <input v-model.number="pitchInput" type="number" min="-12" max="12" class="vol-input no-spinner" @keydown.enter="confirmPitchInput" @blur="confirmPitchInput" />
                   </div>
+                  <input type="range" class="h-slider pitch-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
                   <div class="pitch-actions">
                     <button class="pitch-reset" @click="playerStore.setPitch(0)">重置 0</button>
                   </div>
@@ -1859,7 +1859,7 @@ async function searchLyric() {
 .pitch-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px; padding: 10px 14px; width: 200px;
+  border-radius: 10px; padding: 10px 14px; width: 280px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
   color: rgba(255,255,255,0.85);
 }
@@ -1910,7 +1910,7 @@ async function searchLyric() {
 .rate-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
   background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px; padding: 10px 14px; width: 210px;
+  border-radius: 10px; padding: 10px 14px; width: 280px;
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
   color: rgba(255,255,255,0.85);
 }
@@ -1927,8 +1927,8 @@ async function searchLyric() {
 .pitch-row { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; }
 .pitch-row-label { min-width: 28px; font-size: var(--font-size-xs, 12px); color: rgba(255,255,255,0.72); }
 .pitch-row-val { min-width: 34px; text-align: center; font-size: 11px; color: #6ec6ff; font-weight: 700; font-variant-numeric: tabular-nums; }
-.pitch-row input[type="range"].h-slider { flex: 1; min-width: 0; }
-.pitch-row .vol-input { width: 44px; }
+.pitch-row input[type="number"] { width: 54px; }
+.pitch-slider { width: 100%; margin: 4px 0 2px; }
 .pitch-actions { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
 .pitch-reset {
   font-size: var(--font-size-sm, 12px); padding: 3px 14px;
