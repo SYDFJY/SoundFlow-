@@ -42,10 +42,8 @@ export const usePlayerStore = defineStore('player', () => {
   const lyrics = ref([])
   const currentLyricIndex = ref(-1)
   const playbackRate = ref(1.0)
-  // 变调(半音,-12 ~ +12,0 = 不变调;经 SoundTouch 实时处理,变速不变调)
+  // 变调(半音,-12 ~ +12,0 = 不变调;经 SoundTouch 实时处理,与速度独立)
   const pitch = ref(0)
-  // 变调模式:false=变速不变调(SoundTouch,音高变速度不变);true=变速变调(playbackRate,卡带/花栗鼠效果)
-  const pitchShiftTempo = ref(false)
   // 桌面歌词三态:0=未打开 1=打开(解锁) 2=锁定(穿透)
   const desktopLyricState = ref(0)
   const showLyricPanel = ref(false)
@@ -332,8 +330,8 @@ export const usePlayerStore = defineStore('player', () => {
         _mediaSourceNode.connect(_fadeGain)
         prev = _fadeGain
       }
-      // 变调(pitch ≠ 0 且变速不变调模式时,经 SoundTouch 管线;变速变调模式直接旁路,由 playbackRate 处理)
-      if (pitch.value !== 0 && !pitchShiftTempo.value) {
+      // 变调(pitch ≠ 0 时经 SoundTouch 管线;音高独立处理,与速度无联动)
+      if (pitch.value !== 0) {
         if (!_pitchNode) createPitchNode()
         if (_pitchNode) {
           prev.connect(_pitchNode)
@@ -1394,23 +1392,17 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 应用倍速+变调到 audio
-  function applyPitchToAudio(fromPitchChange) {
+  // 应用倍速+变调到 audio(音高/速度完全独立:音高经 SoundTouch,速度只做 playbackRate)
+  function applyPitchToAudio() {
     if (!audio.value) return
     try {
-      // 速度始终独立:playbackRate 只做速度(音高始终经 SoundTouch worklet 处理)
       audio.value.preservesPitch = true
       audio.value.playbackRate = playbackRate.value
-      // 变速变调模式:调音高时自动联动速度(黑胶/卡带:音高↑速度↑);
-      // 手动调速度(fromPitchChange=false)则直接生效,音高保持 → 自由组合(如 1.3x + -3st)
-      if (pitchShiftTempo.value && fromPitchChange) {
-        audio.value.playbackRate = playbackRate.value * Math.pow(2, pitch.value / 12)
-      }
     } catch {}
   }
 
   function applyPitch() {
-    applyPitchToAudio(false) // 切换模式本身不触发联动
+    applyPitchToAudio()
     rebuildAudioChain() // 变调 ≠ 0 时插入 SoundTouch 节点,= 0 时旁路
   }
 
@@ -1419,16 +1411,9 @@ export const usePlayerStore = defineStore('player', () => {
     if (v === pitch.value) return
     pitch.value = v
     if (_pitchNode && _pitchNode.port) _pitchNode.port.postMessage({ type: 'pitch', value: v })
-    applyPitchToAudio(true) // 变速变调模式联动速度
+    applyPitchToAudio()
     rebuildAudioChain()
     schedulePitchSave()
-  }
-
-  // 切换变调模式:变速不变调(SoundTouch)/ 变速变调(playbackRate 卡带效果)
-  function setPitchShiftTempo(v) {
-    pitchShiftTempo.value = !!v
-    applyPitch()
-    saveSettings()
   }
   // 变调滑条拖动时保存节流(避免每帧全量持久化)
   let _pitchSaveTimer = null
@@ -1452,7 +1437,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function setPlaybackRate(rate) {
     playbackRate.value = rate
-    applyPitchToAudio(false) // 手动调速度直接生效(变速变调模式也不乘音高系数,音高保持)
+    applyPitchToAudio() // 手动调速度直接生效(音高经 SoundTouch 独立处理,互不影响)
   }
 
   function cyclePlaybackRate() {
@@ -1545,7 +1530,6 @@ export const usePlayerStore = defineStore('player', () => {
       if (r) playbackRate.value = parseFloat(r)
       const ph2 = localStorage.getItem('soundflow_pitch')
       if (ph2) pitch.value = Math.max(-12, Math.min(12, parseInt(ph2) || 0))
-      try { pitchShiftTempo.value = localStorage.getItem('soundflow_pitch_shift_tempo') === '1' } catch {}
       const ph = localStorage.getItem('soundflow_progress')
       if (ph) progressHistory.value = JSON.parse(ph)
       loadReplayGainPref()
@@ -1561,7 +1545,6 @@ export const usePlayerStore = defineStore('player', () => {
       localStorage.setItem('soundflow_play_mode', playMode.value)
       localStorage.setItem('soundflow_playback_rate', String(playbackRate.value))
       localStorage.setItem('soundflow_pitch', String(pitch.value))
-      localStorage.setItem('soundflow_pitch_shift_tempo', pitchShiftTempo.value ? '1' : '0')
       localStorage.setItem('soundflow_progress', JSON.stringify(progressHistory.value))
       saveQueueState()
       if (window.electronAPI) {
@@ -1584,7 +1567,7 @@ export const usePlayerStore = defineStore('player', () => {
     endAction, setEndAction,
     showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory,
-    pitch, setPitch, pitchShiftTempo, setPitchShiftTempo, desktopLyricState, cycleDesktopLyric,
+    pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
     initAudio, setPlayQueue, insertNext, addToQueue, removeFromQueue, moveInQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,

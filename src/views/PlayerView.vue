@@ -174,43 +174,50 @@
             <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()">
               <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
             </button>
-            <!-- 音调与速度(变调+倍速合一,双滑杆+数字输入自由组合) -->
-            <div class="pitch-control">
-              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 || playerStore.playbackRate !== 1 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>
-                <span v-if="playerStore.pitch !== 0 || playerStore.playbackRate !== 1" class="pitch-badge">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} · {{ playerStore.playbackRate }}x</span>
+            <!-- 倍速(自定义) -->
+            <div class="rate-control">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.playbackRate !== 1 }" @click="showRatePanel = !showRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
+                {{ playerStore.playbackRate }}x
               </button>
               <transition name="vol-fade">
-                <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
+                <div v-if="showRatePanel" class="rate-panel" @click.stop>
                   <div class="pitch-header">
-                    <span>音调与速度</span>
+                    <span>播放速度</span>
                   </div>
-                  <!-- 变调模式:变速不变调 / 变速变调 -->
-                  <div class="pitch-mode">
-                    <button class="pitch-mode-btn" :class="{ active: !playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(false)">变速不变调</button>
-                    <button class="pitch-mode-btn" :class="{ active: playerStore.pitchShiftTempo }" @click="playerStore.setPitchShiftTempo(true)">变速变调</button>
-                  </div>
-                  <div class="pitch-mode-hint">{{ playerStore.pitchShiftTempo ? '调音高自动联动速度(卡带/黑胶效果);也可单独调速度' : '音高与速度完全独立调节' }}</div>
-
-                  <!-- 音高:滑杆 + 数字输入 -->
-                  <div class="pitch-row">
-                    <span class="pitch-row-label">音调</span>
-                    <span class="pitch-row-val">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
-                    <input type="range" class="h-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
-                    <input v-model.number="pitchInput" type="number" min="-12" max="12" class="vol-input no-spinner" @keydown.enter="confirmPitchInput" @blur="confirmPitchInput" />
-                  </div>
-
-                  <!-- 速度:滑杆 + 数字输入 -->
                   <div class="pitch-row">
                     <span class="pitch-row-label">速度</span>
                     <span class="pitch-row-val">{{ playerStore.playbackRate }}x</span>
                     <input type="range" class="h-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
                     <input v-model.number="rateInput" type="number" min="0.25" max="3" step="0.05" class="vol-input no-spinner" @keydown.enter="confirmRateInput" @blur="confirmRateInput" />
                   </div>
-
                   <div class="pitch-actions">
-                    <button class="pitch-reset" @click="playerStore.setPitch(0)">音调重置 0</button>
-                    <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">速度重置 1x</button>
+                    <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">重置 1x</button>
+                  </div>
+                </div>
+              </transition>
+            </div>
+
+            <!-- 变调(升降调,与倍速独立同时生效) -->
+            <div class="pitch-control">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>
+                <span v-if="playerStore.pitch !== 0" class="pitch-badge">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }}</span>
+              </button>
+              <transition name="vol-fade">
+                <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
+                  <div class="pitch-header">
+                    <span>音调</span>
+                    <span class="pitch-value" :class="{ 'pitch-value--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
+                  </div>
+                  <!-- 音高:滑杆 + 数字输入(与倍速独立同时生效) -->
+                  <div class="pitch-row">
+                    <span class="pitch-row-label">音调</span>
+                    <span class="pitch-row-val">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</span>
+                    <input type="range" class="h-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
+                    <input v-model.number="pitchInput" type="number" min="-12" max="12" class="vol-input no-spinner" @keydown.enter="confirmPitchInput" @blur="confirmPitchInput" />
+                  </div>
+                  <div class="pitch-actions">
+                    <button class="pitch-reset" @click="playerStore.setPitch(0)">重置 0</button>
                   </div>
                 </div>
               </transition>
@@ -546,7 +553,7 @@ let _pvPanelWatch = null
 function setupPvPanelsClickOutside() {
   if (_pvPanelWatch) return
   _pvPanelWatch = watch(
-    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showPitchPanel],
+    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onPvPanelDocClick)
       else document.removeEventListener('click', onPvPanelDocClick)
@@ -565,6 +572,7 @@ function onPvPanelDocClick(e) {
   showColorPanel.value = false
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
+  showRatePanel.value = false
 }
 
 // 打开/切换歌曲时,自动定位当前播放项
@@ -892,7 +900,8 @@ const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
 // 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
-const showPitchPanel = ref(false) // 音调与速度面板默认收起
+const showPitchPanel = ref(false) // 变调面板默认收起
+const showRatePanel = ref(false) // 倍速面板默认收起
 // 音调/速度数字输入(Enter/失焦确认)
 const pitchInput = ref(playerStore.pitch)
 const rateInput = ref(playerStore.playbackRate)
@@ -1132,6 +1141,7 @@ function onPvEsc() {
   showColorPanel.value = false
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
+  showRatePanel.value = false
 }
 onMounted(() => {
   setupPvPanelsClickOutside()
@@ -1883,15 +1893,6 @@ async function searchLyric() {
   background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff);
   box-shadow: 0 0 0 1px var(--color-primary, #4096ff);
 }
-.pitch-mode { display: flex; gap: 4px; margin-bottom: 4px; }
-.pitch-mode-btn {
-  flex: 1; padding: 3px 0; font-size: var(--font-size-sm, 11px);
-  border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
-  background: transparent; color: rgba(255,255,255,0.78); cursor: pointer; transition: all 0.15s;
-}
-.pitch-mode-btn:hover { border-color: #6ec6ff; }
-.pitch-mode-btn.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
-.pitch-mode-hint { font-size: 10px; color: rgba(255,255,255,0.5); margin-bottom: 6px; text-align: center; }
 .voice-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
 .voice-preset {
   flex: 1 1 30%; min-width: 58px; padding: 4px 0; font-size: var(--font-size-sm, 11px);
