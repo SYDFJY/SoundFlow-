@@ -184,6 +184,9 @@
                   <div class="pitch-header"><span>播放速度</span></div>
                   <div class="pitch-val-big">{{ playerStore.playbackRate }}x</div>
                   <input type="range" class="h-slider pitch-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
+                  <div class="pitch-presets">
+                    <button v-for="r in [0.5, 0.75, 1, 1.25, 1.5, 2, 3]" :key="r" class="pitch-preset" :class="{ active: Math.abs(playerStore.playbackRate - r) < 0.001 }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
+                  </div>
                   <div class="pitch-scale"><span>0.25x</span><span>3x</span></div>
                   <div class="pitch-actions">
                     <div class="pitch-input-group">
@@ -199,14 +202,16 @@
             <!-- 变调(升降调,与倍速独立同时生效) -->
             <div class="pitch-control">
               <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"/><path d="M8 7l4-4 4 4"/><path d="M8 17l4 4 4-4"/></svg>
-                <span v-if="playerStore.pitch !== 0" class="pitch-badge">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }}</span>
+                {{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st
               </button>
               <transition name="vol-fade">
                 <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
                   <div class="pitch-header"><span>音调</span></div>
                   <div class="pitch-val-big" :class="{ 'pitch-val-big--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</div>
                   <input type="range" class="h-slider pitch-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
+                  <div class="pitch-presets">
+                    <button v-for="p in [-12, -7, -5, -3, 0, 3, 5, 7, 12]" :key="p" class="pitch-preset" :class="{ active: playerStore.pitch === p }" @click="playerStore.setPitch(p)">{{ p > 0 ? '+' : '' }}{{ p }}</button>
+                  </div>
                   <div class="pitch-scale"><span>-12</span><span>0</span><span>+12</span></div>
                   <div class="pitch-actions">
                     <div class="pitch-input-group">
@@ -1930,6 +1935,14 @@ async function searchLyric() {
 .pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.45); margin: 2px 2px 8px; }
 .pitch-input-group { display: flex; align-items: center; gap: 4px; }
 .pitch-input-group span { font-size: 11px; color: rgba(255,255,255,0.6); }
+.pitch-presets { display: flex; gap: 4px; flex-wrap: wrap; margin: 2px 0 8px; }
+.pitch-preset {
+  flex: 1; min-width: 34px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
+  border: 1px solid var(--border-color, rgba(255,255,255,0.18)); border-radius: 6px;
+  background: transparent; color: rgba(255,255,255,0.85); cursor: pointer; transition: all 0.15s;
+}
+.pitch-preset:hover { border-color: var(--color-primary, #4096ff); color: var(--color-primary, #4096ff); }
+.pitch-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
 .pitch-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
 .pitch-reset {
   font-size: var(--font-size-sm, 12px); padding: 3px 14px;
