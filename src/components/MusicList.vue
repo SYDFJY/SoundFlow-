@@ -623,8 +623,9 @@ async function openAutoTag(source) {
   const results = []
   for (let i = 0; i < songs.length; i++) {
     const s = songs[i]
-    // 只补缺失字段:已有专辑且已有年份的跳过搜索
-    const need = !s.album || !s.year
+    // 只补缺失字段:已有专辑且已有年份的跳过搜索(占位符"未知专辑/unknown"视为缺失)
+    const albumBad = !s.album || /未知专辑|unknown/i.test(String(s.album || ''))
+    const need = albumBad || !s.year
     if (need) {
       const cands = await searchForSong(s, autoTagModal.value.source)
       results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: -1 })
@@ -653,7 +654,7 @@ async function saveAutoTag() {
     const api = window.electronAPI
     // 只补缺失字段
     const tags = {}
-    if (song && !song.album && c.album) tags.album = c.album
+    if (song && (!song.album || /未知专辑|unknown/i.test(String(song.album || ''))) && c.album) tags.album = c.album
     if (song && !song.year && c.year) tags.year = c.year
     // 封面:候选带封面 URL 且歌曲无封面 → 下载存缓存,内嵌进音频
     let coverPath = ''
