@@ -2253,6 +2253,97 @@ function setupIPC() {
   // 歌曲信息编辑:ffmpeg -metadata 写回标签(标题/歌手/专辑,流复制不改音频数据)
   // ===== MusicBrainz 自动补全标签(文本搜索,预览确认后由 write-tags 写回)=====
   let _mbLastReq = 0
+  // ===== 自动补全多音源:QQ 音乐优先 → 网易云 → MusicBrainz =====
+  let _srcLastReq = 0
+  async function _srcThrottle() {
+    const wait = Math.max(0, 1000 - (Date.now() - _srcLastReq))
+    if (wait > 0) await new Promise(r => setTimeout(r, wait))
+    _srcLastReq = Date.now()
+  }
+  // 歌手归一化:去空格/标点/后缀,用于过滤 UGC/翻唱污染
+  function _normName(s) { return String(s || '').toLowerCase().replace(/[\s·・．.&,，\-_'"]/g, '').replace(/(翻唱|cover|live|伴奏|现场|版|remix)$/g, '') }
+  // QQ 音乐搜索(musicu.fcg,带 Referer;返回含封面 albummid)
+  ipcMain.handle('search-qqmusic', async (event, song) => {
+    try {
+      await _srcThrottle()
+      const title = (song && song.title || '').trim()
+      const artist = (song && song.artist || '').trim()
+      if (!title) return []
+      const query = title + (artist ? ' ' + artist : '')
+      const payload = {
+        req_0: { module: 'music.search.SearchCgiService', method: 'DoSearchForQQMusicDesktop', param: { search_type: 0, query, num_per_page: 8 } }
+      }
+      const url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?data=' + encodeURIComponent(JSON.stringify(payload))
+      const res = await fetch(url, { headers: { 'Referer': 'https://y.qq.com', 'User-Agent': 'Mozilla/5.0' } })
+      if (!res.ok) return []
+      const data = await res.json()
+      const list = (data.req_0 && data.req_0.data && data.req_0.data.body && data.req_0.data.body.song && data.req_0.data.body.song.list) || []
+      const out = []
+      const want = _normName(artist)
+      for (const s of list) {
+        const sArtist = (s.singer || []).map(x => x.name).join('/')
+        const album = (s.album && s.album.name) || ''
+        // 歌手过滤:要求归一化后包含目标歌手(防 UGC 翻唱条目)
+        if (want && !_normName(sArtist).includes(want)) continue
+        out.push({
+          title: s.name || title,
+          artist: sArtist,
+          album,
+          year: '',
+          duration: s.interval ? Math.round(s.interval) : 0,
+          coverUrl: s.albummid ? 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + s.albummid + '.jpg' : '',
+          source: 'QQ音乐'
+        })
+        if (out.length >= 5) break
+      }
+      return out
+    } catch { return [] }
+  })
+  // 网易云搜索(回退源;搜索 → song/detail 取封面/年份)
+  ipcMain.handle('search-netease', async (event, song) => {
+    try {
+      await _srcThrottle()
+      const title = (song && song.title || '').trim()
+      const artist = (song && song.artist || '').trim()
+      if (!title) return []
+      const q = encodeURIComponent(title + (artist ? ' ' + artist : ''))
+      const res = await fetch('https://music.163.com/api/search/get/web?s=' + q + '&type=1&limit=8&offset=0', { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (!res.ok) return []
+      const data = await res.json()
+      const songs = (data.result && data.result.songs) || []
+      const out = []
+      const want = _normName(artist)
+      for (const s of songs) {
+        const sArtist = (s.artists || []).map(x => x.name).join('/')
+        if (want && !_normName(sArtist).includes(want)) continue
+        let coverUrl = '', year = ''
+        try {
+          await _srcThrottle()
+          const d = await fetch('https://music.163.com/api/song/detail?id=' + s.id + '&ids=%5B' + s.id + '%5D', { headers: { 'User-Agent': 'Mozilla/5.0' } })
+          if (d.ok) { const dj = await d.json(); const so = dj.songs && dj.songs[0]; if (so && so.album) { coverUrl = so.album.picUrl || ''; const t = so.album.publishTime; if (t) year = String(new Date(t).getFullYear()) } }
+        } catch {}
+        out.push({
+          title: s.name || title, artist: sArtist,
+          album: (s.album && s.album.name) || '', year,
+          duration: s.duration ? Math.round(s.duration / 1000) : 0,
+          coverUrl, source: '网易云'
+        })
+        if (out.length >= 5) break
+      }
+      return out
+    } catch { return [] }
+  })
+  // 下载封面:URL → 字节 → saveCoverFile 存本地缓存,返回本地路径
+  ipcMain.handle('download-cover', async (event, coverUrl, songPath) => {
+    try {
+      const res = await fetch(coverUrl, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://y.qq.com' } })
+      if (!res.ok) return { ok: false, error: '下载失败 ' + res.status }
+      const buf = Buffer.from(await res.arrayBuffer())
+      const localPath = saveCoverFile(songPath, buf)
+      return { ok: true, path: localPath }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
   ipcMain.handle('search-musicbrainz', async (event, song) => {
     try {
       // 限流:MusicBrainz 免费 API 要求 1 req/s
@@ -2283,11 +2374,14 @@ function setupIPC() {
     } catch { return [] }
   })
 
-  ipcMain.handle('write-tags', async (event, filePath, tags) => {
+  ipcMain.handle('write-tags', async (event, filePath, tags, coverPath) => {
     try {
       if (!ffmpegPathForLoudness) detectFFmpegLoudness()
       const { execFile } = require('child_process')
       const fs = require('fs')
+      // 封面内嵌:可选 coverPath(本地封面文件)→ attached_pic(不重编码音频)
+      const hasCover = coverPath && fs.existsSync(coverPath)
+      // 备份阶段(略)
       // ===== 写前持久备份原文件(可回滚)=====
       // 备份整个原文件副本到 userData/tag-backups/ + 索引,写坏/想还原随时恢复
       const tagBakDir = path.join(app.getPath('userData'), 'tag-backups')
@@ -2309,7 +2403,10 @@ function setupIPC() {
         }
       } catch (be) { console.error('[write-tags] 备份失败(继续写入):', be.message) }
       const tmp = filePath + '.tagtmp' + path.extname(filePath)
-      const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy', '-id3v2_version', '3']
+      // 有封面:第二输入封面文件,音频流复制 + 封面流 mjpeg 内嵌
+      const args = hasCover
+        ? ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-i', coverPath, '-map', '0:a', '-map', '1:v', '-c', 'copy', '-c:v', 'mjpeg', '-disposition:v', 'attached_pic', '-id3v2_version', '3']
+        : ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy', '-id3v2_version', '3']
       if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
       if (tags && tags.artist) args.push('-metadata', 'artist=' + tags.artist)
       if (tags && tags.album) args.push('-metadata', 'album=' + tags.album)

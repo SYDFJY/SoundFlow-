@@ -534,3 +534,9 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 .autotag-none { font-size: 11px; color: var(--text-tertiary); }
 .autotag-skip { margin-left: auto; flex-shrink: 0; }
 .autotag-hint { font-size: 11px; color: var(--text-tertiary); flex: 1; }
+
+/* 自动补全候选:封面缩略图 + 来源标签 */
+.autotag-opt { gap: 6px; padding: 3px 10px; }
+.autotag-cover { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
+.autotag-opt-text { font-size: 11px; }
+.autotag-src { font-style: normal; font-size: 10px; color: var(--color-primary); opacity: 0.8; }

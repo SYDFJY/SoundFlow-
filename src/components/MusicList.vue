@@ -118,7 +118,8 @@
                 <span v-if="r.candidates.length" class="autotag-cands">
                   <label v-for="(c, ci) in r.candidates" :key="ci" class="autotag-opt" :class="{ checked: r.checked === ci }">
                     <input type="radio" :name="'at-' + r.path" :checked="r.checked === ci" @change="r.checked = ci" />
-                    {{ c.album }}{{ c.year ? '(' + c.year + ')' : '' }}
+                    <img v-if="c.coverUrl" class="autotag-cover" :src="c.coverUrl" loading="lazy" @error="$event.target.style.display='none'" />
+                    <span class="autotag-opt-text">{{ c.album }}{{ c.year ? '(' + c.year + ')' : '' }} <em class="autotag-src">{{ c.source || '' }}</em></span>
                   </label>
                 </span>
                 <span v-else class="autotag-none">未找到匹配</span>
@@ -605,8 +606,19 @@ async function openAutoTag() {
     const need = !s.album || !s.year
     if (need) {
       let cands = []
-      if (window.electronAPI && window.electronAPI.searchMusicbrainz) {
-        try { cands = await window.electronAPI.searchMusicbrainz({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
+      const api = window.electronAPI
+      // 源优先级:QQ 音乐 → 网易云 → MusicBrainz;首个有候选即用
+      if (api && api.searchQqmusic) {
+        try { cands = await api.searchQqmusic({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
+      }
+      if (!cands.length && api && api.searchNetease) {
+        try { cands = await api.searchNetease({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
+      }
+      if (!cands.length && api && api.searchMusicbrainz) {
+        try {
+          const mb = await api.searchMusicbrainz({ title: s.title, artist: s.artist }) || []
+          cands = mb.map(c => ({ ...c, source: 'MusicBrainz' }))
+        } catch { cands = [] }
       }
       results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: -1 })
     } else {
@@ -623,14 +635,23 @@ async function saveAutoTag() {
   for (const r of picked) {
     const c = r.candidates[r.checked]
     const song = props.songs.find(s => s.path === r.path)
+    const api = window.electronAPI
     // 只补缺失字段
     const tags = {}
     if (song && !song.album && c.album) tags.album = c.album
     if (song && !song.year && c.year) tags.year = c.year
-    if (Object.keys(tags).length && window.electronAPI && window.electronAPI.writeTags) {
+    // 封面:候选带封面 URL 且歌曲无封面 → 下载存缓存,内嵌进音频
+    let coverPath = ''
+    if (c.coverUrl && api && api.downloadCover) {
       try {
-        const res = await window.electronAPI.writeTags(r.path, tags)
-        if (res && res.ok) { ok++; musicStore.updateSong(r.path, tags) }
+        const dl = await api.downloadCover(c.coverUrl, r.path)
+        if (dl && dl.ok && dl.path) { coverPath = dl.path; musicStore.updateSong(r.path, { coverUrl: dl.path }) }
+      } catch {}
+    }
+    if ((Object.keys(tags).length || coverPath) && api && api.writeTags) {
+      try {
+        const res = await api.writeTags(r.path, tags, coverPath)
+        if (res && res.ok) { ok++; if (Object.keys(tags).length) musicStore.updateSong(r.path, tags) }
       } catch {}
     }
   }

@@ -151,7 +151,9 @@
       </div>
 
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
-      <canvas v-show="activeTab === 'cover'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
+      <canvas v-show="activeTab === 'cover' && specMode !== 'ring'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
+      <!-- 圆形环绕频谱:绝对定位覆盖唱片外圈,与直线频谱可同时显示(两者模式) -->
+      <canvas v-show="activeTab === 'cover' && specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
 
       <!-- 底部控制栏 -->
       <div class="player-controls">
@@ -260,6 +262,10 @@
             <!-- 音效 -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
+            </button>
+            <!-- 频谱模式:直线 / 圆形 / 两者同时 -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: specMode !== 'bar' }" @click="cycleSpecMode" :title="'频谱模式: ' + ({ bar: '直线', ring: '圆形', both: '两者同时' })[specMode]" style="font-size:11px">
+              {{ ({ bar: '频谱', ring: '圆谱', both: '双谱' })[specMode] }}
             </button>
 
             <!-- 播放列表 -->
@@ -533,14 +539,15 @@ function onQueueDrop(idx) {
   queueDragTarget.value = null
 }
 const eqGroups = [
-  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical', 'bass'] },
-  { name: '风格', keys: ['electronic', 'hiphop', 'metal', 'blues', 'folk', 'dance'] },
-  { name: '人声', keys: ['vocal', 'aiVocal', 'ktv', 'podcast'] },
-  { name: '环绕', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
-  { name: '律动', keys: ['dj', 'live'] },
-  { name: '场景', keys: ['movie', 'tape', 'bathroom'] },
-  { name: '趣味', keys: ['telephone', 'acg'] },
-  { name: '更多', keys: ['auto', 'chinese'] }
+  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical'] },
+  { name: '音乐风格', keys: ['electronic', 'hiphop', 'metal', 'blues', 'folk', 'dance'] },
+  { name: '人声增强', keys: ['vocal', 'aiVocal', 'ktv', 'podcast'] },
+  { name: '低音增强', keys: ['bass'] },
+  { name: '声场空间', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
+  { name: '动态力度', keys: ['dj', 'live'] },
+  { name: '场景模拟', keys: ['movie', 'tape', 'bathroom'] },
+  { name: '趣味特效', keys: ['telephone', 'acg'] },
+  { name: '综合智能', keys: ['auto', 'chinese'] }
 ]
 
 function toggleQueuePanel() {
@@ -996,6 +1003,17 @@ watch(showEqPanel, (v) => { if (v) nextTick(drawEqCurve) })
 
 // 频谱可视化(华丽版:左右对称镜像 + 圆头渐变条 + 峰值保持亮点 + 平滑动画)
 const spectrumCanvas = ref(null)
+const spectrumRingCanvas = ref(null)
+// 频谱模式:bar=直线 / ring=圆形 / both=两者同时(默认,localStorage 记忆)
+const specMode = ref((() => { try { return localStorage.getItem('soundflow_spec_mode') || 'both' } catch { return 'both' } })())
+const SPEC_MODES = ['both', 'bar', 'ring']
+function cycleSpecMode() {
+  const i = SPEC_MODES.indexOf(specMode.value)
+  specMode.value = SPEC_MODES[(i + 1) % SPEC_MODES.length]
+  try { localStorage.setItem('soundflow_spec_mode', specMode.value) } catch {}
+  // 切换到任一模式立即恢复绘制
+  if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
+}
 let spectrumRAF = null
 const BAR_COUNT = 72
 const barVals = new Array(BAR_COUNT).fill(0)    // 当前平滑高度
@@ -1007,26 +1025,14 @@ function hexToRgb(hex) {
 let lastSpecTs = 0
 // 渐变缓存:主题色/高度不变时复用,避免每帧创建 gradient
 let gradCache = { key: '', grad: null }
-function drawSpectrum(ts) {
+// 直线频谱绘制(纯绘制,由 spectrumLoop 统一调度)
+function paintBarSpectrum() {
   const canvas = spectrumCanvas.value
-  // canvas 被销毁(切 tab 时 v-if)必须重置 rAF 状态,否则 1s 兜底定时器误判"仍在运行"而永不重启
-  if (!canvas) {
-    spectrumRAF = null
-    return
-  }
+  if (!canvas) return
   const playing = playerStore.isPlaying
-  // 30fps 限帧:视觉仍流畅,主线程占用减半
-  if (ts && ts - lastSpecTs < 33) {
-    spectrumRAF = requestAnimationFrame(drawSpectrum)
-    return
-  }
-  lastSpecTs = ts || 0
-  // 不可见(隐藏/切tab)或未播放 → 停止绘制循环,避免空转耗 CPU
+  // 不可见(隐藏/切tab)或未播放 → 跳过
   const rect = canvas.getBoundingClientRect()
-  if (rect.width === 0 || rect.height === 0 || !playing) {
-    spectrumRAF = null
-    return
-  }
+  if (rect.width === 0 || rect.height === 0 || !playing) return
   // DPR 适配:按实际显示尺寸 × 像素比设置画布,避免拉伸模糊
   const dpr = window.devicePixelRatio || 1
   const fitW = Math.max(1, Math.round(rect.width * dpr))
@@ -1115,12 +1121,85 @@ function drawSpectrum(ts) {
   ctx.roundRect(1, height - 2, width - 2, 2, 1)
   ctx.fill()
   ctx.globalAlpha = 1
-  if (playing) spectrumRAF = requestAnimationFrame(drawSpectrum)
-  else spectrumRAF = null
+}
+
+// ===== 圆形环绕频谱(唱片外圈,随音频跳动)=====
+let ringVals = new Array(BAR_COUNT).fill(0)
+let ringPeaks = new Array(BAR_COUNT).fill(0)
+function paintRingSpectrum() {
+  const canvas = spectrumRingCanvas.value
+  if (!canvas) return
+  const playing = playerStore.isPlaying
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0 || !playing) return
+  const dpr = window.devicePixelRatio || 1
+  const fitW = Math.max(1, Math.round(rect.width * dpr))
+  const fitH = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== fitW || canvas.height !== fitH) { canvas.width = fitW; canvas.height = fitH }
+  const ctx = canvas.getContext('2d')
+  const { width, height } = canvas
+  ctx.clearRect(0, 0, width, height)
+  const data = playerStore.getSpectrumData()
+  const cx = width / 2, cy = height / 2
+  const r0 = Math.min(width, height) * 0.30       // 环起始半径(贴唱片外圈)
+  const rMax = Math.min(width, height) * 0.47     // 最大半径(条顶)
+  const barCount = 64
+  const step = Math.max(1, Math.floor((data ? data.length : 0) / barCount))
+  const accent = getAccentColor()
+  const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
+  ctx.lineCap = 'round'
+  for (let i = 0; i < barCount; i++) {
+    let target = 0
+    if (data) {
+      let v = 0
+      for (let j = 0; j < step; j++) v += data[i * step + j]
+      v = v / step / 255
+      target = Math.pow(v, 0.75) * (rMax - r0)
+    }
+    const diff = target - ringVals[i]
+    ringVals[i] += diff * (diff > 0 ? 0.5 : 0.3)
+    if (ringVals[i] > ringPeaks[i]) ringPeaks[i] = ringVals[i]
+    else ringPeaks[i] = Math.max(0, ringPeaks[i] - 1.2)
+    const h = Math.max(3, ringVals[i])
+    const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2
+    const x1 = cx + Math.cos(angle) * r0, y1 = cy + Math.sin(angle) * r0
+    const x2 = cx + Math.cos(angle) * (r0 + h), y2 = cy + Math.sin(angle) * (r0 + h)
+    // 渐变:近根透明 → 外端亮色
+    const g = ctx.createLinearGradient(x1, y1, x2, y2)
+    g.addColorStop(0, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.15)')
+    g.addColorStop(1, 'rgba(' + Math.min(255, c.r + 80) + ',' + Math.min(255, c.g + 80) + ',' + Math.min(255, c.b + 80) + ',0.95)')
+    ctx.strokeStyle = g
+    ctx.lineWidth = Math.max(2, (rMax - r0) / 40)
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+    // 峰值亮点
+    if (ringPeaks[i] > 4) {
+      const px = cx + Math.cos(angle) * (r0 + ringPeaks[i]), py = cy + Math.sin(angle) * (r0 + ringPeaks[i])
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'
+      ctx.beginPath(); ctx.arc(px, py, 1.6, 0, Math.PI * 2); ctx.fill()
+    }
+  }
+}
+
+// 频谱主循环:一次取数据、按模式画直线/圆形两个 canvas,统一 rAF 调度(省 CPU)
+function spectrumLoop(ts) {
+  // 30fps 限帧
+  if (ts && ts - lastSpecTs < 33) {
+    spectrumRAF = requestAnimationFrame(spectrumLoop)
+    return
+  }
+  lastSpecTs = ts || 0
+  const playing = playerStore.isPlaying
+  // 任一 canvas 可见才继续;全部不可见/未播放 → 停
+  const barVisible = spectrumCanvas.value && specMode.value !== 'ring'
+  const ringVisible = spectrumRingCanvas.value && specMode.value !== 'bar'
+  if (!playing || (!barVisible && !ringVisible)) { spectrumRAF = null; return }
+  if (barVisible) paintBarSpectrum()
+  if (ringVisible) paintRingSpectrum()
+  spectrumRAF = requestAnimationFrame(spectrumLoop)
 }
 // 组件挂载后启动常驻绘制
 function startSpectrum() {
-  if (spectrumCanvas.value) drawSpectrum()
+  spectrumLoop()
 }
 // 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)—— 仅播放时存在,暂停/卸载即清
 let spectrumTimer = null
@@ -1168,6 +1247,10 @@ watch(() => playerStore.isPlaying, (v) => {
     if (spectrumCanvas.value) {
       const ctx = spectrumCanvas.value.getContext('2d')
       ctx.clearRect(0, 0, spectrumCanvas.value.width, spectrumCanvas.value.height)
+    }
+    if (spectrumRingCanvas.value) {
+      const ctx2 = spectrumRingCanvas.value.getContext('2d')
+      ctx2.clearRect(0, 0, spectrumRingCanvas.value.width, spectrumRingCanvas.value.height)
     }
   }
 })
@@ -1435,6 +1518,8 @@ async function searchLyric() {
 }
 .disc-cover-small img { width: 100%; height: 100%; object-fit: cover; }
 .spectrum-bar { display: block; margin: 14px auto 0; max-width: 520px; width: 100%; height: 80px; opacity: 0.9; }
+/* 圆形环绕频谱:覆盖唱片外圈,pointer-events 穿透 */
+.spectrum-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(56vh, 52vw, 460px); height: min(56vh, 52vw, 460px); pointer-events: none; z-index: 4; opacity: 0.85; }
 
 .song-meta-small { text-align: center; }
 .song-title-sm { font-size: 18px; font-weight: 600; color: white; margin-bottom: 4px; }

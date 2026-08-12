@@ -95,8 +95,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 响度分析(ReplayGain)
   analyzeLoudness: (filePath) => ipcRenderer.invoke('analyze-loudness', filePath),
   getLoudness: (filePath) => ipcRenderer.invoke('get-loudness', filePath),
-  writeTags: (filePath, tags) => ipcRenderer.invoke('write-tags', filePath, tags),
+  writeTags: (filePath, tags, coverPath) => ipcRenderer.invoke('write-tags', filePath, tags, coverPath),
   searchMusicbrainz: (song) => ipcRenderer.invoke('search-musicbrainz', song),
+  searchQqmusic: (song) => ipcRenderer.invoke('search-qqmusic', song),
+  searchNetease: (song) => ipcRenderer.invoke('search-netease', song),
+  downloadCover: (coverUrl, songPath) => ipcRenderer.invoke('download-cover', coverUrl, songPath),
   // 标签备份管理(写回前自动备份,可回滚)
   listTagBackups: () => ipcRenderer.invoke('list-tag-backups'),
   restoreTagBackup: (id) => ipcRenderer.invoke('restore-tag-backup', id),
