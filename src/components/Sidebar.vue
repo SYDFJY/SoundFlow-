@@ -322,12 +322,11 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .add-playlist-btn { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); color: var(--text-tertiary); transition: all var(--transition-fast); }
 .add-playlist-btn:hover { background: var(--bg-hover); color: var(--color-primary); }
 .add-playlist-btn svg { width: 14px; height: 14px; }
-.menu-item { display: flex; align-items: center; gap: 10px; padding: 8px 20px; color: var(--text-secondary); text-decoration: none; transition: all var(--transition-fast); cursor: pointer; position: relative; }
+.menu-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; margin: 2px 8px; border-radius: 8px; color: var(--text-secondary); text-decoration: none; transition: all 0.18s ease; cursor: pointer; position: relative; }
 .menu-item.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.25)); outline: 1px dashed var(--color-primary); color: var(--text-primary); }
-.menu-item:hover { background: var(--bg-hover); color: var(--text-primary); }
-.menu-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 500; }
+.menu-item:hover { background: var(--bg-hover); color: var(--text-primary); transform: translateX(3px); }
+.menu-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 600; box-shadow: inset 0 0 0 1px var(--color-primary-alpha, rgba(64,150,255,0.35)); }
 .menu-item.menu-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
-.menu-item.active::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; background: var(--color-primary); border-radius: 0 3px 3px 0; }
 .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 .menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-base); }
 .menu-badge { font-size: 11px; background: var(--color-primary); color: white; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }

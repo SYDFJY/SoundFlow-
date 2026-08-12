@@ -383,7 +383,10 @@ function setCustomTimer() {
 <style scoped>
 .player-bar {
   height: var(--player-height);
-  background: var(--player-bg);
+  /* 毛玻璃:半透明底 + 背景模糊,主界面层次感(与播放页控制区呼应) */
+  background: color-mix(in srgb, var(--player-bg) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
   border-top: 1px solid var(--border-color);
   display: flex;
   align-items: center;

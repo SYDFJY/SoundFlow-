@@ -42,7 +42,8 @@
       </div>
 
       <!-- 封面模式 -->
-      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
+      <div v-if="activeTab === 'cover'" key="cover" class="cover-mode" :class="{ split: useSplit }">
+        <div class="cover-left">
         <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
           <!-- 圆形环绕频谱:移入 disc-area 内,圆心=唱片圆心 -->
           <canvas v-show="specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
@@ -58,6 +59,38 @@
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
           <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
+        </div>
+        </div>
+        <!-- 大屏分栏:右侧歌词(整行高亮,点击跳转) -->
+        <div v-if="useSplit" class="split-lyrics" ref="splitLyricsEl">
+          <div class="lyrics-scroll">
+            <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
+              <div class="empty-icon">📝</div>
+              <div>{{ t('playerView.noLyrics') }}</div>
+            </div>
+            <div v-else class="lyrics-content" :class="{ 'no-lyric-effect': !lyricEffect }">
+              <div style="height:30%"></div>
+              <div
+                v-for="(line, idx) in playerStore.lyrics" :key="idx"
+                class="lyric-line"
+                :class="{
+                  active: idx === playerStore.currentLyricIndex,
+                  left: lyricAlign === 'left',
+                  near: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) === 1,
+                  far: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) > 1
+                }"
+                :style="{
+                  fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
+                  lineHeight: lyricLineGap,
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99'
+                }"
+                :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
+                @click="seekToLine(line)"
+                :ref="el => { if (idx === playerStore.currentLyricIndex) splitActiveEl = el }"
+              >{{ line.text }}</div>
+              <div style="height:30%"></div>
+            </div>
+          </div>
         </div>
       </div>
       <div v-if="activeTab !== 'cover'" key="lyric" class="lyric-mode">
@@ -275,6 +308,13 @@
                     <div class="spec-group-name">模式</div>
                     <div class="spec-opts">
                       <button v-for="m in SPEC_MODES" :key="m.v" class="pitch-preset" :class="{ active: specMode === m.v }" @click="specMode = m.v; localStorage.setItem('soundflow_spec_mode', m.v)">{{ m.l }}</button>
+                    </div>
+                  </div>
+                  <div class="spec-group">
+                    <div class="spec-group-name">直线区风格</div>
+                    <div class="spec-opts">
+                      <button class="pitch-preset" :class="{ active: specStyle === 'bar' }" @click="setSpecStyle('bar')">柱状</button>
+                      <button class="pitch-preset" :class="{ active: specStyle === 'wave' }" @click="setSpecStyle('wave')">波动线</button>
                     </div>
                   </div>
                   <div class="spec-group">
@@ -497,6 +537,7 @@ function setupQueueSortable() {
 }
 watch(showQueuePanel, (v) => { if (v) nextTick(setupQueueSortable) })
 onUnmounted(() => { if (queueSortable) { try { queueSortable.destroy() } catch (_) {} } })
+window.removeEventListener('resize', onSplitResize)
 const activeQueueEl = ref(null)
 
 // 音效面板
@@ -626,8 +667,29 @@ const currentSongInfo = computed(() => {
   const parts = []
   if (s.bitrate) parts.push(s.bitrate + ' kbps')
   if (s.sampleRate) parts.push((s.sampleRate / 1000).toFixed(1) + ' kHz')
+  if (bpmCache.value[s.path || '']) parts.push(bpmCache.value[s.path] + ' BPM')
   return parts.join(' · ')
 })
+// BPM 缓存(按歌曲路径;分析一次永久记住,切歌即时显示)
+const bpmCache = ref((() => { try { return JSON.parse(localStorage.getItem('soundflow_bpm_cache') || '{}') } catch { return {} } })())
+function _saveBpmCache() { try { localStorage.setItem('soundflow_bpm_cache', JSON.stringify(bpmCache.value)) } catch {} }
+let _bpmPending = ''
+async function ensureBpm() {
+  const s = playerStore.currentSong
+  if (!s || !s.path) return
+  if (bpmCache.value[s.path] || _bpmPending === s.path) return
+  _bpmPending = s.path
+  try {
+    if (window.electronAPI && window.electronAPI.analyzeBpm) {
+      const r = await window.electronAPI.analyzeBpm(s.path)
+      if (r && r.ok && r.bpm) {
+        bpmCache.value = { ...bpmCache.value, [s.path]: r.bpm }
+        _saveBpmCache()
+      }
+    }
+  } catch {}
+  _bpmPending = ''
+}
 
 // 封面容灾:封面文件丢失时重新生成
 function onCoverError() {
@@ -819,6 +881,7 @@ watch(activeTab, (v) => {
 // 切歌时自动切换到封面模式
 watch(() => playerStore.currentSong, () => {
   activeTab.value = 'cover'
+  ensureBpm() // 切歌自动分析新歌 BPM(有缓存即时显示)
 })
 
 function onProgressClick(e) {
@@ -930,6 +993,20 @@ const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_ly
 // 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
 const showPitchPanel = ref(false) // 变调面板默认收起
 const showSpecPanel = ref(false) // 频谱设置面板默认收起
+// 大屏左右分栏(>900px 封面+歌词并排,YesPlayMusic 布局)
+const useSplit = ref(window.innerWidth > 900)
+const splitLyricsEl = ref(null)
+let splitActiveEl = null
+function onSplitResize() { useSplit.value = window.innerWidth > 900 }
+watch(() => playerStore.currentLyricIndex, () => {
+  if (!useSplit.value || !splitLyricsEl.value) return
+  const el = splitActiveEl
+  const list = splitLyricsEl.value.querySelector('.lyrics-scroll')
+  if (el && list) {
+    const lr = el.getBoundingClientRect(), sr = list.getBoundingClientRect()
+    list.scrollTop += lr.top - sr.top - sr.height / 2 + lr.height / 2
+  }
+})
 const showRatePanel = ref(false) // 倍速面板默认收起
 // 音调/速度数字输入(Enter/失焦确认)
 const pitchInput = ref(playerStore.pitch)
@@ -1039,6 +1116,14 @@ const SPEC_DENSITIES = [
   { n: 48, l: '粗(48)' }
 ]
 const barCount = ref((() => { try { return parseInt(localStorage.getItem('soundflow_spec_density')) || 96 } catch { return 96 } })())
+// 直线区风格:bar=柱状 / wave=波动线(局部存储)
+const specStyle = ref((() => { try { return localStorage.getItem('soundflow_spec_style') || 'bar' } catch { return 'bar' } })())
+function setSpecStyle(s) {
+  specStyle.value = s
+  try { localStorage.setItem('soundflow_spec_style', s) } catch {}
+  initSpectrumArrays()
+  if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
+}
 function setSpecDensity(n) {
   barCount.value = n
   try { localStorage.setItem('soundflow_spec_density', String(n)) } catch {}
@@ -1174,6 +1259,82 @@ function paintBarSpectrum() {
 }
 
 // ===== 圆形环绕频谱(唱片外圈,随音频跳动)=====
+// 波动线频谱(封面下方,蝴蝶对称:左半向上、右半向下,渐变辉光)
+function paintWaveSpectrum() {
+  const canvas = spectrumCanvas.value
+  if (!canvas) return
+  const playing = playerStore.isPlaying
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width === 0 || rect.height === 0 || !playing) return
+  const dpr = window.devicePixelRatio || 1
+  const fitW = Math.max(1, Math.round(rect.width * dpr))
+  const fitH = Math.max(1, Math.round(rect.height * dpr))
+  if (canvas.width !== fitW || canvas.height !== fitH) { canvas.width = fitW; canvas.height = fitH }
+  const ctx = canvas.getContext('2d')
+  const { width, height } = canvas
+  ctx.clearRect(0, 0, width, height)
+  const data = playerStore.getSpectrumData()
+  const n = barCount.value
+  const half = n / 2
+  const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
+  const maxAmp = height * 0.36
+  // 平滑更新 barVals(复用柱状平滑数组,波动线/柱状切换平滑过渡)
+  for (let i = 0; i < n; i++) {
+    let target = 0
+    if (data) {
+      const src = i < half ? i : n - 1 - i
+      let v = 0
+      for (let j = 0; j < step; j++) v += data[src * step + j]
+      v = v / step / 255
+      target = Math.pow(v, 0.7) * maxAmp
+    }
+    const diff = target - barVals[i]
+    barVals[i] += diff * (diff > 0 ? 0.5 : 0.3)
+    if (barVals[i] > barPeaks[i]) barPeaks[i] = barVals[i]
+    else barPeaks[i] = Math.max(0, barPeaks[i] - 1.1)
+  }
+  const accent = getAccentColor()
+  const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
+  const midY = height * 0.5
+  const grad = ctx.createLinearGradient(0, 0, width, 0)
+  grad.addColorStop(0, 'hsla(4, 88%, 62%, 0.9)')
+  grad.addColorStop(0.5, 'hsla(190, 88%, 62%, 0.95)')
+  grad.addColorStop(1, 'hsla(4, 88%, 62%, 0.9)')
+  // 主体波形(蝴蝶对称):左半向上、右半向下
+  ctx.save()
+  ctx.shadowColor = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.55)'
+  ctx.shadowBlur = 10
+  ctx.strokeStyle = grad
+  ctx.lineWidth = 3
+  ctx.lineJoin = 'round'
+  ctx.beginPath()
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * (width - 8) + 4
+    const amp = Math.max(2, barVals[i])
+    const y = i < half ? midY - amp : midY + amp
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  }
+  ctx.stroke()
+  ctx.shadowBlur = 0
+  // 中心基线微光
+  ctx.globalAlpha = 0.25
+  ctx.strokeStyle = grad
+  ctx.lineWidth = 1
+  ctx.beginPath(); ctx.moveTo(4, midY); ctx.lineTo(width - 4, midY); ctx.stroke()
+  ctx.globalAlpha = 1
+  ctx.restore()
+  // 峰值亮点(沿波形)
+  for (let i = 0; i < n; i += 4) {
+    if (barPeaks[i] > 4) {
+      const x = (i / (n - 1)) * (width - 8) + 4
+      const y = i < half ? midY - barPeaks[i] : midY + barPeaks[i]
+      ctx.fillStyle = 'rgba(255,255,255,0.9)'
+      ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill()
+    }
+  }
+}
+
 function paintRingSpectrum() {
   const canvas = spectrumRingCanvas.value
   if (!canvas) return
@@ -1245,7 +1406,7 @@ function spectrumLoop(ts) {
   const barVisible = spectrumCanvas.value && specMode.value !== 'ring'
   const ringVisible = spectrumRingCanvas.value && specMode.value !== 'bar'
   if (!playing || (!barVisible && !ringVisible)) { spectrumRAF = null; return }
-  if (barVisible) paintBarSpectrum()
+  if (barVisible) { specStyle.value === 'wave' ? paintWaveSpectrum() : paintBarSpectrum() }
   if (ringVisible) paintRingSpectrum()
   spectrumRAF = requestAnimationFrame(spectrumLoop)
 }
@@ -1279,6 +1440,8 @@ function onPvEsc() {
 onMounted(() => {
   setupPvPanelsClickOutside()
   document.addEventListener('soundflow:esc', onPvEsc)
+  window.addEventListener('resize', onSplitResize)
+  ensureBpm() // 进入播放页分析当前歌 BPM(有缓存秒出)
   if (playerStore.isPlaying) { startSpectrum(); ensureSpectrumTimer() }
   // 进入播放页时若歌词尚未加载(未播放过/切源后),补一次读取;本地歌词删除/外部修改后也能立即反映
   if (playerStore.currentSong && playerStore.lyrics.length === 0) {
@@ -1504,6 +1667,11 @@ async function searchLyric() {
   --gap: clamp(8px, 2.6vh, 32px);
   gap: var(--gap);
 }
+/* 大屏分栏:左封面右歌词并排(YesPlayMusic 布局) */
+.cover-mode.split { flex-direction: row; justify-content: center; align-items: center; gap: 48px; padding: 0 8vw; }
+.cover-mode.split .cover-left { display: flex; flex-direction: column; align-items: center; gap: var(--gap); flex-shrink: 0; }
+.split-lyrics { flex: 1; max-width: 560px; min-width: 0; height: 100%; overflow: hidden; }
+.split-lyrics .lyrics-scroll { height: 100%; overflow-y: auto; padding: 8px 12px; }
 
 .disc-area { position: relative; display: flex; flex-direction: column; align-items: center; }
 

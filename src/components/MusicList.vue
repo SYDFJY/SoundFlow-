@@ -101,6 +101,7 @@
       <span class="batch-count">已选 {{ selectedSet.size }} 首</span>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openBatchEdit">编辑标签</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAutoTag">✨ 自动补全</button>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openRename">重命名</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAddToPlaylist">加入歌单</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="confirmRemoveSelected">删除</button>
       <button class="batch-btn" @click="toggleBatch">取消</button>
@@ -112,7 +113,7 @@
         <div class="edit-modal autotag-modal">
           <h3>✨ 自动补全标签({{ autoTagModal.results.length }} 首匹配)</h3>
           <div class="autotag-sources">
-            <button v-for="s in [{ v: 'auto', l: '自动' }, { v: 'qq', l: 'QQ音乐' }, { v: 'netease', l: '网易云' }, { v: 'musicbrainz', l: 'MusicBrainz' }]" :key="s.v"
+            <button v-for="s in [{ v: 'auto', l: '自动' }, { v: 'qq', l: 'QQ音乐' }, { v: 'netease', l: '网易云' }, { v: 'kugou', l: '酷狗' }, { v: 'musicbrainz', l: 'MusicBrainz' }]" :key="s.v"
               class="chip" :class="{ active: autoTagModal.source === s.v }" :disabled="autoTagModal.searching" @click="switchAutoTagSource(s.v)">
               {{ s.l }}
             </button>
@@ -138,6 +139,31 @@
             <span class="autotag-hint">只补缺失字段,写前自动备份可回滚</span>
             <button class="modal-btn cancel" @click="autoTagModal.show = false">取消</button>
             <button class="modal-btn confirm" :disabled="!autoTagModal.results.some(r => r.checked >= 0)" @click="saveAutoTag">写入选中</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
+
+    <!-- 批量重命名弹窗 -->
+    <teleport to="body">
+      <div v-if="renameModal.show" class="modal-mask" @click.self="renameModal.show = false">
+        <div class="edit-modal rename-modal">
+          <h3>批量重命名文件({{ renameModal.rows.length }} 首)</h3>
+          <div class="rename-tpl">
+            <button v-for="t in RENAME_TPLS" :key="t.v" class="chip" :class="{ active: renameModal.tpl === t.v }" @click="setRenameTpl(t.v)">{{ t.l }}</button>
+          </div>
+          <div class="rename-list">
+            <div v-for="(r, i) in renameModal.rows" :key="i" class="rename-row" :class="{ bad: r.bad }">
+              <span class="rename-old">{{ r.old }}</span>
+              <span class="rename-arrow">→</span>
+              <span class="rename-new">{{ r.new }}</span>
+              <span v-if="r.bad" class="rename-bad">{{ r.bad }}</span>
+            </div>
+          </div>
+          <div class="edit-actions">
+            <span class="autotag-hint">重命名本地文件,封面缓存同步迁移</span>
+            <button class="modal-btn cancel" @click="renameModal.show = false">取消</button>
+            <button class="modal-btn confirm" :disabled="!renameModal.rows.some(r => !r.bad)" @click="confirmRename">重命名 {{ renameModal.rows.filter(r => !r.bad).length }} 首</button>
           </div>
         </div>
       </div>
@@ -599,6 +625,57 @@ function saveBatchEdit() {
   batchEditModal.value.show = false
 }
 
+// ===== 批量重命名文件 =====
+const RENAME_TPLS = [
+  { v: 'artist-title', l: '歌手 - 标题' },
+  { v: 'title-artist', l: '标题 - 歌手' },
+  { v: 'artist-title-year', l: '歌手 - 标题 (年份)' },
+  { v: 'artist-album-title', l: '歌手 - 专辑 - 标题' }
+]
+const renameModal = ref({ show: false, rows: [], tpl: 'artist-title' })
+function buildRenameRows(tpl) {
+  const paths = [...selectedSet.value]
+  const songs = paths.map(p => props.songs.find(s => s.path === p)).filter(Boolean)
+  const rows = []
+  for (const s of songs) {
+    let name = ''
+    const t = s.title || '', a = s.artist || '', al = s.album || '', y = s.year || ''
+    if (tpl === 'artist-title') name = (a ? a + ' - ' : '') + t
+    else if (tpl === 'title-artist') name = t + (a ? ' - ' + a : '')
+    else if (tpl === 'artist-title-year') name = (a ? a + ' - ' : '') + t + (y ? ' (' + y + ')' : '')
+    else name = (a ? a + ' - ' : '') + (al ? al + ' - ' : '') + t
+    name = name.replace(/[\\/:*?"<>|]/g, '_').trim()
+    let bad = ''
+    if (!name) bad = '名称为空'
+    rows.push({ path: s.path, old: s.path.split(/[\\/]/).pop(), new: name + path.extname(s.path), bad })
+  }
+  renameModal.value.rows = rows
+}
+function openRename() {
+  renameModal.value = { show: true, rows: [], tpl: 'artist-title' }
+  buildRenameRows('artist-title')
+}
+function setRenameTpl(v) {
+  renameModal.value.tpl = v
+  buildRenameRows(v)
+}
+async function confirmRename() {
+  const okRows = renameModal.value.rows.filter(r => !r.bad)
+  let ok = 0
+  let failMsg = ''
+  for (const r of okRows) {
+    try {
+      const res = await window.electronAPI.renameSong(r.path, r.new)
+      if (res && res.ok) { ok++; musicStore.updateSong(r.path, { path: res.newPath }) }
+      else failMsg = (res && res.error) || '重命名失败'
+    } catch (e) { failMsg = e.message || '重命名异常' }
+  }
+  if (failMsg) window.$toast?.('重命名失败: ' + failMsg, 'error')
+  window.$toast?.(`已重命名 ${ok} 首`, ok ? 'success' : 'info')
+  renameModal.value.show = false
+  emit('refresh')
+}
+
 // ===== MusicBrainz 自动补全标签 =====
 const autoTagModal = ref({ show: false, results: [] })
 // 按源搜索单首歌(自动=QQ→网易云→MusicBrainz;单源=只查该源)
@@ -612,6 +689,7 @@ async function searchForSong(s, source) {
   }
   if (source === 'qq' || source === 'auto') await trySrc(api.searchQqmusic.bind(api))
   if (source === 'netease' || source === 'auto') await trySrc(api.searchNetease.bind(api))
+  if (source === 'kugou' || source === 'auto') await trySrc(api.searchKugou.bind(api))
   if (source === 'musicbrainz' || source === 'auto') await trySrc(api.searchMusicbrainz.bind(api), c => ({ ...c, source: 'MusicBrainz' }))
   return cands
 }

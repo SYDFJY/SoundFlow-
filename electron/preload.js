@@ -99,6 +99,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchMusicbrainz: (song) => ipcRenderer.invoke('search-musicbrainz', song),
   searchQqmusic: (song) => ipcRenderer.invoke('search-qqmusic', song),
   searchNetease: (song) => ipcRenderer.invoke('search-netease', song),
+  searchKugou: (song) => ipcRenderer.invoke('search-kugou', song),
+  renameSong: (oldPath, newName) => ipcRenderer.invoke('rename-song', oldPath, newName),
+  analyzeBpm: (filePath) => ipcRenderer.invoke('analyze-bpm', filePath),
   downloadCover: (coverUrl, songPath) => ipcRenderer.invoke('download-cover', coverUrl, songPath),
   // 标签备份管理(写回前自动备份,可回滚)
   listTagBackups: () => ipcRenderer.invoke('list-tag-backups'),

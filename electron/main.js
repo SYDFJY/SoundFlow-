@@ -2251,6 +2251,77 @@ function setupIPC() {
   })
 
   // 歌曲信息编辑:ffmpeg -metadata 写回标签(标题/歌手/专辑,流复制不改音频数据)
+  // 音频 BPM 分析(ffmpeg 解码 60s PCM → 能量峰值间距 → BPM;后台计算,结果缓存)
+  ipcMain.handle('analyze-bpm', async (event, filePath) => {
+    try {
+      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
+      const { execFile } = require('child_process')
+      const pcm = await new Promise((resolve, reject) => {
+        execFile(ffmpegPathForLoudness, ['-hide_banner', '-loglevel', 'error', '-t', '60', '-i', filePath, '-ac', '1', '-ar', '44100', '-f', 's16le', '-'], { timeout: 90000, maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
+          if (err && !stdout.length) reject(new Error(String(stderr || err.message).slice(0, 150)))
+          else resolve(stdout)
+        })
+      })
+      // 帧 RMS 能量
+      const frame = 1024, hop = 512
+      const samples = pcm.length / 2
+      const energies = []
+      for (let off = 0; off + frame * 2 <= pcm.length; off += hop * 2) {
+        let sum = 0
+        for (let i = 0; i < frame; i++) {
+          const v = pcm.readInt16LE(off + i * 2) / 32768
+          sum += v * v
+        }
+        energies.push(Math.sqrt(sum / frame))
+      }
+      if (energies.length < 20) return { ok: false, error: '音频太短' }
+      // 平滑 + 峰值检测(阈值 = 均值 + 0.6σ)
+      const avg = energies.reduce((a, b) => a + b, 0) / energies.length
+      const sd = Math.sqrt(energies.reduce((a, b) => a + (b - avg) * (b - avg), 0) / energies.length)
+      const thr = avg + sd * 0.6
+      const peaks = []
+      for (let i = 1; i < energies.length - 1; i++) {
+        if (energies[i] > thr && energies[i] >= energies[i - 1] && energies[i] > energies[i + 1]) peaks.push(i)
+      }
+      if (peaks.length < 4) return { ok: false, error: '节拍不明显' }
+      // 峰间距中位数 → BPM(hop 512 @44100 = 0.0116s/帧)
+      const secPerFrame = hop / 44100
+      const gaps = []
+      for (let i = 1; i < peaks.length; i++) { const g = (peaks[i] - peaks[i - 1]) * secPerFrame; if (g > 0.25 && g < 2.5) gaps.push(g) }
+      if (!gaps.length) return { ok: false, error: '节拍不明显' }
+      gaps.sort((a, b) => a - b)
+      const med = gaps[Math.floor(gaps.length / 2)]
+      const bpm = Math.round(60 / med)
+      return { ok: true, bpm: Math.max(40, Math.min(240, bpm)) }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // 批量重命名文件(模板生成新名后逐首调用;迁移封面缓存 + 更新曲库路径)
+  ipcMain.handle('rename-song', async (event, oldPath, newName) => {
+    try {
+      const fs = require('fs')
+      const base = String(newName || '').trim()
+      if (!base) return { ok: false, error: '名称为空' }
+      if (/[\\/:*?"<>|]/.test(base)) return { ok: false, error: '文件名含非法字符(\\/:*?"<>|)' }
+      const dir = path.dirname(oldPath)
+      const ext = path.extname(oldPath)
+      const newPath = path.join(dir, base.toLowerCase().endsWith(ext.toLowerCase()) ? base : base + ext)
+      if (newPath.toLowerCase() === oldPath.toLowerCase()) return { ok: false, error: '名称未变化' }
+      if (fs.existsSync(newPath)) return { ok: false, error: '目标文件已存在' }
+      // 封面缓存迁移(路径 hash 变了,旧封面文件搬过去)
+      try {
+        const oldCover = coverPathFor(oldPath)
+        if (fs.existsSync(oldCover)) fs.renameSync(oldCover, coverPathFor(newPath))
+      } catch {}
+      fs.renameSync(oldPath, newPath)
+      // 更新权威数据中的路径
+      const song = storageData.library.find(s => s.path === oldPath)
+      if (song) { song.path = newPath; song.coverUrl = 'file:///' + coverPathFor(newPath).replace(/\\/g, '/') }
+      saveStorage()
+      return { ok: true, newPath }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+
   // ===== MusicBrainz 自动补全标签(文本搜索,预览确认后由 write-tags 写回)=====
   let _mbLastReq = 0
   // ===== 自动补全多音源:QQ 音乐优先 → 网易云 → MusicBrainz =====
@@ -2370,6 +2441,43 @@ function setupIPC() {
       const localPath = saveCoverFile(songPath, buf)
       return { ok: true, path: localPath }
     } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  // 酷狗搜索(标准 JSON 接口;酷我返回非标准 dict 不接入)
+  ipcMain.handle('search-kugou', async (event, song) => {
+    try {
+      await _srcThrottle()
+      const title = (song && song.title || '').trim()
+      const artist = (song && song.artist || '').trim()
+      if (!title) return []
+      const kw = encodeURIComponent(title + (artist ? ' ' + artist : ''))
+      const res = await fetch('https://songsearch.kugou.com/song_search_v2?keyword=' + kw + '&page=1&pagesize=8', { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      if (!res.ok) return []
+      const data = await res.json()
+      const list = (data.data && data.data.lists) || []
+      const wantTitle = _normName(title)
+      const want = _normName(artist)
+      const out = []
+      for (const s of list) {
+        const sArtist = s.SingerName || ''
+        if (want && !_normName(sArtist).includes(want)) continue
+        const sTitle = s.SongName || ''
+        // 精确标题优先;翻唱/Live/DJ 版标题不匹配的排后面
+        const exact = wantTitle && _normName(sTitle) === wantTitle
+        out.push({
+          title: sTitle, artist: sArtist,
+          album: s.AlbumName || '', year: '',
+          duration: s.Duration ? Math.round(s.Duration) : 0,
+          coverUrl: '', source: '酷狗',
+          _exact: exact ? 0 : 1
+        })
+      }
+      // 精确匹配排前,去重
+      const seen = new Set()
+      const uniq = out.filter(x => { const k = x.album + '|' + x.title; if (seen.has(k)) return false; seen.add(k); return true })
+      uniq.sort((a, b) => a._exact - b._exact)
+      return uniq.slice(0, 5).map(x => ({ title: x.title, artist: x.artist, album: x.album, year: x.year, duration: x.duration, coverUrl: x.coverUrl, source: x.source }))
+    } catch { return [] }
   })
 
   ipcMain.handle('search-musicbrainz', async (event, song) => {
