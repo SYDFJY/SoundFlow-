@@ -2408,7 +2408,13 @@ function setupIPC() {
       const { execFile } = require('child_process')
       const fs = require('fs')
       // 封面内嵌:可选 coverPath(本地封面文件)→ attached_pic(不重编码音频)
-      const hasCover = coverPath && fs.existsSync(coverPath)
+      // saveCoverFile 返回 file:/// URL,ffmpeg 不识别,需转本地路径
+      let coverFile = ''
+      if (coverPath) {
+        coverFile = coverPath.replace(/^file:\/\/\//, '').replace(/^file:\/\//, '')
+        if (coverFile && !fs.existsSync(coverFile)) coverFile = ''
+      }
+      const hasCover = !!coverFile
       // 备份阶段(略)
       // ===== 写前持久备份原文件(可回滚)=====
       // 备份整个原文件副本到 userData/tag-backups/ + 索引,写坏/想还原随时恢复
@@ -2433,7 +2439,7 @@ function setupIPC() {
       const tmp = filePath + '.tagtmp' + path.extname(filePath)
       // 有封面:第二输入封面文件,音频流复制 + 封面流 mjpeg 内嵌
       const args = hasCover
-        ? ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-i', coverPath, '-map', '0:a', '-map', '1:v', '-c', 'copy', '-c:v', 'mjpeg', '-disposition:v', 'attached_pic', '-id3v2_version', '3']
+        ? ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-i', coverFile, '-map', '0:a', '-map', '1:v', '-c', 'copy', '-c:v', 'mjpeg', '-disposition:v', 'attached_pic', '-id3v2_version', '3']
         : ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy', '-id3v2_version', '3']
       if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
       if (tags && tags.artist) args.push('-metadata', 'artist=' + tags.artist)

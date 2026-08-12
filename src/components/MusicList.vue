@@ -646,6 +646,7 @@ async function switchAutoTagSource(src) {
 async function saveAutoTag() {
   const picked = autoTagModal.value.results.filter(r => r.checked >= 0 && r.candidates[r.checked])
   let ok = 0
+  let failMsg = ''
   for (const r of picked) {
     const c = r.candidates[r.checked]
     const song = props.songs.find(s => s.path === r.path)
@@ -676,10 +677,13 @@ async function saveAutoTag() {
               playerStore.currentSong = { ...playerStore.currentSong, ...merged }
             }
           }
+        } else {
+          failMsg = (res && res.error) || '写回失败'
         }
-      } catch {}
+      } catch (e) { failMsg = e.message || '写回异常' }
     }
   }
+  if (failMsg) window.$toast?.('写回失败: ' + failMsg, 'error')
   window.$toast?.(`已补全 ${ok} 首歌曲标签`, ok ? 'success' : 'info')
   autoTagModal.value.show = false
 }

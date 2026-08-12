@@ -1015,7 +1015,7 @@ function cycleSpecMode() {
   if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
 }
 let spectrumRAF = null
-const BAR_COUNT = 72
+const BAR_COUNT = 96
 const barVals = new Array(BAR_COUNT).fill(0)    // 当前平滑高度
 const barPeaks = new Array(BAR_COUNT).fill(0)   // 峰值保持
 function hexToRgb(hex) {
@@ -1060,8 +1060,9 @@ function paintBarSpectrum() {
     g.addColorStop(1, 'rgba(' + Math.min(255, c.r + 80) + ',' + Math.min(255, c.g + 80) + ',' + Math.min(255, c.b + 80) + ',1)')
     gradCache = { key: gkey, grad: g }
   }
-  const grad = gradCache.grad
-
+  // 镜面基线:柱从中间基线向上,倒影向下(主流播放器风格)
+  const baseY = height * 0.56
+  const mirrorH = height * 0.44
   for (let i = 0; i < BAR_COUNT; i++) {
     let target = 0
     if (data && playing) {
@@ -1070,7 +1071,7 @@ function paintBarSpectrum() {
       let v = 0
       for (let j = 0; j < step; j++) v += data[src * step + j]
       v = v / step / 255
-      target = Math.pow(v, 0.75) * (height - 6) // 提亮低能量段
+      target = Math.pow(v, 0.75) * (baseY - 6) // 提亮低能量段
     }
     // 平滑追高,回落稍快
     const diff = target - barVals[i]
@@ -1081,11 +1082,29 @@ function paintBarSpectrum() {
 
     const barH = Math.max(3, barVals[i])
     const x = i * (barW + 3) + 1
-    const y = height - barH
+    const y = baseY - barH
     const radius = Math.min(3, Math.max(1, barW / 2 - 0.5))
+    // 按频率渐变配色:低频红/橙 → 高频青/蓝(主流频谱彩虹风格)
+    const hue = 4 + (i / BAR_COUNT) * 190
+    const col = 'hsl(' + hue.toFixed(0) + ', 88%, 62%)'
+    const colTop = 'hsl(' + hue.toFixed(0) + ', 90%, 74%)'
 
-    // 主体:圆角渐变柱(底部透明→顶部亮色)
-    ctx.fillStyle = grad
+    // 镜面倒影(向下,透明度递减)
+    if (barH > 4) {
+      const mir = ctx.createLinearGradient(0, baseY, 0, baseY + mirrorH)
+      mir.addColorStop(0, 'hsla(' + hue.toFixed(0) + ', 88%, 62%, 0.30)')
+      mir.addColorStop(1, 'hsla(' + hue.toFixed(0) + ', 88%, 62%, 0)')
+      ctx.fillStyle = mir
+      ctx.beginPath()
+      ctx.roundRect(x, baseY, barW, Math.min(mirrorH, barH * 0.7), radius)
+      ctx.fill()
+    }
+
+    // 主体:圆角柱(渐变:底暗→顶亮)
+    const g2 = ctx.createLinearGradient(0, y, 0, baseY)
+    g2.addColorStop(0, colTop)
+    g2.addColorStop(1, col)
+    ctx.fillStyle = g2
     ctx.beginPath()
     ctx.roundRect(x, y, barW, barH, radius)
     ctx.fill()
@@ -1098,27 +1117,21 @@ function paintBarSpectrum() {
       ctx.fill()
     }
 
-    // 柱底镜面高光(模拟水面反射点)
-    ctx.fillStyle = 'rgba(255,255,255,0.28)'
-    ctx.beginPath()
-    ctx.roundRect(x + 1, height - 2.5, barW - 2, 2, 1)
-    ctx.fill()
-
     // 峰值辉光点:主色光晕 + 白色核心
     if (barPeaks[i] > 3 && playing) {
-      const py = height - barPeaks[i] - 2
-      ctx.fillStyle = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.4)'
+      const py = baseY - barPeaks[i] - 2
+      ctx.fillStyle = 'hsla(' + hue.toFixed(0) + ', 90%, 65%, 0.45)'
       ctx.beginPath(); ctx.arc(x + barW / 2, py, 4.2, 0, Math.PI * 2); ctx.fill()
       ctx.fillStyle = 'rgba(255,255,255,0.95)'
       ctx.beginPath(); ctx.arc(x + barW / 2, py, 1.7, 0, Math.PI * 2); ctx.fill()
     }
   }
-  // 底部发光基线(整体氛围,随低音微微起伏)
+  // 基线细线(随低音微微起伏)
   const bass = data && playing ? Math.max(0.15, (data[0] || 0) / 255) : 0.15
   ctx.globalAlpha = 0.35 + bass * 0.4
-  ctx.fillStyle = grad
+  ctx.fillStyle = 'hsla(' + (4 + 95).toFixed(0) + ', 88%, 62%, 0.7)'
   ctx.beginPath()
-  ctx.roundRect(1, height - 2, width - 2, 2, 1)
+  ctx.roundRect(1, baseY - 1, width - 2, 2, 1)
   ctx.fill()
   ctx.globalAlpha = 1
 }
@@ -1170,7 +1183,11 @@ function paintRingSpectrum() {
     g.addColorStop(1, 'rgba(' + Math.min(255, c.r + 80) + ',' + Math.min(255, c.g + 80) + ',' + Math.min(255, c.b + 80) + ',0.95)')
     ctx.strokeStyle = g
     ctx.lineWidth = Math.max(2, (rMax - r0) / 40)
+    // 柔光辉光(主色光晕,主流环绕频谱质感)
+    ctx.shadowColor = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.55)'
+    ctx.shadowBlur = 8
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+    ctx.shadowBlur = 0
     // 峰值亮点
     if (ringPeaks[i] > 4) {
       const px = cx + Math.cos(angle) * (r0 + ringPeaks[i]), py = cy + Math.sin(angle) * (r0 + ringPeaks[i])
