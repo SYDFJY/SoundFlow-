@@ -117,7 +117,7 @@
                 <span class="autotag-song">{{ r.title }}</span>
                 <span v-if="r.candidates.length" class="autotag-cands">
                   <label v-for="(c, ci) in r.candidates" :key="ci" class="autotag-opt" :class="{ checked: r.checked === ci }">
-                    <input type="radio" name="at-{{ r.path }}" :checked="r.checked === ci" @change="r.checked = ci" />
+                    <input type="radio" :name="'at-' + r.path" :checked="r.checked === ci" @change="r.checked = ci" />
                     {{ c.album }}{{ c.year ? '(' + c.year + ')' : '' }}
                   </label>
                 </span>
@@ -608,7 +608,7 @@ async function openAutoTag() {
       if (window.electronAPI && window.electronAPI.searchMusicbrainz) {
         try { cands = await window.electronAPI.searchMusicbrainz({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
       }
-      results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: cands.length ? 0 : -1 })
+      results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: -1 })
     } else {
       results.push({ path: s.path, title: s.title, artist: s.artist, candidates: [], checked: -1 })
     }
