@@ -2262,7 +2262,24 @@ function setupIPC() {
   }
   // 歌手归一化:去空格/标点/后缀,用于过滤 UGC/翻唱污染
   function _normName(s) { return String(s || '').toLowerCase().replace(/[\s·・．.&,，\-_'"]/g, '').replace(/(翻唱|cover|live|伴奏|现场|版|remix)$/g, '') }
-  // QQ 音乐搜索(musicu.fcg,带 Referer;返回含封面 albummid)
+  // QQ 音乐搜索(musicu.fcg,必须带 Referer;fetch 禁设 Referer,故用 Node https)
+  function httpsGetJson(url, headers) {
+    const https = require('https')
+    return new Promise((resolve, reject) => {
+      const u = new URL(url)
+      const req = https.request({
+        hostname: u.hostname, port: 443, path: u.pathname + u.search,
+        method: 'GET',
+        headers: Object.assign({ 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' }, headers || {})
+      }, r => {
+        let d = ''
+        r.on('data', c => d += c)
+        r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { reject(e) } })
+      })
+      req.on('error', reject)
+      req.end()
+    })
+  }
   ipcMain.handle('search-qqmusic', async (event, song) => {
     try {
       await _srcThrottle()
@@ -2274,9 +2291,7 @@ function setupIPC() {
         req_0: { module: 'music.search.SearchCgiService', method: 'DoSearchForQQMusicDesktop', param: { search_type: 0, query, num_per_page: 8 } }
       }
       const url = 'https://u.y.qq.com/cgi-bin/musicu.fcg?data=' + encodeURIComponent(JSON.stringify(payload))
-      const res = await fetch(url, { headers: { 'Referer': 'https://y.qq.com', 'User-Agent': 'Mozilla/5.0' } })
-      if (!res.ok) return []
-      const data = await res.json()
+      const data = await httpsGetJson(url, { 'Referer': 'https://y.qq.com' })
       const list = (data.req_0 && data.req_0.data && data.req_0.data.body && data.req_0.data.body.song && data.req_0.data.body.song.list) || []
       const out = []
       const want = _normName(artist)
@@ -2336,9 +2351,20 @@ function setupIPC() {
   // 下载封面:URL → 字节 → saveCoverFile 存本地缓存,返回本地路径
   ipcMain.handle('download-cover', async (event, coverUrl, songPath) => {
     try {
-      const res = await fetch(coverUrl, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://y.qq.com' } })
-      if (!res.ok) return { ok: false, error: '下载失败 ' + res.status }
-      const buf = Buffer.from(await res.arrayBuffer())
+      // 用 Node https 下载(可带 Referer,QQ 封面更稳)
+      const https = require('https')
+      const buf = await new Promise((resolve, reject) => {
+        const u = new URL(coverUrl)
+        const req = https.request({ hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://y.qq.com' } }, r => {
+          if (r.statusCode !== 200) { reject(new Error('HTTP ' + r.statusCode)); return }
+          const chunks = []
+          r.on('data', c => chunks.push(c))
+          r.on('end', () => resolve(Buffer.concat(chunks)))
+        })
+        req.on('error', reject)
+        req.end()
+      })
+      if (!buf.length) return { ok: false, error: '空响应' }
       const localPath = saveCoverFile(songPath, buf)
       return { ok: true, path: localPath }
     } catch (e) { return { ok: false, error: e.message } }
