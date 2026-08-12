@@ -111,6 +111,13 @@
       <div v-if="autoTagModal.show" class="modal-mask" @click.self="autoTagModal.show = false">
         <div class="edit-modal autotag-modal">
           <h3>✨ 自动补全标签({{ autoTagModal.results.length }} 首匹配)</h3>
+          <div class="autotag-sources">
+            <button v-for="s in [{ v: 'auto', l: '自动' }, { v: 'qq', l: 'QQ音乐' }, { v: 'netease', l: '网易云' }, { v: 'musicbrainz', l: 'MusicBrainz' }]" :key="s.v"
+              class="chip" :class="{ active: autoTagModal.source === s.v }" :disabled="autoTagModal.searching" @click="switchAutoTagSource(s.v)">
+              {{ s.l }}
+            </button>
+          </div>
+          <div v-if="autoTagModal.searching" class="autotag-searching">搜索中…(每首约 1 秒,请稍候)</div>
           <div class="autotag-list">
             <div v-for="r in autoTagModal.results" :key="r.path" class="autotag-item">
               <div class="autotag-info">
@@ -594,10 +601,24 @@ function saveBatchEdit() {
 
 // ===== MusicBrainz 自动补全标签 =====
 const autoTagModal = ref({ show: false, results: [] })
-async function openAutoTag() {
+// 按源搜索单首歌(自动=QQ→网易云→MusicBrainz;单源=只查该源)
+async function searchForSong(s, source) {
+  const api = window.electronAPI
+  if (!api) return []
+  let cands = []
+  const trySrc = async (fn, mk) => {
+    if (cands.length) return
+    try { const r = await fn({ title: s.title, artist: s.artist }) || []; cands = mk ? r.map(mk) : r } catch { cands = [] }
+  }
+  if (source === 'qq' || source === 'auto') await trySrc(api.searchQqmusic.bind(api))
+  if (source === 'netease' || source === 'auto') await trySrc(api.searchNetease.bind(api))
+  if (source === 'musicbrainz' || source === 'auto') await trySrc(api.searchMusicbrainz.bind(api), c => ({ ...c, source: 'MusicBrainz' }))
+  return cands
+}
+async function openAutoTag(source) {
   const paths = [...selectedSet.value]
   if (!paths.length) return
-  autoTagModal.value = { show: true, results: [] }
+  autoTagModal.value = { show: true, results: [], source: source || autoTagModal.value.source || 'auto', searching: true }
   const songs = paths.map(p => props.songs.find(s => s.path === p)).filter(Boolean)
   const results = []
   for (let i = 0; i < songs.length; i++) {
@@ -605,21 +626,7 @@ async function openAutoTag() {
     // 只补缺失字段:已有专辑且已有年份的跳过搜索
     const need = !s.album || !s.year
     if (need) {
-      let cands = []
-      const api = window.electronAPI
-      // 源优先级:QQ 音乐 → 网易云 → MusicBrainz;首个有候选即用
-      if (api && api.searchQqmusic) {
-        try { cands = await api.searchQqmusic({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
-      }
-      if (!cands.length && api && api.searchNetease) {
-        try { cands = await api.searchNetease({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
-      }
-      if (!cands.length && api && api.searchMusicbrainz) {
-        try {
-          const mb = await api.searchMusicbrainz({ title: s.title, artist: s.artist }) || []
-          cands = mb.map(c => ({ ...c, source: 'MusicBrainz' }))
-        } catch { cands = [] }
-      }
+      const cands = await searchForSong(s, autoTagModal.value.source)
       results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: -1 })
     } else {
       results.push({ path: s.path, title: s.title, artist: s.artist, candidates: [], checked: -1 })
@@ -628,6 +635,13 @@ async function openAutoTag() {
     if (need && i < songs.length - 1) await new Promise(r => setTimeout(r, 1000))
   }
   autoTagModal.value.results = results
+  autoTagModal.value.searching = false
+}
+// 弹窗内切换数据源 → 重新搜索
+async function switchAutoTagSource(src) {
+  if (src === autoTagModal.value.source || autoTagModal.value.searching) return
+  autoTagModal.value.source = src
+  await openAutoTag(src)
 }
 async function saveAutoTag() {
   const picked = autoTagModal.value.results.filter(r => r.checked >= 0 && r.candidates[r.checked])
@@ -645,13 +659,24 @@ async function saveAutoTag() {
     if (c.coverUrl && api && api.downloadCover) {
       try {
         const dl = await api.downloadCover(c.coverUrl, r.path)
-        if (dl && dl.ok && dl.path) { coverPath = dl.path; musicStore.updateSong(r.path, { coverUrl: dl.path }) }
+        if (dl && dl.ok && dl.path) { coverPath = dl.path }
       } catch {}
     }
     if ((Object.keys(tags).length || coverPath) && api && api.writeTags) {
       try {
         const res = await api.writeTags(r.path, tags, coverPath)
-        if (res && res.ok) { ok++; if (Object.keys(tags).length) musicStore.updateSong(r.path, tags) }
+        if (res && res.ok) {
+          ok++
+          const merged = { ...tags }
+          if (coverPath) merged.coverUrl = coverPath
+          if (Object.keys(merged).length) {
+            musicStore.updateSong(r.path, merged)
+            // 若正在播放该歌,同步当前播放信息(播放页标题/专辑/封面即时刷新)
+            if (playerStore.currentSong && playerStore.currentSong.path === r.path) {
+              playerStore.currentSong = { ...playerStore.currentSong, ...merged }
+            }
+          }
+        }
       } catch {}
     }
   }

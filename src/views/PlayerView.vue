@@ -44,6 +44,8 @@
       <!-- 封面模式 -->
       <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
+          <!-- 圆形环绕频谱:移入 disc-area 内,圆心=唱片圆心 -->
+          <canvas v-show="specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
               <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
@@ -152,8 +154,6 @@
 
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
       <canvas v-show="activeTab === 'cover' && specMode !== 'ring'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
-      <!-- 圆形环绕频谱:绝对定位覆盖唱片外圈,与直线频谱可同时显示(两者模式) -->
-      <canvas v-show="activeTab === 'cover' && specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
 
       <!-- 底部控制栏 -->
       <div class="player-controls">
@@ -1518,8 +1518,8 @@ async function searchLyric() {
 }
 .disc-cover-small img { width: 100%; height: 100%; object-fit: cover; }
 .spectrum-bar { display: block; margin: 14px auto 0; max-width: 520px; width: 100%; height: 80px; opacity: 0.9; }
-/* 圆形环绕频谱:覆盖唱片外圈,pointer-events 穿透 */
-.spectrum-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(56vh, 52vw, 460px); height: min(56vh, 52vw, 460px); pointer-events: none; z-index: 4; opacity: 0.85; }
+/* 圆形环绕频谱:相对 disc-area(唱片)居中,圆心=唱片圆心 */
+.spectrum-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: calc(var(--disc) * 1.5); height: calc(var(--disc) * 1.5); pointer-events: none; z-index: 4; opacity: 0.85; }
 
 .song-meta-small { text-align: center; }
 .song-title-sm { font-size: 18px; font-weight: 600; color: white; margin-bottom: 4px; }

@@ -540,3 +540,8 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 .autotag-cover { width: 26px; height: 26px; border-radius: 4px; object-fit: cover; flex-shrink: 0; }
 .autotag-opt-text { font-size: 11px; }
 .autotag-src { font-style: normal; font-size: 10px; color: var(--color-primary); opacity: 0.8; }
+
+/* 自动补全:数据源切换 */
+.autotag-sources { display: flex; gap: 6px; margin: 2px 0 6px; flex-wrap: wrap; }
+.autotag-sources .chip { padding: 3px 12px; font-size: 12px; }
+.autotag-searching { font-size: 12px; color: var(--color-primary); padding: 4px 0; }
