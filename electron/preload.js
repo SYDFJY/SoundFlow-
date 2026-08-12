@@ -96,6 +96,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analyzeLoudness: (filePath) => ipcRenderer.invoke('analyze-loudness', filePath),
   getLoudness: (filePath) => ipcRenderer.invoke('get-loudness', filePath),
   writeTags: (filePath, tags) => ipcRenderer.invoke('write-tags', filePath, tags),
+  searchMusicbrainz: (song) => ipcRenderer.invoke('search-musicbrainz', song),
   // 标签备份管理(写回前自动备份,可回滚)
   listTagBackups: () => ipcRenderer.invoke('list-tag-backups'),
   restoreTagBackup: (id) => ipcRenderer.invoke('restore-tag-backup', id),

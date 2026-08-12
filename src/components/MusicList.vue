@@ -100,10 +100,40 @@
     <div v-if="batchOn" class="batch-bar">
       <span class="batch-count">已选 {{ selectedSet.size }} 首</span>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openBatchEdit">编辑标签</button>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAutoTag">✨ 自动补全</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAddToPlaylist">加入歌单</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="confirmRemoveSelected">删除</button>
       <button class="batch-btn" @click="toggleBatch">取消</button>
     </div>
+
+    <!-- MusicBrainz 自动补全预览弹窗 -->
+    <teleport to="body">
+      <div v-if="autoTagModal.show" class="modal-mask" @click.self="autoTagModal.show = false">
+        <div class="edit-modal autotag-modal">
+          <h3>✨ 自动补全标签({{ autoTagModal.results.length }} 首匹配)</h3>
+          <div class="autotag-list">
+            <div v-for="r in autoTagModal.results" :key="r.path" class="autotag-item">
+              <div class="autotag-info">
+                <span class="autotag-song">{{ r.title }}</span>
+                <span v-if="r.candidates.length" class="autotag-cands">
+                  <label v-for="(c, ci) in r.candidates" :key="ci" class="autotag-opt" :class="{ checked: r.checked === ci }">
+                    <input type="radio" name="at-{{ r.path }}" :checked="r.checked === ci" @change="r.checked = ci" />
+                    {{ c.album }}{{ c.year ? '(' + c.year + ')' : '' }}
+                  </label>
+                </span>
+                <span v-else class="autotag-none">未找到匹配</span>
+              </div>
+              <button class="modal-btn cancel autotag-skip" @click="r.checked = -1">跳过</button>
+            </div>
+          </div>
+          <div class="edit-actions">
+            <span class="autotag-hint">只补缺失字段,写前自动备份可回滚</span>
+            <button class="modal-btn cancel" @click="autoTagModal.show = false">取消</button>
+            <button class="modal-btn confirm" :disabled="!autoTagModal.results.some(r => r.checked >= 0)" @click="saveAutoTag">写入选中</button>
+          </div>
+        </div>
+      </div>
+    </teleport>
 
     <!-- 批量编辑标签弹窗 -->
     <teleport to="body">
@@ -559,6 +589,53 @@ function saveBatchEdit() {
     window.$toast?.(`已更新 ${selectedSet.value.size} 首歌曲标签`, 'success')
   }
   batchEditModal.value.show = false
+}
+
+// ===== MusicBrainz 自动补全标签 =====
+const autoTagModal = ref({ show: false, results: [] })
+async function openAutoTag() {
+  const paths = [...selectedSet.value]
+  if (!paths.length) return
+  autoTagModal.value = { show: true, results: [] }
+  const songs = paths.map(p => props.songs.find(s => s.path === p)).filter(Boolean)
+  const results = []
+  for (let i = 0; i < songs.length; i++) {
+    const s = songs[i]
+    // 只补缺失字段:已有专辑且已有年份的跳过搜索
+    const need = !s.album || !s.year
+    if (need) {
+      let cands = []
+      if (window.electronAPI && window.electronAPI.searchMusicbrainz) {
+        try { cands = await window.electronAPI.searchMusicbrainz({ title: s.title, artist: s.artist }) || [] } catch { cands = [] }
+      }
+      results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: cands.length ? 0 : -1 })
+    } else {
+      results.push({ path: s.path, title: s.title, artist: s.artist, candidates: [], checked: -1 })
+    }
+    // 每首之间限流 1s(服务端 1 req/s)
+    if (need && i < songs.length - 1) await new Promise(r => setTimeout(r, 1000))
+  }
+  autoTagModal.value.results = results
+}
+async function saveAutoTag() {
+  const picked = autoTagModal.value.results.filter(r => r.checked >= 0 && r.candidates[r.checked])
+  let ok = 0
+  for (const r of picked) {
+    const c = r.candidates[r.checked]
+    const song = props.songs.find(s => s.path === r.path)
+    // 只补缺失字段
+    const tags = {}
+    if (song && !song.album && c.album) tags.album = c.album
+    if (song && !song.year && c.year) tags.year = c.year
+    if (Object.keys(tags).length && window.electronAPI && window.electronAPI.writeTags) {
+      try {
+        const res = await window.electronAPI.writeTags(r.path, tags)
+        if (res && res.ok) { ok++; musicStore.updateSong(r.path, tags) }
+      } catch {}
+    }
+  }
+  window.$toast?.(`已补全 ${ok} 首歌曲标签`, ok ? 'success' : 'info')
+  autoTagModal.value.show = false
 }
 
 function toggleSelect(idx) {

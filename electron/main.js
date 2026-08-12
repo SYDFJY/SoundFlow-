@@ -2251,6 +2251,38 @@ function setupIPC() {
   })
 
   // 歌曲信息编辑:ffmpeg -metadata 写回标签(标题/歌手/专辑,流复制不改音频数据)
+  // ===== MusicBrainz 自动补全标签(文本搜索,预览确认后由 write-tags 写回)=====
+  let _mbLastReq = 0
+  ipcMain.handle('search-musicbrainz', async (event, song) => {
+    try {
+      // 限流:MusicBrainz 免费 API 要求 1 req/s
+      const wait = Math.max(0, 1100 - (Date.now() - _mbLastReq))
+      if (wait > 0) await new Promise(r => setTimeout(r, wait))
+      _mbLastReq = Date.now()
+      const title = (song && song.title || '').trim()
+      const artist = (song && song.artist || '').trim()
+      if (!title) return []
+      const q = encodeURIComponent(`recording:"${title}"${artist ? ` AND artist:"${artist}"` : ''}`)
+      const url = `https://musicbrainz.org/ws/2/recording/?query=${q}&limit=5&fmt=json`
+      const res = await fetch(url, { headers: { 'User-Agent': 'SoundFlowMusic/1.0 (local music player)' } })
+      if (!res.ok) return []
+      const data = await res.json()
+      // 提取候选:标题/艺术家/专辑/年份(去重按专辑)
+      const out = []
+      for (const rec of (data.recordings || [])) {
+        const album = rec.releases && rec.releases[0]
+        const item = {
+          title: rec.title || title,
+          artist: rec['artist-credit'] && rec['artist-credit'][0] && rec['artist-credit'][0].name || artist,
+          album: album ? album.title : '',
+          year: album && album.date ? album.date.slice(0, 4) : ''
+        }
+        if (!out.some(x => x.album === item.album && x.artist === item.artist)) out.push(item)
+      }
+      return out
+    } catch { return [] }
+  })
+
   ipcMain.handle('write-tags', async (event, filePath, tags) => {
     try {
       if (!ffmpegPathForLoudness) detectFFmpegLoudness()

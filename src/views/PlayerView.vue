@@ -44,15 +44,6 @@
       <!-- 封面模式 -->
       <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
-          <!-- 唱针:播放落下,暂停抬起 -->
-          <div class="tonearm" :class="{ playing: playerStore.isPlaying }">
-            <svg viewBox="0 0 120 180" width="120" height="180">
-              <ellipse cx="104" cy="14" rx="14" ry="8" fill="#333" />
-              <rect x="98" y="18" width="12" height="150" rx="5" fill="#444" />
-              <rect x="99" y="16" width="10" height="30" rx="4" fill="#666" />
-              <circle cx="104" cy="164" r="7" fill="#222" />
-            </svg>
-          </div>
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
               <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
@@ -1379,16 +1370,6 @@ async function searchLyric() {
 }
 
 .disc-area { position: relative; display: flex; flex-direction: column; align-items: center; }
-/* 唱针:右上角支点,播放落下 / 暂停抬起 */
-.tonearm {
-  position: absolute; top: -6px; right: -2%;
-  width: 120px; height: 180px; z-index: 5; pointer-events: none;
-  transform-origin: 87% 7%;
-  transform: rotate(26deg);
-  transition: transform 0.55s cubic-bezier(0.34, 1.4, 0.64, 1);
-  opacity: 0.92; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
-}
-.tonearm.playing { transform: rotate(6deg); }
 
 .disc-ring {
   width: var(--disc, 300px); height: var(--disc, 300px); border-radius: 50%;
@@ -1647,6 +1628,11 @@ async function searchLyric() {
 .lyric-line.active {
   color: white; font-size: 22px; font-weight: 600;
   text-shadow: 0 0 20px rgba(22,119,230,0.5);
+}
+/* 当前行胶囊高亮背景条(受 ✨ 歌词特效开关控制) */
+.lyrics-content:not(.no-lyric-effect) .lyric-line.active {
+  background: linear-gradient(90deg, transparent, var(--color-primary-alpha, rgba(22,119,230,0.16)), transparent);
+  box-shadow: inset 0 0 0 1px rgba(22,119,230,0.18);
 }
 
 /* ===== 底部控制栏 ===== */

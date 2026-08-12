@@ -520,3 +520,17 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 .tag-backup-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-primary); }
 .tag-backup-time { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
 .tag-backup-actions { display: flex; justify-content: flex-end; margin-top: 6px; }
+
+/* MusicBrainz 自动补全弹窗 */
+.autotag-modal { width: 480px; max-width: 92vw; }
+.autotag-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.autotag-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 10px; border-radius: 8px; background: var(--bg-hover); }
+.autotag-info { flex: 1; min-width: 0; }
+.autotag-song { display: block; font-size: 13px; color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.autotag-cands { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 5px; }
+.autotag-opt { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-active); color: var(--text-secondary); cursor: pointer; }
+.autotag-opt.checked { background: var(--color-primary); color: #fff; }
+.autotag-opt input { display: none; }
+.autotag-none { font-size: 11px; color: var(--text-tertiary); }
+.autotag-skip { margin-left: auto; flex-shrink: 0; }
+.autotag-hint { font-size: 11px; color: var(--text-tertiary); flex: 1; }
