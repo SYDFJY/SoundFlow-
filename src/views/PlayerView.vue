@@ -205,6 +205,106 @@
         <div class="controls-row">
           <!-- 左工具组(桌面歌词/迷你/音量) -->
           <div class="tools-group-left">
+<!-- 桌面歌词 -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+
+            </button>
+
+            <!-- 迷你播放器 -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.miniOpen }" @click="toggleMini" title="迷你播放器(独立小窗)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
+            </button>
+
+            <!-- 音量(默认收起,点击图标展开滑块) -->
+            <div class="volume-control" :class="{ expanded: playerStore.volPanelOpen }">
+              <button class="vol-btn" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen" :title="t('player.volume')">
+                <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+              </button>
+              <transition name="vol-fade">
+                <div v-if="playerStore.volPanelOpen" class="vol-pop">
+                  <div class="vol-pct">{{ Math.round(playerStore.volume * 100) }}%</div>
+                  <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" @pointerdown="volDragStart" @pointerup="volDragEnd" />
+                  <div class="vol-input-row">
+                    <input v-model.number="volInput" type="number" min="0" max="100" class="vol-input no-spinner" @keydown.enter="confirmVolInput" @blur="confirmVolInput" />
+                    <span class="vol-input-unit">%</span>
+                  </div>
+                </div>
+              </transition>
+            </div>
+          </div>
+
+<!-- 播放控制组(居中:播放模式/上一曲/播放/下一曲/倍速,与播放栏一致) -->
+          <div class="controls-group">
+            <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" :title="t(playModeLabelKey)">
+              <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
+              <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            </button>
+            <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+            </button>
+            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
+              <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+              <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+            </button>
+            <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()">
+              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+            </button>
+            <!-- 倍速(自定义) -->
+            <div class="rate-control">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.playbackRate !== 1 }" @click="showRatePanel = !showRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
+                {{ playerStore.playbackRate }}x
+              </button>
+              <transition name="vol-fade">
+                <div v-if="showRatePanel" class="rate-panel" @click.stop>
+                  <div class="pitch-header"><span>播放速度</span></div>
+                  <div class="pitch-val-big">{{ playerStore.playbackRate }}x</div>
+                  <input type="range" class="h-slider pitch-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
+                  <div class="pitch-presets">
+                    <button v-for="r in [0.5, 0.75, 1, 1.25, 1.5, 2, 3]" :key="r" class="pitch-preset" :class="{ active: Math.abs(playerStore.playbackRate - r) < 0.001 }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
+                  </div>
+                  <div class="pitch-scale"><span>0.25x</span><span>3x</span></div>
+                  <div class="pitch-actions">
+                    <div class="pitch-input-group">
+                      <input v-model.number="rateInput" type="number" min="0.25" max="3" step="0.05" class="vol-input no-spinner" @keydown.enter="confirmRateInput" @blur="confirmRateInput" />
+                      <span>x</span>
+                    </div>
+                    <button class="pitch-reset" @click="playerStore.setPlaybackRate(1)">重置 1x</button>
+                  </div>
+                </div>
+              </transition>
+            </div>
+
+            <!-- 变调(升降调,与倍速独立同时生效) -->
+            <div class="pitch-control">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.pitch !== 0 }" @click="showPitchPanel = !showPitchPanel" :title="t('playerView.pitch')">
+                {{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st
+              </button>
+              <transition name="vol-fade">
+                <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
+                  <div class="pitch-header"><span>音调</span></div>
+                  <div class="pitch-val-big" :class="{ 'pitch-val-big--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</div>
+                  <input type="range" class="h-slider pitch-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
+                  <div class="pitch-presets">
+                    <button v-for="p in [-12, -7, -5, -3, 0, 3, 5, 7, 12]" :key="p" class="pitch-preset" :class="{ active: playerStore.pitch === p }" @click="playerStore.setPitch(p)">{{ p > 0 ? '+' : '' }}{{ p }}</button>
+                  </div>
+                  <div class="pitch-scale"><span>-12</span><span>0</span><span>+12</span></div>
+                  <div class="pitch-actions">
+                    <div class="pitch-input-group">
+                      <input v-model.number="pitchInput" type="number" min="-12" max="12" class="vol-input no-spinner" @keydown.enter="confirmPitchInput" @blur="confirmPitchInput" />
+                      <span>st</span>
+                    </div>
+                    <button class="pitch-reset" @click="playerStore.setPitch(0)">重置 0</button>
+                  </div>
+                </div>
+              </transition>
+            </div>
+          </div>
+          <!-- 右工具组(分栏 / 音效 / 频谱 / 播放列表) -->
+          <div class="tools-group">
 <!-- 分栏切换(大屏封面+歌词并排) -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: useSplit }" @click="toggleSplit" title="分栏/单栏切换(封面与歌词并排)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></svg>
