@@ -263,10 +263,29 @@
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
             </button>
-            <!-- 频谱模式:直线 / 圆形 / 两者同时 -->
-            <button class="ctrl-btn ctrl-btn--small" :class="{ active: specMode !== 'bar' }" @click="cycleSpecMode" :title="'频谱模式: ' + ({ bar: '直线', ring: '圆形', both: '两者同时' })[specMode]" style="font-size:11px">
-              {{ ({ bar: '频谱', ring: '圆谱', both: '双谱' })[specMode] }}
-            </button>
+            <!-- 频谱模式与密度 -->
+            <div class="spec-control">
+              <button class="ctrl-btn ctrl-btn--small" :class="{ active: showSpecPanel || specMode !== 'bar' }" @click="showSpecPanel = !showSpecPanel" title="频谱设置(模式/柱数密度)">
+                {{ ({ bar: '频谱', ring: '圆谱', both: '双谱' })[specMode] }}
+              </button>
+              <transition name="vol-fade">
+                <div v-if="showSpecPanel" class="spec-panel" @click.stop>
+                  <div class="pitch-header"><span>频谱</span></div>
+                  <div class="spec-group">
+                    <div class="spec-group-name">模式</div>
+                    <div class="spec-opts">
+                      <button v-for="m in SPEC_MODES" :key="m.v" class="pitch-preset" :class="{ active: specMode === m.v }" @click="specMode = m.v; localStorage.setItem('soundflow_spec_mode', m.v)">{{ m.l }}</button>
+                    </div>
+                  </div>
+                  <div class="spec-group">
+                    <div class="spec-group-name">柱数密度</div>
+                    <div class="spec-opts">
+                      <button v-for="d in SPEC_DENSITIES" :key="d.n" class="pitch-preset" :class="{ active: barCount === d.n }" @click="setSpecDensity(d.n)">{{ d.l }}</button>
+                    </div>
+                  </div>
+                </div>
+              </transition>
+            </div>
 
             <!-- 播放列表 -->
             <button class="ctrl-btn ctrl-btn--small" data-queue-toggle :class="{ active: showQueuePanel }" @click="toggleQueuePanel" :title="t('player.queue')">
@@ -561,7 +580,7 @@ let _pvPanelWatch = null
 function setupPvPanelsClickOutside() {
   if (_pvPanelWatch) return
   _pvPanelWatch = watch(
-    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel],
+    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel, showSpecPanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onPvPanelDocClick)
       else document.removeEventListener('click', onPvPanelDocClick)
@@ -581,6 +600,7 @@ function onPvPanelDocClick(e) {
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
   showRatePanel.value = false
+  showSpecPanel.value = false
 }
 
 // 打开/切换歌曲时,自动定位当前播放项
@@ -909,6 +929,7 @@ const showColorPanel = ref(false)
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
 // 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
 const showPitchPanel = ref(false) // 变调面板默认收起
+const showSpecPanel = ref(false) // 频谱设置面板默认收起
 const showRatePanel = ref(false) // 倍速面板默认收起
 // 音调/速度数字输入(Enter/失焦确认)
 const pitchInput = ref(playerStore.pitch)
@@ -1006,18 +1027,34 @@ const spectrumCanvas = ref(null)
 const spectrumRingCanvas = ref(null)
 // 频谱模式:bar=直线 / ring=圆形 / both=两者同时(默认,localStorage 记忆)
 const specMode = ref((() => { try { return localStorage.getItem('soundflow_spec_mode') || 'both' } catch { return 'both' } })())
-const SPEC_MODES = ['both', 'bar', 'ring']
-function cycleSpecMode() {
-  const i = SPEC_MODES.indexOf(specMode.value)
-  specMode.value = SPEC_MODES[(i + 1) % SPEC_MODES.length]
-  try { localStorage.setItem('soundflow_spec_mode', specMode.value) } catch {}
-  // 切换到任一模式立即恢复绘制
+const SPEC_MODES = [
+  { v: 'both', l: '两者同时' },
+  { v: 'bar', l: '直线' },
+  { v: 'ring', l: '圆形' }
+]
+// 柱数密度:细96 / 中72 / 粗48(localStorage 记忆)
+const SPEC_DENSITIES = [
+  { n: 96, l: '细(96)' },
+  { n: 72, l: '中(72)' },
+  { n: 48, l: '粗(48)' }
+]
+const barCount = ref((() => { try { return parseInt(localStorage.getItem('soundflow_spec_density')) || 96 } catch { return 96 } })())
+function setSpecDensity(n) {
+  barCount.value = n
+  try { localStorage.setItem('soundflow_spec_density', String(n)) } catch {}
+  initSpectrumArrays()
   if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
 }
 let spectrumRAF = null
-const BAR_COUNT = 96
-const barVals = new Array(BAR_COUNT).fill(0)    // 当前平滑高度
-const barPeaks = new Array(BAR_COUNT).fill(0)   // 峰值保持
+let barVals = [], barPeaks = [], ringVals = [], ringPeaks = []
+function initSpectrumArrays() {
+  const n = barCount.value
+  barVals = new Array(n).fill(0)
+  barPeaks = new Array(n).fill(0)
+  ringVals = new Array(n).fill(0)
+  ringPeaks = new Array(n).fill(0)
+}
+initSpectrumArrays()
 function hexToRgb(hex) {
   const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '')
   return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null
@@ -1046,8 +1083,8 @@ function paintBarSpectrum() {
   const { width, height } = canvas
   ctx.clearRect(0, 0, width, height)
   const data = playerStore.getSpectrumData()
-  const half = BAR_COUNT / 2
-  const barW = (width - (BAR_COUNT - 1) * 3) / BAR_COUNT
+  const half = barCount.value / 2
+  const barW = (width - (barCount.value - 1) * 3) / barCount.value
   const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
   const accent = getAccentColor()
   const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
@@ -1063,11 +1100,11 @@ function paintBarSpectrum() {
   // 镜面基线:柱从中间基线向上,倒影向下(主流播放器风格)
   const baseY = height * 0.56
   const mirrorH = height * 0.44
-  for (let i = 0; i < BAR_COUNT; i++) {
+  for (let i = 0; i < barCount.value; i++) {
     let target = 0
     if (data && playing) {
       // 左右对称:左半正序、右半镜像(呈现中间高两侧低的对称柱)
-      const src = i < half ? i : BAR_COUNT - 1 - i
+      const src = i < half ? i : barCount.value - 1 - i
       let v = 0
       for (let j = 0; j < step; j++) v += data[src * step + j]
       v = v / step / 255
@@ -1085,7 +1122,7 @@ function paintBarSpectrum() {
     const y = baseY - barH
     const radius = Math.min(3, Math.max(1, barW / 2 - 0.5))
     // 按频率渐变配色:低频红/橙 → 高频青/蓝(主流频谱彩虹风格)
-    const hue = 4 + (i / BAR_COUNT) * 190
+    const hue = 4 + (i / barCount.value) * 190
     const col = 'hsl(' + hue.toFixed(0) + ', 88%, 62%)'
     const colTop = 'hsl(' + hue.toFixed(0) + ', 90%, 74%)'
 
@@ -1137,8 +1174,6 @@ function paintBarSpectrum() {
 }
 
 // ===== 圆形环绕频谱(唱片外圈,随音频跳动)=====
-let ringVals = new Array(BAR_COUNT).fill(0)
-let ringPeaks = new Array(BAR_COUNT).fill(0)
 function paintRingSpectrum() {
   const canvas = spectrumRingCanvas.value
   if (!canvas) return
@@ -1156,12 +1191,12 @@ function paintRingSpectrum() {
   const cx = width / 2, cy = height / 2
   const r0 = Math.min(width, height) * 0.30       // 环起始半径(贴唱片外圈)
   const rMax = Math.min(width, height) * 0.47     // 最大半径(条顶)
-  const barCount = 64
-  const step = Math.max(1, Math.floor((data ? data.length : 0) / barCount))
+  const ringBars = { 96: 80, 72: 64, 48: 48 }[barCount.value] || 64
+  const step = Math.max(1, Math.floor((data ? data.length : 0) / ringBars))
   const accent = getAccentColor()
   const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
   ctx.lineCap = 'round'
-  for (let i = 0; i < barCount; i++) {
+  for (let i = 0; i < ringBars; i++) {
     let target = 0
     if (data) {
       let v = 0
@@ -1174,7 +1209,7 @@ function paintRingSpectrum() {
     if (ringVals[i] > ringPeaks[i]) ringPeaks[i] = ringVals[i]
     else ringPeaks[i] = Math.max(0, ringPeaks[i] - 1.2)
     const h = Math.max(3, ringVals[i])
-    const angle = (i / barCount) * Math.PI * 2 - Math.PI / 2
+    const angle = (i / ringBars) * Math.PI * 2 - Math.PI / 2
     const x1 = cx + Math.cos(angle) * r0, y1 = cy + Math.sin(angle) * r0
     const x2 = cx + Math.cos(angle) * (r0 + h), y2 = cy + Math.sin(angle) * (r0 + h)
     // 渐变:近根透明 → 外端亮色
@@ -1239,6 +1274,7 @@ function onPvEsc() {
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
   showRatePanel.value = false
+  showSpecPanel.value = false
 }
 onMounted(() => {
   setupPvPanelsClickOutside()
@@ -2063,4 +2099,18 @@ async function searchLyric() {
   background: transparent; color: rgba(255,255,255,0.78); cursor: pointer;
 }
 .pitch-reset:hover { background: rgba(255,255,255,0.1); }
+
+/* 频谱设置面板 */
+.spec-control { position: relative; display: flex; align-items: center; }
+.spec-panel {
+  position: absolute; bottom: calc(100% + 10px); right: 0;
+  background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px; padding: 10px 14px; width: 210px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60; color: rgba(255,255,255,0.85);
+}
+.spec-group { margin: 6px 0 2px; }
+.spec-group-name { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+.spec-opts { display: flex; gap: 4px; }
+.spec-opts .pitch-preset { flex: 1; min-width: 0; }
+
 </style>
