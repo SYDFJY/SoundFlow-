@@ -44,7 +44,17 @@
       <!-- 封面模式 -->
       <div v-if="activeTab === 'cover'" key="cover" class="cover-mode" :class="{ split: useSplit }">
         <div class="cover-left">
-        <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
+        <!-- 分栏:方形封面 + 半露旋转 CD(文档风格) -->
+        <div v-if="useSplit" class="album-stage">
+          <div class="album-art">
+            <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
+            <div v-else class="cover-placeholder">🎵</div>
+          </div>
+          <div class="cd-half" :class="{ spinning: playerStore.isPlaying }" :key="'cd-' + (playerStore.currentSong?.path || 'none')">
+            <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
+          </div>
+        </div>
+        <div v-else class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
           <!-- 圆形环绕频谱:移入 disc-area 内,圆心=唱片圆心 -->
           <canvas v-show="specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
@@ -292,6 +302,10 @@
               </transition>
             </div>
 
+            <!-- 分栏切换(大屏封面+歌词并排) -->
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: useSplit }" @click="toggleSplit" title="分栏/单栏切换(封面与歌词并排)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></svg>
+            </button>
             <!-- 音效 -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
@@ -993,11 +1007,29 @@ const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_ly
 // 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
 const showPitchPanel = ref(false) // 变调面板默认收起
 const showSpecPanel = ref(false) // 频谱设置面板默认收起
-// 大屏左右分栏(>900px 封面+歌词并排,YesPlayMusic 布局)
-const useSplit = ref(window.innerWidth > 900)
+// 大屏左右分栏:手动设置优先(localStorage),未设置按窗口 >900px 自动
+const useSplit = ref((() => {
+  try {
+    const m = localStorage.getItem('soundflow_pv_split')
+    if (m === 'on') return true
+    if (m === 'off') return false
+  } catch {}
+  return window.innerWidth > 900
+})())
+function toggleSplit() {
+  useSplit.value = !useSplit.value
+  try { localStorage.setItem('soundflow_pv_split', useSplit.value ? 'on' : 'off') } catch {}
+}
 const splitLyricsEl = ref(null)
 let splitActiveEl = null
-function onSplitResize() { useSplit.value = window.innerWidth > 900 }
+function onSplitResize() {
+  // 未手动设置时才跟随窗口宽度
+  try {
+    const m = localStorage.getItem('soundflow_pv_split')
+    if (m === 'on' || m === 'off') return
+  } catch {}
+  useSplit.value = window.innerWidth > 900
+}
 watch(() => playerStore.currentLyricIndex, () => {
   if (!useSplit.value || !splitLyricsEl.value) return
   const el = splitActiveEl
@@ -1672,6 +1704,33 @@ async function searchLyric() {
 .cover-mode.split .cover-left { display: flex; flex-direction: column; align-items: center; gap: var(--gap); flex-shrink: 0; }
 .split-lyrics { flex: 1; max-width: 560px; min-width: 0; height: 100%; overflow: hidden; }
 .split-lyrics .lyrics-scroll { height: 100%; overflow-y: auto; padding: 8px 12px; }
+/* 分栏:方形封面 + 半露旋转 CD(文档可视化风格) */
+.album-stage { position: relative; width: calc(var(--disc) * 1.5); height: calc(var(--disc) * 1.5); }
+.album-art {
+  width: 70%; aspect-ratio: 1; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 18px 48px rgba(0,0,0,0.5); position: absolute; left: 0; top: 15%;
+}
+.album-art img, .cd-half img { width: 100%; height: 100%; object-fit: cover; }
+.album-art .cover-placeholder, .cd-half .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 48px; background: rgba(255,255,255,0.08); }
+.cd-half {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  width: 62%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+}
+/* CD 多层渐变:中心透明孔 → 内壁阴影 → 透明 → 外圈反光(底层透出) */
+.cd-half::after {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, transparent 0 6%, rgba(0,0,0,0.85) 6% 8%, rgba(255,255,255,0.35) 8% 9.5%, transparent 9.5% 30%, rgba(255,255,255,0.12) 30% 34%, transparent 34% 92%, rgba(255,255,255,0.55) 92% 96%, rgba(0,0,0,0.5) 96% 100%);
+}
+.cd-half::before {
+  content: ''; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255,255,255,0.35) 0%, transparent 40%), linear-gradient(315deg, rgba(255,255,255,0.15) 0%, transparent 45%);
+  mix-blend-mode: screen;
+}
+.cd-half.spinning { animation: spin 24s linear infinite; }
+/* 分栏歌词:当前行金色高亮(文档 #FFD700) */
+.split-lyrics .lyric-line.active { color: #FFD700 !important; font-weight: 700; text-shadow: 0 0 18px rgba(255, 215, 0, 0.55); background: none; box-shadow: none; }
 
 .disc-area { position: relative; display: flex; flex-direction: column; align-items: center; }
 
@@ -2281,4 +2340,18 @@ async function searchLyric() {
 .spec-opts { display: flex; gap: 4px; }
 .spec-opts .pitch-preset { flex: 1; min-width: 0; }
 
+/* 窗口变窄:压缩工具组,避免与中间控制按钮重叠 */
+@media (max-width: 1200px) {
+  .tools-group { right: 16px; gap: 8px; }
+  .tools-group .ctrl-btn--small { width: 30px; height: 30px; }
+  .player-controls { padding: 12px 20px 16px; }
+}
+@media (max-width: 960px) {
+  /* 工具组改流式 + 控制行允许换行,两排不重叠 */
+  .tools-group { position: static; transform: none; margin-left: auto; gap: 6px; }
+  .tools-group .ctrl-btn--small { width: 28px; height: 28px; }
+  .controls-row { flex-wrap: wrap; row-gap: 8px; min-height: 0; }
+  .controls-group { position: static; transform: none; order: -1; width: 100%; justify-content: center; flex-wrap: wrap; gap: 8px; }
+  .controls-group .ctrl-btn--small, .controls-group .ctrl-btn { margin: 0 !important; }
+}
 </style>
