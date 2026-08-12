@@ -2298,6 +2298,8 @@ function setupIPC() {
       for (const s of list) {
         const sArtist = (s.singer || []).map(x => x.name).join('/')
         const album = (s.album && s.album.name) || ''
+        // 封面:专辑 mid 在 s.album.mid(部分接口为顶层 albummid)
+        const albumMid = (s.album && s.album.mid) || s.albummid || ''
         // 歌手过滤:要求归一化后包含目标歌手(防 UGC 翻唱条目)
         if (want && !_normName(sArtist).includes(want)) continue
         out.push({
@@ -2306,7 +2308,7 @@ function setupIPC() {
           album,
           year: '',
           duration: s.interval ? Math.round(s.interval) : 0,
-          coverUrl: s.albummid ? 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + s.albummid + '.jpg' : '',
+          coverUrl: albumMid ? 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + albumMid + '.jpg' : '',
           source: 'QQ音乐'
         })
         if (out.length >= 5) break
