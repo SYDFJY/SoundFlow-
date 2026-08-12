@@ -2437,10 +2437,18 @@ function setupIPC() {
         }
       } catch (be) { console.error('[write-tags] 备份失败(继续写入):', be.message) }
       const tmp = filePath + '.tagtmp' + path.extname(filePath)
-      // 有封面:第二输入封面文件,音频流复制 + 封面流 mjpeg 内嵌
-      const args = hasCover
-        ? ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-i', coverFile, '-map', '0:a', '-map', '1:v', '-c', 'copy', '-c:v', 'mjpeg', '-disposition:v', 'attached_pic', '-id3v2_version', '3']
-        : ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy', '-id3v2_version', '3']
+      // 按容器格式分派:mp3 用 id3v2_version 3 + mjpeg 封面;flac/ogg/m4a 用 attached_pic 原样图片;
+      // wav/ape 等仅写文本标签(封面支持有限,跳过)
+      const ext = path.extname(filePath).toLowerCase()
+      const isMp3 = ext === '.mp3'
+      const coverOk = ['.mp3', '.flac', '.ogg', '.opus', '.m4a', '.mp4', '.aac'].includes(ext)
+      const coverMux = isMp3 ? ['-c:v', 'mjpeg'] : ['-c:v', 'copy']
+      const id3Opts = isMp3 ? ['-id3v2_version', '3'] : []
+      const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath]
+      if (hasCover && coverOk) {
+        args.push('-i', coverFile, '-map', '0:a', '-map', '1:v', '-c', 'copy', ...coverMux, '-disposition:v', 'attached_pic')
+      }
+      args.push(...id3Opts)
       if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
       if (tags && tags.artist) args.push('-metadata', 'artist=' + tags.artist)
       if (tags && tags.album) args.push('-metadata', 'album=' + tags.album)
