@@ -96,6 +96,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analyzeLoudness: (filePath) => ipcRenderer.invoke('analyze-loudness', filePath),
   getLoudness: (filePath) => ipcRenderer.invoke('get-loudness', filePath),
   writeTags: (filePath, tags) => ipcRenderer.invoke('write-tags', filePath, tags),
+  // 标签备份管理(写回前自动备份,可回滚)
+  listTagBackups: () => ipcRenderer.invoke('list-tag-backups'),
+  restoreTagBackup: (id) => ipcRenderer.invoke('restore-tag-backup', id),
+  clearTagBackups: () => ipcRenderer.invoke('clear-tag-backups'),
   pushLoudnessBatch: (paths) => ipcRenderer.send('loudness-batch', paths),
   stopLoudnessBatch: () => ipcRenderer.send('loudness-stop'),
   checkUpdates: () => ipcRenderer.invoke('check-updates'),

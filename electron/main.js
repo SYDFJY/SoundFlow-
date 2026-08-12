@@ -2256,6 +2256,26 @@ function setupIPC() {
       if (!ffmpegPathForLoudness) detectFFmpegLoudness()
       const { execFile } = require('child_process')
       const fs = require('fs')
+      // ===== 写前持久备份原文件(可回滚)=====
+      // 备份整个原文件副本到 userData/tag-backups/ + 索引,写坏/想还原随时恢复
+      const tagBakDir = path.join(app.getPath('userData'), 'tag-backups')
+      const tagBakIndex = path.join(tagBakDir, 'index.json')
+      try {
+        if (!fs.existsSync(tagBakDir)) fs.mkdirSync(tagBakDir, { recursive: true })
+        if (fs.existsSync(filePath)) {
+          const id = Date.now() + '-' + Math.random().toString(36).slice(2, 7)
+          const bakFile = path.join(tagBakDir, id + path.extname(filePath))
+          fs.copyFileSync(filePath, bakFile)
+          let idx = []
+          try { idx = JSON.parse(fs.readFileSync(tagBakIndex, 'utf8') || '[]') } catch {}
+          idx.push({ id, filePath, bakFile, time: Date.now(), size: fs.statSync(filePath).size })
+          // 同一首歌只保留最近 3 份,总量上限 50 份(防磁盘膨胀)
+          const same = idx.filter(x => x.filePath === filePath)
+          while (same.length > 3) { const old = same.shift(); idx = idx.filter(x => x.id !== old.id); try { fs.unlinkSync(old.bakFile) } catch {} }
+          while (idx.length > 50) { const old = idx.shift(); try { fs.unlinkSync(old.bakFile) } catch {} }
+          fs.writeFileSync(tagBakIndex, JSON.stringify(idx, null, 2))
+        }
+      } catch (be) { console.error('[write-tags] 备份失败(继续写入):', be.message) }
       const tmp = filePath + '.tagtmp' + path.extname(filePath)
       const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, '-c', 'copy', '-id3v2_version', '3']
       if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
@@ -2286,6 +2306,48 @@ function setupIPC() {
       console.error('[write-tags] 失败:', e && e.message ? e.message : e)
       return { ok: false, error: e && e.message ? e.message : String(e) }
     }
+  })
+
+  // ===== 标签备份管理:列出 / 恢复 / 清理 =====
+  function _tagBakPaths() {
+    const dir = path.join(app.getPath('userData'), 'tag-backups')
+    return { dir, index: path.join(dir, 'index.json') }
+  }
+  ipcMain.handle('list-tag-backups', () => {
+    try {
+      const { index } = _tagBakPaths()
+      if (!fs.existsSync(index)) return []
+      const idx = JSON.parse(fs.readFileSync(index, 'utf8') || '[]')
+      return idx.map(x => ({ ...x, name: path.basename(x.filePath) })).sort((a, b) => b.time - a.time)
+    } catch { return [] }
+  })
+  ipcMain.handle('restore-tag-backup', async (event, id) => {
+    try {
+      const { dir, index } = _tagBakPaths()
+      if (!fs.existsSync(index)) return { ok: false, error: '无备份记录' }
+      let idx = JSON.parse(fs.readFileSync(index, 'utf8') || '[]')
+      const item = idx.find(x => x.id === id)
+      if (!item) return { ok: false, error: '备份不存在' }
+      if (!fs.existsSync(item.bakFile)) return { ok: false, error: '备份文件丢失' }
+      // 恢复:备份副本复制回原路径(覆盖当前文件)
+      fs.copyFileSync(item.bakFile, item.filePath)
+      // 恢复后移除该条备份
+      idx = idx.filter(x => x.id !== id)
+      fs.writeFileSync(index, JSON.stringify(idx, null, 2))
+      try { fs.unlinkSync(item.bakFile) } catch {}
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
+  })
+  ipcMain.handle('clear-tag-backups', () => {
+    try {
+      const { dir, index } = _tagBakPaths()
+      if (fs.existsSync(index)) {
+        const idx = JSON.parse(fs.readFileSync(index, 'utf8') || '[]')
+        for (const x of idx) { try { fs.unlinkSync(x.bakFile) } catch {} }
+      }
+      try { fs.rmSync(dir, { recursive: true, force: true }) } catch {}
+      return { ok: true }
+    } catch (e) { return { ok: false, error: e.message } }
   })
 
   // 预加载数据(异步 invoke,不再 sendSync 同步阻塞渲染进程启动)

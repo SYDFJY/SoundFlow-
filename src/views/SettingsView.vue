@@ -454,6 +454,23 @@
             <span class="label-desc">导出/导入完整数据备份(下方「数据」区),可用于换机迁移或数据损坏后恢复</span>
           </div>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">标签备份(可回滚)</span>
+            <span class="label-desc">修改歌曲信息(写回标签)前自动备份原文件,可一键还原;每首歌保留最近 3 份</span>
+          </div>
+          <div v-if="tagBackups.length" class="tag-backup-list">
+            <div v-for="b in tagBackups.slice(0, 20)" :key="b.id" class="tag-backup-row">
+              <span class="tag-backup-name" :title="b.filePath">{{ b.name }}</span>
+              <span class="tag-backup-time">{{ new Date(b.time).toLocaleString().slice(5, 16) }}</span>
+              <button class="sec-btn" @click="restoreTag(b)">还原</button>
+            </div>
+            <div class="tag-backup-actions">
+              <button class="sec-btn" @click="clearTagBackups">清空全部备份</button>
+            </div>
+          </div>
+          <span v-else class="label-desc">暂无标签备份(修改歌曲信息后自动生成)</span>
+        </div>
       </div>
 
       <!-- 关于 -->
@@ -769,6 +786,23 @@ const closeAction = computed({
   set: (val) => { appStore.closeAction = val; appStore.saveSettings() }
 })
 const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
+// 标签备份管理(写回前自动备份,可回滚)
+const tagBackups = ref([])
+async function loadTagBackups() {
+  try { tagBackups.value = (await window.electronAPI.listTagBackups()) || [] } catch { tagBackups.value = [] }
+}
+async function restoreTag(b) {
+  if (!confirm(`还原「${b.name}」到修改标签前的版本?\n当前文件将被备份副本覆盖(仅恢复该文件)`)) return
+  const r = await window.electronAPI.restoreTagBackup(b.id)
+  if (r && r.ok) { window.$toast?.('已还原原文件', 'success'); loadTagBackups() }
+  else { window.$toast?.(r?.error || '还原失败', 'error') }
+}
+async function clearTagBackups() {
+  if (!confirm('确定清空全部标签备份?清空后无法再还原到旧标签')) return
+  const r = await window.electronAPI.clearTagBackups()
+  if (r && r.ok) { window.$toast?.('已清空', 'success'); tagBackups.value = [] }
+  else { window.$toast?.(r?.error || '清空失败', 'error') }
+}
 
 // ===== 迷你播放器背景(深色/白色/自定义/透明) =====
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
@@ -786,6 +820,7 @@ function setMiniBgMode(mode, color, alpha) {
 }
 // 迷你窗右键菜单修改后同步设置页状态
 onMounted(() => {
+  loadTagBackups()
   document.addEventListener('mini-bg-synced', (e) => {
     const cfg = e.detail
     if (!cfg) return
