@@ -44,6 +44,15 @@
       <!-- 封面模式 -->
       <div v-if="activeTab === 'cover'" key="cover" class="cover-mode">
         <div class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
+          <!-- 唱针:播放落下,暂停抬起 -->
+          <div class="tonearm" :class="{ playing: playerStore.isPlaying }">
+            <svg viewBox="0 0 120 180" width="120" height="180">
+              <ellipse cx="104" cy="14" rx="14" ry="8" fill="#333" />
+              <rect x="98" y="18" width="12" height="150" rx="5" fill="#444" />
+              <rect x="99" y="16" width="10" height="30" rx="4" fill="#666" />
+              <circle cx="104" cy="164" r="7" fill="#222" />
+            </svg>
+          </div>
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
               <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
@@ -122,7 +131,7 @@
                   far: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) > 1
                 }"
                 :style="{
-                  fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : lyricFontSize) + 'px',
+                  fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
                   color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99',
                   textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : '0 1px 8px rgba(0,0,0,.55)'
@@ -1369,7 +1378,17 @@ async function searchLyric() {
   gap: var(--gap);
 }
 
-.disc-area { display: flex; flex-direction: column; align-items: center; }
+.disc-area { position: relative; display: flex; flex-direction: column; align-items: center; }
+/* 唱针:右上角支点,播放落下 / 暂停抬起 */
+.tonearm {
+  position: absolute; top: -6px; right: -2%;
+  width: 120px; height: 180px; z-index: 5; pointer-events: none;
+  transform-origin: 87% 7%;
+  transform: rotate(26deg);
+  transition: transform 0.55s cubic-bezier(0.34, 1.4, 0.64, 1);
+  opacity: 0.92; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+}
+.tonearm.playing { transform: rotate(6deg); }
 
 .disc-ring {
   width: var(--disc, 300px); height: var(--disc, 300px); border-radius: 50%;
@@ -1632,8 +1651,14 @@ async function searchLyric() {
 
 /* ===== 底部控制栏 ===== */
 .player-controls {
-  flex-shrink: 0; padding: 16px 40px 24px;
+  flex-shrink: 0; padding: 14px 40px 20px;
   display: flex; flex-direction: column; gap: 12px;
+  /* 毛玻璃:半透明底 + 背景模糊,层次更分明 */
+  background: rgba(8, 14, 26, 0.32);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  border-radius: 18px 18px 0 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
 }
 
 .controls-row {

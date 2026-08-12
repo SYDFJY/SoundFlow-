@@ -956,10 +956,10 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .col-actions {
   width: 70px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: flex-end; gap: 4px;
-  opacity: 0;
-  transition: opacity var(--transition-fast);
+  opacity: 0; transform: translateX(8px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
-.list-row:hover .col-actions { opacity: 1; }
+.list-row:hover .col-actions { opacity: 1; transform: translateX(0); }
 
 .action-btn {
   width: 28px; height: 28px;
