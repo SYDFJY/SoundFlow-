@@ -328,13 +328,6 @@
                     </div>
                   </div>
                   <div class="spec-group">
-                    <div class="spec-group-name">直线区风格</div>
-                    <div class="spec-opts">
-                      <button class="pitch-preset" :class="{ active: specStyle === 'bar' }" @click="setSpecStyle('bar')">柱状</button>
-                      <button class="pitch-preset" :class="{ active: specStyle === 'wave' }" @click="setSpecStyle('wave')">波动线</button>
-                    </div>
-                  </div>
-                  <div class="spec-group">
                     <div class="spec-group-name">柱数密度</div>
                     <div class="spec-opts">
                       <button v-for="d in SPEC_DENSITIES" :key="d.n" class="pitch-preset" :class="{ active: barCount === d.n }" @click="setSpecDensity(d.n)">{{ d.l }}</button>
@@ -1151,14 +1144,7 @@ const SPEC_DENSITIES = [
   { n: 48, l: '粗(48)' }
 ]
 const barCount = ref((() => { try { return parseInt(localStorage.getItem('soundflow_spec_density')) || 96 } catch { return 96 } })())
-// 直线区风格:bar=柱状 / wave=波动线(局部存储)
-const specStyle = ref((() => { try { return localStorage.getItem('soundflow_spec_style') || 'bar' } catch { return 'bar' } })())
-function setSpecStyle(s) {
-  specStyle.value = s
-  try { localStorage.setItem('soundflow_spec_style', s) } catch {}
-  initSpectrumArrays()
-  if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
-}
+// (直线区风格已删:仅柱状)
 function setSpecDensity(n) {
   barCount.value = n
   try { localStorage.setItem('soundflow_spec_density', String(n)) } catch {}
@@ -1294,82 +1280,6 @@ function paintBarSpectrum() {
 }
 
 // ===== 圆形环绕频谱(唱片外圈,随音频跳动)=====
-// 波动线频谱(封面下方,蝴蝶对称:左半向上、右半向下,渐变辉光)
-function paintWaveSpectrum() {
-  const canvas = spectrumCanvas.value
-  if (!canvas) return
-  const playing = playerStore.isPlaying
-  const rect = canvas.getBoundingClientRect()
-  if (rect.width === 0 || rect.height === 0 || !playing) return
-  const dpr = window.devicePixelRatio || 1
-  const fitW = Math.max(1, Math.round(rect.width * dpr))
-  const fitH = Math.max(1, Math.round(rect.height * dpr))
-  if (canvas.width !== fitW || canvas.height !== fitH) { canvas.width = fitW; canvas.height = fitH }
-  const ctx = canvas.getContext('2d')
-  const { width, height } = canvas
-  ctx.clearRect(0, 0, width, height)
-  const data = playerStore.getSpectrumData()
-  const n = barCount.value
-  const half = n / 2
-  const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
-  const maxAmp = height * 0.36
-  // 平滑更新 barVals(复用柱状平滑数组,波动线/柱状切换平滑过渡)
-  for (let i = 0; i < n; i++) {
-    let target = 0
-    if (data) {
-      const src = i < half ? i : n - 1 - i
-      let v = 0
-      for (let j = 0; j < step; j++) v += data[src * step + j]
-      v = v / step / 255
-      target = Math.pow(v, 0.7) * maxAmp
-    }
-    const diff = target - barVals[i]
-    barVals[i] += diff * (diff > 0 ? 0.5 : 0.3)
-    if (barVals[i] > barPeaks[i]) barPeaks[i] = barVals[i]
-    else barPeaks[i] = Math.max(0, barPeaks[i] - 1.1)
-  }
-  const accent = getAccentColor()
-  const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
-  const midY = height * 0.5
-  const grad = ctx.createLinearGradient(0, 0, width, 0)
-  grad.addColorStop(0, 'hsla(4, 88%, 62%, 0.9)')
-  grad.addColorStop(0.5, 'hsla(190, 88%, 62%, 0.95)')
-  grad.addColorStop(1, 'hsla(4, 88%, 62%, 0.9)')
-  // 主体波形(蝴蝶对称):左半向上、右半向下
-  ctx.save()
-  ctx.shadowColor = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.55)'
-  ctx.shadowBlur = 10
-  ctx.strokeStyle = grad
-  ctx.lineWidth = 3
-  ctx.lineJoin = 'round'
-  ctx.beginPath()
-  for (let i = 0; i < n; i++) {
-    const x = (i / (n - 1)) * (width - 8) + 4
-    const amp = Math.max(2, barVals[i])
-    const y = i < half ? midY - amp : midY + amp
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-  ctx.stroke()
-  ctx.shadowBlur = 0
-  // 中心基线微光
-  ctx.globalAlpha = 0.25
-  ctx.strokeStyle = grad
-  ctx.lineWidth = 1
-  ctx.beginPath(); ctx.moveTo(4, midY); ctx.lineTo(width - 4, midY); ctx.stroke()
-  ctx.globalAlpha = 1
-  ctx.restore()
-  // 峰值亮点(沿波形)
-  for (let i = 0; i < n; i += 4) {
-    if (barPeaks[i] > 4) {
-      const x = (i / (n - 1)) * (width - 8) + 4
-      const y = i < half ? midY - barPeaks[i] : midY + barPeaks[i]
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'
-      ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill()
-    }
-  }
-}
-
 function paintRingSpectrum() {
   const canvas = spectrumRingCanvas.value
   if (!canvas) return
@@ -1441,7 +1351,7 @@ function spectrumLoop(ts) {
   const barVisible = spectrumCanvas.value && specMode.value !== 'ring'
   const ringVisible = spectrumRingCanvas.value && specMode.value !== 'bar'
   if (!playing || (!barVisible && !ringVisible)) { spectrumRAF = null; return }
-  if (barVisible) { specStyle.value === 'wave' ? paintWaveSpectrum() : paintBarSpectrum() }
+  if (barVisible) paintBarSpectrum()
   if (ringVisible) paintRingSpectrum()
   spectrumRAF = requestAnimationFrame(spectrumLoop)
 }
