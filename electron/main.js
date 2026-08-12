@@ -2446,7 +2446,7 @@ function setupIPC() {
       const id3Opts = isMp3 ? ['-id3v2_version', '3'] : []
       const args = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath]
       if (hasCover && coverOk) {
-        args.push('-i', coverFile, '-map', '0:a', '-map', '1:v', '-c', 'copy', ...coverMux, '-disposition:v', 'attached_pic')
+        args.push('-i', coverFile, '-map', '0:a:0', '-map', '1:v', '-c:a', 'copy', ...coverMux, '-disposition:v', 'attached_pic')
       }
       args.push(...id3Opts)
       if (tags && tags.title) args.push('-metadata', 'title=' + tags.title)
@@ -2455,12 +2455,29 @@ function setupIPC() {
       if (tags && tags.genre) args.push('-metadata', 'genre=' + tags.genre)
       if (tags && tags.year) args.push('-metadata', 'date=' + tags.year)
       args.push(tmp)
-      await new Promise((res, rej) => {
-        execFile(ffmpegPathForLoudness, args, { timeout: 60000 }, (err, stdout, stderr) => {
+      const runFfmpeg = (a) => new Promise((res, rej) => {
+        execFile(ffmpegPathForLoudness, a, { timeout: 60000 }, (err, stdout, stderr) => {
           if (err) rej(new Error((err.message || 'ffmpeg失败') + ' ' + String(stderr || '').slice(0, 300)))
           else res()
         })
       })
+      try {
+        await runFfmpeg(args)
+      } catch (coverErr) {
+        // 封面导致 mux 失败(如多音频流/图片格式)→ 降级:重试纯标签写回(不带封面)
+        if (hasCover && coverOk) {
+          const fallback = ['-hide_banner', '-loglevel', 'error', '-y', '-i', filePath, ...id3Opts]
+          if (tags && tags.title) fallback.push('-metadata', 'title=' + tags.title)
+          if (tags && tags.artist) fallback.push('-metadata', 'artist=' + tags.artist)
+          if (tags && tags.album) fallback.push('-metadata', 'album=' + tags.album)
+          if (tags && tags.genre) fallback.push('-metadata', 'genre=' + tags.genre)
+          if (tags && tags.year) fallback.push('-metadata', 'date=' + tags.year)
+          fallback.push(tmp)
+          await runFfmpeg(fallback)
+        } else {
+          throw coverErr
+        }
+      }
       // 备份后替换原文件;失败回滚
       const bak = filePath + '.bak'
       if (fs.existsSync(bak)) fs.unlinkSync(bak)
