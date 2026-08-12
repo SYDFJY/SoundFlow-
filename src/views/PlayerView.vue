@@ -50,8 +50,10 @@
             <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
             <div v-else class="cover-placeholder">🎵</div>
           </div>
-          <div class="cd-half" :class="{ spinning: playerStore.isPlaying }" :key="'cd-' + (playerStore.currentSong?.path || 'none')">
-            <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
+          <div class="cd-wrap">
+            <div class="cd-half" :class="{ spinning: playerStore.isPlaying }" :key="'cd-' + (playerStore.currentSong?.path || 'none')">
+              <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
+            </div>
           </div>
         </div>
         <div v-else class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
@@ -1709,13 +1711,18 @@ async function searchLyric() {
 .album-art {
   width: 70%; aspect-ratio: 1; border-radius: 12px; overflow: hidden;
   box-shadow: 0 18px 48px rgba(0,0,0,0.5); position: absolute; left: 0; top: 15%;
+  z-index: 2; /* 封面在上,盖住 CD 左半 */
 }
 .album-art img, .cd-half img { width: 100%; height: 100%; object-fit: cover; }
 .album-art .cover-placeholder, .cd-half .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 48px; background: rgba(255,255,255,0.08); }
+/* cd-wrap 承担垂直定位(与 spin 动画 transform 隔离),CD 只做旋转 */
+.cd-wrap {
+  position: absolute; left: 44%; top: 50%; transform: translateY(-50%);
+  width: 62%; aspect-ratio: 1; z-index: 1; pointer-events: none;
+}
 .cd-half {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  width: 62%; aspect-ratio: 1; border-radius: 50%; overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+  width: 100%; height: 100%; border-radius: 50%; overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45); position: relative;
 }
 /* CD 多层渐变:中心透明孔 → 内壁阴影 → 透明 → 外圈反光(底层透出) */
 .cd-half::after {
@@ -2018,10 +2025,8 @@ async function searchLyric() {
   min-height: 56px;
 }
 .controls-group {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex; align-items: center;
+  /* flex 流式一行居中:模式/上曲/播放/下曲/倍速/变调 天然左右对称 */
+  display: flex; align-items: center; justify-content: center; gap: 10px;
   /* 按钮全部绝对定位:播放键居中,上一曲/下一曲对称贴靠,模式/倍速两端 */
 }
 .tools-group {
@@ -2175,18 +2180,13 @@ async function searchLyric() {
 .ctrl-btn svg { width: 24px; height: 24px; }
 
 .ctrl-btn--play {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
   width: 56px; height: 56px;
   background: var(--color-primary); color: white !important;
 }
-.ctrl-btn--play:hover { background: var(--color-primary-light); transform: translateX(-50%) scale(1.05); }
+.ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); }
 .ctrl-btn--play svg { width: 28px; height: 28px; }
-/* 对称布局:播放键居中(56px),上一曲/下一曲(44px)贴靠两侧(间隙10px),模式/倍速对称两端 */
-.ctrl-prev { position: absolute; right: calc(50% + 38px); }
-.ctrl-next { position: absolute; left: calc(50% + 38px); }
-.ctrl-mode { position: absolute; right: calc(50% + 102px); }
+/* flex 流式对称:播放键居中,上/下曲贴靠,模式/倍速/变调对称两端 */
+.ctrl-prev, .ctrl-next, .ctrl-mode { position: static; }
 
 .progress-row { display: flex; align-items: center; gap: 12px; padding: 0 32px; }
 .time {
