@@ -593,3 +593,16 @@ body, .sidebar, .topbar, .player-bar, .main-content, .main-content > * {
 .list-empty .le-icon { font-size: 56px; opacity: 0.55; }
 .list-empty .le-text { font-size: 14px; }
 .list-empty .le-hint { font-size: 12px; opacity: 0.7; }
+
+/* 迷你窗自定义选色:色块 + HSV 色板 */
+.mini-color-picker { flex-direction: column; align-items: flex-start; gap: 8px; }
+.mini-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.mini-swatch { width: 26px; height: 26px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; transition: transform 0.12s; }
+.mini-swatch:hover { transform: scale(1.12); }
+.mini-swatch.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-alpha); }
+.mini-hsv { display: flex; flex-direction: column; gap: 6px; }
+.sv-canvas { border-radius: 8px; cursor: crosshair; border: 1px solid var(--border-color); touch-action: none; }
+.hue-canvas { border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color); touch-action: none; }
+.mini-hex-row { display: flex; align-items: center; gap: 8px; }
+.hex-input { width: 84px; padding: 5px 8px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-size: 12px; outline: none; }
+.hex-input:focus { border-color: var(--color-primary); }

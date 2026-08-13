@@ -733,8 +733,10 @@ function createMiniWindow() {
     const distFile = path.join(__dirname, '..', 'dist', 'index.html').replace(/\\/g, '/')
     miniWindow.loadURL('file:///' + distFile + '#/mini')
   }
-  // 渲染完成后再显示,消除打开时闪现一帧
-  miniWindow.once('ready-to-show', () => { try { miniWindow.show() } catch {} })
+  // 渲染完成后再显示,消除打开时闪现一帧;transparent 窗口 ready-to-show 可能提前,加 did-finish-load 兜底
+  const showMini = () => { try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.show() } catch {} }
+  miniWindow.once('ready-to-show', showMini)
+  miniWindow.webContents.once('did-finish-load', () => setTimeout(showMini, 60))
 
   // 位置记忆(拖动后保存,重启恢复)
   let posSaveTimer = null
