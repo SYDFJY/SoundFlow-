@@ -1968,7 +1968,7 @@ async function searchLyric() {
   position: relative; display: flex; align-items: center;
 }
 .vol-pop {
-  position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(100% + 12px); left: 50%; margin-left: -32px;
   padding: 10px 8px;
 
   z-index: 60;
@@ -2154,7 +2154,7 @@ async function searchLyric() {
   border-radius: 8px; padding: 0 4px; line-height: 14px;
 }
 .pitch-panel {
-  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(100% + 10px); left: 50%; margin-left: -140px;
   padding: 10px 14px; width: 280px; z-index: 60;
 }
 .pitch-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
@@ -2202,7 +2202,7 @@ async function searchLyric() {
 .pitch-control { position: absolute; left: calc(50% + 152px); }
 
 .rate-panel {
-  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: calc(100% + 10px); left: 50%; margin-left: -140px;
   padding: 10px 14px; width: 280px; z-index: 60;
   color: rgba(255,255,255,0.85);
 }
