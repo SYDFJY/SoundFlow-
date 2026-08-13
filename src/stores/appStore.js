@@ -422,6 +422,7 @@ export const useAppStore = defineStore('app', () => {
     showSettings, language, autoPlay, closeAction, followSystemTheme,
     themes, applyTheme, loadSettings, saveSettings, setFontSize,
     setFollowSystemTheme, applySystemTheme,
-    exportThemeJSON, importThemeJSON
+    exportThemeJSON, importThemeJSON,
+    setPrimaryColor, resetPrimaryColor, customPrimary
   }
 })
