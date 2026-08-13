@@ -93,6 +93,7 @@
       <div v-if="emptyActions" class="empty-actions">
         <button class="btn btn--sm" @click="$emit('add-files')">添加文件</button>
         <button class="btn btn--ghost btn--sm" @click="$emit('add-folder')">添加文件夹</button>
+        <button v-if="emptyCtaLabel" class="btn btn--ghost btn--sm" @click="$emit('empty-cta')">{{ emptyCtaLabel }}</button>
       </div>
     </div>
 
@@ -288,6 +289,7 @@ const props = defineProps({
   emptyText: { type: String, default: '暂无歌曲' },
   emptyIcon: { type: String, default: '🎵' },
   emptyActions: { type: Boolean, default: false },
+  emptyCtaLabel: { type: String, default: '' },
   playlistContext: { type: Boolean, default: false }
 })
 
@@ -1150,7 +1152,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   display: flex; align-items: center; gap: 10px;
 }
 .song-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; background: var(--bg-hover); }
-.song-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease; }
+.song-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; }
 .list-row:hover .song-cover img { transform: scale(1.1); }
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .song-name { font-size: var(--font-size-base); color: var(--text-primary); }

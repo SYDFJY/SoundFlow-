@@ -66,6 +66,8 @@
         @selection-change="onSelectionChange"
         @add-files="addFiles"
         @add-folder="addFolder"
+        empty-cta-label="音乐目录设置"
+        @empty-cta="openSettings"
       />
     </div>
 
@@ -172,12 +174,14 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
+const appStore = useAppStore()
 const isElectron = computed(() => !!window.electronAPI)
 const batchMode = ref(false)
 const selectedSongs = ref([])
@@ -218,6 +222,11 @@ async function addFolder() {
   if (isElectron.value) {
     await musicStore.addFolder()
   }
+}
+
+function openSettings() {
+  appStore.currentView = 'settings'
+  appStore.showSettings = true
 }
 
 function onDrop(e) {

@@ -18,6 +18,7 @@
         :sort-field="musicStore.sortField"
         @sort="musicStore.setSortField"
         empty-text="还没有收藏歌曲，在歌曲列表中点击 ♡ 收藏" empty-icon="♡"
+        empty-actions empty-cta-label="去音乐库逛逛" @empty-cta="gotoLibrary"
       />
     </div>
   </div>
@@ -26,14 +27,20 @@
 <script setup>
 import { computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
+import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 
 const musicStore = useMusicStore()
+const appStore = useAppStore()
 const playerStore = usePlayerStore()
 
 const sortedFavorites = computed(() => musicStore.sortSongs(musicStore.favoriteSongs))
+
+function gotoLibrary() {
+  appStore.currentView = 'home'
+}
 
 function playAll() {
   const songs = musicStore.favoriteSongs

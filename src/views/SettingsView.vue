@@ -1194,8 +1194,8 @@ async function batchDownloadLyrics() {
 
 .settings-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
 
-.settings-section { margin-bottom: 24px; }
-.section-title { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; }
+.settings-section { margin-bottom: 28px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 18px 20px; }
+.section-title { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 6px; }
 
 /* 快捷键总览:键帽卡片 */
 .shortcut-overview {
@@ -1213,12 +1213,14 @@ async function batchDownloadLyrics() {
   font-family: inherit; font-size: 11px; color: var(--text-primary);
 }
 .setting-item {
-  display: flex; align-items: center; justify-content: space-between;  padding: 12px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  margin-bottom: 8px;
+  display: flex; align-items: center; justify-content: space-between;  padding: 13px 2px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-color);
+  border-radius: 0;
+  margin-bottom: 0;
 }
+.setting-item:last-child { border-bottom: none; }
 
 .setting-label { flex: 1; }
 .label-text { font-size: var(--font-size-base); color: var(--text-primary); font-weight: 500; }

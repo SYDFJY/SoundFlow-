@@ -1629,7 +1629,7 @@ async function searchLyric() {
   box-shadow: 0 18px 48px rgba(0,0,0,0.5); position: absolute; left: 0; top: 15%;
   z-index: 2; /* 封面在上,盖住 CD 左半 */
 }
-.album-art img, .cd-half img { width: 100%; height: 100%; object-fit: cover; }
+.album-art img, .cd-half img { width: 100%; height: 100%; object-fit: cover; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; }
 .album-art .cover-placeholder, .cd-half .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 48px; background: rgba(255,255,255,0.08); }
 /* cd-wrap 承担垂直定位(与 spin 动画 transform 隔离),CD 只做旋转 */
 .cd-wrap {
