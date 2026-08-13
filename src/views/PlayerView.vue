@@ -2047,20 +2047,20 @@ async function searchLyric() {
   border-radius: 14px;
   display: flex; flex-direction: column; z-index: 40; overflow: hidden;
 }
-.eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
+.eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: #aab6cc; }
 .eq-toggle.on { background: var(--color-primary); color: #fff; }
 .eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .eq-curve { display: block; width: 100%; height: 130px; margin: 2px 0 6px; background: rgba(128,128,160,0.05); border-radius: 8px; flex-shrink: 0; }
-.eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: rgba(255,255,255,0.4); }
+.eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: #7c879c; }
 .eq-group { display: flex; flex-direction: column; gap: 5px; }
-.eq-group-name { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
+.eq-group-name { font-size: var(--font-size-xs); color: #7c879c; }
 .eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.6); transition: all var(--transition-fast); border: 1px solid transparent; cursor: pointer; }
+.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.08); color: #eaf2ff; transition: all var(--transition-fast); border: 1px solid transparent; cursor: pointer; }
 .eq-preset-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9); }
 .eq-preset-btn.active { background: var(--color-primary); color: #fff; box-shadow: 0 0 12px var(--color-primary-alpha, rgba(64,150,255,0.55)); }
 .eq-preset-del { margin-left: 4px; opacity: 0.6; font-size: 10px; }
 .eq-preset-del:hover { opacity: 1; color: #ff6b6b; }
-.eq-save-btn { margin: 8px 0 2px; padding: 5px 12px; font-size: var(--font-size-xs); border-radius: 999px; background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.65); border: 1px dashed rgba(255,255,255,0.25); cursor: pointer; transition: all var(--transition-fast); }
+.eq-save-btn { margin: 8px 0 2px; padding: 5px 12px; font-size: var(--font-size-xs); border-radius: 999px; background: rgba(255,255,255,0.06); color: #eaf2ff; border: 1px dashed rgba(255,255,255,0.25); cursor: pointer; transition: all var(--transition-fast); }
 .eq-save-btn:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 .eq-name-input { width: 100%; padding: 8px 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.06); color: var(--text-primary); outline: none; }
 .eq-save-actions { display: flex; justify-content: flex-end; gap: 8px; }
@@ -2080,12 +2080,12 @@ async function searchLyric() {
   box-shadow: 0 0 8px var(--color-primary-alpha, rgba(64,150,255,0.8));
   margin-left: -4px; margin-top: 4px;
 }
-.eq-gain { font-size: 10px; color: rgba(255,255,255,0.55); font-variant-numeric: tabular-nums; min-height: 13px; }
+.eq-gain { font-size: 10px; color: #aab6cc; font-variant-numeric: tabular-nums; min-height: 13px; }
 /* 拖动滑杆时 dB 值高亮放大(气泡感) */
 .eq-slider-col:focus-within .eq-gain { color: var(--color-primary); font-weight: 700; transform: scale(1.2); }
 .eq-slider-col .eq-gain { transition: all 0.15s; }
-.eq-gain { font-size: 10px; color: rgba(255,255,255,0.4); }
-.eq-freq { font-size: 10px; color: rgba(255,255,255,0.4); }
+.eq-gain { font-size: 10px; color: #7c879c; }
+.eq-freq { font-size: 10px; color: #7c879c; }
 .eq-extra { display: flex; align-items: center; gap: 8px; }
 .eq-extra .label-text { min-width: 48px; color: rgba(255,255,255,0.75); font-size: var(--font-size-xs); }
 .eq-extra-val { min-width: 42px; font-size: 11px; color: var(--color-primary, #4096ff); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -2214,7 +2214,7 @@ async function searchLyric() {
 }
 .rate-preset:hover { border-color: #6ec6ff; color: #6ec6ff; }
 .rate-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); }
-.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 2px; padding: 0 2px; }
+.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: #aab6cc; margin-top: 2px; padding: 0 2px; }
 .pitch-value--active { color: #fff; background: var(--color-primary, #4096ff); border-radius: 4px; padding: 0 6px; }
 .pitch-row { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; }
 .pitch-row-label { min-width: 28px; font-size: var(--font-size-xs, 12px); color: rgba(255,255,255,0.72); }
@@ -2223,9 +2223,9 @@ async function searchLyric() {
 .pitch-slider { width: 100%; margin: 2px 0; }
 .pitch-val-big { text-align: center; font-size: 22px; font-weight: 800; color: var(--color-primary, #4096ff); font-variant-numeric: tabular-nums; line-height: 1.3; margin: 2px 0 4px; }
 .pitch-val-big--active { text-shadow: 0 0 12px var(--color-primary-alpha, rgba(64,150,255,0.6)); }
-.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: rgba(255,255,255,0.45); margin: 2px 2px 8px; }
+.pitch-scale { display: flex; justify-content: space-between; font-size: 10px; color: #aab6cc; margin: 2px 2px 8px; }
 .pitch-input-group { display: flex; align-items: center; gap: 4px; }
-.pitch-input-group span { font-size: 11px; color: rgba(255,255,255,0.6); }
+.pitch-input-group span { font-size: 11px; color: #aab6cc; }
 .pitch-presets { display: flex; gap: 4px; flex-wrap: wrap; margin: 2px 0 8px; }
 .pitch-preset {
   flex: 1; min-width: 34px; padding: 3px 0; font-size: var(--font-size-sm, 11px);
@@ -2251,7 +2251,7 @@ async function searchLyric() {
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60; color: rgba(255,255,255,0.85);
 }
 .spec-group { margin: 6px 0 2px; }
-.spec-group-name { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 4px; }
+.spec-group-name { font-size: 11px; color: #aab6cc; margin-bottom: 4px; }
 .spec-opts { display: flex; gap: 4px; }
 .spec-opts .pitch-preset { flex: 1; min-width: 0; }
 
