@@ -272,6 +272,7 @@ onMounted(async () => {
       if (Object.keys(sc).length) window.electronAPI.updateShortcuts(sc)
     } catch (_) {}
     window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
+    window.electronAPI.on('player:set-volume', (v) => { if (typeof v === 'number') playerStore.setVolume(v) })
     // 迷你窗右键菜单改背景/透明度 → 同步 localStorage(设置页)与全局状态
     window.electronAPI.on('mini:bg-sync', (cfg) => {
       if (!cfg) return

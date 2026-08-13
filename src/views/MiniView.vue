@@ -26,6 +26,10 @@
     <div class="mini-progress">
       <div class="mini-progress-fill" :style="{ width: progressPercent + '%' }"></div>
     </div>
+    <div class="mini-vol">
+      <svg class="mini-vol-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4v8a4.5 4.5 0 002.5-4zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
+      <input class="mini-vol-slider" type="range" min="0" max="1" step="0.01" :value="volume" @input="onVolInput" @change="onVolChange" />
+    </div>
   </div>
 </template>
 
@@ -38,6 +42,7 @@ const coverUrl = ref(null)
 const isPlaying = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
+const volume = ref(0.8)
 
 const progressPercent = computed(() => duration.value ? (currentTime.value / duration.value) * 100 : 0)
 
@@ -94,6 +99,7 @@ onMounted(() => {
       isPlaying.value = data.isPlaying || false
       currentTime.value = data.currentTime || 0
       duration.value = data.duration || 0
+      if (typeof data.volume === 'number') volume.value = data.volume
     })
     // 主进程右键菜单改背景/透明度 → 刷新本窗口样式
     window.electronAPI.on('mini:bg-sync', (cfg) => {
@@ -104,6 +110,15 @@ onMounted(() => {
     })
   }
 })
+
+function onVolInput(e) {
+  volume.value = parseFloat(e.target.value)
+}
+
+function onVolChange(e) {
+  volume.value = parseFloat(e.target.value)
+  if (window.electronAPI) window.electronAPI.send('mini:volume', volume.value)
+}
 
 function togglePlay() {
   if (window.electronAPI) {
@@ -181,6 +196,40 @@ function restoreMain() {
   right: 0;
   height: 3px;
   background: var(--mc3, rgba(255,255,255,0.1));
+}
+
+/* 音量滑杆(进度条上方) */
+.mini-vol {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.mini-player:hover .mini-vol { opacity: 0.9; }
+.mini-vol-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.7; }
+.mini-vol-slider {
+  flex: 1;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--mc3, rgba(255,255,255,0.15));
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.mini-vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--mc1, #fff);
+  border: none;
+  cursor: pointer;
 }
 
 .mini-progress-fill {

@@ -1,7 +1,12 @@
 <template>
-  <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong, 'player-bar--drag': barDragOver }">
+  <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong, 'player-bar--drag': barDragOver, 'player-bar--mini': collapsed }">
+    <!-- 收起/展开(迷你化切换) -->
+    <button class="pb-collapse" @click="toggleCollapse" :title="collapsed ? '展开播放栏' : '收起为迷你条'">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path v-if="!collapsed" d="M6 9l6 6 6-6"/><path v-else d="M6 15l6-6 6 6"/></svg>
+    </button>
+
     <!-- 左：封面+信息 -->
-    <div class="player-left">
+    <div class="player-left" v-show="!collapsed">
       <div class="player-cover" @click="goToPlayer">
         <img v-if="coverUrl" :src="coverUrl" class="cover-img" />
         <div v-else class="cover-placeholder">
@@ -18,7 +23,7 @@
     </div>
 
     <!-- 中：控制+进度 -->
-    <div class="player-center">
+    <div class="player-center" v-show="!collapsed">
       <div class="player-controls">
         <button class="ctrl-btn" :title="playModeLabel" @click="playerStore.cyclePlayMode()">
           <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -62,7 +67,7 @@
     </div>
 
     <!-- 右：工具按钮 -->
-    <div class="player-right">
+    <div class="player-right" v-show="!collapsed">
       <!-- 定时 -->
       <div class="tool-wrapper">
         <button class="right-btn" :class="{ active: playerStore.sleepTimerMinutes !== 0 }" @click="showTimer = !showTimer" :title="t('settings.sleepTimer')">
@@ -132,6 +137,23 @@
       <button class="right-btn" data-queue-toggle :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" :title="t('player.queue')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
       </button>
+    </div>
+
+    <!-- 迷你条(收起态) -->
+    <div v-show="collapsed" class="pb-mini" @click="toggleCollapse" title="点击展开播放栏">
+      <img v-if="coverUrl" :src="coverUrl" class="pb-mini-cover" />
+      <div v-else class="pb-mini-cover pb-mini-cover--ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>
+      <div class="pb-mini-title text-ellipsis">{{ playerStore.currentSong?.title || 'SoundFlow' }}</div>
+      <div class="pb-mini-bar"><div class="pb-mini-bar-fill" :style="{ width: miniProgress + '%' }"></div></div>
+      <div class="pb-mini-ctrl">
+        <button class="pb-mini-btn" @click.stop="playerStore.togglePlay()" :title="playerStore.isPlaying ? '暂停' : '播放'">
+          <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+        </button>
+        <button class="pb-mini-btn" @click.stop="playerStore.playNext()" title="下一曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+        </button>
+      </div>
     </div>
 
     <!-- 音效面板 -->
@@ -212,6 +234,23 @@ const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
 const progressBar = ref(null)
 const showPbRatePanel = ref(false)
+// 播放栏迷你化(收起为迷你条)
+const collapsed = ref(localStorage.getItem('soundflow_pb_collapsed') === '1')
+const miniProgress = computed(() => {
+  const { currentTime, duration } = playerStore
+  return duration ? Math.min(100, (currentTime / duration) * 100) : 0
+})
+function toggleCollapse() {
+  collapsed.value = !collapsed.value
+  localStorage.setItem('soundflow_pb_collapsed', collapsed.value ? '1' : '0')
+  // 收起时关闭所有浮层
+  if (collapsed.value) {
+    showPbRatePanel.value = false
+    showEqPanel.value = false
+    playerStore.showQueue = false
+    showTimer.value = false
+  }
+}
 const showTimer = ref(false)
 const customMinutes = ref(30)
 const showEqPanel = ref(false)
@@ -449,6 +488,83 @@ function setCustomTimer() {
 
 /* 右侧 */
 .player-right { display: flex; align-items: center; gap: 2px; width: 260px; justify-content: flex-end; flex-shrink: 0; }
+
+/* ===== 播放栏迷你化 ===== */
+.pb-collapse {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  margin: 0 4px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, rgba(255,255,255,0.55));
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+.pb-collapse svg { width: 14px; height: 14px; }
+.pb-collapse:hover { color: var(--text-primary); background: var(--bg-hover, rgba(255,255,255,0.08)); }
+
+.player-bar--mini { height: 48px; }
+.player-bar--mini .player-left,
+.player-bar--mini .player-center,
+.player-bar--mini .player-right { display: none !important; }
+
+.pb-mini {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+  padding-right: 10px;
+}
+.pb-mini-cover {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.pb-mini-cover--ph { display: flex; align-items: center; justify-content: center; background: var(--bg-hover, rgba(255,255,255,0.08)); color: var(--text-secondary); }
+.pb-mini-cover--ph svg { width: 18px; height: 18px; }
+.pb-mini-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pb-mini-bar {
+  width: 120px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-hover, rgba(255,255,255,0.12));
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.pb-mini-bar-fill { height: 100%; background: var(--color-primary, #1677E6); border-radius: 2px; transition: width 0.4s linear; }
+.pb-mini-ctrl { display: flex; gap: 2px; flex-shrink: 0; }
+.pb-mini-btn {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.pb-mini-btn svg { width: 18px; height: 18px; }
+.pb-mini-btn:hover { background: var(--bg-hover, rgba(255,255,255,0.1)); }
 .right-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); transition: all var(--transition-fast); position: relative; }
 .right-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .right-btn.active { color: var(--color-primary); }

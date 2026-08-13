@@ -71,6 +71,7 @@
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
           <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
+          <button v-if="playerStore.currentSong && window.electronAPI?.selectCover" class="cover-swap" @click="swapCover">🖼 更换封面</button>
         </div>
         </div>
         <!-- 大屏分栏:右侧歌词(整行高亮,点击跳转) -->
@@ -684,6 +685,17 @@ const currentSongInfo = computed(() => {
 const bpmCache = ref((() => { try { return JSON.parse(localStorage.getItem('soundflow_bpm_cache') || '{}') } catch { return {} } })())
 function _saveBpmCache() { try { localStorage.setItem('soundflow_bpm_cache', JSON.stringify(bpmCache.value)) } catch {} }
 let _bpmPending = ''
+// 更换当前歌曲封面(信息区 hover 操作)
+async function swapCover() {
+  const s = playerStore.currentSong
+  if (!s || !s.path || !window.electronAPI?.selectCover) return
+  const coverPath = await window.electronAPI.selectCover().catch(() => null)
+  if (!coverPath) return
+  const url = coverPath.startsWith('file://') ? coverPath : 'file:///' + coverPath.replace(/\\/g, '/')
+  s.coverUrl = url
+  musicStore.updateSong(s.path, { coverUrl: url })
+}
+
 async function ensureBpm() {
   const s = playerStore.currentSong
   if (!s || !s.path) return
@@ -1702,9 +1714,28 @@ async function searchLyric() {
 }
 
 .song-meta { text-align: center; }
-.song-title { font-size: clamp(18px, 3.4vh, 26px); font-weight: 700; color: white; margin-bottom: 8px; }
-.song-artist { font-size: var(--font-size-lg); color: #c6d0e0; }
-.song-album { font-size: var(--font-size-base); color: #8a94a8; margin-top: 4px; }
+.song-title { font-size: clamp(20px, 3.8vh, 30px); font-weight: 700; color: white; margin-bottom: 10px; letter-spacing: 0.5px; text-shadow: 0 2px 18px rgba(0,0,0,0.35); }
+.song-artist { font-size: var(--font-size-lg); color: #c6d0e0; transition: color 0.2s; }
+.song-artist:hover { color: var(--color-primary, #1677E6); }
+.song-album { font-size: var(--font-size-base); color: #8a94a8; margin-top: 6px; transition: color 0.2s; }
+.song-album:hover { color: #aab4c8; }
+
+/* 信息区 hover 操作:更换封面 */
+.cover-swap {
+  margin-top: 12px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 14px;
+  background: rgba(255,255,255,0.08);
+  color: rgba(255,255,255,0.85);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.25s, transform 0.25s, background 0.2s;
+}
+.song-meta:hover .cover-swap { opacity: 1; transform: translateY(0); }
+.cover-swap:hover { background: rgba(255,255,255,0.18); }
 .song-info { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 6px; letter-spacing: 0.3px; }
 
 /* ===== 歌词模式 ===== */

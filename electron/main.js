@@ -2165,6 +2165,9 @@ async function searchLyricAuto(info) {
   })
 
   // 迷你播放器控制命令转发到主窗口
+  ipcMain.on('mini:volume', (event, v) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('player:set-volume', v)
+  })
   ipcMain.on('mini:toggle-play', () => {
     if (mainWindow) mainWindow.webContents.send('tray-command', 'toggle-play')
   })

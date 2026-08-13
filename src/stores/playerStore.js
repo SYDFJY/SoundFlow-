@@ -90,6 +90,7 @@ export const usePlayerStore = defineStore('player', () => {
       title: currentSong.value?.title || '',
       artist: currentSong.value?.artist || '',
       coverUrl: currentSong.value?.coverUrl || null,
+      volume: volume.value,
       isPlaying: typeof forcePlaying === 'boolean' ? forcePlaying : isPlaying.value
     })
   }
@@ -1262,6 +1263,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (audio.value) audio.value.volume = Math.max(0, Math.min(1, volume.value * _replayGainFactor))
     isMuted.value = volume.value === 0
     if (volume.value > 0) _preMuteVolume.value = volume.value
+    sendMiniUpdate() // 主窗口音量变化 → 同步迷你窗音量滑杆
   }
 
   function toggleMute() {
