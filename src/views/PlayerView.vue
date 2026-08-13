@@ -1604,11 +1604,10 @@ async function searchLyric() {
 
 .player-overlay {
   position: absolute; inset: 0;
-  /* 高亮版氛围:顶部浅色光 + 中部透亮 + 底部微暗(保底对比,歌词已加描边) */
+  /* 纯净深色氛围:均匀暗角(无白色高光,封面本色呈现;歌词已有描边保证对比) */
   background:
-    radial-gradient(120% 55% at 50% -5%, rgba(160, 210, 255, 0.22), transparent 60%),
     radial-gradient(90% 45% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%),
-    linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.34) 100%);
+    linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.40) 100%);
   display: flex; flex-direction: column;
 }
 /* 封面背景:伪元素高清提亮(不模糊,封面原图铺底;单层 filter,避开 Electron 叠加渲染异常);z-index 0 垫底 */
