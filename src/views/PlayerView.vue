@@ -101,8 +101,8 @@
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
                   fontWeight: idx === playerStore.currentLyricIndex ? 700 : 400,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, transparent)` : `color-mix(in srgb, ${lyricColor} 38%, transparent)`),
-                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 22px ${lyricColor}66` : `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65)`
+                  color: lyricLineColor(idx),
+                  textShadow: lyricLineShadow(idx)
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -181,8 +181,8 @@
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
                   fontWeight: idx === playerStore.currentLyricIndex ? 700 : 400,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, transparent)` : `color-mix(in srgb, ${lyricColor} 38%, transparent)`),
-                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 22px ${lyricColor}66` : `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65)`
+                  color: lyricLineColor(idx),
+                  textShadow: lyricLineShadow(idx)
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -1053,6 +1053,20 @@ function openLyricPicker() {
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
+// 歌词行颜色:特效开启才「中心高光+前后变淡」;默认(关闭)所有行不透明纯色(无模糊处理)
+function lyricLineColor(idx) {
+  if (!lyricEffect.value) return lyricColor.value
+  if (idx === playerStore.currentLyricIndex) return lyricColor.value
+  const d = Math.abs(idx - playerStore.currentLyricIndex)
+  return `color-mix(in srgb, ${lyricColor.value} ${d === 1 ? 60 : 38}%, transparent)`
+}
+// 歌词行阴影:描边始终保留(保证任何背景可读);中心发光仅特效开启时
+function lyricLineShadow(idx) {
+  const stroke = '0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65)'
+  if (!lyricEffect.value) return stroke
+  if (idx === playerStore.currentLyricIndex) return `${stroke}, 0 0 22px ${lyricColor.value}66`
+  return stroke
+}
 // 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
 const showPitchPanel = ref(false) // 变调面板默认收起
 const showSpecPanel = ref(false) // 频谱设置面板默认收起
