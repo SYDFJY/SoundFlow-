@@ -71,7 +71,7 @@
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
           <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
-          <button v-if="playerStore.currentSong && window.electronAPI?.selectCover" class="cover-swap" @click="swapCover">🖼 更换封面</button>
+          <button v-if="playerStore.currentSong && hasCoverAPI" class="cover-swap" @click="swapCover">🖼 更换封面</button>
         </div>
         </div>
         <!-- 大屏分栏:右侧歌词(整行高亮,点击跳转) -->
@@ -467,6 +467,8 @@ import ProgressBar from '@/components/ProgressBar.vue'
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
 const router = useRouter()
+// 模板不能直接访问 window(Vue 模板全局白名单不含 window),此处提取供模板 v-if 使用
+const hasCoverAPI = !!window.electronAPI?.selectCover
 
 // 返回:历史栈为空时(如直接进入播放页)回退到主页,避免"返回键失灵"
 function goBack() {
