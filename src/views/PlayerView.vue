@@ -223,7 +223,7 @@
                 <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
               </button>
               <transition name="vol-fade">
-                <div v-if="playerStore.volPanelOpen" class="vol-pop">
+                <div v-if="playerStore.volPanelOpen" class="vol-pop pop-panel">
                   <div class="vol-pct">{{ Math.round(playerStore.volume * 100) }}%</div>
                   <input type="range" class="vol-slider" min="0" max="1" step="0.01" :value="playerStore.volume" @input="setVolume" @pointerdown="volDragStart" @pointerup="volDragEnd" />
                   <div class="vol-input-row">
@@ -259,7 +259,7 @@
                 {{ playerStore.playbackRate }}x
               </button>
               <transition name="vol-fade">
-                <div v-if="showRatePanel" class="rate-panel" @click.stop>
+                <div v-if="showRatePanel" class="rate-panel pop-panel" @click.stop>
                   <div class="pitch-header"><span>播放速度</span></div>
                   <div class="pitch-val-big">{{ playerStore.playbackRate }}x</div>
                   <input type="range" class="h-slider pitch-slider" min="0.25" max="3" step="0.05" :value="playerStore.playbackRate" @input="playerStore.setPlaybackRate(+$event.target.value)" />
@@ -284,7 +284,7 @@
                 {{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st
               </button>
               <transition name="vol-fade">
-                <div v-if="showPitchPanel" class="pitch-panel" @click.stop>
+                <div v-if="showPitchPanel" class="pitch-panel pop-panel" @click.stop>
                   <div class="pitch-header"><span>音调</span></div>
                   <div class="pitch-val-big" :class="{ 'pitch-val-big--active': playerStore.pitch !== 0 }">{{ playerStore.pitch > 0 ? '+' : '' }}{{ playerStore.pitch }} st</div>
                   <input type="range" class="h-slider pitch-slider" min="-12" max="12" step="1" :value="playerStore.pitch" @input="playerStore.setPitch(+$event.target.value)" />
@@ -319,7 +319,7 @@
                 {{ ({ bar: '频谱', ring: '圆谱', both: '双谱' })[specMode] }}
               </button>
               <transition name="vol-fade">
-                <div v-if="showSpecPanel" class="spec-panel" @click.stop>
+                <div v-if="showSpecPanel" class="spec-panel pop-panel" @click.stop>
                   <div class="pitch-header"><span>频谱</span></div>
                   <div class="spec-group">
                     <div class="spec-group-name">模式</div>
@@ -346,7 +346,7 @@
 
         <!-- 音效面板 -->
         <transition name="queue-slide">
-          <div v-if="showEqPanel" class="eq-panel" @click.stop>
+          <div v-if="showEqPanel" class="eq-panel pop-panel" @click.stop>
             <div class="queue-header">
               <span class="queue-title">音效</span>
               <button class="eq-toggle" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
@@ -410,7 +410,7 @@
 
         <!-- 播放列表面板(打开自动定位当前歌曲) -->
         <transition name="queue-slide">
-          <div v-if="showQueuePanel" class="queue-panel" :style="{ width: queueW + 'px', height: queueH + 'px' }">
+          <div v-if="showQueuePanel" class="queue-panel pop-panel" :style="{ width: queueW + 'px', height: queueH + 'px' }">
             <div class="queue-header">
               <span class="queue-title">播放列表</span>
               <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
@@ -1967,10 +1967,7 @@ async function searchLyric() {
 .vol-pop {
   position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
   padding: 10px 8px;
-  background: var(--bg-secondary, rgba(20,28,50,0.96));
-  border: 1px solid var(--border-color, rgba(255,255,255,0.12));
-  border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+
   z-index: 60;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
@@ -2044,9 +2041,7 @@ async function searchLyric() {
 .eq-panel {
   position: absolute; bottom: 76px; right: 20px;
   width: min(640px, 92vw); max-height: min(480px, 80vh);
-  background: rgba(18, 20, 30, 0.98);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 16px; box-shadow: 0 16px 44px rgba(0,0,0,0.55);
+  border-radius: 14px;
   display: flex; flex-direction: column; z-index: 40; overflow: hidden;
 }
 .eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.6); }
@@ -2157,10 +2152,7 @@ async function searchLyric() {
 }
 .pitch-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px; padding: 10px 14px; width: 280px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
-  color: rgba(255,255,255,0.85);
+  padding: 10px 14px; width: 280px; z-index: 60;
 }
 .pitch-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
 .pitch-value { color: #6ec6ff; font-weight: 700; }
@@ -2208,9 +2200,7 @@ async function searchLyric() {
 
 .rate-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
-  background: rgba(20,28,50,0.95); border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 10px; padding: 10px 14px; width: 280px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60;
+  padding: 10px 14px; width: 280px; z-index: 60;
   color: rgba(255,255,255,0.85);
 }
 .rate-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
