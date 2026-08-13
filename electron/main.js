@@ -714,6 +714,7 @@ function createMiniWindow() {
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: true,
+    show: false, // 渲染完成前不显示,避免闪现一帧空白/默认画面
     ...(miniTransparent
       ? { transparent: true }
       : { backgroundColor: miniBg.mode === 'white' ? '#ffffff' : miniBg.color }),
@@ -732,6 +733,8 @@ function createMiniWindow() {
     const distFile = path.join(__dirname, '..', 'dist', 'index.html').replace(/\\/g, '/')
     miniWindow.loadURL('file:///' + distFile + '#/mini')
   }
+  // 渲染完成后再显示,消除打开时闪现一帧
+  miniWindow.once('ready-to-show', () => { try { miniWindow.show() } catch {} })
 
   // 位置记忆(拖动后保存,重启恢复)
   let posSaveTimer = null
