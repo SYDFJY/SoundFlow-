@@ -1,5 +1,5 @@
 <template>
-  <div class="player-view" :style="bgStyle" :data-bg="bgMode">
+  <div class="player-view" :style="[bgStyle, { '--bg-bright': bgBrightness + '%' }]" :data-bg="bgMode">
     <div class="player-overlay" :class="{ 'overlay-theme': bgMode === 'theme' }">
       <!-- 顶部栏 -->
       <div class="player-topbar">
@@ -37,6 +37,11 @@
             <button class="bg-import-btn" @click="importBgImage">🖼 导入自定义图片</button>
             <button v-if="bgImageUrl" class="bg-clear-btn" @click="clearBgImage">清除(恢复封面)</button>
             <div v-if="bgImageUrl" class="bg-image-preview" :style="{ backgroundImage: `url(${bgImageUrl})` }"></div>
+          </div>
+          <div class="bg-bright-row">
+            <span class="bg-bright-label">背景亮度</span>
+            <input class="h-slider bg-bright-slider" type="range" min="70" max="140" step="5" :value="bgBrightness" @input="setBgBrightness($event.target.value)" />
+            <span class="bg-bright-val">{{ bgBrightness }}%</span>
           </div>
         </div>
       </div>
@@ -95,7 +100,9 @@
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, #0c1220)` : `color-mix(in srgb, ${lyricColor} 38%, #0c1220)`)
+                  fontWeight: idx === playerStore.currentLyricIndex ? 700 : 400,
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, transparent)` : `color-mix(in srgb, ${lyricColor} 38%, transparent)`),
+                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 22px ${lyricColor}66` : `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65)`
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -172,8 +179,9 @@
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, #0c1220)` : `color-mix(in srgb, ${lyricColor} 38%, #0c1220)`),
-                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : 'none'
+                  fontWeight: idx === playerStore.currentLyricIndex ? 700 : 400,
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, transparent)` : `color-mix(in srgb, ${lyricColor} 38%, transparent)`),
+                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 22px ${lyricColor}66` : `0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65)`
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -745,6 +753,7 @@ const bgPresets = {
   ]
 }
 const bgMode = ref(localStorage.getItem('soundflow_player_bg_mode') || 'cover')
+const bgBrightness = ref(parseInt(localStorage.getItem('soundflow_bg_brightness')) || 110)
 const bgColor = ref(localStorage.getItem('soundflow_player_bg_color') || '#14161c')
 const bgGradient = ref(localStorage.getItem('soundflow_player_bg_gradient') || bgPresets.gradient[0].value)
 const bgImageUrl = ref(localStorage.getItem('soundflow_player_bg_image') || '')
@@ -752,6 +761,10 @@ const bgImageUrl = ref(localStorage.getItem('soundflow_player_bg_image') || '')
 function setBgMode(mode) {
   bgMode.value = mode
   localStorage.setItem('soundflow_player_bg_mode', mode)
+}
+function setBgBrightness(v) {
+  bgBrightness.value = parseInt(v) || 110
+  localStorage.setItem('soundflow_bg_brightness', bgBrightness.value)
 }
 function setBgColor(v) {
   bgColor.value = v
@@ -863,12 +876,10 @@ const bgStyle = computed(() => {
       backgroundPosition: 'center'
     }
   }
-  // 封面模式:封面铺底 + 深色遮罩压暗(避免 filter/backdrop-filter 叠加触发 Electron 渲染异常)
+  // 封面模式:封面铺底交给 .player-view[data-bg="cover"]::before(模糊+提亮,单层 filter 不触发 Electron 异常),此处只传 CSS 变量
   if (coverUrl.value) {
     return {
-      backgroundImage: `url(${coverUrl.value})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center'
+      '--cover-bg': `url(${coverUrl.value})`
     }
   }
   return { backgroundColor: '#14161c' }
@@ -1583,13 +1594,29 @@ async function searchLyric() {
 
 .player-overlay {
   position: absolute; inset: 0;
-  /* 多层静态渐变质感(零合成层):顶部主色氛围光 + 中央环境光 + 底部暗角 */
+  /* 高亮版氛围:顶部浅色光 + 中部透亮 + 底部微暗(保底对比,歌词已加描边) */
   background:
-    radial-gradient(120% 55% at 50% -5%, rgba(110, 198, 255, 0.16), transparent 60%),
-    radial-gradient(90% 45% at 50% 100%, rgba(0, 0, 0, 0.5), transparent 70%),
-    linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.55) 45%, rgba(0,0,0,0.78) 100%);
+    radial-gradient(120% 55% at 50% -5%, rgba(160, 210, 255, 0.22), transparent 60%),
+    radial-gradient(90% 45% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.34) 100%);
   display: flex; flex-direction: column;
 }
+/* 封面背景:伪元素模糊+提亮(单层 filter,避开 Electron 叠加渲染异常);z-index 0 垫底 */
+.player-view[data-bg="cover"]::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: var(--cover-bg);
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) brightness(var(--bg-bright, 110%)) saturate(1.15);
+  transform: scale(1.25);
+  z-index: 0;
+  pointer-events: none;
+}
+.bg-bright-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.bg-bright-label { font-size: 11px; color: rgba(255,255,255,0.6); flex-shrink: 0; }
+.bg-bright-slider { flex: 1; min-width: 0; }
+.bg-bright-val { font-size: 11px; color: rgba(255,255,255,0.7); width: 38px; text-align: right; }
 .player-overlay.overlay-theme { background: rgba(0,0,0,0.15); }
 
 /* 顶部栏 */
@@ -1834,8 +1861,8 @@ async function searchLyric() {
 /* 远离当前句:明度层次(不透明,避免 opacity/blur 合成层糊字) */
 .lyric-line.near { opacity: 1; filter: none; }
 .lyric-line.far { opacity: 1; filter: none; }
-.lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; }
-.lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 18px var(--color-primary); }
+.lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65); }
+.lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 18px var(--color-primary); }
 .lyric-trans {
   font-size: 0.82em;
   font-weight: 400;
