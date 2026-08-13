@@ -94,7 +94,7 @@
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? '#9fb0c8' : '#6b7890')
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, #0c1220)` : `color-mix(in srgb, ${lyricColor} 38%, #0c1220)`)
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -171,7 +171,7 @@
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? '#9fb0c8' : '#6b7890'),
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? `color-mix(in srgb, ${lyricColor} 60%, #0c1220)` : `color-mix(in srgb, ${lyricColor} 38%, #0c1220)`),
                   textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : 'none'
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
