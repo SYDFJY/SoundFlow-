@@ -248,7 +248,7 @@
         </div>
         <div class="edit-actions">
           <button class="modal-btn cancel" @click="editModal.show = false">取消</button>
-          <button class="modal-btn confirm" :disabled="savingTags" @click="saveEditInfo">{{ savingTags ? '保存中…' : '保存' }}</button>
+          <button class="modal-btn confirm" :disabled="savingTags" @click="saveEditInfo">{{ savingTags ? t('common.saving') : t('common.save') }}</button>
         </div>
       </div>
     </div>

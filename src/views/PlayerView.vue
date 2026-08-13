@@ -67,7 +67,7 @@
           </div>
         </div>
         <div class="song-meta" :key="'meta-' + (playerStore.currentSong?.path || 'none')">
-          <h2 class="song-title">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
+          <h2 class="song-title">{{ playerStore.currentSong?.title || t('player.notPlaying') }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
           <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
@@ -115,7 +115,7 @@
             </div>
           </div>
           <div class="song-meta-small">
-            <h2 class="song-title-sm">{{ playerStore.currentSong?.title || '未在播放' }}</h2>
+            <h2 class="song-title-sm">{{ playerStore.currentSong?.title || t('player.notPlaying') }}</h2>
             <div class="song-artist-sm">{{ playerStore.currentSong?.artist || '' }}</div>
           </div>
         </div>

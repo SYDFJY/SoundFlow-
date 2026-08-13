@@ -44,7 +44,7 @@ describe('musicStore 收藏', () => {
     const store = useMusicStore()
     store.toggleFavorite('x.mp3')
     store.toggleFavorite('y.mp3')
-    store.saveToStorage()
+    store.saveToStorage(true) // immediate:测试环境无防抖等待,立即落盘
     const saved = JSON.parse(globalThis.localStorage.getItem('soundflow_favorites'))
     expect(saved.sort()).toEqual(['x.mp3', 'y.mp3'])
     // 重新实例化恢复

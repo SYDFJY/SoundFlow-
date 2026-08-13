@@ -132,7 +132,7 @@ export const useMusicStore = defineStore('music', () => {
   function saveToStorage(immediate = false) {
     if (immediate) {
       if (_saveDebounce) { clearTimeout(_saveDebounce); _saveDebounce = null }
-      doSaveToStorage()
+      doSaveNow() // immediate:绕过空闲调度,立即同步落盘
       return
     }
     if (_saveDebounce) return

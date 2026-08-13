@@ -669,6 +669,25 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 加载并播放
   // fromBeginning=true:用户手动选择,从头播放;false:自动切歌,顺序模式恢复记忆、随机模式从头
+  // 无缝预加载:下一曲预缓冲到隐藏 Audio(本地直连 file://,随机模式预取随机曲;repeatOne 不预取)
+  const _preloadAudio = typeof Audio !== 'undefined' ? new Audio() : null
+  function preloadNextTrack() {
+    if (!_preloadAudio) return
+    const q = playQueue.value
+    if (!q.length || q.length < 2 || playMode.value === 'repeatOne') return
+    let idx
+    if (playMode.value === 'random') idx = Math.floor(Math.random() * q.length)
+    else idx = (currentIndex.value + 1) % q.length
+    const next = q[idx]
+    if (!next || !next.path) return
+    const src = `file:///${next.path.replace(/\\/g, '/')}`
+    if (_preloadAudio.src !== src) {
+      _preloadAudio.preload = 'auto'
+      _preloadAudio.src = src
+      _preloadAudio.load()
+    }
+  }
+
   async function loadAndPlay(index, fromBeginning = false) {
     initAudio()
     if (index < 0 || index >= playQueue.value.length) return
@@ -709,6 +728,7 @@ export const usePlayerStore = defineStore('player', () => {
     // 异步期间可能已切歌
     if (currentIndex.value !== index || currentSong.value !== song) return
     audio.value.src = src
+    preloadNextTrack() // 无缝预加载:下一曲缓冲,切歌几乎无延迟
     applyPitchToAudio() // 应用倍速(变调节点已在音频链中,切歌自动生效)
     audio.value.play().catch(e => {
       console.warn('[播放器] 播放失败(自动跳过):', e)
