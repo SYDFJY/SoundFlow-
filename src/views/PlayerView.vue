@@ -148,6 +148,7 @@
           <div v-if="showColorPanel" class="color-panel" @click.stop>
             <div class="color-panel-title">歌词颜色</div>
             <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
+            <button class="color-dot color-dot-custom" :style="{ background: lyricColor }" :class="{ active: lyricIsCustom }" title="自定义取色" @click="openLyricPicker"></button>
           </div>
           <div class="lyrics-scroll" ref="lyricsPanel">
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">
@@ -1032,6 +1033,22 @@ function setLyricColor(v) {
   lyricColor.value = v
   localStorage.setItem('soundflow_lyric_color', v)
   try { window.$toast?.('歌词颜色已更新', 'success') } catch {}
+}
+const lyricIsCustom = computed(() => !lyricColorOptions.some(c => c.value === lyricColor.value))
+let _lyricPickr = null
+function openLyricPicker() {
+  const btn = document.querySelector('.color-dot-custom')
+  if (!btn || typeof window.Pickr === 'undefined') return
+  if (_lyricPickr) { _lyricPickr.destroy(); _lyricPickr = null }
+  _lyricPickr = window.Pickr.create({
+    el: btn,
+    theme: 'nano',
+    default: lyricColor.value,
+    swatches: lyricColorOptions.map(c => c.value),
+    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
+  })
+  _lyricPickr.on('change', (color) => { if (color) setLyricColor(color.toHEXA().toString()) })
+  _lyricPickr.on('save', (color) => { if (color) { setLyricColor(color.toHEXA().toString()); _lyricPickr?.hide() } })
 }
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
@@ -1991,6 +2008,17 @@ async function searchLyric() {
   border: 2px solid transparent; transition: all 0.15s; flex-shrink: 0;
 }
 .color-dot.active { border-color: #fff; transform: scale(1.15); }
+/* 自定义取色按钮:渐变描边 + 取色器图标 */
+.color-dot-custom {
+  position: relative;
+  background-image: conic-gradient(#f55, #fa5, #ff5, #5f5, #5ff, #55f, #f5f, #f55) !important;
+  border-color: rgba(255,255,255,0.35);
+}
+.color-dot-custom::after {
+  content: "🎨"; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+}
 .bg-image-actions { display: flex; flex-direction: column; gap: 8px; }
 .bg-import-btn { padding: 8px 0; font-size: var(--font-size-xs); color: #fff; background: var(--color-primary); border-radius: 6px; transition: all 0.15s; }
 .bg-import-btn:hover { background: var(--color-primary-light); }
