@@ -1601,15 +1601,14 @@ async function searchLyric() {
     linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.34) 100%);
   display: flex; flex-direction: column;
 }
-/* 封面背景:伪元素模糊+提亮(单层 filter,避开 Electron 叠加渲染异常);z-index 0 垫底 */
+/* 封面背景:伪元素高清提亮(不模糊,封面原图铺底;单层 filter,避开 Electron 叠加渲染异常);z-index 0 垫底 */
 .player-view[data-bg="cover"]::before {
   content: "";
   position: absolute; inset: 0;
   background-image: var(--cover-bg);
   background-size: cover;
   background-position: center;
-  filter: blur(28px) brightness(var(--bg-bright, 110%)) saturate(1.15);
-  transform: scale(1.25);
+  filter: brightness(var(--bg-bright, 110%)) saturate(1.15);
   z-index: 0;
   pointer-events: none;
 }
