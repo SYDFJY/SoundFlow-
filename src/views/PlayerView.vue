@@ -1,5 +1,5 @@
 <template>
-  <div class="player-view" :style="bgStyle">
+  <div class="player-view" :style="bgStyle" :data-bg="bgMode">
     <div class="player-overlay" :class="{ 'overlay-theme': bgMode === 'theme' }">
       <!-- 顶部栏 -->
       <div class="player-topbar">
@@ -1572,6 +1572,9 @@ async function searchLyric() {
   display: flex; flex-direction: column;
 }
 .player-overlay.overlay-theme { background: rgba(0,0,0,0.15); }
+/* 封面铺底背景缓慢呼吸(微缩放,不呆板) */
+.player-view[data-bg="cover"] { animation: bg-breathe 18s ease-in-out infinite alternate; }
+@keyframes bg-breathe { from { transform: scale(1); } to { transform: scale(1.05); } }
 
 /* 顶部栏 */
 .player-topbar {

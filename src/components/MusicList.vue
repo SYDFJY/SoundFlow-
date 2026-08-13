@@ -88,7 +88,7 @@
 
     <!-- 空状态 -->
     <div v-else class="list-empty">
-      <div class="empty-icon">🎵</div>
+      <div class="empty-icon">{{ emptyIcon }}</div>
       <div class="empty-text">{{ emptyText }}</div>
       <div v-if="emptyActions" class="empty-actions">
         <button class="btn btn--sm" @click="$emit('add-files')">添加文件</button>
@@ -286,6 +286,7 @@ const props = defineProps({
   sortField: { type: String, default: 'title' },
   batchMode: { type: Boolean, default: false },
   emptyText: { type: String, default: '暂无歌曲' },
+  emptyIcon: { type: String, default: '🎵' },
   emptyActions: { type: Boolean, default: false },
   playlistContext: { type: Boolean, default: false }
 })
@@ -1114,7 +1115,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .list-row[draggable="true"] { cursor: grab; }
 .list-row[draggable="true"]:active { cursor: grabbing; }
 .list-row:hover { background: var(--bg-hover); }
-.list-row.active { background: var(--color-primary-alpha); }
+.list-row.active { background: var(--color-primary-alpha); border-left: 3px solid var(--color-primary); }
 .list-row.keyboard-selected { outline: 1px solid var(--color-primary); outline-offset: -1px; }
 .list-row.selected { background: var(--color-primary-alpha); }
 

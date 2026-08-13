@@ -17,7 +17,7 @@
         :songs="sortedFavorites"
         :sort-field="musicStore.sortField"
         @sort="musicStore.setSortField"
-        empty-text="还没有收藏歌曲，在歌曲列表中点击 ♡ 收藏"
+        empty-text="还没有收藏歌曲，在歌曲列表中点击 ♡ 收藏" empty-icon="♡"
       />
     </div>
   </div>

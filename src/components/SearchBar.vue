@@ -129,6 +129,7 @@ watch(() => musicStore.searchQuery, (v) => { if (v !== query.value) query.value 
   color: var(--text-primary);
   transition: all var(--transition-fast);
 }
+.search-input:hover { border-color: var(--border-color); }
 
 .search-input:focus {
   background: var(--bg-secondary);

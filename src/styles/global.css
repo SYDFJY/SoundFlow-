@@ -582,3 +582,14 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 .modal-mask { background: rgba(0,0,0,0.4); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
 .modal-mask > div { animation: modal-in 0.2s cubic-bezier(0.3, 1.3, 0.5, 1); }
 @keyframes modal-in { from { opacity: 0; transform: scale(0.96) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+
+/* ===== 主题切换平滑过渡(关键容器,不铺全元素避免卡顿)===== */
+body, .sidebar, .topbar, .player-bar, .main-content, .main-content > * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* ===== 空状态美化(列表空时)===== */
+.list-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 60px 20px; color: var(--text-tertiary); }
+.list-empty .le-icon { font-size: 56px; opacity: 0.55; }
+.list-empty .le-text { font-size: 14px; }
+.list-empty .le-hint { font-size: 12px; opacity: 0.7; }
