@@ -146,6 +146,9 @@
       <div class="pb-mini-title text-ellipsis">{{ playerStore.currentSong?.title || 'SoundFlow' }}</div>
       <div class="pb-mini-bar"><div class="pb-mini-bar-fill" :style="{ width: miniProgress + '%' }"></div></div>
       <div class="pb-mini-ctrl">
+        <button class="pb-mini-btn" @click.stop="playerStore.playPrev()" title="上一曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM18 18l-8.5-6L18 6z"/></svg>
+        </button>
         <button class="pb-mini-btn" @click.stop="playerStore.togglePlay()" :title="playerStore.isPlaying ? '暂停' : '播放'">
           <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
           <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
