@@ -255,6 +255,22 @@ onMounted(async () => {
     })
     // 系统深色模式变化 → 主题跟随
     window.electronAPI.on('system-theme', (dark) => { appStore.applySystemTheme(!!dark) })
+    // 用户自定义全局快捷键 → 播放控制
+    window.electronAPI.on('user-shortcut', (action) => {
+      try {
+        if (action === 'playPause') playerStore.togglePlay()
+        else if (action === 'next') playerStore.playNext()
+        else if (action === 'prev') playerStore.playPrev()
+        else if (action === 'volUp') playerStore.setVolume(Math.min(1, playerStore.volume + 0.05))
+        else if (action === 'volDown') playerStore.setVolume(Math.max(0, playerStore.volume - 0.05))
+        else if (action === 'mute') playerStore.toggleMute()
+      } catch (_) {}
+    })
+    // 启动注册用户自定义快捷键
+    try {
+      const sc = JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}')
+      if (Object.keys(sc).length) window.electronAPI.updateShortcuts(sc)
+    } catch (_) {}
     window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
     // 迷你窗右键菜单改背景/透明度 → 同步 localStorage(设置页)与全局状态
     window.electronAPI.on('mini:bg-sync', (cfg) => {

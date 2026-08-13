@@ -102,6 +102,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   searchKugou: (song) => ipcRenderer.invoke('search-kugou', song),
   renameSong: (oldPath, newName) => ipcRenderer.invoke('rename-song', oldPath, newName),
   analyzeBpm: (filePath) => ipcRenderer.invoke('analyze-bpm', filePath),
+  updateShortcuts: (map) => ipcRenderer.invoke('update-shortcuts', map),
   downloadCover: (coverUrl, songPath) => ipcRenderer.invoke('download-cover', coverUrl, songPath),
   // 标签备份管理(写回前自动备份,可回滚)
   listTagBackups: () => ipcRenderer.invoke('list-tag-backups'),
@@ -128,7 +129,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'mini:update', 'mini:state', 'mini:bg-sync', 'window-state', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
+    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'mini:update', 'mini:state', 'mini:bg-sync', 'window-state', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
     if (validChannels.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)

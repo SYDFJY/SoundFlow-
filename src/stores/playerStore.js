@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { DEFAULTS, getSetting } from '../config/defaults.js'
 import { ref, computed, watch, reactive } from 'vue'
 import { parseLRC as parseLRCLines } from '@/utils/lrc'
 import { SoundTouch } from 'soundtouchjs'
@@ -708,7 +709,17 @@ export const usePlayerStore = defineStore('player', () => {
     if (currentIndex.value !== index || currentSong.value !== song) return
     audio.value.src = src
     applyPitchToAudio() // 应用倍速(变调节点已在音频链中,切歌自动生效)
-    audio.value.play().catch(e => console.warn('[播放器] 播放失败:', e))
+    audio.value.play().catch(e => {
+      console.warn('[播放器] 播放失败(自动跳过):', e)
+      // 文件损坏/格式不支持等 play() 拒绝 → 计入连续失败并自动下一曲
+      _consecutiveErrors++
+      if (_consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        _consecutiveErrors = 0
+        isPlaying.value = false
+        return
+      }
+      setTimeout(() => playNext(), 800)
+    })
     fadeIn()
     ensureReplayGain(song.path)
     isBuffering.value = false
@@ -1522,8 +1533,7 @@ export const usePlayerStore = defineStore('player', () => {
 
   function loadSettings() {
     try {
-      const v = localStorage.getItem('soundflow_volume')
-      if (v) volume.value = parseFloat(v)
+      volume.value = parseFloat(getSetting('soundflow_volume'))
       const m = localStorage.getItem('soundflow_play_mode')
       if (m) playMode.value = m
       const r = localStorage.getItem('soundflow_playback_rate')

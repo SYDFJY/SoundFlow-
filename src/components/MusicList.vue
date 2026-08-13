@@ -996,7 +996,8 @@ watch(() => playerStore.currentSong?.path, (p) => {
   const rowTop = idx * ROW_H
   const rowBottom = rowTop + ROW_H
   if (rowTop < el.scrollTop || rowBottom > el.scrollTop + el.clientHeight) {
-    el.scrollTop = Math.max(0, rowTop - (el.clientHeight - ROW_H) / 2)
+    // 吸顶:切歌时播放行滚动到列表顶部(洛雪式)
+    el.scrollTop = Math.max(0, rowTop)
   }
 })
 </script>

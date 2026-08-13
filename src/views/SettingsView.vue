@@ -165,17 +165,9 @@
             <div class="mini-swatches">
               <button v-for="c in MINI_COLOR_SWATCHES" :key="c" class="mini-swatch" :class="{ active: miniBgColor.toLowerCase() === c.toLowerCase() }" :style="{ background: c }" :title="c" @click="setMiniBgMode('custom', c)"></button>
             </div>
-            <!-- 完整色板:SV 方块 + 色相条 -->
-            <div class="mini-hsv">
-              <canvas ref="svCanvas" class="sv-canvas" width="220" height="150" @mousedown="onSvDown" @mousemove="onSvMove" @mouseup="onSvUp"></canvas>
-              <canvas ref="hueCanvas" class="hue-canvas" width="220" height="16" @mousedown="onHueDown" @mousemove="onHueMove" @mouseup="onHueUp"></canvas>
-            </div>
-            <!-- hex 输入 + 取色器 -->
-            <div class="mini-hex-row">
-              <input type="color" :value="miniBgColor" @input="e => setMiniBgMode('custom', e.target.value)" class="color-input" title="系统取色器" />
-              <input v-model="miniBgColor" class="hex-input" maxlength="7" @change="onHexChange" @keydown.enter="onHexChange" />
-              <span class="volume-val">{{ miniBgColor }}</span>
-            </div>
+            <!-- pickr 取色器(成熟组件:色相/SV/hex) -->
+            <div ref="pickrEl" class="pickr-wrap"></div>
+            <span class="volume-val">{{ miniBgColor }}</span>
           </div>
         </div>
         <div class="setting-item" v-if="miniBgMode === 'transparent'">
@@ -352,6 +344,19 @@
       <!-- 字体 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.font') }}</h3>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">自定义主色</span>
+            <span class="label-desc">实时全局生效(按钮/高亮/进度条),点「恢复」还原主题默认色</span>
+          </div>
+          <div class="setting-control mini-color-picker">
+            <div class="mini-swatches">
+              <button v-for="c in PRIMARY_SWATCHES" :key="c" class="mini-swatch" :class="{ active: (appStore.customPrimary || '').toLowerCase() === c.toLowerCase() }" :style="{ background: c }" :title="c" @click="setPrimary(c)"></button>
+            </div>
+            <div ref="primaryPickrEl" class="pickr-wrap"></div>
+            <button class="btn" @click="resetPrimary">恢复默认</button>
+          </div>
+        </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">界面字体</span>
@@ -820,82 +825,39 @@ async function clearTagBackups() {
 // ===== 迷你播放器背景(深色/白色/自定义/透明) =====
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
 const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
-// 迷你窗自定义选色:预设色块 + HSV 色板
+// 迷你窗自定义选色:预设色块 + pickr 取色器
 const MINI_COLOR_SWATCHES = ['#161b22', '#1e2433', '#1f3a5f', '#1d3a34', '#3a1d24', '#3a2f1d', '#33415c', '#f2f0ea', '#f7d9e0', '#cfe8dd', '#d9d2f0', '#f0d9c2']
-const svCanvas = ref(null)
-const hueCanvas = ref(null)
-let _pickHue = 0
-function _hexToHsv(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '')
-  if (!m) return { h: 0, s: 0, v: 1 }
-  let r = parseInt(m[1], 16) / 255, g = parseInt(m[2], 16) / 255, b = parseInt(m[3], 16) / 255
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min
-  let h = 0
-  if (d) { if (max === r) h = ((g - b) / d) % 6; else if (max === g) h = (b - r) / d + 2; else h = (r - g) / d + 4; h *= 60; if (h < 0) h += 360 }
-  return { h, s: max ? d / max : 0, v: max }
+const pickrEl = ref(null)
+// 自定义主色(全局联动)
+const PRIMARY_SWATCHES = ['#1677E6', '#4493f8', '#722ed1', '#13c2c2', '#52c41a', '#fa8c16', '#f5222d', '#eb2f96', '#f2f0ea', '#1e2433']
+const primaryPickrEl = ref(null)
+let _primaryPickr = null
+function setPrimary(c) { appStore.setPrimaryColor(c) }
+function resetPrimary() { appStore.resetPrimaryColor() }
+function initPrimaryPickr() {
+  if (!primaryPickrEl.value || typeof window.Pickr === 'undefined') return
+  _primaryPickr = window.Pickr.create({
+    el: primaryPickrEl.value,
+    theme: 'nano',
+    default: appStore.customPrimary || '#1677E6',
+    swatches: PRIMARY_SWATCHES,
+    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
+  })
+  _primaryPickr.on('save', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
+  _primaryPickr.on('change', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
 }
-function _hsvToHex(h, s, v) {
-  h = ((h % 360) + 360) % 360
-  const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c
-  let r = 0, g = 0, b = 0
-  if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0]; else if (h < 180) [r, g, b] = [0, c, x]
-  else if (h < 240) [r, g, b] = [0, x, c]; else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x]
-  const to = n => Math.round((n + m) * 255).toString(16).padStart(2, '0')
-  return '#' + to(r) + to(g) + to(b)
-}
-function _paintSv() {
-  const c = svCanvas.value; if (!c) return
-  const ctx = c.getContext('2d')
-  const w = c.width, h = c.height
-  ctx.fillStyle = _hsvToHex(_pickHue, 1, 1)
-  ctx.fillRect(0, 0, w, h)
-  const white = ctx.createLinearGradient(0, 0, w, 0); white.addColorStop(0, '#fff'); white.addColorStop(1, 'rgba(255,255,255,0)')
-  ctx.fillStyle = white; ctx.fillRect(0, 0, w, h)
-  const black = ctx.createLinearGradient(0, 0, 0, h); black.addColorStop(0, 'rgba(0,0,0,0)'); black.addColorStop(1, '#000')
-  ctx.fillStyle = black; ctx.fillRect(0, 0, w, h)
-  // 当前点
-  const { s, v } = _hexToHsv(miniBgColor.value)
-  const x = s * w, y = (1 - v) * h
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2
-  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke()
-  ctx.strokeStyle = '#000'; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke()
-}
-function _paintHue() {
-  const c = hueCanvas.value; if (!c) return
-  const ctx = c.getContext('2d')
-  const w = c.width
-  const g = ctx.createLinearGradient(0, 0, w, 0)
-  for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, _hsvToHex(i * 60, 1, 1))
-  ctx.fillStyle = g; ctx.fillRect(0, 0, w, c.height)
-  const x = (_pickHue / 360) * w
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2
-  ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, c.height); ctx.stroke()
-}
-function _svFromEvent(e) {
-  const c = svCanvas.value; if (!c) return null
-  const r = c.getBoundingClientRect()
-  const x = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width))
-  const y = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))
-  return { s: x, v: 1 - y }
-}
-let _svDrag = false
-function onSvDown(e) { _svDrag = true; onSvMove(e) }
-function onSvMove(e) { if (!_svDrag) return; const p = _svFromEvent(e); if (p) { setMiniBgMode('custom', _hsvToHex(_pickHue, p.s, p.v)); _paintSv() } }
-function onSvUp() { _svDrag = false }
-function _hueFromEvent(e) {
-  const c = hueCanvas.value; if (!c) return null
-  const r = c.getBoundingClientRect()
-  return Math.max(0, Math.min(360, ((e.clientX - r.left) / r.width) * 360))
-}
-let _hueDrag = false
-function onHueDown(e) { _hueDrag = true; onHueMove(e) }
-function onHueMove(e) { if (!_hueDrag) return; _pickHue = _hueFromEvent(e) || 0; _paintHue(); _paintSv() }
-function onHueUp() { _hueDrag = false }
-function onHexChange() {
-  const v = miniBgColor.value.trim()
-  if (/^#[0-9a-fA-F]{6}$/.test(v)) { _pickHue = _hexToHsv(v).h; setMiniBgMode('custom', v.toLowerCase()); _paintHue(); _paintSv() }
-  else { miniBgColor.value = localStorage.getItem('soundflow_mini_bg_color') || '#161b22' }
+let _pickr = null
+function initPickr() {
+  if (!pickrEl.value || typeof window.Pickr === 'undefined') return
+  _pickr = window.Pickr.create({
+    el: pickrEl.value,
+    theme: 'nano',
+    default: miniBgColor.value,
+    swatches: MINI_COLOR_SWATCHES,
+    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
+  })
+  _pickr.on('save', (color) => { if (color) setMiniBgMode('custom', color.toHEXA().toString()) })
+  _pickr.on('change', (color) => { if (color) setMiniBgMode('custom', color.toHEXA().toString()) })
 }
 const miniBgAlpha = ref(parseFloat(localStorage.getItem('soundflow_mini_bg_alpha')) || 0.05)
 function setMiniBgMode(mode, color, alpha) {
@@ -912,8 +874,8 @@ function setMiniBgMode(mode, color, alpha) {
 onMounted(() => {
   loadTagBackups()
   // 初始化迷你窗色板(当前色 → 色相/点位)
-  _pickHue = _hexToHsv(miniBgColor.value).h
-  nextTick(() => { _paintHue(); _paintSv() })
+  initPickr()
+  initPrimaryPickr()
   document.addEventListener('mini-bg-synced', (e) => {
     const cfg = e.detail
     if (!cfg) return
@@ -1035,6 +997,7 @@ function onRecordKey(e) {
   const combo = (e.ctrlKey ? 'Control+' : '') + e.code
   shortcuts.value[recordingKey.value] = combo
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(shortcuts.value))
+  try { window.electronAPI?.updateShortcuts(shortcuts.value) } catch (_) {}
   recordingKey.value = ''
 }
 

@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@lucide/vue": "^1.28.0",
+    "@simonwep/pickr": "^1.10.1",
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
+    "iconv-lite": "^0.7.3",
     "music-metadata": "^11.12.3",
     "pinia": "^2.1.7",
     "sortablejs": "^1.15.7",

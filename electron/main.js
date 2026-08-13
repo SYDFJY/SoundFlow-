@@ -1,6 +1,7 @@
 /**
  * SoundFlow 声流音乐 — Electron 主进程
  */
+const iconv = require('iconv-lite')
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker, nativeTheme, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
@@ -1290,13 +1291,25 @@ function setupIPC() {
   })
 
   // 查找本地歌词(同目录同名 → 歌词文件夹匹配),返回文本或 null
+
+// 歌词读取:UTF-8 严格解码校验,失败用 GBK/GB18030(解决中文歌词乱码)
+function readLrc(fp) {
+  try {
+    const buf = fs.readFileSync(fp)
+    try {
+      const s = iconv.decode(buf, 'utf8')
+      if (s && !/�/.test(s)) return s
+    } catch {}
+    return iconv.decode(buf, 'gb18030')
+  } catch { return '' }
+}
   async function findLyricFile(audioPath, lyricFolders) {
     const ext = path.extname(audioPath)
     const base = path.basename(audioPath, ext)
     // 1. 同目录同名
     const sameDirLrc = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
     try {
-      if (fs.existsSync(sameDirLrc)) return fs.readFileSync(sameDirLrc, 'utf8')
+      if (fs.existsSync(sameDirLrc)) return readLrc(sameDirLrc)
     } catch {}
     // 2. 歌词文件夹中按文件名匹配
     if (lyricFolders && lyricFolders.length > 0) {
@@ -1308,7 +1321,7 @@ function setupIPC() {
         try {
           // 精确匹配
           const exact = path.join(folder, base + '.lrc')
-          if (fs.existsSync(exact)) return fs.readFileSync(exact, 'utf8')
+          if (fs.existsSync(exact)) return readLrc(exact)
 
           const files = getLrcFiles(folder)
           // 可靠匹配:基于"完整文件名规范化"比对,不猜测"哪半是标题/歌手"(文件名格式不统一,
@@ -1332,7 +1345,7 @@ function setupIPC() {
           // 返回得分最高的
           if (candidates.length > 0) {
             candidates.sort((a, b) => b.score - a.score)
-            return fs.readFileSync(candidates[0].path, 'utf8')
+            return readLrc(candidates[0].path)
           }
         } catch {}
       }
@@ -1464,18 +1477,32 @@ function setupIPC() {
   }
 
   // 在线歌词:按用户选择的来源;lrclib 未命中/失败自动回退网易云(中文歌命中率),网络异常透出
+
+// ===== 歌词源接口(插件化铺路:新增源只需在 LYRIC_SOURCES 加一项)=====
+const LYRIC_SOURCES = {
+  lrclib: { label: 'LRCLIB', fetch: fetchLRCLIB },
+  qq: { label: 'QQ音乐', fetch: fetchQQMusicLyric },
+  netease: { label: '网易云', fetch: fetchNetEaseLyric }
+}
+const LYRIC_ORDER = ['lrclib', 'qq', 'netease'] // auto 源回退顺序
+async function searchLyricBySource(info, source) {
+  const s = LYRIC_SOURCES[source]
+  if (!s) return { error: 'unknown-source' }
+  return await s.fetch(info)
+}
+async function searchLyricAuto(info) {
+  for (const name of LYRIC_ORDER) {
+    const r = await LYRIC_SOURCES[name].fetch(info)
+    if (r && !r.error) return r
+  }
+  return { error: 'network' }
+}
+
   ipcMain.handle('fetch-online-lyric', async (event, info) => {
-    const src = info?.source || 'lrclib' // 默认 LRCLIB
-    if (src === 'netease') return await fetchNetEaseLyric(info)
-    if (src === 'qq') return await fetchQQMusicLyric(info)
+    const src = info?.source || 'lrclib'
     if (src === 'local') return null
-    // lrclib / auto:LRCLIB 优先,未找到或网络异常时回退 QQ 音乐 → 网易云
-    const r1 = await fetchLRCLIB(info)
-    if (r1 && !r1.error) return r1
-    const r2 = await fetchQQMusicLyric(info)
-    if (r2 && !r2.error) return r2
-    const r3 = await fetchNetEaseLyric(info)
-    if (r3 && !r3.error) return r3
+    if (src === 'auto') return await searchLyricAuto(info)
+    return await searchLyricBySource(info, src)
     // 三个源都网络异常才提示网络问题;单个源未找到(null)不提示
     if (r1 && r1.error && r2 && r2.error && r3 && r3.error) return { error: 'network' }
     return null
@@ -1613,18 +1640,10 @@ function setupIPC() {
 
   // 手动搜索下载(用户点击):同样 LRCLIB → 网易云
   ipcMain.handle('search-lyric-online', async (event, info) => {
-    // 按用户选择的歌词源取词;auto/lrclib 优先 LRCLIB,未命中回退 QQ → 网易云
     const src = info?.source || 'auto'
-    if (src === 'netease') return await fetchNetEaseLyric(info)
-    if (src === 'qq') return await fetchQQMusicLyric(info)
     if (src === 'local') return null
-    const r1 = await fetchLRCLIB(info)
-    if (r1 && !r1.error) return r1
-    const r2 = await fetchQQMusicLyric(info)
-    if (r2 && !r2.error) return r2
-    const r3 = await fetchNetEaseLyric(info)
-    if (r3 && !r3.error) return r3
-    if (r1 && r1.error && r2 && r2.error && r3 && r3.error) return { error: 'network' }
+    if (src === 'auto') return await searchLyricAuto(info)
+    return await searchLyricBySource(info, src)
     return null
   })
 
@@ -2857,6 +2876,24 @@ app.whenReady().then(async () => {
         mainWindow.webContents.send('system-theme', nativeTheme.shouldUseDarkColors)
       }
     } catch {}
+  })
+
+  // 用户自定义全局快捷键(非媒体键,避免抢占 SMTC):设置页保存后调用
+  ipcMain.handle('update-shortcuts', (event, map) => {
+    try { globalShortcut.unregisterAll() } catch (_) {}
+    if (map && typeof map === 'object') {
+      for (const [action, accel] of Object.entries(map)) {
+        if (!accel || accel === '未设置') continue
+        try {
+          globalShortcut.register(accel, () => {
+            try {
+              const w = BrowserWindow.getAllWindows().find(x => x.isVisible() && !x.isDestroyed())
+              if (w && !w.webContents.isDestroyed()) w.webContents.send('user-shortcut', action)
+            } catch (_) {}
+          })
+        } catch (e) { log.warn('[shortcut] 注册失败', accel, e.message) }
+      }
+    }
   })
   // 文件夹监控:默认开(用户关闭过则保持关闭),扫描目录存在时启动
   if (storageData.folderWatch !== false) setFolderWatchEnabled(true)

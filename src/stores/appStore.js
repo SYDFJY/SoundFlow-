@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { DEFAULTS, getSetting } from '../config/defaults.js'
 import { ref, watch } from 'vue'
 import { setLang } from '../i18n'
 
@@ -275,6 +276,34 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // 自定义主色(洛雪 pickr 思路):替换 --color-primary 三档,存 localStorage,主题切换后保留
+  function shade(hex, amt) {
+    const n = parseInt(hex.replace('#', ''), 16)
+    if (isNaN(n)) return hex
+    let r = ((n >> 16) & 255) + Math.round(255 * amt)
+    let g = ((n >> 8) & 255) + Math.round(255 * amt)
+    let b = (n & 255) + Math.round(255 * amt)
+    r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b))
+    return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')
+  }
+  const customPrimary = ref(localStorage.getItem('soundflow_custom_primary') || '')
+  function setPrimaryColor(hex) {
+    if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return
+    customPrimary.value = hex
+    localStorage.setItem('soundflow_custom_primary', hex)
+    const root = document.documentElement
+    root.style.setProperty('--color-primary', hex)
+    root.style.setProperty('--color-primary-light', shade(hex, 0.18))
+    root.style.setProperty('--color-primary-dark', shade(hex, -0.22))
+    const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16)
+    root.style.setProperty('--color-primary-alpha', 'rgba(' + r + ',' + g + ',' + b + ',0.12)')
+  }
+  function resetPrimaryColor() {
+    customPrimary.value = ''
+    localStorage.removeItem('soundflow_custom_primary')
+    applyTheme(theme.value)
+  }
+
   function applyTheme(themeName) {
     // 主题已删除(如 liquid)时回退浅色,避免保存不存在的主题名
     const key = themes[themeName] ? themeName : 'light'
@@ -288,6 +317,7 @@ export const useAppStore = defineStore('app', () => {
     if (window.electronAPI) {
       window.electronAPI.storeSet('theme', key)
     }
+    if (customPrimary.value) setPrimaryColor(customPrimary.value)
   }
 
   // 跟随系统深色模式:系统切换时自动用 深色(dark)/浅色(light) 主题
@@ -330,7 +360,7 @@ export const useAppStore = defineStore('app', () => {
   function loadSettings() {
     try {
       loadCustomThemes()
-      const t = localStorage.getItem('soundflow_theme')
+      const t = getSetting('soundflow_theme')
       if (t && themes[t]) theme.value = t
       applyTheme(theme.value)
 

@@ -991,7 +991,8 @@ const lyricColorOptions = [
   { name: '青色', value: '#4fd8d8' },
   { name: '红色', value: '#ff7a7a' }
 ]
-const lyricColor = ref(localStorage.getItem('soundflow_lyric_color') || '#ffffff')
+import { getSetting } from '../config/defaults.js'
+const lyricColor = ref(getSetting('soundflow_lyric_color'))
 function setLyricColor(v) {
   lyricColor.value = v
   localStorage.setItem('soundflow_lyric_color', v)
