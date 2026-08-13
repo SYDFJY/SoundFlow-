@@ -94,7 +94,7 @@
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99'
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? '#9fb0c8' : '#6b7890')
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -171,8 +171,8 @@
                 :style="{
                   fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
                   lineHeight: lyricLineGap,
-                  color: idx === playerStore.currentLyricIndex ? lyricColor : lyricColor + '99',
-                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : '0 1px 8px rgba(0,0,0,.55)'
+                  color: idx === playerStore.currentLyricIndex ? lyricColor : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? '#9fb0c8' : '#6b7890'),
+                  textShadow: idx === playerStore.currentLyricIndex ? `0 0 22px ${lyricColor}66` : 'none'
                 }"
                 :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
                 @click="seekToLine(line)"
@@ -1568,13 +1568,14 @@ async function searchLyric() {
 
 .player-overlay {
   position: absolute; inset: 0;
-  background: rgba(0,0,0,0.68);
+  /* 多层静态渐变质感(零合成层):顶部主色氛围光 + 中央环境光 + 底部暗角 */
+  background:
+    radial-gradient(120% 55% at 50% -5%, rgba(110, 198, 255, 0.16), transparent 60%),
+    radial-gradient(90% 45% at 50% 100%, rgba(0, 0, 0, 0.5), transparent 70%),
+    linear-gradient(180deg, rgba(0,0,0,0.42) 0%, rgba(0,0,0,0.55) 45%, rgba(0,0,0,0.78) 100%);
   display: flex; flex-direction: column;
 }
 .player-overlay.overlay-theme { background: rgba(0,0,0,0.15); }
-/* 封面铺底背景缓慢呼吸(微缩放,不呆板) */
-.player-view[data-bg="cover"] { animation: bg-breathe 18s ease-in-out infinite alternate; }
-@keyframes bg-breathe { from { transform: scale(1); } to { transform: scale(1.05); } }
 
 /* 顶部栏 */
 .player-topbar {
@@ -1701,8 +1702,8 @@ async function searchLyric() {
 
 .song-meta { text-align: center; }
 .song-title { font-size: clamp(18px, 3.4vh, 26px); font-weight: 700; color: white; margin-bottom: 8px; }
-.song-artist { font-size: var(--font-size-lg); color: rgba(255,255,255,0.6); }
-.song-album { font-size: var(--font-size-base); color: rgba(255,255,255,0.4); margin-top: 4px; }
+.song-artist { font-size: var(--font-size-lg); color: #c6d0e0; }
+.song-album { font-size: var(--font-size-base); color: #8a94a8; margin-top: 4px; }
 .song-info { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 6px; letter-spacing: 0.3px; }
 
 /* ===== 歌词模式 ===== */
@@ -1737,7 +1738,7 @@ async function searchLyric() {
 
 .song-meta-small { text-align: center; }
 .song-title-sm { font-size: 18px; font-weight: 600; color: white; margin-bottom: 4px; }
-.song-artist-sm { font-size: var(--font-size-base); color: rgba(255,255,255,0.5); }
+.song-artist-sm { font-size: var(--font-size-base); color: #aab6cc; }
 
 .lyric-right {
   position: relative;
@@ -1796,11 +1797,9 @@ async function searchLyric() {
 .lyric-line:hover .lyric-time { display: block; }
 .lyric-line.active .lyric-time { display: block; color: #fff; background: var(--color-primary); }
 .lyric-line.left { text-align: left; }
-/* Apple Music 风格:远离当前句越远越模糊透明 */
-.lyric-line.near { opacity: 0.55; filter: blur(0.4px); }
-.lyric-line.far { opacity: 0.22; filter: blur(1.2px); }
-.no-lyric-effect .lyric-line.near,
-.no-lyric-effect .lyric-line.far { opacity: 0.6; filter: none; }
+/* 远离当前句:明度层次(不透明,避免 opacity/blur 合成层糊字) */
+.lyric-line.near { opacity: 1; filter: none; }
+.lyric-line.far { opacity: 1; filter: none; }
 .lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; }
 .lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 18px var(--color-primary); }
 .lyric-trans {
