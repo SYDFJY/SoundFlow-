@@ -681,6 +681,16 @@ watch(() => playerStore.currentIndex, () => {
 })
 const activeTab = ref('cover')
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
+// 高清封面(QQ 300px→800px,背景更清晰);非网络封面回退原图
+const hdCoverUrl = ref(null)
+watch(coverUrl, async (url) => {
+  hdCoverUrl.value = null
+  if (!url || !window.electronAPI?.getHdCover) return
+  try {
+    const r = await window.electronAPI.getHdCover(url)
+    if (r?.ok && r.url) hdCoverUrl.value = r.url
+  } catch { /* 网络失败保持原图 */ }
+})
 // 播放页信息行:比特率 · 采样率(数据来自 metadata 解析)
 const currentSongInfo = computed(() => {
   const s = playerStore.currentSong
@@ -876,10 +886,10 @@ const bgStyle = computed(() => {
       backgroundPosition: 'center'
     }
   }
-  // 封面模式:封面铺底交给 .player-view[data-bg="cover"]::before(模糊+提亮,单层 filter 不触发 Electron 异常),此处只传 CSS 变量
+  // 封面模式:封面铺底交给 .player-view[data-bg="cover"]::before(提亮,单层 filter 不触发 Electron 异常),此处只传 CSS 变量;高清封面可用时优先
   if (coverUrl.value) {
     return {
-      '--cover-bg': `url(${coverUrl.value})`
+      '--cover-bg': `url(${hdCoverUrl.value || coverUrl.value})`
     }
   }
   return { backgroundColor: '#14161c' }
@@ -1627,25 +1637,30 @@ async function searchLyric() {
 
 .back-btn {
   display: flex; align-items: center; gap: 6px;
-  color: rgba(255,255,255,0.7); font-size: var(--font-size-base);
+  color: rgba(255,255,255,0.85); font-size: var(--font-size-base);
+  background: rgba(0,0,0,0.25); border-radius: 8px; padding: 6px 10px;
+  transition: all 0.15s;
 }
-.back-btn:hover { color: white; }
+.back-btn:hover { color: white; background: rgba(0,0,0,0.4); }
 .back-btn svg { width: 20px; height: 20px; }
 
-.tab-switcher { display: flex; gap: 4px; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 3px; }
+.tab-switcher { display: flex; gap: 4px; background: rgba(0,0,0,0.3); border-radius: 8px; padding: 3px; }
 .tab-btn {
   padding: 6px 20px; border-radius: 6px; font-size: var(--font-size-sm);
-  color: rgba(255,255,255,0.6); transition: all 0.2s;
+  color: rgba(255,255,255,0.78); transition: all 0.2s;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
-.tab-btn.active { background: rgba(255,255,255,0.2); color: white; font-weight: 600; }
+.tab-btn.active { background: rgba(255,255,255,0.28); color: white; font-weight: 600; }
 .tab-btn:hover { color: white; }
 
 .topbar-right { display: flex; gap: 8px; }
 .icon-btn {
   width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
-  border-radius: 8px; color: rgba(255,255,255,0.6);
+  border-radius: 8px; color: rgba(255,255,255,0.85);
+  background: rgba(0,0,0,0.25); transition: all 0.15s;
 }
-.icon-btn:hover { background: rgba(255,255,255,0.1); color: white; }
+.icon-btn:hover { color: #fff; background: rgba(0,0,0,0.4); }
+.icon-btn.active { color: #fff; background: var(--color-primary); }
 .icon-btn svg { width: 18px; height: 18px; }
 
 /* ===== 封面模式 ===== */

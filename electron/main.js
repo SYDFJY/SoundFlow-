@@ -2470,6 +2470,43 @@ async function searchLyricAuto(info) {
     } catch (e) { return { ok: false, error: e.message } }
   })
 
+  // 高清封面:QQ 封面 300px→800px 存 covers-hd(不压缩,背景更清晰);失败回退原图
+  ipcMain.handle('get-hd-cover', async (event, coverUrl) => {
+    try {
+      if (!coverUrl) return { ok: false, url: '' }
+      let hdUrl = String(coverUrl)
+      if (/y\.gtimg\.cn\/music\/photo_new\//.test(hdUrl)) {
+        hdUrl = hdUrl.replace(/T\d+R\d+x\d+M000/, 'T002R800x800M000')
+      }
+      if (!/^https?:\/\//.test(hdUrl)) return { ok: false, url: coverUrl }
+      const hdDir = path.join(app.getPath('userData'), 'covers-hd')
+      const key = crypto.createHash('md5').update(hdUrl).digest('hex').slice(0, 16)
+      const fp = path.join(hdDir, key + '.jpg')
+      if (fs.existsSync(fp)) return { ok: true, url: `file:///${fp.replace(/\\/g, '/')}` }
+      const buf = await new Promise((resolve, reject) => {
+        const https = require('https')
+        const u = new URL(hdUrl)
+        const req = https.request({ hostname: u.hostname, port: 443, path: u.pathname + u.search, method: 'GET', headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://y.qq.com' } }, r => {
+          if (r.statusCode !== 200) { reject(new Error('HTTP ' + r.statusCode)); return }
+          const chunks = []
+          r.on('data', c => chunks.push(c))
+          r.on('end', () => resolve(Buffer.concat(chunks)))
+        })
+        req.on('error', reject)
+        req.end()
+      })
+      if (!buf.length || buf.length < 1000) return { ok: false, url: coverUrl }
+      fs.mkdirSync(hdDir, { recursive: true })
+      let img = nativeImage.createFromBuffer(buf)
+      if (img.isEmpty()) return { ok: false, url: coverUrl }
+      if (img.getSize().width > 2400) img = img.resize({ width: 2400 })
+      fs.writeFileSync(fp, img.toJPEG(92))
+      return { ok: true, url: `file:///${fp.replace(/\\/g, '/')}` }
+    } catch (e) {
+      return { ok: false, url: coverUrl }
+    }
+  })
+
   // 酷狗搜索(标准 JSON 接口;酷我返回非标准 dict 不接入)
   ipcMain.handle('search-kugou', async (event, song) => {
     try {

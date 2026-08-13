@@ -104,6 +104,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   analyzeBpm: (filePath) => ipcRenderer.invoke('analyze-bpm', filePath),
   updateShortcuts: (map) => ipcRenderer.invoke('update-shortcuts', map),
   downloadCover: (coverUrl, songPath) => ipcRenderer.invoke('download-cover', coverUrl, songPath),
+  getHdCover: (coverUrl) => ipcRenderer.invoke('get-hd-cover', coverUrl),
   // 标签备份管理(写回前自动备份,可回滚)
   listTagBackups: () => ipcRenderer.invoke('list-tag-backups'),
   restoreTagBackup: (id) => ipcRenderer.invoke('restore-tag-backup', id),
