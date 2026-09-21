@@ -205,7 +205,15 @@ export const usePlayerStore = defineStore('player', () => {
     // 兜底清除缓冲态:缓冲后可能不经 canplay 就恢复(网络盘恢复、seek 命中缓存、
     // 解码器自行追上),此时只等 canplay 会让转圈图标一直转 —— 看起来就是"播放栏卡住不更新"。
     // playing(真正出声)与 seeked(跳转完成)都是可靠的"已经好了"信号。
-    audio.value.addEventListener('playing', () => { isBuffering.value = false })
+    audio.value.addEventListener('playing', () => {
+      isBuffering.value = false
+      // 切歌耗时:准备(解析/转码) + 缓冲 = 总耗时。这就是 gapless 要压缩的间隙
+      if (_switchT0) {
+        const total = Math.round(performance.now() - _switchT0)
+        console.info(`[切歌] ${_switchLabel}:准备 ${_switchPrepMs}ms + 缓冲 ${total - _switchPrepMs}ms = ${total}ms(淡入 ${_switchFadeMs}ms)`)
+        _switchT0 = 0
+      }
+    })
     audio.value.addEventListener('seeked', () => { isBuffering.value = false })
     audio.value.addEventListener('error', (e) => {
       // 主动清空 src(releaseAudio/stopPlayback)会触发空 src 错误,直接忽略,不视为播放失败
@@ -863,15 +871,29 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 加载并播放
   // fromBeginning=true:用户手动选择,从头播放;false:自动切歌,顺序模式恢复记忆、随机模式从头
-  // 无缝预加载:下一曲预缓冲到隐藏 Audio(本地直连 file://,随机模式预取随机曲;repeatOne 不预取)
+  // 无缝预加载:下一曲预缓冲到隐藏 Audio(本地直连 file://;repeatOne 不预取)。
+  // 随机模式必须取乱序池预告的那首 —— 旧实现随机取一首,结果常常不是接下来要播的,
+  // 白等一下(非原生格式尤其明显:转码是为那一首做的,没用到就得重来)
   const _preloadAudio = typeof Audio !== 'undefined' ? new Audio() : null
+  // 切歌耗时诊断:从"开始切歌"到"真正出声"拆分两段 ——
+  //   准备(解析/转码,resolveSrc)与 出声前的缓冲等待。
+  // 做 gapless 之前必须先有这个数字:否则不知道差在哪一段,也无法证明改进有效。
+  let _switchT0 = 0
+  let _switchPrepMs = -1
+  let _switchLabel = ''
+  let _switchFadeMs = 0
+  // 自动续播标记:只有"上一首放完自己走的"才算无缝切歌(不做淡入)。
+  // 用户按下一首/上一首仍走正常淡入 —— 那是他主动要一次切换
+  let _autoAdvance = false
   async function preloadNextTrack() {
     if (!_preloadAudio) return
     const q = playQueue.value
     if (!q.length || q.length < 2 || playMode.value === 'repeatOne') return
     let idx
-    if (playMode.value === 'random') idx = Math.floor(Math.random() * q.length)
-    else idx = (currentIndex.value + 1) % q.length
+    if (playMode.value === 'random') {
+      idx = _pool.peek(q.length, currentIndex.value)
+      if (idx < 0 || idx >= q.length) return
+    } else idx = (currentIndex.value + 1) % q.length
     const next = q[idx]
     if (!next || !next.path) return
     // 预载同样走 resolveSrc:转码产物才是可播源,原始 APE/WMA 路径预载必然失败
@@ -918,7 +940,15 @@ export const usePlayerStore = defineStore('player', () => {
     // 先停掉上一首 —— 转码可能耗时数十秒,期间继续播放旧音频会与已切换的标题/封面自相矛盾
     // (用户看到「新歌名 + 旧声音 + 旧进度」)。
     if (audio.value && !audio.value.paused) { try { audio.value.pause() } catch (_) {} }
+    const seamless = _autoAdvance
+    _autoAdvance = false
+    _switchT0 = performance.now()
+    _switchLabel = seamless ? '自动续播' : (fromBeginning ? '手动切歌' : '切歌')
+    _switchFadeMs = seamless ? DECLICK_MS : 1200
+    _switchPrepMs = -1
+    const _prepT0 = performance.now()
     const { url: src, res } = await resolveSrc(song)
+    _switchPrepMs = Math.round(performance.now() - _prepT0)
 
     // 异步期间可能已切歌
     if (currentIndex.value !== index || currentSong.value !== song) return
@@ -950,9 +980,9 @@ export const usePlayerStore = defineStore('player', () => {
         return
       }
       if (_failSkipTimer) clearTimeout(_failSkipTimer)
-      _failSkipTimer = setTimeout(() => { _failSkipTimer = null; playNext() }, 800)
+      _failSkipTimer = setTimeout(() => { _failSkipTimer = null; _autoAdvance = true; playNext() }, 800)
     })
-    fadeIn()
+    fadeIn(_switchFadeMs / 1000)
     ensureReplayGain(song.path)
     isBuffering.value = false
     loadLyrics(song)
@@ -1600,12 +1630,13 @@ export const usePlayerStore = defineStore('player', () => {
       })
       return
     }
-    // 默认:自动下一曲
+    // 默认:自动下一曲(无缝:不淡入;单曲循环原地重播同样不打标记,淡入反而突兀)
     if (playMode.value === 'repeatOne') {
       audio.value.currentTime = 0
-      fadeIn()
+      fadeIn(0.02)
       audio.value.play().catch(() => {})
     } else {
+      _autoAdvance = true
       playNext()
     }
   }
@@ -1631,15 +1662,20 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 播放淡入(新歌/恢复播放 1.2s 从静音渐变)
-  function fadeIn() {
+  // 防爆音斜坡:硬起播可能因波形起始点非零而"啪"一声,极短斜坡即可消除,听不出淡入
+  const DECLICK_MS = 40
+  // 播放淡入。sec 由调用方给:
+  //   - 用户主动起播/恢复播放:1.2s 从静音渐变(原行为,保留手感)
+  //   - 自动切下一曲:只做 DECLICK_MS 防爆音 —— 连续专辑(现场、DJ mix、古典乐章)
+  //     是一整段音乐,每首淡入 1.2s 会让它碎成一首首,这正是"无缝播放"要消除的东西
+  function fadeIn(sec = 1.2) {
     if (_fadeGain && _audioCtx) {
       try {
         const g = _fadeGain.gain
         const t = _audioCtx.currentTime
         g.cancelScheduledValues(t)
         g.setValueAtTime(0.0001, t)
-        g.linearRampToValueAtTime(1, t + 1.2)
+        g.linearRampToValueAtTime(1, t + sec)
       } catch {}
     }
   }
