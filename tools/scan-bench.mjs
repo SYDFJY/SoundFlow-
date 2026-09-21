@@ -61,7 +61,7 @@ app.whenReady().then(async () => {
       `(async () => {
          const res = await window.electronAPI.scanFiles([${JSON.stringify(path)}], 'fp-check')
          const it = (res && res.items) || []
-         return it[0] ? { fp: it[0].fp, fpk: it[0].fpk, title: it[0].title } : null
+         return it[0] ? { fp: it[0].fp, fpk: it[0].fpk, title: it[0].title, artist: it[0].artist, album: it[0].album, duration: it[0].duration } : null
        })()`,
       true
     )
@@ -85,6 +85,29 @@ app.whenReady().then(async () => {
   console.log(`指纹回填: ${backfilled}/${listed.length} 首直接从缓存取到`)
   if (backfilled !== listed.length) console.error('回填未命中:老曲库补指纹会失效')
 
+  // 转码链(ffmpeg + 缓存 + 原子改名):找一个非原生格式走一遍 prepare-audio,
+  // 断言产物是真实可用的 FLAC —— 这条链一断,APE/WMA/AIFF 全部无法播放
+  const exotic = listed.find((i) => /\.(wma|ape|aiff|alac|wv)$/i.test(i.path))
+  if (exotic) {
+    const fs2 = require('node:fs')
+    const r = await win.webContents.executeJavaScript(
+      `(async () => await window.electronAPI.prepareAudio(${JSON.stringify(exotic.path)}))()`, true)
+    const outPath = decodeURIComponent(String(r.url || '').replace('file:///', ''))
+    let magic = ''
+    try {
+      const fd = fs2.openSync(outPath, 'r')
+      const buf = Buffer.alloc(4)
+      fs2.readSync(fd, buf, 0, 4, 0)
+      fs2.closeSync(fd)
+      magic = buf.toString('latin1')
+    } catch {}
+    const ok = r.transcoded && magic === 'fLaC'
+    console.log(`转码: ${path.basename(exotic.path)} → ${path.basename(outPath)} magic=${magic} ${ok ? '✓' : '✗'}`)
+    if (!ok) console.error('转码链异常:产物不是完整 FLAC')
+  } else {
+    console.log('转码: 目录内没有非原生格式,跳过(放一个 .wma/.ape 即可测到)')
+  }
+
   if (listed.length > 0) {
     const target = listed[0]
     const renamed = target.path.replace(/(\.[^.]*)?$/, '_renamed$1')
@@ -93,7 +116,11 @@ app.whenReady().then(async () => {
       fs.renameSync(target.path, renamed)
       const after = await fpOf(renamed)
       const same = after && after.fp === target.fp
-      console.log(`改名后指纹:${same ? '一致 ✓' : '不一致 ✗'}(fp ${target.fp} → ${after && after.fp})`)
+      console.log(`改名后指纹:${path.basename(target.path)} → ${path.basename(renamed)}:${same ? '一致 ✓' : '不一致 ✗'}`)
+      if (!same) {
+        console.log('  改名前:', JSON.stringify(target))
+        console.log('  改名后:', JSON.stringify(after))
+      }
       fs.renameSync(renamed, target.path) // 复原,别把测试目录改了
     } catch (e) {
       console.error('改名检查失败:', e.message)

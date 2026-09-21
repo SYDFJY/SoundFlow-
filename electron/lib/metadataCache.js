@@ -15,7 +15,11 @@
 const CACHEABLE_FIELDS = [
   'title', 'artist', 'album', 'year', 'genre',
   'duration', 'bitrate', 'sampleRate', 'bitDepth',
-  'coverUrl', 'format'
+  'coverUrl', 'format',
+  // 内容指纹:它的输入里 **size 来自缓存键**(键含 size,所以缓存值里的指纹必然对得上),
+  // 其余输入是解析时的原始标签值 —— 而"生效值"(无标签文件用文件名兜底而来的标题)
+  // 会随改名变化,不能用来算指纹。缓存里带上指纹,命中与未命中才必然一致。
+  'fp', 'fpk'
 ]
 
 /** 缓存键:路径 + 修改时间 + 大小。任一项变化即失效 */
