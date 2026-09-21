@@ -2,7 +2,7 @@
   <div class="playlist-view">
     <div class="view-header">
       <div class="header-left">
-        <img v-if="playlistCover" :src="playlistCover" class="pl-big-cover" />
+        <img v-if="playlistCover" :src="playlistCover" class="pl-big-cover" alt="" />
         <div>
           <h1 class="header-title">{{ playlist?.name || '歌单' }}</h1>
           <span class="header-count">{{ songs.length }} 首</span>
@@ -10,27 +10,27 @@
       </div>
       <div class="header-right">
         <button class="add-songs-btn" @click="renamePlaylist" title="重命名歌单">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+          <Icon name="edit" :size="14" />
           <span>重命名</span>
         </button>
         <button class="add-songs-btn pl-del" @click="deletePlaylist" title="删除歌单">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+          <Icon name="remove" :size="14" />
           <span>删除歌单</span>
         </button>
         <button class="add-songs-btn" @click="exportPlaylistM3u">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <Icon name="upload" :size="14" />
           <span>导出</span>
         </button>
         <button class="add-songs-btn" @click="importPlaylist">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <Icon name="download" :size="14" />
           <span>导入歌曲</span>
         </button>
         <button class="add-songs-btn" @click="showAddDialog = true">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <Icon name="add" :size="15" />
           <span>添加歌曲</span>
         </button>
         <button v-if="songs.length" class="play-all-btn" @click="playAll">
-          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          <Icon name="play" :size="14" fill="currentColor" />
           <span>播放全部</span>
         </button>
       </div>
@@ -43,11 +43,11 @@
     <teleport to="body">
       <transition name="fade">
         <div v-if="showAddDialog" class="dialog-overlay" @click.self="closeAddDialog">
-          <div class="dialog-box">
+          <div class="modal-card dialog-box">
             <div class="dialog-header">
               <h3>添加歌曲到「{{ playlist?.name }}」</h3>
               <button class="dialog-close" @click="closeAddDialog">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon name="close" :size="14" />
               </button>
             </div>
             <div class="dialog-search">
@@ -67,9 +67,9 @@
                 :class="{ selected: addSelected.has(song.path) }"
                 @click="toggleAddSelect(song.path)"
               >
-                <input type="checkbox" :checked="addSelected.has(song.path)" @click.stop @change="toggleAddSelect(song.path)" />
+                <input type="checkbox" class="sf-check" :checked="addSelected.has(song.path)" :aria-label="`选择 ${song.title || '这首歌'}`" @click.stop @change="toggleAddSelect(song.path)" />
                 <div class="dialog-item-cover" v-if="song.coverUrl">
-                  <img :src="song.coverUrl" />
+                  <img :src="song.coverUrl" alt="" />
                 </div>
                 <div class="dialog-item-info">
                   <div class="dialog-item-title text-ellipsis">{{ song.title }}</div>
@@ -99,6 +99,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
+import Icon from '@/components/icons/Icon.vue'
+import { confirmDialog } from '@/composables/useConfirm'
 
 const route = useRoute()
 const router = useRouter()
@@ -115,11 +117,9 @@ const playlist = computed(() => musicStore.playlists.find(p => p.id === route.pa
 const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
 
 const sortedSongs = computed(() => musicStore.sortSongs(songs.value))
-function onReorder({ from, to, pos }) {  // 排序激活时拖拽会乱序,提示先回默认排序
-  if (musicStore.sortField) {
-    try { window.$toast?.('请先切换到「默认排序」再拖拽调整顺序', 'warning') } catch {}
-    return
-  }
+function onReorder({ from, to, pos }) {
+  // 拖拽自动解除列头排序:排序会遮蔽拖拽结果(显示顺序被排序覆盖),清空后按自定义顺序显示
+  musicStore.sortField = null
   musicStore.moveSongInPlaylist(playlist.id, from, to, pos)
 }
 
@@ -139,8 +139,8 @@ function renamePlaylist() {
   }
 }
 
-function deletePlaylist() {
-  if (!confirm(`确定删除歌单「${playlist.value?.name || ''}」？歌曲不会从曲库删除`)) return
+async function deletePlaylist() {
+  if (!(await confirmDialog({ message: `确定删除歌单「${playlist.value?.name || ''}」？`, detail: '歌单内的歌曲不会从曲库删除', confirmText: '删除', danger: true }))) return
   musicStore.deletePlaylist(route.params.id)
   window.$toast?.('歌单已删除', 'success')
   router.push('/home')
@@ -257,9 +257,11 @@ async function importPlaylist() {
 .view-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 12px; flex-shrink: 0; }
 .header-left { display: flex; align-items: center; gap: 12px; }
 .pl-big-cover { width: 56px; height: 56px; border-radius: 10px; object-fit: cover; box-shadow: var(--shadow-md); }
-.header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+.header-title { font-size: var(--font-size-page-title); font-weight: 700; color: var(--text-primary); }
 .header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
-.header-right { display: flex; align-items: center; gap: 8px; }
+.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; row-gap: 6px; }
+/* 最小窗口(960px)+ 可拖宽的侧边栏下,页头按钮组必然换行 —— 顶部对齐比居中稳定 */
+.view-header { align-items: flex-start; }
 
 .add-songs-btn, .play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .add-songs-btn { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); }
@@ -275,19 +277,13 @@ async function importPlaylist() {
 
 /* 弹窗 */
 .dialog-overlay {
-  position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.5);
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: var(--overlay-mask, rgba(0,0,0,0.5));
   display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(4px);
 }
 .dialog-box {
-  width: 560px; max-height: 80vh;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  padding: 0; width: 560px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
 }
 .dialog-header {
   display: flex; align-items: center; justify-content: space-between;
@@ -318,7 +314,7 @@ async function importPlaylist() {
 }
 .dialog-item:hover { background: var(--bg-hover); }
 .dialog-item.selected { background: var(--color-primary-alpha); }
-.dialog-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; flex-shrink: 0; }
+.dialog-item input[type="checkbox"] { flex-shrink: 0; }
 .dialog-item-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
 .dialog-item-cover img { width: 100%; height: 100%; object-fit: cover; }
 .dialog-item-info { flex: 1; min-width: 0; }

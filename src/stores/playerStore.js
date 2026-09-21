@@ -1,12 +1,25 @@
 import { defineStore } from 'pinia'
 import { DEFAULTS, getSetting } from '../config/defaults.js'
 import { ref, computed, watch, reactive } from 'vue'
-import { parseLRC as parseLRCLines } from '@/utils/lrc'
+import { parseLRCWithMeta } from '@/utils/lrc'
+import { resolveLyricOffset } from '@/utils/lyricTiming'
+import { formatDuration } from '@/utils/time'
+import { noteFailure } from '@/utils/failures'
+import { describeChain, formatChainLog, compareChain } from '@/services/playbackGraph'
 import { SoundTouch } from 'soundtouchjs'
+// 静态导入 musicStore(其不依赖 playerStore,通过 window 事件解耦,无循环依赖)
+import { useMusicStore } from '@/stores/musicStore'
 
 export const usePlayerStore = defineStore('player', () => {
   const audio = ref(null)
   const currentSong = ref(null)
+  // 队列项稳定 id:用于 v-for 的 key。
+  // 此前 key 含索引(song.path + '-' + idx),任何重排都会让全部 key 变化,
+  // 导致 Vue 重建整个列表行。队列允许同一首歌出现多次,故不能用 path 当 key。
+  // 不变量:同一个 _qid 始终对应同一条队列项(改动队列时用展开保留,新增项才分配新 id)。
+  let _qidSeq = 0
+  function withQid(s) { return { ...s, _qid: ++_qidSeq } }
+
   const playQueue = ref([])
   const currentIndex = ref(-1)
   const isPlaying = ref(false)
@@ -41,8 +54,21 @@ export const usePlayerStore = defineStore('player', () => {
     } catch {}
   }
   const lyrics = ref([])
+  // 歌词偏移:文件 [offset:] 的值(毫秒)与用户按曲微调的值(毫秒)。
+  // 有效偏移为正表示歌词需要**延后**显示,详见 utils/lyricTiming.resolveLyricOffset
+  const lyricFileOffsetMs = ref(0)
+  const lyricUserOffsetMs = ref(0)
+  // 按歌曲路径记忆的用户微调(本地歌词库最常见的问题就是整体偏早/偏晚)
+  const lyricOffsets = ref({})
+  const lyricOffsetSeconds = computed(() => resolveLyricOffset(lyricFileOffsetMs.value, lyricUserOffsetMs.value))
+  // 行索引与词级进度共用的时间轴:两处若各自减一次偏移,迟早会算得不一致
+  const lyricClock = computed(() => currentTime.value - lyricOffsetSeconds.value)
+  const lyricLoading = ref(false)
+  let _lyricReqSeq = 0 // 歌词并发加载请求序号,防止旧请求 finally 误清新请求的 loading 态
   const currentLyricIndex = ref(-1)
   const playbackRate = ref(1.0)
+  // 切歌续播(记忆上次进度):默认关 = 手动切歌从 0 开始;开 = 恢复该歌历史进度(>5s 且未播完)
+  const resumeProgress = ref(false)
   // 变调(半音,-12 ~ +12,0 = 不变调;经 SoundTouch 实时处理,与速度独立)
   const pitch = ref(0)
   // 桌面歌词三态:0=未打开 1=打开(解锁) 2=锁定(穿透)
@@ -62,12 +88,21 @@ export const usePlayerStore = defineStore('player', () => {
   // 错误计数器，防止无限循环
   let _consecutiveErrors = 0
   const MAX_CONSECUTIVE_ERRORS = 3
+  // 播放失败自动跳歌定时器句柄(可被用户手动切歌取消,避免多跳/覆盖用户选择)
+  let _failSkipTimer = null
+  // 用户是否已主动开始播放(用于压制启动时的自动续播,避免覆盖用户提前操作)
+  const userStartedPlay = ref(false)
   // 本次加载是否允许恢复播放记忆(随机模式/用户手动选择时为 false)
   let _pendingRestore = false
   let _restoreToastShown = false
   // 播完兜底:ended 事件可能因文件尾部异常不触发,停滞检测用
   let _endStallTimer = null
   let _endStallLast = -1
+  // 淡出定时器句柄与代次。必须可取消:否则淡出途中用户按下一曲,
+  // 0.8s 后旧回调仍会 playNext(),把刚开始的新歌顶掉(且音量被压在淡出值上)
+  let _fadeTimer = null
+  let _fadeGen = 0
+  let _fadeBaseVol = null
   // 原始队列顺序(供随机/顺序切换时恢复)
   let _originalQueue = []
 
@@ -94,6 +129,8 @@ export const usePlayerStore = defineStore('player', () => {
       isPlaying: typeof forcePlaying === 'boolean' ? forcePlaying : isPlaying.value
     })
   }
+  // 迷你窗打开时立即同步一次当前播放状态(消除新窗口刚挂载时的空占位,不必等下一次 timeupdate)
+  watch(miniOpen, (open) => { if (open) sendMiniUpdate() })
   function initAudio() {
     if (audio.value) return
     audio.value = new Audio()
@@ -102,9 +139,18 @@ export const usePlayerStore = defineStore('player', () => {
     applyPitch()
     // 建立音频图(频谱可视化常驻;音效开启时挂 EQ 链)
     ensureAudioGraph()
+    // 转码进度订阅(非原生格式的「准备阶段」反馈,如 APE/WMA)
+    initTranscodeProgress()
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
+      // A-B 循环:播到 B 就回到 A。放在 timeupdate(≈4Hz)而不是 rAF:
+      // 区间回跳对精度要求不高(几十毫秒内),而 4Hz 足够且不额外占帧。
+      if (abEnd.value > abStart.value && currentTime.value >= abEnd.value) {
+        try { audio.value.currentTime = abStart.value } catch (_) {}
+        currentTime.value = abStart.value
+        sendLyricUpdate()
+      }
       // 节流同步迷你播放器(主进程在迷你窗未开时丢弃,渲染端不判断状态避免同步失效)
       const now = Date.now()
       if (window.electronAPI && now - _lastMiniIpcTime > MINI_IPC_INTERVAL) {
@@ -117,6 +163,8 @@ export const usePlayerStore = defineStore('player', () => {
       duration.value = audio.value.duration
       isBuffering.value = false
       _consecutiveErrors = 0 // 成功加载，重置错误计数
+      // 切歌通知:音频元数据就绪时才触发(对齐实际播放,避免快速切歌时通知提前/堆积)
+      if (currentSong.value) showSongNotify(currentSong.value)
       if (_pendingRestore && currentSong.value) {
         const saved = progressHistory.value[currentSong.value.path]
         if (saved && saved > 5 && saved < duration.value - 5) {
@@ -135,23 +183,66 @@ export const usePlayerStore = defineStore('player', () => {
     })
 
     audio.value.addEventListener('ended', () => onSongEnd())
-    audio.value.addEventListener('play', () => { isPlaying.value = true })
-    audio.value.addEventListener('pause', () => { isPlaying.value = false })
+    // 播放状态以**音频元素的事件**为准,并在这里统一推送给迷你窗。
+    // 此前只在 togglePlay 里推送,于是所有不经过它的暂停/停止都不同步:
+    // 连续失败后的停止、清空队列(releaseAudio)、写标签前释放音频、睡眠定时、
+    // 系统媒体键/耳机按键暂停、队列播完 —— 主窗口停了,迷你窗还显示在播放。
+    // 挂在事件上以后,任何路径改变播放状态都会同步,不必逐个调用点记得补推送。
+    audio.value.addEventListener('play', () => {
+      isPlaying.value = true
+      sendMiniUpdate(true)
+    })
+    audio.value.addEventListener('pause', () => {
+      isPlaying.value = false
+      sendMiniUpdate(false)
+    })
     audio.value.addEventListener('waiting', () => { isBuffering.value = true })
     audio.value.addEventListener('canplay', () => { isBuffering.value = false })
+    // 兜底清除缓冲态:缓冲后可能不经 canplay 就恢复(网络盘恢复、seek 命中缓存、
+    // 解码器自行追上),此时只等 canplay 会让转圈图标一直转 —— 看起来就是"播放栏卡住不更新"。
+    // playing(真正出声)与 seeked(跳转完成)都是可靠的"已经好了"信号。
+    audio.value.addEventListener('playing', () => { isBuffering.value = false })
+    audio.value.addEventListener('seeked', () => { isBuffering.value = false })
     audio.value.addEventListener('error', (e) => {
       // 主动清空 src(releaseAudio/stopPlayback)会触发空 src 错误,直接忽略,不视为播放失败
       if (!audio.value || !audio.value.src) return
       console.error('[播放器] 错误:', e)
       isBuffering.value = false
       _consecutiveErrors++
+      // 播放失败提示(仅首次提示,连续失败不刷屏)。
+      // 带上动作:文件损坏/格式不支持时,"重试"与"打开位置"是用户真正会做的事;
+      // 此前只有一句"自动跳下一首",想去看看文件还得自己开资源管理器找。
+      if (_consecutiveErrors === 1) {
+        try {
+          const song = currentSong.value
+          const name = song?.title || ''
+          const actions = []
+          if (song?.path) {
+            actions.push({
+              label: '重试',
+              onClick: () => {
+                _consecutiveErrors = 0
+                if (_failSkipTimer) { clearTimeout(_failSkipTimer); _failSkipTimer = null }
+                loadAndPlay(currentIndex.value, true)
+              }
+            })
+            actions.push({
+              label: '打开位置',
+              onClick: () => { try { window.electronAPI?.openFileLocation?.(song.path) } catch (_) {} }
+            })
+          }
+          window.$toast?.(`「${name}」播放失败,将自动跳到下一首`, 'warning', 6000, actions)
+        } catch {}
+      }
       if (_consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
         console.error('[播放器] 连续播放失败，停止播放')
         _consecutiveErrors = 0
         isPlaying.value = false
+        sendMiniUpdate(false) // 元素从未进入播放态时不会有 pause 事件,这里显式推
         return
       }
-      setTimeout(() => playNext(), 1000)
+      if (_failSkipTimer) clearTimeout(_failSkipTimer)
+      _failSkipTimer = setTimeout(() => { _failSkipTimer = null; playNext() }, 1000)
     })
   }
 
@@ -260,7 +351,16 @@ export const usePlayerStore = defineStore('player', () => {
   let _pitchST = null
   let _mediaSourceNode = null
   let _fadeGain = null   // 播放淡入淡出增益节点
-  let _replayGainFactor = 1  // 响度均衡系数(与用户音量叠加)
+  // 响度均衡:增益施加在音频图的 GainNode 上,而不是乘进 element.volume。
+  // element.volume 上限是 1,乘出来的结果再 clamp —— 用户音量偏高时安静曲目永远提不上去,
+  // 「响度均衡」实际只剩衰减;GainNode 可以 > 1,峰值交给后面的限幅器兜底。
+  let _replayGainFactor = 1
+  let _rgGain = null
+  let _limiter = null
+  // 当前曲目实际施加的响度增益(dB),供音质信息卡显示;0 表示未均衡
+  const currentGainDb = ref(0)
+  // 当前是否以转码产物播放(非原生格式首次播放时会先转码为 FLAC)
+  const isTranscoded = ref(false)
   // 响度均衡开关(默认关;开启后后台批量分析,避免启动期 CPU 压力)
   const replayGainEnabled = ref(false)
   let _eqFilters = []
@@ -270,8 +370,16 @@ export const usePlayerStore = defineStore('player', () => {
   let _widthMerger = null
   let _reverbConvolver = null
   let _reverbGain = null
+  // 混响的干路节点:此前是局部 const,重建时无法断开它的输出连接,
+  // 导致每次改 EQ 参数都会往 destination 上多挂一个死节点(输入已断,输出静音但仍在图里)
+  let _reverbDryGain = null
   let _compressor = null
   let _analyser = null
+  // 统一输出节点:所有分支先汇入这里,再由它接 destination 与分析器。
+  // 分析器必须采"真正送到输出的那路",否则混响的湿信号会被漏掉(见下方连接点注释)
+  let _outGain = null
+  // 上一次打印过的链描述:仅当级序变化时才打日志,避免调 EQ 滑杆时刷屏
+  let _lastChainLog = ''
 
   // 确保音频图存在(频谱可视化需要常驻 AudioContext;音效开启时再挂 EQ 链)
   function ensureAudioGraph() {
@@ -292,6 +400,24 @@ export const usePlayerStore = defineStore('player', () => {
         _analyser = _audioCtx.createAnalyser()
         _analyser.fftSize = 256
         _analyser.smoothingTimeConstant = 0.8
+      }
+      if (!_outGain) {
+        _outGain = _audioCtx.createGain()
+        _outGain.gain.value = 1
+      }
+      if (!_rgGain) {
+        _rgGain = _audioCtx.createGain()
+        _rgGain.gain.value = _replayGainFactor
+      }
+      if (!_limiter) {
+        // 真峰值保护:只有响度增益 > 1 时才可能起作用。常驻一个压缩器,
+        // 比「增益越界就重建音频链」便宜得多 —— 重建带 40ms 静音过渡,切歌时会听见停顿。
+        _limiter = _audioCtx.createDynamicsCompressor()
+        _limiter.threshold.value = -0.5
+        _limiter.knee.value = 0
+        _limiter.ratio.value = 20
+        _limiter.attack.value = 0.003
+        _limiter.release.value = 0.25
       }
       rebuildAudioChain()
     } catch (e) {
@@ -314,6 +440,8 @@ export const usePlayerStore = defineStore('player', () => {
       // 断开旧连接
       _mediaSourceNode.disconnect()
       if (_fadeGain) { try { _fadeGain.disconnect() } catch {} }
+      // 输出节点:一条 disconnect 同时切掉 destination 与分析器两条出边
+      if (_outGain) { try { _outGain.disconnect() } catch {} }
       _eqFilters.forEach(f => { try { f.disconnect() } catch {} })
       _eqFilters = []
       if (_bassFilter) { try { _bassFilter.disconnect() } catch {}; _bassFilter = null }
@@ -322,15 +450,21 @@ export const usePlayerStore = defineStore('player', () => {
       if (_widthMerger) { try { _widthMerger.disconnect() } catch {}; _widthMerger = null }
       if (_reverbConvolver) { try { _reverbConvolver.disconnect() } catch {}; _reverbConvolver = null }
       if (_reverbGain) { try { _reverbGain.disconnect() } catch {}; _reverbGain = null }
+      if (_reverbDryGain) { try { _reverbDryGain.disconnect() } catch {}; _reverbDryGain = null }
       if (_compressor) { try { _compressor.disconnect() } catch {}; _compressor = null }
+      if (_rgGain) { try { _rgGain.disconnect() } catch {} }
+      if (_limiter) { try { _limiter.disconnect() } catch {} }
       if (_pitchNode) { try { _pitchNode.disconnect() } catch {} }
 
       const s = eqSettings.value
       let prev = _mediaSourceNode
+      // 实际连线轨迹:与 describeChain() 的声明比对,防止"描述与实现各自漂移"
+      const trace = ['source']
       // 淡入淡出增益节点(链首,播放淡入用)
       if (_fadeGain) {
         _mediaSourceNode.connect(_fadeGain)
         prev = _fadeGain
+        trace.push('fade')
       }
       // 变调(pitch ≠ 0 时经 SoundTouch 管线;音高独立处理,与速度无联动)
       if (pitch.value !== 0) {
@@ -338,9 +472,11 @@ export const usePlayerStore = defineStore('player', () => {
         if (_pitchNode) {
           prev.connect(_pitchNode)
           prev = _pitchNode
+          trace.push('pitch')
         }
       }
       if (s.enabled) {
+        trace.push('eq10', 'bass', 'treble', 'mid')
         // 10 段 EQ
         s.gains.forEach((g, i) => {
           const f = _audioCtx.createBiquadFilter()
@@ -393,6 +529,7 @@ export const usePlayerStore = defineStore('player', () => {
           midG.connect(merger, 0, 1); widthInvG.connect(merger, 0, 1)  // R = M - S*w
           _widthMerger = merger
           prev = merger
+          trace.push('width')
         }
         // 空间声场(轻量混响)
         if (s.reverb > 0) {
@@ -403,10 +540,14 @@ export const usePlayerStore = defineStore('player', () => {
           prev.connect(dryGain)
           prev.connect(_reverbConvolver)
           _reverbConvolver.connect(wetGain)
-          dryGain.connect(_audioCtx.destination)
-          wetGain.connect(_audioCtx.destination)
+          // 干/湿两路都汇入统一输出节点(而不是各自直连 destination):
+          // 这样分析器从输出节点取到的才是「干 + 湿」的完整信号
+          dryGain.connect(_outGain)
+          wetGain.connect(_outGain)
           _reverbGain = wetGain
+          _reverbDryGain = dryGain
           prev = dryGain
+          trace.push('reverb')
         }
         // 动态压缩(增强响度)
         if (s.comp > 0) {
@@ -418,14 +559,44 @@ export const usePlayerStore = defineStore('player', () => {
           _compressor.release.value = 0.25
           prev.connect(_compressor)
           prev = _compressor
+          trace.push('comp')
         }
-        prev.connect(_audioCtx.destination)
+        prev.connect(_outGain)
       } else {
         // 未开启:直通(仍走 AudioContext,保持路由一致)
-        prev.connect(_audioCtx.destination)
+        prev.connect(_outGain)
       }
-      // 频谱分析:从链尾(或直通点)分接,不连 destination
-      try { prev.connect(_analyser) } catch {}
+      // 唯一出口:输出电压 → 响度增益 → 限幅器 → destination,并从**链尾**分接分析器。
+      // 分析器必须采最终输出 —— 此前它接在 prev 上,而混响分支结束时 prev 是 dryGain,
+      // 于是开启混响后频谱只看到干信号,听感里的混响尾音完全不参与可视化。
+      // 响度增益与限幅器同样属于「最终输出」:频谱要反映实际听到的电平。
+      let tail = _outGain
+      if (_rgGain) { tail.connect(_rgGain); tail = _rgGain }
+      if (_limiter) { tail.connect(_limiter); tail = _limiter }
+      tail.connect(_audioCtx.destination)
+      try { tail.connect(_analyser) } catch (e) {
+        noteFailure('audio.graph', '分析器接入输出节点失败,频谱将不可用', e)
+      }
+      trace.push('out')
+
+      // 不变量:实际级序必须与 playbackGraph 的声明一致。
+      // 顺序本身就是若干已修 bug 的落点(分析器采样点、音量与效果的前后关系),
+      // 所以这里不是"打印一下方便调试",而是主动比对:
+      // 谁新增了节点却忘了更新声明,下一次重建就会留下一条带原因的失败记录。
+      const declared = describeChain(s, pitch.value !== 0)
+      const cmp = compareChain(declared, trace)
+      if (!cmp.ok) {
+        noteFailure(
+          'audio.graph',
+          `音频链级序与声明不一致:实际 ${trace.join(' > ')};声明 ${declared.join(' > ')}`,
+          null
+        )
+      }
+      const logLine = formatChainLog(trace)
+      if (logLine !== _lastChainLog) {
+        _lastChainLog = logLine
+        console.info(logLine)
+      }
       // 重建完成,平滑恢复音量(防爆音过渡结束)
       if (_fadeGain) {
         try {
@@ -435,7 +606,7 @@ export const usePlayerStore = defineStore('player', () => {
         } catch (_) {}
       }
     } catch (e) {
-      console.error('[音效] 重建链失败:', e.message)
+      noteFailure('audio.graph', '重建音频链失败,音效可能未生效', e)
     }
   }
 
@@ -523,7 +694,8 @@ export const usePlayerStore = defineStore('player', () => {
   // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
   // 同时记录原始顺序,供随机/顺序切换时恢复
   function setPlayQueue(songs, startIndex = 0) {
-    playQueue.value = songs.map(s => ({ ...s }))
+    userStartedPlay.value = true
+    playQueue.value = songs.map(withQid)
     _originalQueue = playQueue.value.map(s => ({ ...s }))
     currentIndex.value = startIndex
     if (songs.length > 0 && startIndex >= 0 && startIndex < songs.length) {
@@ -535,20 +707,23 @@ export const usePlayerStore = defineStore('player', () => {
   // 插入到下一首
   function insertNext(song) {
     const insertIdx = currentIndex.value + 1
-    playQueue.value.splice(insertIdx, 0, { ...song })
-    _originalQueue.push({ ...song }) // 同步原始队列
+    const item = withQid(song)
+    playQueue.value.splice(insertIdx, 0, item)
+    _originalQueue.splice(insertIdx, 0, { ...item }) // 同步原始队列(保持顺序一致)
     saveQueueState()
   }
 
   // 追加到播放列表末尾(拖歌曲到播放栏等场景)
   function addToQueue(song) {
-    playQueue.value.push({ ...song })
-    _originalQueue.push({ ...song })
+    const item = withQid(song)
+    playQueue.value.push(item)
+    _originalQueue.push({ ...item })
     saveQueueState()
   }
 
   // 停止播放并清空队列
   function stopPlayback() {
+    cancelFade()
     if (audio.value) { audio.value.pause(); audio.value.src = '' }
     currentSong.value = null
     currentIndex.value = -1
@@ -566,11 +741,11 @@ export const usePlayerStore = defineStore('player', () => {
   function removeFromQueue(index) {
     if (index < 0 || index >= playQueue.value.length) return
     const wasCurrent = index === currentIndex.value
-    const removedPath = playQueue.value[index]?.path
+    const removed = playQueue.value[index]
     playQueue.value.splice(index, 1)
-    // 同步原始队列(按 path 移除)
-    if (removedPath) {
-      const oi = _originalQueue.findIndex(s => s.path === removedPath)
+    // 同步原始队列:按 _qid 精确移除(队列含重复歌曲时按 path 会删错那一条)
+    if (removed && removed._qid != null) {
+      const oi = _originalQueue.findIndex(s => s._qid === removed._qid)
       if (oi >= 0) _originalQueue.splice(oi, 1)
     }
     if (wasCurrent) {
@@ -588,23 +763,6 @@ export const usePlayerStore = defineStore('player', () => {
     saveQueueState()
   }
 
-  // 队列拖拽排序(调整顺序,维护 currentIndex 引用)
-  function moveInQueue(from, to) {
-    const q = playQueue.value
-    if (from < 0 || from >= q.length || to < 0 || to >= q.length || from === to) return
-    const [item] = q.splice(from, 1)
-    q.splice(to, 0, item)
-    const cur = currentIndex.value
-    if (cur === from) currentIndex.value = to
-    else if (from < cur && to >= cur) currentIndex.value = cur - 1
-    else if (from > cur && to <= cur) currentIndex.value = cur + 1
-    // 同步原始队列顺序
-    if (_originalQueue.length === q.length) {
-      _originalQueue = q.map(s => ({ ...s }))
-    }
-    saveQueueState()
-  }
-
   // 拖拽排序后修正当前索引(playQueue 已由拖拽库改序)
   function fixQueueIndex(oldIndex, newIndex) {
     if (oldIndex === newIndex) return
@@ -616,6 +774,17 @@ export const usePlayerStore = defineStore('player', () => {
     else if (newIndex <= ci && ci < oldIndex) ci++
     currentIndex.value = ci
     saveQueueState()
+  }
+
+  // 队列拖拽排序重排(播放栏/播放页共用):Sortable 触发 onEnd 后此处统一完成 splice + 修正索引引用
+  function reorderQueue(oldIndex, newIndex) {
+    const q = playQueue.value
+    if (!Number.isInteger(oldIndex) || !Number.isInteger(newIndex) || oldIndex === newIndex) return
+    if (oldIndex < 0 || oldIndex >= q.length || newIndex < 0 || newIndex >= q.length) return
+    const moved = q.splice(oldIndex, 1)[0]
+    q.splice(newIndex, 0, moved)
+    fixQueueIndex(oldIndex, newIndex)
+    syncOriginalQueue() // 拖拽即新顺序,随机模式恢复时保持一致
   }
 
   // 播放列表持久化:保存队列与当前索引(重启后恢复)
@@ -646,7 +815,6 @@ export const usePlayerStore = defineStore('player', () => {
       // 新格式 queue 为 path 数组 → 映射回歌曲对象(避免序列化整个队列);旧格式对象数组兼容
       if (typeof state.queue[0] === 'string') {
         try {
-          const { useMusicStore } = await import('@/stores/musicStore')
           const songMap = new Map(useMusicStore().songs.map(s => [s.path, s]))
           const mapped = state.queue.map(p => songMap.get(p)).filter(Boolean)
           if (mapped.length > 0) {
@@ -655,7 +823,8 @@ export const usePlayerStore = defineStore('player', () => {
           }
         } catch { return }
       }
-      playQueue.value = state.queue.filter(s => s && s.path)
+      // 恢复自持久化数据:补齐稳定 id(旧数据没有 _qid,且同一首歌可能在队列里出现多次)
+      playQueue.value = state.queue.filter(s => s && s.path).map(withQid)
       _originalQueue = playQueue.value.map(s => ({ ...s }))
       if (playQueue.value.length === 0) return
       currentIndex.value = (state.index >= 0 && state.index < playQueue.value.length) ? state.index : 0
@@ -667,11 +836,38 @@ export const usePlayerStore = defineStore('player', () => {
     } catch {}
   }
 
+  // ===== 播放源解析(原生直通 / 非原生转码)=====
+  // 转码进度(0-100,仅在非原生格式的「准备阶段」大于 0):播放栏/播放页据此显示「转码中 x%」
+  const transcodePct = ref(0)
+  let _offTranscodeProgress = null
+  // 主进程在 prepare-audio 期间持续推送已处理秒数;百分比在这里换算(歌曲时长曲库已知,无需额外探测)
+  function initTranscodeProgress() {
+    if (_offTranscodeProgress || !window.electronAPI || !window.electronAPI.on) return
+    _offTranscodeProgress = window.electronAPI.on('transcode-progress', (info) => {
+      if (!info || !currentSong.value || info.path !== currentSong.value.path) return
+      const total = duration.value || currentSong.value.duration || 0
+      if (total > 0) transcodePct.value = Math.min(99, Math.round((info.processedSec / total) * 100))
+    })
+  }
+
+  // 统一解析可播放源。此前只有 loadAndPlay 走 prepareAudio,恢复播放与下一曲预载各自拼
+  // file:/// 原始路径 —— 于是 APE/WMA/AIFF 这类格式「点歌能播、续播与预载必失败」。
+  async function resolveSrc(song) {
+    const raw = `file:///${song.path.replace(/\\/g, '/')}`
+    if (!window.electronAPI || song.path.startsWith('blob:')) return { url: song.path, res: null }
+    try {
+      const res = await window.electronAPI.prepareAudio(song.path)
+      return { url: (res && res.url) || raw, res: res || null }
+    } catch {
+      return { url: raw, res: null }
+    }
+  }
+
   // 加载并播放
   // fromBeginning=true:用户手动选择,从头播放;false:自动切歌,顺序模式恢复记忆、随机模式从头
   // 无缝预加载:下一曲预缓冲到隐藏 Audio(本地直连 file://,随机模式预取随机曲;repeatOne 不预取)
   const _preloadAudio = typeof Audio !== 'undefined' ? new Audio() : null
-  function preloadNextTrack() {
+  async function preloadNextTrack() {
     if (!_preloadAudio) return
     const q = playQueue.value
     if (!q.length || q.length < 2 || playMode.value === 'repeatOne') return
@@ -680,10 +876,11 @@ export const usePlayerStore = defineStore('player', () => {
     else idx = (currentIndex.value + 1) % q.length
     const next = q[idx]
     if (!next || !next.path) return
-    const src = `file:///${next.path.replace(/\\/g, '/')}`
-    if (_preloadAudio.src !== src) {
+    // 预载同样走 resolveSrc:转码产物才是可播源,原始 APE/WMA 路径预载必然失败
+    const { url } = await resolveSrc(next)
+    if (_preloadAudio.src !== url) {
       _preloadAudio.preload = 'auto'
-      _preloadAudio.src = src
+      _preloadAudio.src = url
       _preloadAudio.load()
     }
   }
@@ -691,6 +888,10 @@ export const usePlayerStore = defineStore('player', () => {
   async function loadAndPlay(index, fromBeginning = false) {
     initAudio()
     if (index < 0 || index >= playQueue.value.length) return
+    // 手动/自动切歌:取消挂起的播放失败自动跳歌(避免多跳/覆盖用户选择)
+    if (_failSkipTimer) { clearTimeout(_failSkipTimer); _failSkipTimer = null }
+    // 手动/自动切歌:取消挂起的淡出(否则 0.8s 后旧回调会顶掉刚加载的新歌)
+    cancelFade()
 
     // 手动/自动切歌:清除"播完当前曲目停止"挂起(用户已接管,不再意外停止)
     if (sleepTimerMinutes.value === -1) clearSleepTimer()
@@ -702,31 +903,42 @@ export const usePlayerStore = defineStore('player', () => {
     const song = playQueue.value[index]
     currentSong.value = song
     isBuffering.value = true
+    // 时间轴立即归零:新歌的 duration 要到 loadedmetadata 才可知。沿用上一首的值会让
+    // 进度条按旧时长画百分比,也让 seek 落到错误位置 —— 转码等待期间尤其明显
+    duration.value = 0
+    currentTime.value = 0
+    transcodePct.value = 0
+    clearAB() // 区间属于"这一首",换歌即失效
 
-    // 切歌通知(设置开关,默认关):应用内卡片(封面+歌名+歌手),替代系统横幅
-    showSongNotify(song)
-
-    // 是否允许恢复记忆:非手动选择 且 非随机模式 且 该歌有记忆记录
-    _pendingRestore = !fromBeginning && playMode.value !== 'random'
+    // 是否允许恢复记忆:需开启「切歌续播」设置 且 非手动从头播放 且 非随机模式 且 该歌有记忆记录
+    _pendingRestore = resumeProgress.value && !fromBeginning && playMode.value !== 'random'
     if (!_pendingRestore || !progressHistory.value[song.path]) {
       _pendingRestore = false
     }
 
-    // 准备音频源:原生格式直通,不支持的格式(APE/WMA 等)主进程转码后播放
-    let src
-    if (window.electronAPI && !song.path.startsWith('blob:')) {
-      try {
-        const res = await window.electronAPI.prepareAudio(song.path)
-        src = res?.url || `file:///${song.path.replace(/\\/g, '/')}`
-      } catch {
-        src = `file:///${song.path.replace(/\\/g, '/')}`
-      }
-    } else {
-      src = song.path
-    }
+    // 准备音频源:原生格式直通,不支持的格式(APE/WMA 等)主进程转码后播放。
+    // 先停掉上一首 —— 转码可能耗时数十秒,期间继续播放旧音频会与已切换的标题/封面自相矛盾
+    // (用户看到「新歌名 + 旧声音 + 旧进度」)。
+    if (audio.value && !audio.value.paused) { try { audio.value.pause() } catch (_) {} }
+    const { url: src, res } = await resolveSrc(song)
 
     // 异步期间可能已切歌
     if (currentIndex.value !== index || currentSong.value !== song) return
+    transcodePct.value = 0
+    isTranscoded.value = !!(res && res.transcoded)
+    if (res && res.transcodeFailed) {
+      // 源文件根本不可播时给出可操作提示,而不是笼统的「播放失败,自动跳下一首」
+      try {
+        const name = song.title || ''
+        window.$toast?.(
+          res.needFfmpeg
+            ? `「${name}」需要 ffmpeg 转码,但未找到可用的 ffmpeg(设置页可查看诊断)`
+            : `「${name}」转码失败,已尝试直接播放`,
+          'warning',
+          5000
+        )
+      } catch (_) {}
+    }
     audio.value.src = src
     preloadNextTrack() // 无缝预加载:下一曲缓冲,切歌几乎无延迟
     applyPitchToAudio() // 应用倍速(变调节点已在音频链中,切歌自动生效)
@@ -739,7 +951,8 @@ export const usePlayerStore = defineStore('player', () => {
         isPlaying.value = false
         return
       }
-      setTimeout(() => playNext(), 800)
+      if (_failSkipTimer) clearTimeout(_failSkipTimer)
+      _failSkipTimer = setTimeout(() => { _failSkipTimer = null; playNext() }, 800)
     })
     fadeIn()
     ensureReplayGain(song.path)
@@ -779,6 +992,7 @@ export const usePlayerStore = defineStore('player', () => {
   // 歌词翻译
   const showTranslation = ref(false)
   const translating = ref(false)
+  let _transReqSeq = 0 // 翻译并发请求序号,仅最晚请求落地并复位 translating
   const translations = ref([])
   const translateNotice = ref('') // 翻译服务不可用提示弹窗:'' 无 / 'quota' 额度用完 / 'empty' 服务不可用
   let _translationCache = new Map() // 歌曲路径 -> 译文数组(会话内缓存)
@@ -819,14 +1033,17 @@ export const usePlayerStore = defineStore('player', () => {
     const song = currentSong.value
     if (!song) return
     const reqSong = song
+    const seq = ++_transReqSeq // 同歌/连点并发保护:只让最新请求落地
     if (_translationCache.has(song.path) && _isValidTranslation(_translationCache.get(song.path))) {
       translations.value = _translationCache.get(song.path)
+      translating.value = false // 缓存命中:若此前有旧请求在途,需复位标志避免卡死
       return
     }
     // 懒加载持久化缓存
     if (_translationCache.size === 0) _loadTransCache()
     if (_translationCache.has(song.path) && _isValidTranslation(_translationCache.get(song.path))) {
       translations.value = _translationCache.get(song.path)
+      translating.value = false
       return
     }
     const texts = lyrics.value.map(l => l.text)
@@ -842,8 +1059,8 @@ export const usePlayerStore = defineStore('player', () => {
         service,
         deepseekKey
       })
-      // 竞态保护:翻译期间可能已切歌
-      if (currentSong.value !== reqSong) return
+      // 竞态保护:翻译期间可能已切歌,或已有更新的翻译请求
+      if (currentSong.value !== reqSong || seq !== _transReqSeq) return
       // 免费配额耗尽 / 服务不可用:友好提示 + 引导配置 DeepSeek
       if (result && result.error === 'quota') {
         translations.value = []
@@ -862,9 +1079,9 @@ export const usePlayerStore = defineStore('player', () => {
         _saveTransCache()
       }
     } catch {
-      translations.value = []
+      if (seq === _transReqSeq) translations.value = []
     } finally {
-      translating.value = false
+      if (seq === _transReqSeq) translating.value = false
     }
   }
 
@@ -878,9 +1095,15 @@ export const usePlayerStore = defineStore('player', () => {
   //  - 源=netease/lrclib(显式选择):强制用该在线源;在线无结果才回退本地
   async function loadLyrics(song) {
     const reqSong = song
+    const seq = ++_lyricReqSeq
+    lyricLoading.value = true
     lyrics.value = []
     currentLyricIndex.value = -1
-    if (!window.electronAPI) return
+    // 换歌即重置文件偏移:新歌的 [offset:] 会在成功解析后由 setLyricsFromText 重新套用。
+    // 若这首歌最终没有歌词,偏移也不应沿用上一首的。用户微调按曲读取。
+    lyricFileOffsetMs.value = 0
+    lyricUserOffsetMs.value = getLyricUserOffset(song)
+    if (!window.electronAPI) { lyricLoading.value = false; return }
     try {
       // 0. 读取本地 .lrc(备用于 auto 优先 / 显式源失败回退)
       let lyricFolders = []
@@ -903,7 +1126,7 @@ export const usePlayerStore = defineStore('player', () => {
       const showLyrics = (text, origin) => {
         if (currentSong.value !== reqSong) return false
         lyricOrigin.value = origin
-        lyrics.value = parseLRC(text)
+        setLyricsFromText(text)
         if (showTranslation.value) translateCurrentLyrics()
         return true
       }
@@ -951,21 +1174,89 @@ export const usePlayerStore = defineStore('player', () => {
         showLyrics(lrcText, '本地')
       } else {
         lyricOrigin.value = (source === 'auto' && lrcText) ? '本地' : (onlineEnabled ? '未找到' : '')
-        if (source === 'auto' && lrcText) lyrics.value = parseLRC(lrcText)
+        if (source === 'auto' && lrcText) setLyricsFromText(lrcText)
       }
-    } catch {}
+    } catch (e) {
+      // 此前完全静默:读取/解析失败的界面表现与「这首歌没有歌词」一模一样,无法区分。
+      // 这里写入日志(主进程 console-message 会落盘)并在歌词来源处显示失败状态;
+      // 不用 toast 是因为网络异常时每切一首都会弹,反而打扰。
+      console.error('[歌词] 加载失败:', e)
+      if (currentSong.value === reqSong) lyricOrigin.value = '加载失败'
+    } finally {
+      if (seq === _lyricReqSeq) lyricLoading.value = false
+    }
   }
 
   // 解析 LRC
+  // 解析歌词文本:统一走这里,顺带取出 [offset:] 并套用当前歌曲的用户微调。
+  // 此前直接调 parseLRC,offset 标签被静默忽略,且全项目没有任何偏移校正。
+  function setLyricsFromText(text) {
+    const { offsetMs, lines } = parseLRCWithMeta(text)
+    lyricFileOffsetMs.value = offsetMs
+    lyricUserOffsetMs.value = getLyricUserOffset(currentSong.value)
+    lyrics.value = lines
+  }
+
+  /** 取某首歌的用户偏移微调(毫秒) */
+  function getLyricUserOffset(song) {
+    const key = song && song.path
+    if (!key) return 0
+    const v = lyricOffsets.value[key]
+    return Number.isFinite(v) ? v : 0
+  }
+
+  /** 加载按曲偏移记忆 */
+  function loadLyricOffsets() {
+    try {
+      const raw = localStorage.getItem('soundflow_lyric_offsets')
+      const parsed = raw ? JSON.parse(raw) : {}
+      lyricOffsets.value = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {}
+    } catch (e) {
+      lyricOffsets.value = {}
+      noteFailure('lyric.offset', '按曲歌词偏移记忆读取失败,已重置', e)
+    }
+  }
+
+  /**
+   * 设置当前歌曲的偏移微调(毫秒,正值 = 歌词延后)。
+   * 传 0 表示清除该曲的微调记录。
+   */
+  function setLyricUserOffset(ms) {
+    const key = currentSong.value && currentSong.value.path
+    if (!key) return
+    const v = Number.isFinite(ms) ? Math.round(ms) : 0
+    const next = { ...lyricOffsets.value }
+    if (v) next[key] = v
+    else delete next[key]
+    lyricOffsets.value = next
+    lyricUserOffsetMs.value = v
+    try { localStorage.setItem('soundflow_lyric_offsets', JSON.stringify(next)) } catch (e) {
+      noteFailure('lyric.offset', '按曲歌词偏移记忆保存失败(本次调整仍然生效)', e)
+    }
+    updateLyricIndex() // 立即生效,不必等下一帧
+  }
+
+  /** 在当前值上增减(供 UI 的 ±0.1s / ±0.5s 按钮) */
+  function nudgeLyricOffset(deltaMs) {
+    setLyricUserOffset((lyricUserOffsetMs.value || 0) + deltaMs)
+  }
+
+  /** 清除当前歌曲的微调 */
+  function resetLyricUserOffset() {
+    setLyricUserOffset(0)
+  }
+
+  /** 兼容旧调用点:仅取歌词行 */
   function parseLRC(text) {
-    return parseLRCLines(text)
+    return parseLRCWithMeta(text).lines
   }
 
   // 更新当前歌词索引(二分查找,歌词时间有序)
   function updateLyricIndex() {
     const arr = lyrics.value
     if (arr.length === 0) { currentLyricIndex.value = -1; return }
-    const t = currentTime.value
+    // 用 lyricClock(已扣除偏移)而不是原始 currentTime,偏移调整才能立即反映到高亮行
+    const t = lyricClock.value
     let lo = 0, hi = arr.length - 1, idx = -1
     while (lo <= hi) {
       const mid = (lo + hi) >> 1
@@ -1009,7 +1300,8 @@ export const usePlayerStore = defineStore('player', () => {
     try {
       // 歌词可能刚加载而 currentTime 未变化 → 主动重算当前句索引
       updateLyricIndex()
-      const lines = JSON.parse(JSON.stringify(lyrics.value)).map(l => ({ time: l.time, text: l.text }))
+      // 直接浅映射纯对象(time/text),避免无谓深拷贝;IPC 序列化时自会拷贝
+      const lines = lyrics.value.map(l => ({ time: l.time, text: l.text }))
       window.electronAPI.sendLyricUpdate({
         title: currentSong.value?.title || '',
         artist: currentSong.value?.artist || '',
@@ -1138,9 +1430,12 @@ export const usePlayerStore = defineStore('player', () => {
     ms.playbackState = isPlaying.value ? 'playing' : 'paused'
     syncPositionState()
 
-    // 通知主进程更新任务栏缩略图按钮
+    // 通知主进程更新任务栏缩略图按钮(带当前歌曲名,最小化时也实时刷新)
     if (window.electronAPI) {
-      window.electronAPI.send('smtc:playback-state', isPlaying.value ? 'playing' : 'paused')
+      window.electronAPI.send('smtc:playback-state', {
+        state: isPlaying.value ? 'playing' : 'paused',
+        title: currentSong.value?.title || currentSong.value?.artist || ''
+      })
     }
   }
 
@@ -1165,18 +1460,23 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
   // 写文件后恢复播放(重新加载当前歌曲并从指定秒继续)
-  function restoreAudio(time) {
+  async function restoreAudio(time) {
     const a = audio.value
     const song = currentSong.value
     if (!a || !song) return
     try {
-      a.src = song.path
+      // 走统一解析:此前直接 a.src = song.path —— 既没有 file:/// 前缀也未经转码,
+      // APE/WMA/AIFF 这类格式在「写回标签后恢复播放」时必然失败
+      const { url } = await resolveSrc(song)
+      if (currentSong.value !== song) return // 异步期间已切歌
+      a.src = url
       a.currentTime = time || 0
       a.play().catch(() => {})
     } catch {}
   }
 
   function togglePlay() {
+    userStartedPlay.value = true
     initAudio()
     if (!audio.value) return
     if (isPlaying.value) {
@@ -1194,10 +1494,12 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function playIndex(index) {
+    userStartedPlay.value = true
     if (index >= 0 && index < playQueue.value.length) loadAndPlay(index, true)
   }
 
   function playPrev() {
+    userStartedPlay.value = true
     if (playQueue.value.length === 0) return
     let idx
     if (playMode.value === 'random') {
@@ -1209,6 +1511,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function playNext() {
+    userStartedPlay.value = true
     if (playQueue.value.length === 0) return
     let idx
     if (playMode.value === 'random') {
@@ -1227,16 +1530,38 @@ export const usePlayerStore = defineStore('player', () => {
     endAction.value = v
     try { localStorage.setItem('soundflow_end_action', v) } catch {}
   }
+  // 取消进行中的淡出。切歌/停止时必须调用,否则淡出回调会把新歌顶掉;
+  // 同时把音量恢复到淡出前的值,避免新歌以压低后的音量播放
+  function cancelFade() {
+    if (_fadeTimer) {
+      clearInterval(_fadeTimer)
+      _fadeTimer = null
+      if (_fadeBaseVol != null && audio.value) audio.value.volume = _fadeBaseVol
+    }
+    _fadeBaseVol = null
+    _fadeGen++
+  }
   // 淡出后执行回调(0.8s 渐降音量,结束恢复)
   function fadeOutThen(cb) {
+    // 同一时刻只允许一个淡出:重复触发时作废旧的那个(否则两个 interval 同时改音量并各跳一次歌)
+    if (_fadeTimer) { clearInterval(_fadeTimer); _fadeTimer = null }
     const vol = audio.value ? audio.value.volume : 1
+    _fadeBaseVol = vol
     const steps = 12
     let i = 0
-    const timer = setInterval(() => {
+    const gen = ++_fadeGen
+    _fadeTimer = setInterval(() => {
+      // 期间用户切歌/停止:放弃本次淡出(不恢复音量、不回调,音量已由 cancelFade 处理)
+      if (gen !== _fadeGen) {
+        if (_fadeTimer) { clearInterval(_fadeTimer); _fadeTimer = null }
+        return
+      }
       i++
       if (audio.value) audio.value.volume = Math.max(0, vol * (1 - i / steps))
       if (i >= steps) {
-        clearInterval(timer)
+        clearInterval(_fadeTimer)
+        _fadeTimer = null
+        _fadeBaseVol = null
         if (audio.value) audio.value.volume = vol
         cb()
       }
@@ -1280,7 +1605,8 @@ export const usePlayerStore = defineStore('player', () => {
 
   function setVolume(v) {
     volume.value = Math.max(0, Math.min(1, v))
-    if (audio.value) audio.value.volume = Math.max(0, Math.min(1, volume.value * _replayGainFactor))
+    // 只写用户音量;响度均衡与限幅在音频图上完成(见 applyReplayGain)
+    if (audio.value) audio.value.volume = Math.max(0, Math.min(1, volume.value))
     isMuted.value = volume.value === 0
     if (volume.value > 0) _preMuteVolume.value = volume.value
     sendMiniUpdate() // 主窗口音量变化 → 同步迷你窗音量滑杆
@@ -1311,13 +1637,20 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 响度均衡应用(ReplayGain):增益 dB 换算到 volume
+  // 响度均衡应用(ReplayGain):增益施加到音频图的 GainNode(可 >1),不再乘进 element.volume
   function applyReplayGain(db) {
-    if (!audio.value) return
     try {
-      if (db == null || !isFinite(db)) _replayGainFactor = 1
-      else _replayGainFactor = Math.pow(10, db / 20)
-      audio.value.volume = Math.max(0, Math.min(1, volume.value * _replayGainFactor))
+      _replayGainFactor = (db == null || !isFinite(db)) ? 1 : Math.pow(10, db / 20)
+      currentGainDb.value = (db == null || !isFinite(db)) ? 0 : Math.round(db * 10) / 10
+      if (_rgGain && _audioCtx) {
+        const g = _rgGain.gain
+        const t = _audioCtx.currentTime
+        g.cancelScheduledValues(t)
+        g.setValueAtTime(g.value, t)
+        g.linearRampToValueAtTime(_replayGainFactor, t + 0.08) // 短斜坡防爆音
+      }
+      // element.volume 只表达用户音量;响度增益在图上叠加
+      if (audio.value) audio.value.volume = Math.max(0, Math.min(1, volume.value))
     } catch {}
   }
 
@@ -1340,8 +1673,76 @@ export const usePlayerStore = defineStore('player', () => {
     else ensureReplayGain(currentSong.value?.path)
   }
 
+  // ===== 下一首预览 =====
+  // 悬停"下一曲"时显示待播曲目。必须与 playNext 的实际取法一致,否则预览会骗人:
+  // 列表/循环模式取队列下一位(队尾回绕),单曲循环是它自己,随机模式无法预告(返回 null)。
+  const nextUpSong = computed(() => {
+    const q = playQueue.value
+    if (!q.length) return null
+    if (playMode.value === 'random') return null // 随机不做假预告
+    if (playMode.value === 'repeatOne') return q[currentIndex.value] || null
+    const i = currentIndex.value + 1
+    return q[i < q.length ? i : 0] || null
+  })
+
+  // ===== A-B 循环 =====
+  // 状态取在 store 而不是播放页:迷你窗、播放栏、MediaSession 都要能反映同一份区间。
+  // 三种态由两个值派生:未设 / 只设了 A / 区间生效。
+  const abStart = ref(0)
+  const abEnd = ref(0)
+  const abState = computed(() => {
+    if (!abStart.value && !abEnd.value) return 'off'
+    return abEnd.value > abStart.value ? 'active' : 'setting'
+  })
+  function clearAB() {
+    abStart.value = 0
+    abEnd.value = 0
+  }
+  // 一键循环:点一次设 A,再点设 B(必须晚于 A 至少 1 秒),再点取消。
+  // 不要求精确到毫秒 —— 用户是"听着"按的,所以取按下那一刻的播放位置。
+  function cycleAB() {
+    const t = currentTime.value || 0
+    if (abState.value === 'off') {
+      abStart.value = t
+      abEnd.value = 0
+      return
+    }
+    if (abState.value === 'setting') {
+      if (t <= abStart.value + 1) return // 区间太短:忽略这次,等用户往后放一点
+      abEnd.value = t
+      // 设完 B 立刻回到 A,让用户马上听到循环闭环
+      seek(abStart.value)
+      return
+    }
+    clearAB()
+  }
+  function setABRange(a, b) {
+    const lo = Math.max(0, Math.min(a, b))
+    const hi = Math.max(a, b)
+    abStart.value = lo
+    abEnd.value = hi > lo + 0.5 ? hi : 0
+  }
+
+  // 跳转播放位置。守卫:加载中/转码中 duration 仍为 0 或 readyState=HAVE_NOTHING,
+  // 此时写 currentTime 会抛错或落到错误位置(拖动进度条、点歌词行、迷你窗 seek 都走这里)
   function seek(time) {
-    if (audio.value) { audio.value.currentTime = time; currentTime.value = time }
+    const a = audio.value
+    const d = duration.value || (a && a.duration) || 0
+    if (!a || !Number.isFinite(time) || d <= 0 || a.readyState === 0) return
+    const t = Math.max(0, Math.min(d, time))
+    // 手动跳到区间之外视为"我要出去":取消 A-B。
+    // 不这样做的话,拖过 B 会在下一个 timeupdate(≤250ms)被弹回 A,看起来像进度条失灵。
+    if (abEnd.value > abStart.value && (t < abStart.value - 0.5 || t > abEnd.value + 0.5)) clearAB()
+    try {
+      a.currentTime = t
+      currentTime.value = t
+    } catch (e) {
+      noteFailure('playback.seek', '跳转失败(音频尚未就绪)', e)
+      return
+    }
+    // 立即同步迷你窗:它的进度推送只来自 timeupdate(播放中才有),
+    // 暂停时拖动进度条/点歌词行跳转,迷你窗会一直停在旧位置
+    sendMiniUpdate()
     sendLyricUpdate()
   }
 
@@ -1373,7 +1774,9 @@ export const usePlayerStore = defineStore('player', () => {
     if (curPath) {
       // 当前歌曲放回原索引(若有)
       const curSong = playQueue.value.find(s => s.path === curPath)
-      if (curSong) newQueue.splice(insertAt, 0, { ...curSong })
+      // 分配新的 _qid:当前歌的副本此时已不在 others 里,复用旧 id 会与队列中
+      // 同名的另一条重复(展开会复制 _qid),造成 v-for key 冲突
+      if (curSong) newQueue.splice(insertAt, 0, withQid(curSong))
     }
     playQueue.value = newQueue
     // 重新定位当前歌曲索引
@@ -1539,11 +1942,9 @@ export const usePlayerStore = defineStore('player', () => {
     sleepTimerRemaining.value = 0
   }
 
+  // 时长格式化:实现已收敛到 utils/time.js(项目内曾散落 5 份副本)
   function formatTime(seconds) {
-    if (!seconds || !isFinite(seconds)) return '00:00'
-    const m = Math.floor(seconds / 60)
-    const s = Math.floor(seconds % 60)
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+    return formatDuration(seconds)
   }
 
   function formatTimerDisplay(seconds) {
@@ -1558,6 +1959,7 @@ export const usePlayerStore = defineStore('player', () => {
       volume.value = parseFloat(getSetting('soundflow_volume'))
       const m = localStorage.getItem('soundflow_play_mode')
       if (m) playMode.value = m
+      resumeProgress.value = localStorage.getItem('soundflow_resume_progress') === '1'
       const r = localStorage.getItem('soundflow_playback_rate')
       if (r) playbackRate.value = parseFloat(r)
       const ph2 = localStorage.getItem('soundflow_pitch')
@@ -1565,9 +1967,31 @@ export const usePlayerStore = defineStore('player', () => {
       const ph = localStorage.getItem('soundflow_progress')
       if (ph) progressHistory.value = JSON.parse(ph)
       loadReplayGainPref()
+      loadLyricOffsets()
       // 变调/倍速应用到 audio(若已初始化)
       if (audio.value) applyPitch()
     } catch {}
+  }
+
+  // 重命名文件后同步播放侧引用:队列、当前歌曲、续播进度
+  // (musicStore 只负责曲库侧数据;两侧都改完才算完整重命名)
+  function renameSongInQueue(oldPath, newPath) {
+    if (!oldPath || !newPath || oldPath === newPath) return
+    let changed = false
+    if (playQueue.value.some(s => s && s.path === oldPath)) {
+      playQueue.value = playQueue.value.map(s => (s && s.path === oldPath) ? { ...s, path: newPath } : s)
+      changed = true
+    }
+    if (currentSong.value && currentSong.value.path === oldPath) {
+      currentSong.value = { ...currentSong.value, path: newPath }
+      changed = true
+    }
+    if (progressHistory.value[oldPath] !== undefined) {
+      const { [oldPath]: t, ...rest } = progressHistory.value
+      progressHistory.value = { ...rest, [newPath]: t }
+      changed = true
+    }
+    if (changed) saveSettings()
   }
 
   function saveSettings() {
@@ -1575,6 +1999,7 @@ export const usePlayerStore = defineStore('player', () => {
       saveCurrentProgress()
       localStorage.setItem('soundflow_volume', String(volume.value))
       localStorage.setItem('soundflow_play_mode', playMode.value)
+      localStorage.setItem('soundflow_resume_progress', resumeProgress.value ? '1' : '0')
       localStorage.setItem('soundflow_playback_rate', String(playbackRate.value))
       localStorage.setItem('soundflow_pitch', String(pitch.value))
       localStorage.setItem('soundflow_progress', JSON.stringify(progressHistory.value))
@@ -1594,21 +2019,25 @@ export const usePlayerStore = defineStore('player', () => {
   return {
     audio, currentSong, playQueue, currentIndex, isPlaying, currentTime,
     songNotify,
-    duration, volume, isMuted, playMode, lyrics, currentLyricIndex, lyricOrigin,
+    duration, volume, isMuted, playMode, lyrics, lyricLoading, currentLyricIndex, lyricOrigin,
+    lyricOffsetSeconds, lyricUserOffsetMs, lyricFileOffsetMs, lyricClock,
+    setLyricUserOffset, nudgeLyricOffset, resetLyricUserOffset, getLyricUserOffset,
+    resumeProgress,
     volPanelOpen, miniOpen,
     endAction, setEndAction,
-    showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
-    playbackRate, showLyricPanel, isBuffering, progressHistory,
+    userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
+    playbackRate, showLyricPanel, isBuffering, progressHistory, transcodePct, isTranscoded,
+    abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong,
     pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
-    initAudio, setPlayQueue, insertNext, addToQueue, removeFromQueue, moveInQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
+    initAudio, setPlayQueue, insertNext, addToQueue, removeFromQueue, reorderQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     loadLyrics,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     releaseAudio, restoreAudio,
-    loadSettings, saveSettings, playSingle, toggleQueue,
+    loadSettings, saveSettings, playSingle, toggleQueue, renameSongInQueue,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,

@@ -7,8 +7,8 @@
           <button class="chip" :class="{ active: timeRange === 'all' }" @click="setTimeRange('all')">全部</button>
           <button class="chip" :class="{ active: timeRange === '30d' }" @click="setTimeRange('30d')">近30天</button>
         </div>
-        <button class="btn" @click="reportOpen = true">📤 听歌报告</button>
-        <button class="btn--ghost" @click="router.push('/history')">🎵 播放记录与排行</button>
+        <button class="btn" @click="reportOpen = true"><Icon name="upload" :size="15" />听歌报告</button>
+        <button class="btn--ghost" @click="router.push('/history')"><Icon name="history" :size="15" />播放记录与排行</button>
       </div>
     </div>
 
@@ -53,14 +53,14 @@
         <div class="rank-list">
           <div v-for="(s, i) in topSongs" :key="s.path" class="rank-item" @dblclick="playTop(i)">
             <span class="rank-no" :class="{ hot: i < 3 }">{{ i + 1 }}</span>
-            <div class="rank-cover"><img v-if="s.coverUrl" :src="s.coverUrl" loading="lazy" /></div>
+            <div class="rank-cover"><img v-if="s.coverUrl" :src="s.coverUrl" loading="lazy" alt="" /></div>
             <div class="rank-info text-ellipsis">
               <span class="rank-title text-ellipsis">{{ s.title }}</span>
               <span class="rank-artist text-ellipsis">{{ s.artist }}</span>
             </div>
             <span class="rank-count">{{ s._playCount }} 次</span>
           </div>
-          <div v-if="!topSongs.length" class="rank-empty">还没有播放记录,先听几首歌吧</div>
+          <div v-if="!topSongs.length" class="rank-empty"><span class="rank-empty-icon"><Icon name="music" :size="34" /></span><span>还没有播放记录,先听几首歌吧</span></div>
         </div>
       </div>
 
@@ -162,12 +162,22 @@
   <!-- 听歌报告弹窗 -->
   <div v-if="reportOpen" class="report-mask" @click.self="reportOpen = false">
     <div class="report-card">
-      <button class="report-close" @click="reportOpen = false" title="关闭">✕</button>
-      <div class="report-head">🎧 我的听歌报告</div>
+      <button class="report-close" title="关闭" aria-label="关闭听歌报告" @click="reportOpen = false"><Icon name="close" :size="15" /></button>
+      <div class="report-head"><Icon name="spectrum" :size="16" />我的听歌报告</div>
       <div class="report-range">
         <button class="chip chip--sm" :class="{ active: reportRange === 'all' }" @click="reportRange = 'all'">全部</button>
         <button class="chip chip--sm" :class="{ active: reportRange === '30d' }" @click="reportRange = '30d'">近30天</button>
         <button class="chip chip--sm" :class="{ active: reportRange === '7d' }" @click="reportRange = '7d'">本周</button>
+        <button class="chip chip--sm" :class="{ active: reportRange === 'year' }" @click="reportRange = 'year'">{{ currentYear }}年度</button>
+      </div>
+      <div v-if="reportRange === 'year' && yearMonths && yearMonthMax" class="report-sec">
+        <div class="rs-title"><Icon name="date" :size="14" />年度月份热力</div>
+        <div class="rm-bars">
+          <div v-for="m in yearMonths" :key="m.month" class="rm-col" :title="`${m.month}月 ${m.count}次`">
+            <div class="rm-bar" :style="{ height: (m.count / yearMonthMax * 100) + '%' }"></div>
+            <span class="rm-label">{{ m.month }}</span>
+          </div>
+        </div>
       </div>
       <div class="report-stats">
         <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放次数</div></div>
@@ -175,7 +185,7 @@
         <div class="rs-item"><div class="rs-num">{{ reportCoverPct }}%</div><div class="rs-label">曲库覆盖</div></div>
       </div>
       <div v-if="reportTopSongs.length" class="report-sec">
-        <div class="rs-title">🎵 最爱单曲</div>
+        <div class="rs-title"><Icon name="music" :size="14" />最爱单曲</div>
         <div v-for="(s, i) in reportTopSongs" :key="s.path" class="rs-row">
           <span class="rs-rank" :class="{ gold: i === 0 }">{{ i + 1 }}</span>
           <span class="rs-name text-ellipsis">{{ s.title }}</span>
@@ -183,7 +193,7 @@
         </div>
       </div>
       <div v-if="reportTopArtists.length" class="report-sec">
-        <div class="rs-title">👤 最爱歌手</div>
+        <div class="rs-title"><Icon name="artist" :size="14" />最爱歌手</div>
         <div v-for="(a, i) in reportTopArtists" :key="a.name" class="rs-row">
           <span class="rs-rank" :class="{ gold: i === 0 }">{{ i + 1 }}</span>
           <span class="rs-name text-ellipsis">{{ a.name }}</span>
@@ -191,7 +201,7 @@
         </div>
       </div>
       <div v-if="reportTopAlbums.length" class="report-sec">
-        <div class="rs-title">💿 最爱专辑</div>
+        <div class="rs-title"><Icon name="album" :size="14" />最爱专辑</div>
         <div v-for="(a, i) in reportTopAlbums" :key="a.name" class="rs-row">
           <span class="rs-rank" :class="{ gold: i === 0 }">{{ i + 1 }}</span>
           <span class="rs-name text-ellipsis">{{ a.name }}</span>
@@ -199,9 +209,9 @@
         </div>
       </div>
       <div class="report-sec rs-facts">
-        <span>🕐 常听时段 {{ funFacts.lateHour }}</span>
-        <span>🌙 深夜 {{ reportNight }} 次</span>
-        <span v-if="reportPeak">📅 峰值 {{ reportPeak }}</span>
+        <span><Icon name="time" :size="13" />常听时段 {{ funFacts.lateHour }}</span>
+        <span><Icon name="darkMode" :size="13" />深夜 {{ reportNight }} 次</span>
+        <span v-if="reportPeak"><Icon name="date" :size="13" />峰值 {{ reportPeak }}</span>
       </div>
       <div class="report-actions">
         <button class="btn btn--sm" @click="copyShare">复制文本分享</button>
@@ -211,30 +221,21 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import { formatTimestamp as formatTime } from '@/utils/time'
+import Icon from '@/components/icons/Icon.vue'
+import { confirmDialog } from '@/composables/useConfirm'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
 const router = useRouter()
 
-function formatTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  const yesterday = new Date(now)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const isYesterday = d.toDateString() === yesterday.toDateString()
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  if (isToday) return `今天 ${time}`
-  if (isYesterday) return `昨天 ${time}`
-  return `${d.getMonth() + 1}/${d.getDate()} ${time}`
-}
-function clearHistory() {
-  if (confirm('确定清空播放历史？')) musicStore.clearHistory()
+// 时间戳格式化已收敛到 @/utils/time(与 HistoryView 原本完全重复)
+async function clearHistory() {
+  if (await confirmDialog({ message: '确定清空播放历史？', detail: '只清空记录,曲库与收藏不受影响', confirmText: '清空', danger: true })) musicStore.clearHistory()
 }
 
 // 所有带播放计数的歌曲
@@ -269,10 +270,12 @@ const totalPlaysAnim = ref(0)
 const totalHoursAnim = ref(0)
 const artistCountAnim = ref(0)
 const favCountAnim = ref(0)
+let _statsAnimArmed = true // 卸载后停止数字滚动动画链
 function animateNumber(to, animRef) {
   const from = animRef.value
   const start = performance.now()
   const step = (now) => {
+    if (!_statsAnimArmed) return
     const p = Math.min(1, (now - start) / 500)
     animRef.value = Math.round(from + (to - from) * (1 - Math.pow(1 - p, 3)))
     if (p < 1) requestAnimationFrame(step)
@@ -285,6 +288,7 @@ onMounted(() => {
   animateNumber(artistCount.value, artistCountAnim)
   animateNumber(favCount.value, favCountAnim)
 })
+onUnmounted(() => { _statsAnimArmed = false })
 
 // 近 7 天趋势(按 history 时间戳聚合)
 const weekTrend = computed(() => {
@@ -453,7 +457,27 @@ const weekHistory = computed(() => {
   return musicStore.history.filter(h => h.time && h.time >= cutoff)
 })
 // 报告数据源:按选择的档位
-const reportHistory = computed(() => (reportRange.value === '7d' ? weekHistory.value : rangeHistory.value))
+const currentYear = computed(() => new Date().getFullYear())
+const yearHistory = computed(() => {
+  const cutoff = new Date(currentYear.value, 0, 1).getTime()
+  return musicStore.history.filter(h => h.time && h.time >= cutoff)
+})
+const reportHistory = computed(() => {
+  if (reportRange.value === 'year') return yearHistory.value
+  if (reportRange.value === '7d') return weekHistory.value
+  return rangeHistory.value
+})
+// 年度月份热力(1-12 月)
+const yearMonths = computed(() => {
+  if (reportRange.value !== 'year') return null
+  const arr = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, count: 0 }))
+  for (const h of yearHistory.value) {
+    const m = new Date(h.time).getMonth()
+    if (m >= 0 && m < 12) arr[m].count++
+  }
+  return arr
+})
+const yearMonthMax = computed(() => Math.max(1, ...(yearMonths.value || []).map(m => m.count)))
 const reportSongsAgg = computed(() => {
   // 历史条目只有 path/title/artist/time,时长与专辑从曲库补齐
   const songMap = new Map(musicStore.songs.map(s => [s.path, s]))
@@ -522,7 +546,7 @@ function playTop(idx) {
 /* 听歌报告弹窗 */
 .report-mask {
   position: fixed; inset: 0; z-index: 400;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--overlay-mask, rgba(0, 0, 0, 0.45));
   backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
 }
@@ -553,6 +577,11 @@ function playTop(idx) {
 .rs-num { font-size: 22px; font-weight: 700; color: var(--color-primary); }
 .rs-label { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 .report-sec { margin-bottom: 12px; }
+.rm-bars { display: flex; align-items: flex-end; gap: 3px; height: 64px; padding: 6px 2px 0; }
+.rm-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; height: 100%; justify-content: flex-end; }
+.rm-bar { width: 100%; max-width: 14px; background: var(--color-primary); border-radius: 3px 3px 0 0; opacity: 0.85; transition: opacity 0.15s; }
+.rm-col:hover .rm-bar { opacity: 1; }
+.rm-label { font-size: 10px; color: var(--text-tertiary); }
 .rs-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
 .rs-row {
   display: flex; align-items: center; gap: 8px;
@@ -570,13 +599,21 @@ function playTop(idx) {
 .rs-count { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
 .rs-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-secondary); }
 .report-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
-.stats-view { padding: 20px 24px; overflow-y: auto; height: 100%; }
+.stats-view { padding: var(--page-pad-y) var(--page-pad-x); overflow-y: auto; height: 100%; }
+/* 超宽屏:内容不再无限拉伸 */
+.stats-view > * { max-width: var(--content-max); margin-left: auto; margin-right: auto; }
 .view-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
-.header-title { font-size: 22px; font-weight: 700; }
-.header-count { font-size: 12px; opacity: 0.6; }
+.header-title { font-size: var(--font-size-page-title); font-weight: 700; }
+.header-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 
-.stat-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
-.stat-card { background: var(--bg-card, rgba(255,255,255,0.06)); border-radius: 12px; padding: 16px; text-align: center; }
+/* 固定四列在宽屏会被拉成超大卡片、在窄窗又会压扁 —— 改为按最小宽度自适应 */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+.stat-card {
+  background: var(--bg-card, rgba(255,255,255,0.06)); border-radius: 12px; padding: 16px; text-align: center;
+  border: 1px solid var(--border-color, transparent);
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+.stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--panel-border, var(--border-color)); }
 .stat-num { font-size: 26px; font-weight: 700; }
 .stat-unit { font-size: 14px; font-weight: 400; opacity: 0.6; }
 .stat-label { font-size: 12px; opacity: 0.6; margin-top: 4px; }
@@ -585,11 +622,14 @@ function playTop(idx) {
 .section-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
 
 .stats-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 1200px) { .stats-columns { grid-template-columns: 1fr; } }
+@media (max-width: 960px) { .hour-grid { grid-template-columns: repeat(6, 1fr); } }
 .stats-right { display: flex; flex-direction: column; gap: 14px; }
 
 /* 趋势图 */
 .trend-chart { display: flex; align-items: flex-end; gap: 8px; height: 110px; padding-top: 6px; }
 .trend-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.trend-col:hover .trend-bar, .hour-cell:hover, .week-cell:hover { filter: brightness(1.15); }
 .trend-bar-wrap { width: 100%; height: 80px; display: flex; align-items: flex-end; }
 .trend-bar { width: 60%; margin: 0 auto; border-radius: 4px 4px 0 0; background: var(--color-primary, #6ec6ff); opacity: 0.85; transition: height 0.3s; }
 .trend-label { font-size: 11px; opacity: 0.6; }
@@ -607,7 +647,11 @@ function playTop(idx) {
 .rank-title { font-size: 13px; }
 .rank-artist { font-size: 11px; opacity: 0.6; }
 .rank-count { font-size: 12px; opacity: 0.6; flex-shrink: 0; }
-.rank-empty { padding: 18px; text-align: center; opacity: 0.5; font-size: 13px; }
+.rank-empty {
+  padding: 28px 18px; text-align: center; color: var(--text-tertiary); font-size: 13px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.rank-empty .rank-empty-icon { font-size: 34px; opacity: 0.6; }
 
 /* 迷你排行(歌手/专辑/流派) */
 .mini-rank { display: flex; flex-direction: column; gap: 8px; }

@@ -1,7 +1,29 @@
 /**
  * SoundFlow 声流音乐 — Electron 预加载脚本
  */
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
+
+// 主进程 → 渲染进程 的事件通道白名单(渲染端通过 on() 订阅)
+const RECEIVE_CHANNELS = [
+  'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut',
+  'mini:update', 'mini:state', 'mini:bg-sync', 'window-state',
+  'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
+  'app:before-close', 'update-available', 'update-not-available', 'update-error',
+  'external-command', 'lyric-state-sync',
+  'library-folder-changed', 'system-theme', 'backup-request',
+  // 非原生格式转码进度(主进程 prepare-audio 期间推送)
+  'transcode-progress',
+  // 迷你播放器拖拽进度/音量 → 主窗口回填(App.vue 订阅),此前缺失导致拖动无效
+  'player:seek', 'player:set-volume',
+]
+// 渲染进程 → 主进程 的单向发送通道白名单
+const SEND_CHANNELS = [
+  'smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore',
+  'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
+  'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
+  'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index',
+  'lyric:seek', 'lyric:save', 'notify-song',
+]
 
 // 启动预填数据改为异步拉取(preload 不再 sendSync 同步阻塞渲染进程启动;
 // 渲染端 App.vue onMounted 最先 await getPreloadedData() 后回填 localStorage)
@@ -10,13 +32,23 @@ const { contextBridge, ipcRenderer } = require('electron')
 contextBridge.exposeInMainWorld('electronAPI', {
   // 启动预填数据(异步,替代原 sendSync)
   getPreloadedData: () => ipcRenderer.invoke('get-preloaded-data'),
+  // 硬件加速(设置页开关,重启生效)
+  getHardwareAccel: () => ipcRenderer.invoke('hardware-accel-get'),
+  setHardwareAccel: (on) => ipcRenderer.invoke('hardware-accel-set', on),
   // 文件扫描
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: () => ipcRenderer.invoke('select-files'),
   scanFolder: (folderPath) => ipcRenderer.invoke('scan-folder', folderPath),
+  // 拖拽导入取真实路径:Electron 32 起 File.path 已被移除,必须用 webUtils.getPathForFile
+  // (只能在此 preload 环境调用,渲染进程拿不到 webUtils)
+  getPathForFile: (file) => {
+    try { return webUtils.getPathForFile(file) || '' } catch { return '' }
+  },
   importDropped: (paths) => ipcRenderer.invoke('import-dropped', paths),
   getFileInfo: (p) => ipcRenderer.invoke('get-file-info', p),
   scanFiles: (filePaths) => ipcRenderer.invoke('scan-files', filePaths),
+  // 存量曲库回填「入库时间」(老记录缺 addedTime,排序需要)
+  backfillAddedTime: (paths) => ipcRenderer.invoke('backfill-added-time', paths),
 
   // 元数据
   parseMetadata: (filePath) => ipcRenderer.invoke('parse-metadata', filePath),
@@ -70,6 +102,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('window-state', h)
   },
   closeWindow: () => ipcRenderer.send('close-window'),
+  toggleFullscreen: () => ipcRenderer.send('toggle-fullscreen'),
+  exitFullscreen: () => ipcRenderer.send('exit-fullscreen'),
 
   // 迷你播放器
   toggleMiniWindow: () => ipcRenderer.send('mini:toggle'),
@@ -130,8 +164,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 事件监听
   on: (channel, callback) => {
-    const validChannels = ['menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'mini:update', 'mini:state', 'mini:bg-sync', 'window-state', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'app:before-close', 'update-available', 'external-command', 'lyric-state-sync', 'library-folder-changed', 'system-theme', 'backup-request']
-    if (validChannels.includes(channel)) {
+    if (RECEIVE_CHANNELS.includes(channel)) {
       const subscription = (_event, ...args) => callback(...args)
       ipcRenderer.on(channel, subscription)
       return () => ipcRenderer.removeListener(channel, subscription)
@@ -143,8 +176,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 单向发送
   send: (channel, ...args) => {
-    const validChannels = ['smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore', 'mini:bg-changed', 'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin', 'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save', 'notify-song']
-    if (validChannels.includes(channel)) {
+    if (SEND_CHANNELS.includes(channel)) {
       ipcRenderer.send(channel, ...args)
     }
   }

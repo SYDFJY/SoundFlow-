@@ -1,14 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1677E6"/>
-      <stop offset="100%" style="stop-color:#0958d9"/>
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
-  <circle cx="256" cy="256" r="140" fill="rgba(255,255,255,0.15)"/>
-  <circle cx="256" cy="256" r="100" fill="rgba(255,255,255,0.2)"/>
-  <circle cx="256" cy="256" r="60" fill="rgba(255,255,255,0.9)"/>
-  <circle cx="256" cy="256" r="20" fill="#1677E6"/>
-  <path d="M300 180 L300 340 Q300 360 280 360 L260 360 Q240 360 240 340 L240 220 Q240 200 260 200 L340 200 Q360 200 360 220 L360 240 Q360 260 340 260 L300 260" fill="none" stroke="rgba(255,255,255,0.9)" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="0.55" stop-color="#F7F4EE"/><stop offset="1" stop-color="#EBE5DA"/></linearGradient>
+  <linearGradient id="bars" gradientUnits="userSpaceOnUse" x1="245.0" y1="0" x2="779.0" y2="0"><stop offset="0" stop-color="#3A3F4B"/><stop offset="0.5" stop-color="#262A34"/><stop offset="1" stop-color="#161920"/></linearGradient>
+  <linearGradient id="flow" gradientUnits="userSpaceOnUse" x1="140" y1="0" x2="884" y2="0"><stop offset="0" stop-color="#FF7A6B"/><stop offset="0.5" stop-color="#E5484D"/><stop offset="1" stop-color="#C7362F"/></linearGradient>
+  <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="#ffffff" stop-opacity="0.0"/>
+    <stop offset="0.46" stop-color="#ffffff" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="shade" x1="0" y1="1" x2="0" y2="0">
+    <stop offset="0" stop-color="#5A4A3C" stop-opacity="0.1"/>
+    <stop offset="0.55" stop-color="#5A4A3C" stop-opacity="0"/>
+  </linearGradient>
+  <clipPath id="clip"><path d="M 0 0 L 1024 0 L 1024 1024 L 0 1024 Z"/></clipPath>
+</defs>
+<path d="M 0 0 L 1024 0 L 1024 1024 L 0 1024 Z" fill="url(#bg)"/>
+<g clip-path="url(#clip)">
+  <rect x="245.0" y="431.2" width="78" height="161.6" fill="url(#bars)"/><rect x="359.0" y="366.6" width="78" height="290.9" fill="url(#bars)"/><rect x="473.0" y="310.0" width="78" height="404.0" fill="url(#bars)"/><rect x="587.0" y="350.4" width="78" height="323.2" fill="url(#bars)"/><rect x="701.0" y="411.0" width="78" height="202.0" fill="url(#bars)"/>
+  <path d="M 140.00,548.00 C 162.00,535.00 230.00,486.00 272.00,470.00 C 314.00,454.00 352.00,447.00 392.00,452.00 C 432.00,457.00 472.00,482.67 512.00,500.00 C 552.00,517.33 592.00,540.67 632.00,556.00 C 672.00,571.33 710.00,598.00 752.00,592.00 C 794.00,586.00 862.00,532.00 884.00,520.00" fill="none" stroke="url(#bars)" stroke-width="38" stroke-linecap="butt" opacity="0.26"/>
+  <path d="M 140.00,548.00 C 162.00,535.00 230.00,486.00 272.00,470.00 C 314.00,454.00 352.00,447.00 392.00,452.00 C 432.00,457.00 472.00,482.67 512.00,500.00 C 552.00,517.33 592.00,540.67 632.00,556.00 C 672.00,571.33 710.00,598.00 752.00,592.00 C 794.00,586.00 862.00,532.00 884.00,520.00" fill="none" stroke="url(#flow)" stroke-width="24" stroke-linecap="butt"/>
+  
+  <rect x="0" y="0" width="1024" height="1024" fill="url(#shade)"/>
+</g>
+<rect x="1" y="1" width="1022" height="1022" fill="none" stroke="#000000" stroke-opacity="0.12" stroke-width="2"/>
 </svg>

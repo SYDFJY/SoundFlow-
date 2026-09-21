@@ -32,6 +32,10 @@
   --font-size-lg: 16px;
   --font-size-xl: 20px;
   --font-size-xxl: 28px;
+  /* 页面主标题:此前 Home/Favorites/Album/Artist/Playlist/History/Settings 各写 24px,
+     Stats/Recommend 写 22px,全局 .view-header 规定 20px —— 三个值并存。
+     收敛成一个 token,改一处全站一致。 */
+  --font-size-page-title: 24px;
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 12px;
@@ -41,11 +45,65 @@
   --sidebar-width: 220px;
   --topbar-height: 48px;
   --player-height: 72px;
+  /* ===== 页面骨架 token =====
+     改造前:24px 这个数字在 7 个视图里各写一遍,16/20/22/28 混用,行高有 6 种,
+     卡片网格 3 种,空状态 10 套 —— 视图之间看起来像不同人做的。
+     收敛到一处后,新增视图只需 class="page / page-body" + .view-header。 */
+  /* ===== 层级刻度 =====
+     改造前 z-index 散落在各处,实际出现 100 / 200 / 300 / 1000 / 9999 五档,
+     且同一个「右键菜单」在 MusicList 写 9999、在 Sidebar 走全局的 200。
+     正确的是"浮层 < 停靠面板 < 模态 < 右键菜单(要能盖住模态详情层) < 嵌套模态 < 通知":
+       模态详情层(专辑/歌手详情)里右键歌曲时,菜单必须比模态高;
+       而从模态里再开一个模态(歌词管理/保存队列)又要压过它。
+     令牌化后每处只写 var(--z-*),不再各自拍数字。 */
+  --z-toolbar: 5;      /* 吸顶页头 / 列表工具栏 */
+  --z-popover: 100;    /* 锚定浮层:背景面板、色板、排版、音量、倍速、变调、频谱 */
+  --z-panel: 120;      /* 停靠面板:播放队列、音效 */
+  --z-modal: 300;      /* 模态遮罩与卡片 */
+  --z-menu: 400;       /* 右键菜单(需盖住模态详情层) */
+  --z-nested: 9000;    /* 从模态里再开的模态 */
+  --z-toast: 9999;     /* 通知与提示,永远最上 */
+
+  --page-pad-x: 24px;      /* 页面左右留白(所有视图统一) */
+  --page-pad-y: 20px;      /* 页头上下留白 */
+  --content-max: 1280px;   /* 内容最大宽度(超宽屏不再无限拉伸) */
+  --gap-section: 24px;     /* 区块之间的间距 */
+  --row-h: 56px;           /* 标准列表行高(与 MusicList 虚拟滚动常量一致) */
+  --row-h-compact: 48px;   /* 紧凑行(队列/统计榜单) */
+  --thumb: 36px;           /* 列表缩略图边长 */
+  --col-index: 40px;       /* 序号列宽 */
+  --card-min: 160px;       /* 封面卡片最小宽度 */
+  --card-gap: 20px;        /* 封面卡片间距 */
+  --card-pad: 12px;        /* 封面卡片内边距 */
   --player-bg: #d8e8f4;
   --player-bg-dark: #142230;
   --player-shadow: 0 -2px 12px rgba(18,34,48,0.45);
   --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   font-size: var(--font-size-base);
+
+  /* ===== 辅助变量(浅色默认;appStore.js 按主题明暗自动注入覆盖)===== */
+  --color-danger: #e5484d;
+  --color-danger-alpha: rgba(229,72,77,0.12);
+  --color-success: #2f9e63;
+  --color-warning: #d97706;
+  --overlay-mask: rgba(15,23,42,0.45);
+  --modal-bg: rgba(255,255,255,0.94);
+  --modal-border: rgba(15,23,42,0.08);
+  --panel-bg: rgba(255,255,255,0.88);
+  --panel-border: rgba(15,23,42,0.10);
+  --panel-text: #1c2c3b;
+  --panel-text-secondary: #5c7288;
+  --panel-text-tertiary: #8497ab;
+  --panel-hover: rgba(15,23,42,0.06);
+  --panel-active: rgba(43,134,216,0.12);
+  --input-bg: rgba(255,255,255,0.92);
+  --input-border: rgba(15,23,42,0.14);
+  --input-focus-ring: rgba(43,134,216,0.18);
+  --empty-icon: rgba(15,23,42,0.18);
+  --tooltip-bg: #142230;
+  --tooltip-text: #f5f8fc;
+  --player-overlay-strong: rgba(0,0,0,0.42);
+  --player-overlay-soft: rgba(0,0,0,0.10);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -180,17 +238,19 @@ button:disabled {
   color: var(--text-secondary);
   font-size: 12px;
   border: 1px solid transparent;
-  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
-.chip:hover { color: var(--text-primary); }
+.chip:hover { color: var(--text-primary); transform: translateY(-1px); }
 .chip.active {
   background: var(--color-primary);
   color: #fff;
   font-weight: 500;
+  box-shadow: 0 2px 8px var(--color-primary-alpha, rgba(43,134,216,0.25));
 }
+.chip:active { transform: scale(0.96); }
 .chip--sm { height: 26px; padding: 0 10px; font-size: 11px; }
 
-/* 拨杆开关 */
+/* 拨杆开关 —— 胶囊轨道 + 立体旋钮,全部走主题变量(16 套主题通用) */
 .switch {
   position: relative;
   display: inline-flex;
@@ -198,6 +258,8 @@ button:disabled {
   gap: 8px;
   height: 24px;
   padding: 0;
+  border: none;
+  background: none;
   cursor: pointer;
   user-select: none;
   font-size: 13px;
@@ -208,11 +270,13 @@ button:disabled {
 }
 .switch .switch-track {
   position: relative;
-  width: 36px;
-  height: 20px;
+  width: 44px;
+  height: 24px;
   border-radius: 999px;
   background: var(--bg-hover, rgba(128,128,128,0.35));
-  transition: background var(--transition-fast);
+  border: 1px solid var(--panel-border, rgba(128,128,128,0.25));
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.14);
+  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
   flex-shrink: 0;
 }
 .switch .switch-track::after {
@@ -220,16 +284,32 @@ button:disabled {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform var(--transition-fast);
+  background: linear-gradient(180deg, #fff, #eef0f4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transition: transform var(--transition-fast), width var(--transition-fast), background var(--transition-fast);
 }
+.switch:hover .switch-track { border-color: var(--color-primary); }
+/* 按下时旋钮轻微拉伸(iOS 手法),与位移叠加 */
+.switch:active .switch-track::after { width: 21px; }
 .switch.on { color: var(--text-primary); }
-.switch.on .switch-track { background: var(--color-primary); }
-.switch.on .switch-track::after { transform: translateX(16px); }
+.switch.on .switch-track {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.16), 0 1px 6px var(--color-primary-alpha, rgba(43,134,216,0.4));
+}
+.switch.on .switch-track::after { transform: translateX(20px); }
+.switch.on:active .switch-track::after { width: 21px; transform: translateX(17px); }
+/* 键盘焦点环(此前缺失,键盘用户看不到焦点位置)
+   注意 --focus-ring 是完整的 box-shadow 值(见上方 :root),不是颜色,不能放进 outline */
+.switch:focus { outline: none; }
+.switch:focus-visible { box-shadow: var(--focus-ring); border-radius: 999px; }
+@media (prefers-reduced-motion: reduce) {
+  .switch .switch-track,
+  .switch .switch-track::after { transition: none; }
+}
 
 /* ===== 微交互动效 ===== */
 /* 细滚动条(全局美化) */
@@ -375,112 +455,6 @@ input[type="text"]:focus, input[type="search"]:focus {
 /* 隐藏 */
 .hidden { display: none !important; }
 
-/* ===== 液态玻璃主题(theme-liquid):毛玻璃 + 高光边框 + 渐变背景墙 ===== */
-.theme-liquid {
-  /* 背景墙:深色渐变,供毛玻璃透出(!important 覆盖 .app 的背景变量) */
-  background:
-    radial-gradient(1100px 700px at 15% 8%, rgba(46, 68, 122, 0.55), transparent 60%),
-    radial-gradient(900px 600px at 85% 90%, rgba(90, 60, 140, 0.4), transparent 60%),
-    linear-gradient(160deg, #131c30 0%, #101828 55%, #0d1524 100%) !important;
-}
-.theme-liquid .app-body,
-.theme-liquid .player-page {
-  background: transparent !important;
-}
-/* 内容区整体毛玻璃:让列表/卡片区域也有玻璃质感 */
-.theme-liquid .main-content {
-  background: rgba(16, 26, 48, 0.35) !important;
-  backdrop-filter: blur(22px) saturate(1.25);
-  -webkit-backdrop-filter: blur(22px) saturate(1.25);
-}
-
-/* 框架级容器:半透明 + 背景模糊 + 高光边框(静态区域,性能无压力) */
-.theme-liquid .sidebar,
-.theme-liquid .topbar,
-.theme-liquid .player-bar,
-.theme-liquid .mini-player {
-  background: rgba(16, 26, 48, 0.55) !important;
-  backdrop-filter: blur(26px) saturate(1.25);
-  -webkit-backdrop-filter: blur(26px) saturate(1.25);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-}
-.theme-liquid .player-bar {
-  border-right: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* 内容视图根容器 */
-.theme-liquid .main-content {
-  background: transparent !important;
-}
-
-/* 浮动面板 / 弹窗:玻璃质感 */
-.theme-liquid .queue-panel,
-.theme-liquid .eq-panel,
-.theme-liquid .context-menu,
-.theme-liquid .lyric-color-panel,
-.theme-liquid .bg-panel,
-.theme-liquid .batch-bar,
-.theme-liquid .modal-overlay .modal-card,
-.theme-liquid .add-songs-dialog {
-  background: rgba(18, 28, 52, 0.75) !important;
-  backdrop-filter: blur(22px) saturate(1.25);
-  -webkit-backdrop-filter: blur(22px) saturate(1.5);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 12px 36px rgba(0, 0, 0, 0.4);
-}
-
-/* 列表行 / 卡片:半透明(不 blur,保持滚动性能) */
-.theme-liquid .list-row,
-.theme-liquid .card,
-.theme-liquid .cover-card,
-.theme-liquid .artist-card,
-.theme-liquid .album-card,
-.theme-liquid .settings-section,
-.theme-liquid .history-item {
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-}
-.theme-liquid .list-row:hover,
-.theme-liquid .card:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
-}
-
-/* 进度条 / 频谱等点缀:更通透 */
-.theme-liquid .progress-track {
-  background: rgba(255, 255, 255, 0.14) !important;
-}
-
-/* 液态玻璃下主题按钮选中态更明显 */
-.theme-liquid .theme-btn.active {
-  border-color: var(--color-primary) !important;
-  box-shadow: 0 0 0 1px var(--color-primary), 0 0 14px var(--color-primary-alpha) !important;
-}
-
-/* 液态玻璃下顶栏主题下拉框:深色毛玻璃,避免半透明透出导致看不清 */
-.theme-liquid .theme-dropdown {
-  /* 不透明深色背景:避免半透明+blur 在部分显卡下渲染成白屏 */
-  background: #1a2440 !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
-  /* 液态玻璃下禁用 fade 过渡:过渡动画偶发卡在 opacity:0 残留,导致下拉框透明不可见 */
-  opacity: 1 !important;
-}
-.theme-liquid .fade-enter-active,
-.theme-liquid .fade-leave-active {
-  transition: none !important;
-}
-.theme-liquid .fade-enter-from,
-.theme-liquid .fade-leave-to {
-  opacity: 1 !important;
-}
-.theme-liquid .theme-option { color: #dbe6f5; }
-.theme-liquid .theme-option:hover { background: rgba(255, 255, 255, 0.1); }
-.theme-liquid .theme-option.active { color: #6ec6ff; }
 
 /* 音量弹层:百分比 + 自定义输入(播放栏/播放页共用) */
 .vol-pct { font-size: 13px; font-weight: 700; color: var(--color-primary); }
@@ -500,16 +474,25 @@ input[type="range"].h-slider {
 }
 input[type="range"].h-slider::-webkit-slider-runnable-track {
   height: 6px; border-radius: 3px;
-  background: linear-gradient(90deg, var(--color-primary, #4096ff), rgba(120,160,255,0.25));
+  background: linear-gradient(90deg, var(--color-primary, #4096ff), var(--panel-hover, rgba(120,160,255,0.25)));
 }
+input[type="range"].h-slider:hover::-webkit-slider-runnable-track { filter: brightness(1.1); }
 input[type="range"].h-slider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 15px; height: 15px; border-radius: 50%;
   background: #fff; border: 2px solid var(--color-primary, #4096ff);
   box-shadow: 0 0 8px var(--color-primary-alpha, rgba(64,150,255,0.8));
   margin-top: -4.5px;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 input[type="range"].h-slider:hover::-webkit-slider-thumb { transform: scale(1.12); }
+input[type="range"].h-slider::-webkit-slider-thumb:active {
+  transform: scale(1.25);
+  box-shadow: 0 0 0 6px var(--color-primary-alpha, rgba(64,150,255,0.2));
+}
+input[type="range"].h-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--input-focus-ring, var(--color-primary-alpha));
+}
 /* 数字输入框隐藏上下 spinner(音量/变调等数字输入防误触) */
 input[type="number"].no-spinner::-webkit-inner-spin-button,
 input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -560,17 +543,17 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 
 /* ===== 参数面板设计系统(倍速/变调/EQ/频谱/音量/队列共用)===== */
 .pop-panel {
-  background: #1c2536;
-  border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
   border-radius: 14px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25), 0 18px 48px rgba(0,0,0,0.45);
-  color: #eaf2ff; /* 不透明主文字(半透明文字只能灰度AA,必糊) */
-  --text-primary: #eaf2ff;
-  --text-secondary: #aab6cc;
-  --text-tertiary: #7c879c;
-  --bg-hover: rgba(255, 255, 255, 0.08);
-  --bg-active: rgba(255, 255, 255, 0.12);
-  --border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 2px 8px var(--shadow-sm, rgba(0,0,0,0.25)), 0 18px 48px var(--shadow-lg, rgba(0,0,0,0.45));
+  color: var(--panel-text); /* 不透明主文字(半透明文字只能灰度AA,必糊) */
+  --text-primary: var(--panel-text);
+  --text-secondary: var(--panel-text-secondary);
+  --text-tertiary: var(--panel-text-tertiary);
+  --bg-hover: var(--panel-hover);
+  --bg-active: var(--panel-active);
+  --border-color: var(--panel-border);
 }
 /* 面板进场动画:scale + fade(配合各面板 transition name) */
 /* 面板进场:纯透明度动画(不用 transform——合成层会关闭文字子像素抗锯齿导致糊) */
@@ -578,7 +561,7 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 
 /* ===== 弹窗设计系统(遮罩模糊 + 卡片多层阴影)===== */
-.modal-mask { background: rgba(0,0,0,0.45); }
+.modal-mask { background: var(--overlay-mask, rgba(0,0,0,0.45)); }
 /* 弹窗卡片:纯透明度进场(同因,避免合成层糊字) */
 .modal-mask > div { animation: fade-in 0.18s ease; }
 
@@ -605,3 +588,283 @@ body, .sidebar, .topbar, .player-bar, .main-content, .main-content > * {
 .mini-hex-row { display: flex; align-items: center; gap: 8px; }
 .hex-input { width: 84px; padding: 5px 8px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-primary); font-size: 12px; outline: none; }
 .hex-input:focus { border-color: var(--color-primary); }
+
+/* ============================================================
+   统一设计系统底座(向主流音乐软件看齐)
+   page / view-header / modal-card / context-menu / card-cover / empty-state
+   ============================================================ */
+
+/* ----- 页面骨架(所有视图统一入口)-----
+   根容器不滚动、页头固定、正文滚动 —— 这样页头可以 sticky,且 960px 窄窗下
+   页头能独占一行而不被正文挤压。此前每个视图各写一套,其中 FolderView 甚至
+   没写滚动容器,内容超出会被 .main-content 的 overflow:hidden 直接裁掉。 */
+.page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.page-body {
+  flex: 1;
+  min-height: 0;              /* flex 子项默认可撑破容器,必须显式收住才能出来滚动条 */
+  overflow-y: auto;
+  padding: 0 var(--page-pad-x) var(--page-pad-x);
+}
+.page-body--flush { padding: 0; }  /* 列表页:滚动由 MusicList 自己接管 */
+.page-inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* ----- 视图页头(9 处重复实现收敛于此)----- */
+.view-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  /* sticky:长列表滚动时标题/主操作不滚走。需配合 .page-body 作为滚动容器 */
+  position: sticky;
+  top: 0;
+  z-index: var(--z-toolbar);
+  padding: var(--page-pad-y) var(--page-pad-x) 12px;
+  background: var(--bg-primary);
+}
+/* 嵌在 .page-body(已带左右留白)里的页头:不要再叠一层留白 */
+.page-body .view-header { padding: var(--page-pad-y) 0 12px; }
+.view-header .vh-title,
+.view-header h2,
+.view-header h3 {
+  font-size: var(--font-size-page-title);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.view-header .vh-sub {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: 3px;
+}
+.view-header .vh-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ----- 模态弹窗统一底座(12+ 处弹窗收敛)----- */
+.modal-mask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  background: var(--overlay-mask, rgba(15,23,42,0.45));
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.modal-card {
+  background: var(--modal-bg, var(--bg-secondary));
+  border: 1px solid var(--modal-border, var(--border-color));
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 22px 24px;
+  max-width: 92vw;
+  max-height: 84vh;
+  overflow: auto;
+  animation: fade-in 0.18s ease;
+}
+.modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+.modal-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--input-bg, var(--bg-hover));
+  border: 1px solid var(--input-border, var(--border-color));
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.modal-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px var(--input-focus-ring, var(--color-primary-alpha));
+}
+.modal-input::placeholder { color: var(--text-tertiary); }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+.modal-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--btn-h);
+  padding: 0 18px;
+  border-radius: var(--btn-radius);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  transition: background var(--transition-fast), color var(--transition-fast), filter var(--transition-fast), transform var(--transition-fast);
+}
+.modal-btn.cancel { background: var(--bg-hover); color: var(--text-secondary); }
+.modal-btn.cancel:hover { background: var(--panel-hover, var(--border-color)); }
+.modal-btn.confirm { background: var(--color-primary); color: #fff; }
+.modal-btn.confirm:hover { filter: brightness(1.08); }
+.modal-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
+.modal-btn.danger { background: var(--color-danger); color: #fff; }
+.modal-btn.danger:hover { filter: brightness(1.08); }
+.modal-btn.danger:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ----- 右键菜单统一底座(MusicList/Sidebar/MiniView 3 份收敛)----- */
+.context-menu {
+  position: fixed;
+  z-index: var(--z-menu);
+  min-width: 168px;
+  padding: 6px;
+  background: var(--modal-bg, var(--bg-secondary));
+  border: 1px solid var(--modal-border, var(--border-color));
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg), 0 0 0 1px var(--modal-border, transparent), 0 12px 32px rgba(0,0,0,0.25);
+  overflow: hidden;
+  animation: fade-in 0.12s ease;
+}
+.context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 12px;
+  text-align: left;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  border-radius: 6px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.context-menu button svg { width: 16px; height: 16px; flex-shrink: 0; }
+.context-menu button:hover { background: var(--panel-hover, var(--bg-hover)); color: var(--color-primary); }
+.context-menu button.danger { color: var(--color-danger); }
+.context-menu button.danger:hover { background: var(--color-danger-alpha); color: var(--color-danger); }
+.context-menu .cm-divider { height: 1px; background: var(--modal-border, var(--border-color)); margin: 4px 6px; }
+.context-menu .cm-label {
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+/* ----- 封面卡片统一底座(首页/专辑/歌手/歌单/推荐收敛)----- */
+.card-cover {
+  position: relative;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--bg-hover);
+  aspect-ratio: 1;
+  box-shadow: var(--shadow-sm);
+}
+.card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.card-cover .cc-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34px;
+  color: var(--empty-icon, var(--text-tertiary));
+  background: linear-gradient(160deg, var(--bg-hover), var(--bg-secondary));
+}
+
+/* ----- 空状态统一(6 处收敛,.list-empty 为旧名)----- */
+.empty-state,
+.list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+.empty-state .es-icon,
+.list-empty .le-icon { font-size: 52px; color: var(--empty-icon, var(--text-tertiary)); opacity: 0.85; }
+.empty-state .es-text,
+.list-empty .le-text { font-size: 14px; color: var(--text-secondary); }
+.empty-state .es-hint,
+.list-empty .le-hint { font-size: 12px; opacity: 0.75; }
+
+/* ----- 参数面板内部件统一(标题/预设按钮,各面板共用)----- */
+.panel-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--panel-text, var(--text-primary));
+  margin-bottom: 10px;
+}
+.panel-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.panel-preset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 11px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--panel-text-secondary, var(--text-secondary));
+  background: var(--panel-hover, var(--bg-hover));
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
+}
+.panel-preset-btn:hover { color: var(--color-primary); border-color: var(--color-primary); }
+.panel-preset-btn.active {
+  color: var(--color-primary);
+  background: var(--panel-active, var(--color-primary-alpha));
+  border-color: var(--color-primary);
+  font-weight: 500;
+}
+
+/* ===== 毛玻璃降级策略(清晰度/性能专项)=====
+   软件渲染(默认,硬件加速关)下禁用 backdrop-filter 防卡;
+   硬件加速开启(body.hw-accel)时启用毛玻璃质感。 */
+.pop-panel, .context-menu, .modal-card, .modal-mask {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+body.hw-accel .pop-panel,
+body.hw-accel .context-menu,
+body.hw-accel .modal-card {
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+}
+body.hw-accel .modal-mask {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+/* 完全不支持 backdrop-filter 的环境:浮层背景升为不透明,保证可读 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pop-panel, .context-menu, .modal-card {
+    background: var(--bg-secondary) !important;
+  }
+}

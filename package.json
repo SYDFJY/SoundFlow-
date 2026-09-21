@@ -30,6 +30,7 @@
     "electron": "^34.5.8",
     "electron-builder": "^24.9.0",
     "vite": "^5.0.0",
+    "vitest": "^1.6.1",
     "wait-on": "^7.2.0"
   },
   "build": {
@@ -50,6 +51,10 @@
       {
         "from": "C:/ffmpeg/bin/ffmpeg.exe",
         "to": "ffmpeg/ffmpeg.exe"
+      },
+      {
+        "from": "C:/ffmpeg/bin/ffprobe.exe",
+        "to": "ffmpeg/ffprobe.exe"
       },
       {
         "from": "build/icon.ico",

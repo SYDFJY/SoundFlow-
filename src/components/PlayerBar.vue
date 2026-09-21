@@ -1,24 +1,26 @@
 <template>
-  <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong, 'player-bar--drag': barDragOver, 'player-bar--mini': collapsed }">
+  <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong, 'player-bar--drag': barDragOver, 'player-bar--mini': collapsed }" @wheel="onVolWheel">
     <!-- 收起/展开(迷你化切换) -->
     <button class="pb-collapse" @click="toggleCollapse" :title="collapsed ? '展开播放栏' : '收起为迷你条'">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path v-if="!collapsed" d="M6 9l6 6 6-6"/><path v-else d="M6 15l6-6 6 6"/></svg>
+      <Icon :name="collapsed ? 'expand' : 'collapse'" :size="14" />
     </button>
 
     <!-- 左：封面+信息 -->
     <div class="player-left" v-show="!collapsed">
       <div class="player-cover" @click="goToPlayer">
-        <img v-if="coverUrl" :src="coverUrl" class="cover-img" />
+        <img v-if="coverUrl" :src="displayCover" class="cover-img" @error="onCoverError" alt="" />
         <div v-else class="cover-placeholder">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+          <Icon name="album" :size="24" />
         </div>
       </div>
+      <!-- 主流播放器:悬停小封面显示大封面预览 -->
+      <div v-if="coverUrl" class="cover-float" @error="onCoverError"><img :src="displayCover" alt="" /></div>
       <div class="player-info">
         <div class="player-title text-ellipsis">{{ playerStore.currentSong?.title || 'SoundFlow' }}</div>
         <div class="player-artist text-ellipsis">{{ playerStore.currentSong?.artist || t('player.emptyTip') }}</div>
       </div>
-      <button class="player-fav" @click="toggleFav" :class="{ active: isFav }">
-        <svg viewBox="0 0 24 24" :fill="isFav ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+      <button class="player-fav" @click="toggleFav" :class="{ active: isFav }" :title="isFav ? '取消收藏' : '收藏'" :aria-label="isFav ? '取消收藏' : '收藏'" :aria-pressed="isFav">
+        <Icon name="favorite" :size="18" :fill="isFav ? 'currentColor' : 'none'" />
       </button>
     </div>
 
@@ -26,21 +28,25 @@
     <div class="player-center" v-show="!collapsed">
       <div class="player-controls">
         <button class="ctrl-btn" :title="playModeLabel" @click="playerStore.cyclePlayMode()">
-          <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-          <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-          <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+          <Icon v-if="playerStore.playMode === 'list'" name="modeList" :size="18" />
+          <Icon v-else-if="playerStore.playMode === 'repeat'" name="modeRepeat" :size="18" />
+          <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
+          <Icon v-else name="modeShuffle" :size="18" />
         </button>
         <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + ' (Ctrl+←)'">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+          <Icon name="prev" :size="18" fill="currentColor" />
         </button>
-        <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="(playerStore.isPlaying ? '暂停' : '播放') + ' (空格)'">
-          <svg :key="'play-on'" v-if="playerStore.isPlaying" class="pop-anim" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          <svg :key="'play-off'" v-else class="pop-anim" viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+        <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
+          <Icon v-if="playerStore.isBuffering" class="player-spin" name="loadingCircle" :size="20" />
+          <Icon :key="'play-on'" v-else-if="playerStore.isPlaying" class="pop-anim" name="pause" :size="20" fill="currentColor" />
+          <Icon :key="'play-off'" v-else class="pop-anim" name="play" :size="20" fill="currentColor" />
         </button>
-        <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + ' (Ctrl+→)'">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
-        </button>
+        <div class="next-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
+          <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + ' (Ctrl+→)'" aria-label="下一曲">
+            <Icon name="next" :size="18" fill="currentColor" />
+          </button>
+          <NextTrackHint :show="showNextHint" />
+        </div>
         <!-- 倍速(自定义面板) -->
         <div class="pb-rate-control">
           <button class="ctrl-btn rate-btn" @click="showPbRatePanel = !showPbRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
@@ -64,6 +70,11 @@
         </div>
       </div>
       <ProgressBar class="player-progress" />
+      <!-- 转码提示:非原生格式(APE/WMA/AIFF/ALAC)首次播放需先转码为 FLAC,
+           此前只有「缓冲中」转圈、没有任何进度,看起来像卡死 -->
+      <div v-if="playerStore.transcodePct > 0" class="pb-transcode" role="status" aria-live="polite">
+        转码中 {{ playerStore.transcodePct }}%(首次播放该格式需要)
+      </div>
     </div>
 
     <!-- 右：工具按钮 -->
@@ -71,7 +82,7 @@
       <!-- 定时 -->
       <div class="tool-wrapper">
         <button class="right-btn" :class="{ active: playerStore.sleepTimerMinutes !== 0 }" @click="showTimer = !showTimer" :title="t('settings.sleepTimer')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <Icon name="timer" :size="18" />
           <span v-if="playerStore.sleepTimerMinutes !== 0" class="timer-badge">{{ playerStore.sleepTimerMinutes === -1 ? '本曲后' : playerStore.formatTimerDisplay(playerStore.sleepTimerRemaining) }}</span>
         </button>
         <transition name="popup">
@@ -79,7 +90,7 @@
             <div class="popup-title">{{ t('settings.sleepTimer') }}</div>
             <!-- 播完当前曲目停止 -->
             <button class="popup-item" :class="{ active: playerStore.sleepTimerMinutes === -1 }" @click="setTimer(-1)">
-              ⏭️ 播完当前曲目停止
+              <Icon name="next" :size="14" fill="currentColor" />播完当前曲目停止
             </button>
             <div class="popup-divider"></div>
             <!-- 自定义分钟(无需预设) -->
@@ -98,21 +109,21 @@
 
       <!-- 迷你播放器 -->
       <button class="right-btn" :class="{ active: playerStore.miniOpen }" @click="toggleMini" title="迷你播放器(独立小窗)">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
+        <Icon name="miniPlayer" :size="18" />
       </button>
 
       <!-- 桌面歌词 -->
       <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        <Icon name="lyrics" :size="18" />
 
       </button>
 
-      <!-- 音量:点击弹出竖直滑块 -->
-      <div class="volume-control" @wheel.prevent="onVolWheel">
+      <!-- 音量:点击弹出竖直滑块(滚轮调音量由播放栏根统一处理) -->
+      <div class="volume-control">
         <button class="right-btn" :class="{ active: playerStore.volPanelOpen }" :title="t('player.volume') + ' ' + Math.round(playerStore.volume * 100) + '%'" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen">
-          <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-          <svg v-else-if="playerStore.volume < 0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+          <Icon v-if="playerStore.isMuted || playerStore.volume === 0" name="mute" :size="18" />
+          <Icon v-else-if="playerStore.volume < 0.5" name="volume" :size="18" />
+          <Icon v-else name="volume" :size="18" />
         </button>
         <transition name="vol-fade">
           <div v-if="playerStore.volPanelOpen" class="vol-pop">
@@ -123,8 +134,8 @@
               <span class="vol-input-unit">%</span>
             </div>
             <button class="vol-mute" :title="playerStore.isMuted ? '取消静音' : '静音'" @click="playerStore.toggleMute()">
-              <svg v-if="playerStore.isMuted" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-              <svg v-else viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+              <Icon v-if="playerStore.isMuted" name="mute" :size="14" />
+              <Icon v-else name="volume" :size="14" />
             </button>
           </div>
         </transition>
@@ -132,66 +143,36 @@
 
       <!-- 播放队列 -->
       <button class="right-btn" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
+        <Icon name="equalizer" :size="18" />
       </button>
       <button class="right-btn" data-queue-toggle :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" :title="t('player.queue')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+        <Icon name="queue" :size="18" />
       </button>
     </div>
 
     <!-- 迷你条(收起态) -->
     <div v-show="collapsed" class="pb-mini" @click="toggleCollapse" title="点击展开播放栏">
-      <img v-if="coverUrl" :src="coverUrl" class="pb-mini-cover" />
-      <div v-else class="pb-mini-cover pb-mini-cover--ph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg></div>
+      <img v-if="coverUrl" :src="displayCover" class="pb-mini-cover" @error="onCoverError" alt="" />
+      <div v-else class="pb-mini-cover pb-mini-cover--ph"><Icon name="album" :size="18" /></div>
       <div class="pb-mini-title text-ellipsis">{{ playerStore.currentSong?.title || 'SoundFlow' }}</div>
       <div class="pb-mini-bar"><div class="pb-mini-bar-fill" :style="{ width: miniProgress + '%' }"></div></div>
       <div class="pb-mini-ctrl">
         <button class="pb-mini-btn" @click.stop="playerStore.playPrev()" title="上一曲">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM18 18l-8.5-6L18 6z"/></svg>
+          <Icon name="prev" :size="18" fill="currentColor" />
         </button>
         <button class="pb-mini-btn" @click.stop="playerStore.togglePlay()" :title="playerStore.isPlaying ? '暂停' : '播放'">
-          <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-          <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          <Icon v-if="playerStore.isPlaying" name="pause" :size="18" fill="currentColor" />
+          <Icon v-else name="play" :size="18" fill="currentColor" />
         </button>
         <button class="pb-mini-btn" @click.stop="playerStore.playNext()" title="下一曲">
-          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+          <Icon name="next" :size="18" fill="currentColor" />
         </button>
       </div>
     </div>
 
-    <!-- 音效面板 -->
+    <!-- 音效面板(复用共享 EqPanel 组件,定位经 CSS 变量覆盖为播放栏风格) -->
     <transition name="queue-slide">
-      <div v-if="showEqPanel" class="eq-panel" @click.stop>
-        <div class="queue-header">
-          <span class="queue-title">{{ t('player.eq') }}</span>
-          <button class="eq-toggle" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
-            {{ playerStore.eqSettings.enabled ? t('common.on') : t('common.off') }}
-          </button>
-          <button class="queue-close" @click="showEqPanel = false">✕</button>
-        </div>
-        <div v-if="playerStore.eqSettings.enabled" class="eq-body">
-          <div v-for="g in eqGroups" :key="g.name" class="eq-group">
-            <div class="eq-group-name">{{ g.name }}</div>
-            <div class="eq-presets">
-              <button v-for="key in g.keys" :key="key" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ playerStore.EQ_PRESETS[key].name }}</button>
-            </div>
-          </div>
-          <div class="eq-sliders">
-            <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
-              <span class="eq-gain">{{ playerStore.eqSettings.gains[i] > 0 ? '+' : '' }}{{ playerStore.eqSettings.gains[i] }}</span>
-              <input type="range" min="-12" max="12" step="1" :value="playerStore.eqSettings.gains[i]" @input="playerStore.setEqGain(i, parseInt($event.target.value))" />
-              <span class="eq-freq">{{ f >= 1000 ? (f / 1000) + 'k' : f }}</span>
-            </div>
-          </div>
-          <div class="eq-extra">
-            <span class="label-text">Bass</span>
-            <input type="range" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
-            <span class="label-text">Reverb</span>
-            <input type="range" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
-          </div>
-        </div>
-        <div v-else class="eq-off">{{ t('playerView.eqOff') }}</div>
-      </div>
+      <EqPanel v-if="showEqPanel" :show="showEqPanel" :style="pbEqStyle" @close="showEqPanel = false" />
     </transition>
 
     <!-- 播放队列面板 -->
@@ -200,11 +181,11 @@
         <div class="queue-header">
           <span class="queue-title">{{ t('player.queue') }}</span>
           <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
-          <button class="queue-close" @click="playerStore.showQueue = false">✕</button>
+          <button class="queue-close" title="关闭队列面板" aria-label="关闭队列面板" @click="playerStore.showQueue = false"><Icon name="close" :size="14" /></button>
         </div>
         <div class="queue-list" ref="queueListEl">
           <div v-if="playerStore.playQueue.length === 0" class="queue-empty">队列为空</div>
-          <div v-for="(song, idx) in playerStore.playQueue" :key="song.path + '-' + idx"
+          <div v-for="(song, idx) in playerStore.playQueue" :key="song._qid ?? song.path + '-' + idx"
             class="queue-item" :class="{ active: idx === playerStore.currentIndex }"
             :ref="el => { if (idx === playerStore.currentIndex) activeQueueEl = el }"
             @click="playerStore.playIndex(idx)">
@@ -214,7 +195,7 @@
               <div class="queue-artist text-ellipsis">{{ song.artist }}</div>
             </div>
             <button class="queue-remove" @click.stop="playerStore.removeFromQueue(idx)" title="移除" :class="{ 'queue-remove--current': idx === playerStore.currentIndex }">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              <Icon name="close" :size="14" />
             </button>
           </div>
         </div>
@@ -230,12 +211,18 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { t } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
 import ProgressBar from '@/components/ProgressBar.vue'
+import NextTrackHint from '@/components/NextTrackHint.vue'
+import Icon from '@/components/icons/Icon.vue'
+import EqPanel from '@/components/EqPanel.vue'
+import Sortable from 'sortablejs'
 import { dragSongPath, clearDragSong } from '@/composables/useDragSong'
+import { useVolumeControl } from '@/composables/useVolumeControl'
+import { useCoverPreload } from '@/composables/useCoverPreload'
+import { scrollToActiveQueue as scrollQueueToActive } from '@/utils/queueScroll'
 
 const router = useRouter()
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
-const progressBar = ref(null)
 const showPbRatePanel = ref(false)
 // 播放栏迷你化(收起为迷你条)
 const collapsed = ref(localStorage.getItem('soundflow_pb_collapsed') === '1')
@@ -255,34 +242,40 @@ function toggleCollapse() {
   }
 }
 const showTimer = ref(false)
+// 下一首预览卡:悬停"下一曲"时显示
+const showNextHint = ref(false)
 const customMinutes = ref(30)
 const showEqPanel = ref(false)
-
-// 音效分组(参考主流音乐播放器)
-const eqGroups = [
-  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical'] },
-  { name: '低频', keys: ['bass'] },
-  { name: '人声', keys: ['vocal', 'aiVocal'] },
-  { name: '环绕', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
-  { name: '律动', keys: ['dj', 'live'] },
-  { name: '更多', keys: ['auto', 'chinese'] }
-]
+// 播放栏内嵌 EQ 面板的定位覆盖(CSS 变量传入共享 EqPanel 组件,还原播放栏风格)
+const pbEqStyle = {
+  '--eq-bottom': 'calc(var(--player-height) + 1px)',
+  '--eq-right': '16px',
+  '--eq-z': '49',
+  '--eq-width': '640px',
+  '--eq-maxh': '500px',
+  '--eq-radius': 'var(--radius-lg) var(--radius-lg) 0 0'
+}
 
 // 播放队列面板:打开/切歌时自动定位当前歌曲
 const queueListEl = ref(null)
-const activeQueueEl = ref(null)
-function scrollToActiveQueue() {
-  const list = queueListEl.value
-  const el = activeQueueEl.value
-  if (!list || !el) return
-  const listRect = list.getBoundingClientRect()
-  const elRect = el.getBoundingClientRect()
-  const target = elRect.top - listRect.top + list.scrollTop - list.clientHeight / 2 + elRect.height / 2
-  list.scrollTop = Math.max(0, target)
+let queueSortable = null
+// 队列拖拽排序(Sortable):结束回调统一交给 playerStore.reorderQueue 重排 + 修正索引
+function setupQueueSortable() {
+  if (!queueListEl.value) return
+  if (queueSortable) { try { queueSortable.destroy() } catch (_) {} }
+  queueSortable = Sortable.create(queueListEl.value, {
+    animation: 150,
+    ghostClass: 'queue-ghost',
+    onEnd: (evt) => { playerStore.reorderQueue(evt.oldIndex, evt.newIndex) }
+  })
 }
+watch(() => playerStore.showQueue, (v) => { if (v) nextTick(setupQueueSortable) })
+const activeQueueEl = ref(null)
+// 打开/切换歌曲时,自动定位当前播放项(复用工具,避免两处实现漂移)
+function scrollToActiveQueue() { scrollQueueToActive(queueListEl.value, activeQueueEl.value) }
 function onQueueDocClick(e) {
   // 音量滑杆拖动中(pointer 移出弹层)不关闭
-  if (_volDragging) { _volDragging = false; return }
+  if (consumeVolDragging()) return
   // 面板内 / 触发按钮上点击不关闭
   if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel, .pb-rate-panel') ||
       e.target.closest('.right-btn, .rate-btn, [data-queue-toggle]')) return
@@ -325,11 +318,14 @@ function onBarDragUp(e) {
       playerStore.addToQueue(song)
       try { window.$toast?.('已添加到播放列表', 'success') } catch {}
     }
+    // 命中播放栏才清除拖拽状态(加入队列后);未命中保留,
+    // 让后执行的 MusicList mouseup 正常 emit reorder(此前无条件清除导致列表内排序永远不生效)
+    clearDragSong()
   }
   barDragOver.value = false
-  clearDragSong()
 }
 onUnmounted(() => {
+  if (queueSortable) { try { queueSortable.destroy() } catch (_) {} }
   document.removeEventListener('click', onQueueDocClick)
   document.removeEventListener('mousemove', onBarDragMove)
   document.removeEventListener('mouseup', onBarDragUp)
@@ -342,8 +338,18 @@ watch(() => playerStore.currentIndex, () => {
 })
 
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
+// 封面预加载:新图就绪后再切换(消除切歌露底)
+const displayCover = useCoverPreload(coverUrl)
+// 封面加载失败时经主进程重新取封面(与播放页一致,防封面失效露占位)
+function onCoverError() {
+  const song = playerStore.currentSong
+  if (!song || song._coverRetried || !window.electronAPI) return
+  song._coverRetried = true
+  window.electronAPI.getCover(song.path)
+    .then(url => { if (url) song.coverUrl = url })
+    .catch(() => {})
+}
 const isFav = computed(() => playerStore.currentSong ? musicStore.isFavorite(playerStore.currentSong.path) : false)
-const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
 const playModeLabel = computed(() => {
   const labels = { list: '列表播放', repeat: '列表循环', repeatOne: '单曲循环', random: '随机播放' }
   const order = ['list', 'repeat', 'repeatOne', 'random']
@@ -363,49 +369,8 @@ function goToPlayer() {
   if (playerStore.currentSong) router.push('/player')
 }
 
-function onProgressClick(e) {
-  if (!progressBar.value || !playerStore.duration) return
-  const rect = progressBar.value.getBoundingClientRect()
-  playerStore.seek(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * playerStore.duration)
-}
-
-// 进度条悬停时间预览
-const hoverTime = ref(null)
-const hoverX = ref(0)
-function onProgressHover(e) {
-  if (!progressBar.value || !playerStore.duration) return
-  const rect = progressBar.value.getBoundingClientRect()
-  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-  hoverTime.value = playerStore.formatTime(ratio * playerStore.duration)
-  hoverX.value = Math.min(Math.max(e.clientX - rect.left, 24), rect.width - 24)
-}
-
-function onProgressMouseDown(e) {
-  onProgressClick(e)
-  const onMove = (ev) => onProgressClick(ev)
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-
-const volInput = ref(Math.round(playerStore.volume * 100))
-watch(() => playerStore.volume, (v) => { volInput.value = Math.round(v * 100) })
-function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
-// 音量滑杆拖动标记:pointer 移出弹层时 click-outside 不误关弹层
-let _volDragging = false
-function volDragStart() { _volDragging = true }
-function volDragEnd() { setTimeout(() => { _volDragging = false }, 50) }
-// 自定义音量:数字输入(1-100),Enter/失焦确认
-function confirmVolInput() {
-  let v = Math.round(volInput.value)
-  if (isNaN(v)) v = Math.round(playerStore.volume * 100)
-  volInput.value = Math.min(100, Math.max(0, v))
-  playerStore.setVolume(volInput.value / 100)
-}
-function onVolWheel(e) {
-  const delta = e.deltaY > 0 ? -0.05 : 0.05
-  playerStore.setVolume(Math.min(1, Math.max(0, playerStore.volume + delta)))
-}
+// 音量控制(数字输入/滑杆拖动/滚轮调音量)由 useVolumeControl 统一提供
+const { volInput, setVolume, volDragStart, volDragEnd, consumeVolDragging, confirmVolInput, wheelVolume: onVolWheel } = useVolumeControl(playerStore)
 
 function setTimer(minutes) {
   playerStore.setSleepTimer(minutes)
@@ -438,12 +403,27 @@ function setCustomTimer() {
   position: relative;
   z-index: 50;
 }
-.player-bar--drag { box-shadow: inset 0 0 0 2px var(--color-primary); }
+.player-bar--drag {
+  box-shadow: inset 0 0 0 2px var(--color-primary), 0 -2px 16px var(--color-primary-alpha);
+  background: color-mix(in srgb, var(--color-primary-alpha) 45%, var(--player-bg) 55%) !important;
+}
 
 /* 左侧 */
-.player-left { display: flex; align-items: center; gap: 12px; width: 260px; flex-shrink: 0; }
+.player-left { display: flex; align-items: center; gap: 12px; width: 260px; flex-shrink: 0; position: relative; }
 .player-cover { width: 48px; height: 48px; border-radius: var(--radius-md); overflow: hidden; cursor: pointer; flex-shrink: 0; transition: transform var(--transition-fast); }
 .player-cover:hover { transform: scale(1.05); }
+/* 悬停小封面弹出大封面预览(主流播放器交互) */
+.cover-float {
+  position: absolute; bottom: calc(100% + 10px); left: 0;
+  width: 220px; aspect-ratio: 1; border-radius: 10px;
+  overflow: hidden; box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  opacity: 0; pointer-events: none; transform: translateY(6px);
+  transition: opacity 0.18s, transform 0.18s;
+  z-index: 60;
+}
+.cover-float img { width: 100%; height: 100%; object-fit: cover; }
+.player-cover:hover ~ .cover-float,
+.player-cover:focus-within ~ .cover-float { opacity: 1; transform: translateY(0); }
 .cover-img { width: 100%; height: 100%; object-fit: cover; }
 .cover-placeholder { width: 100%; height: 100%; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; color: var(--text-tertiary); }
 .cover-placeholder svg { width: 24px; height: 24px; }
@@ -461,7 +441,6 @@ function setCustomTimer() {
 .ctrl-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-secondary); transition: all var(--transition-fast); font-size: var(--font-size-base); }
 .ctrl-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
 .ctrl-btn svg { width: 18px; height: 18px; }
-.mode-icon { font-size: var(--font-size-lg); }
 .rate-btn { width: auto; padding: 0 8px; border-radius: var(--radius-sm); font-size: var(--font-size-xs); font-weight: 600; color: var(--color-primary); min-width: 36px; }
 .progress-hover-time {
   position: absolute;
@@ -479,8 +458,18 @@ function setCustomTimer() {
 .ctrl-btn--play { width: 40px; height: 40px; background: var(--color-primary); color: white !important; }
 .ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); }
 .ctrl-btn--play svg { width: 20px; height: 20px; }
+.ctrl-btn--play .player-spin { width: 20px; height: 20px; animation: pb-spin 0.8s linear infinite; }
+@keyframes pb-spin { to { transform: rotate(360deg); } }
 
 .player-progress { display: flex; align-items: center; gap: 8px; width: 100%; }
+/* 转码进度行:与进度条同宽,占用固定高度避免出现/消失时把控制区顶动 */
+.pb-transcode {
+  font-size: 11px;
+  line-height: 14px;
+  height: 14px;
+  color: var(--color-primary);
+  opacity: 0.9;
+}
 .time-current, .time-total { font-size: 11px; color: var(--text-tertiary); min-width: 40px; text-align: center; font-variant-numeric: tabular-nums; }
 .progress-bar { flex: 1; height: 20px; display: flex; align-items: center; cursor: pointer; }
 .progress-track { width: 100%; height: 4px; background: var(--bg-hover); border-radius: 2px; position: relative; }
@@ -568,6 +557,7 @@ function setCustomTimer() {
 }
 .pb-mini-btn svg { width: 18px; height: 18px; }
 .pb-mini-btn:hover { background: var(--bg-hover, rgba(255,255,255,0.1)); }
+
 .right-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: var(--radius-md); color: var(--text-secondary); transition: all var(--transition-fast); position: relative; }
 .right-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .right-btn.active { color: var(--color-primary); }
@@ -578,13 +568,49 @@ function setCustomTimer() {
 .vol-pop {
   position: absolute; bottom: calc(100% + 12px); left: 50%; transform: translateX(-50%);
   padding: 10px 8px;
-  background: var(--bg-secondary, rgba(20,28,50,0.96));
-  border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  background: var(--panel-bg, rgba(20,28,50,0.96));
+  border: 1px solid var(--panel-border, rgba(255,255,255,0.12));
   border-radius: 10px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  box-shadow: 0 8px 28px var(--shadow-lg, rgba(0,0,0,0.35));
   z-index: 60;
   display: flex; flex-direction: column; align-items: center; gap: 8px;
+  --text-primary: var(--panel-text);
+  --text-secondary: var(--panel-text-secondary);
+  --text-tertiary: var(--panel-text-tertiary);
+  --bg-hover: var(--panel-hover);
+  --border-color: var(--panel-border);
 }
+.vol-pct { font-size: 13px; font-weight: 700; color: var(--color-primary); }
+.vol-input-row { display: flex; align-items: center; gap: 2px; }
+.vol-input {
+  width: 48px; padding: 3px 6px;
+  background: var(--bg-hover); border: 1px solid var(--border-color);
+  border-radius: 6px; color: var(--text-primary); font-size: 12px; text-align: center; outline: none;
+}
+.vol-input:focus { border-color: var(--color-primary); }
+.vol-input-unit { font-size: 11px; color: var(--text-tertiary); }
+.vol-mute {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 50%;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.vol-mute:hover { background: var(--bg-hover); color: var(--text-primary); }
+.vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
+.vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
+.vol-slider {
+  -webkit-appearance: slider-vertical;
+  appearance: slider-vertical;
+  width: 4px; height: 100px;
+  background: var(--bg-hover); border-radius: 2px; outline: none;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 13px; height: 13px;
+  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
+  border: none;
+}
+
+
 .vol-pct { font-size: 13px; font-weight: 700; color: var(--color-primary); }
 .vol-input-row { display: flex; align-items: center; gap: 2px; }
 .vol-input {
@@ -617,7 +643,7 @@ function setCustomTimer() {
 
 /* 弹出面板 */
 .tool-wrapper { position: relative; }
-.popup-panel { position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); min-width: 180px; padding: 8px; z-index: 100; }
+.popup-panel { position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--panel-bg, var(--bg-secondary)); border: 1px solid var(--panel-border, var(--border-color)); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); min-width: 180px; padding: 8px; z-index: 100; --text-primary: var(--panel-text); --text-secondary: var(--panel-text-secondary); --text-tertiary: var(--panel-text-tertiary); --bg-hover: var(--panel-hover); --border-color: var(--panel-border); }
 .popup-title { font-size: var(--font-size-xs); font-weight: 600; color: var(--text-tertiary); padding: 4px 12px; margin-bottom: 4px; }
 .popup-item { display: block; width: 100%; padding: 8px 12px; text-align: left; font-size: var(--font-size-sm); color: var(--text-primary); border-radius: var(--radius-sm); }
 .popup-item:hover { background: var(--bg-hover); }
@@ -640,32 +666,7 @@ function setCustomTimer() {
 .popup-enter-from, .popup-leave-to { opacity: 0; transform: translateY(8px); }
 
 /* 播放队列面板 */
-.queue-panel { position: absolute; bottom: calc(var(--player-height) + 1px); right: 16px; width: 360px; max-height: 480px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 49; }
-/* 音效面板 */
-.eq-panel {
-  position: absolute; bottom: calc(var(--player-height) + 1px); right: 16px;
-  width: 640px; max-height: 500px;
-  background: var(--bg-secondary); border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg);
-  display: flex; flex-direction: column; z-index: 49; overflow: hidden;
-}
-.eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: var(--bg-hover); color: var(--text-secondary); }
-.eq-toggle.on { background: var(--color-primary); color: #fff; }
-.eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
-.eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: var(--text-tertiary); }
-.eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.eq-group { display: flex; flex-direction: column; gap: 5px; }
-.eq-group-name { font-size: var(--font-size-xs); color: var(--text-tertiary); }
-.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; border-radius: var(--radius-md); background: var(--bg-hover); color: var(--text-secondary); transition: all var(--transition-fast); }
-.eq-preset-btn.active { background: var(--color-primary); color: #fff; }
-.eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
-.eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
-.eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 110px; }
-.eq-gain { font-size: 10px; color: var(--text-tertiary); }
-.eq-freq { font-size: 10px; color: var(--text-tertiary); }
-.eq-extra { display: flex; align-items: center; gap: 8px; }
-.eq-extra .label-text { min-width: 48px; }
-.eq-extra input[type="range"] { width: 100px; }
+.queue-panel { position: absolute; bottom: calc(var(--player-height) + 1px); right: 16px; width: 360px; max-height: 480px; background: var(--panel-bg, var(--bg-secondary)); border: 1px solid var(--panel-border, var(--border-color)); border-radius: var(--radius-lg) var(--radius-lg) 0 0; box-shadow: var(--shadow-lg); display: flex; flex-direction: column; z-index: 49; --text-primary: var(--panel-text); --text-secondary: var(--panel-text-secondary); --text-tertiary: var(--panel-text-tertiary); --bg-hover: var(--panel-hover); --border-color: var(--panel-border); }
 .queue-header { display: flex; align-items: center; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
 .queue-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
 .queue-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
@@ -673,8 +674,10 @@ function setCustomTimer() {
 .queue-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 .queue-list { position: relative;  flex: 1; overflow-y: auto; padding: 4px 0; }
 .queue-empty { text-align: center; padding: 40px; color: var(--text-tertiary); font-size: var(--font-size-sm); }
-.queue-item { display: flex; align-items: center; gap: 10px; padding: 8px 16px; cursor: pointer; transition: background var(--transition-fast); }
+.queue-item { display: flex; align-items: center; gap: 10px; padding: 8px 16px; cursor: grab; transition: background var(--transition-fast); }
+.queue-item:active { cursor: grabbing; }
 .queue-item:hover { background: var(--bg-hover); }
+.queue-item.queue-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
 .queue-item.active { background: var(--color-primary-alpha); }
 .queue-idx { width: 24px; text-align: center; font-size: var(--font-size-xs); color: var(--text-tertiary); flex-shrink: 0; }
 .queue-item.active .queue-idx { color: var(--color-primary); font-weight: 600; }
@@ -694,9 +697,14 @@ function setCustomTimer() {
 .pb-rate-control { position: relative; }
 .pb-rate-panel {
   position: absolute; bottom: calc(var(--player-height, 72px) + 8px); left: 50%; transform: translateX(-50%);
-  background: var(--bg-secondary, rgba(20,28,50,0.95)); border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+  background: var(--panel-bg, rgba(20,28,50,0.95)); border: 1px solid var(--panel-border, rgba(255,255,255,0.12));
   border-radius: 10px; padding: 10px 14px; width: 210px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 120;
+  box-shadow: 0 8px 28px var(--shadow-lg, rgba(0,0,0,0.35)); z-index: 120;
+  --text-primary: var(--panel-text);
+  --text-secondary: var(--panel-text-secondary);
+  --text-tertiary: var(--panel-text-tertiary);
+  --bg-hover: var(--panel-hover);
+  --border-color: var(--panel-border);
 }
 .pb-rate-header { display: flex; justify-content: space-between; align-items: center; font-size: var(--font-size-sm, 13px); margin-bottom: 6px; }
 .pb-rate-value { color: var(--color-primary, #4096ff); font-weight: 700; }

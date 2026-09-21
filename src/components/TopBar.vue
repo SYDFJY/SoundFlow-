@@ -2,15 +2,15 @@
   <header class="topbar" @dblclick="onTopbarDblClick">
     <div class="topbar-left">
       <div class="logo" @click="$router.push('/home')">
-        <img class="logo-icon" src="/icon.jpg" alt="logo" />
+        <img class="logo-icon" src="/icon.png" alt="logo" />
         <span class="logo-text">SoundFlow</span>
       </div>
       <div class="nav-buttons">
-        <button class="icon-btn" @click="goBack" :title="t('playerView.back')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        <button class="icon-btn" @click="goBack" :title="t('playerView.back')" :aria-label="t('playerView.back')">
+          <Icon name="back" :size="16" />
         </button>
-        <button class="icon-btn" @click="goForward" title="Forward">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        <button class="icon-btn" @click="goForward" title="Forward" aria-label="前进">
+          <Icon name="forward" :size="16" />
         </button>
       </div>
     </div>
@@ -21,12 +21,8 @@
       <!-- 主题下拉 -->
       <div class="theme-dropdown-wrapper" @click.stop>
         <button class="icon-btn" @click="showThemeDropdown = !showThemeDropdown" :title="t('topbar.theme')">
-          <svg v-if="appStore.theme === 'light'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z"/>
-          </svg>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-          </svg>
+          <Icon v-if="appStore.theme === 'light'" name="darkMode" :size="16" />
+          <Icon v-else name="lightMode" :size="16" />
         </button>
         <transition name="fade">
           <div v-if="showThemeDropdown" class="theme-dropdown">
@@ -39,7 +35,7 @@
             >
               <div class="theme-dot" :style="{ background: t.color }"></div>
               <span>{{ t.label }}</span>
-              <svg v-if="appStore.theme === t.value" class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              <Icon v-if="appStore.theme === t.value" class="check-icon" name="check" :size="16" />
             </button>
             <div class="theme-dropdown-divider"></div>
             <div class="theme-io-row">
@@ -50,21 +46,19 @@
         </transition>
       </div>
 
-      <button class="icon-btn" @click="$router.push('/settings')" :title="t('topbar.settings')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
-        </svg>
+      <button class="icon-btn" @click="$router.push('/settings')" :title="t('topbar.settings')" :aria-label="t('topbar.settings')">
+        <Icon name="settings" :size="16" />
       </button>
       <div class="window-controls" v-if="isElectron">
-        <button class="win-btn" @click="minimizeWindow">
-          <svg viewBox="0 0 12 12"><line x1="1" y1="6" x2="11" y2="6" stroke="currentColor" stroke-width="1.5"/></svg>
+        <button class="win-btn" @click="minimizeWindow" title="最小化" aria-label="最小化窗口">
+          <Icon name="winMinimize" :size="14" />
         </button>
-        <button class="win-btn" @click="maximizeWindow" :title="isMaximized ? '还原' : '最大化'">
-          <svg v-if="isMaximized" viewBox="0 0 12 12"><rect x="1.5" y="3.5" width="8" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 3.5V1.5h8v8h-2" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
-          <svg v-else viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+        <button class="win-btn" @click="maximizeWindow" :title="isMaximized ? '还原' : '最大化'" :aria-label="isMaximized ? '还原窗口' : '最大化窗口'">
+          <Icon v-if="isMaximized" name="winRestore" :size="13" />
+          <Icon v-else name="winMaximize" :size="12" />
         </button>
-        <button class="win-btn win-btn--close" @click="closeWindow">
-          <svg viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" stroke-width="1.5"/><line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" stroke-width="1.5"/></svg>
+        <button class="win-btn win-btn--close" @click="closeWindow" title="关闭" aria-label="关闭窗口">
+          <Icon name="close" :size="12" />
         </button>
       </div>
     </div>
@@ -77,7 +71,9 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
+import { THEME_LIST as themeList } from '@/config/themeList'
 import SearchBar from './SearchBar.vue'
+import Icon from '@/components/icons/Icon.vue'
 
 const router = useRouter()
 const appStore = useAppStore()
@@ -95,24 +91,7 @@ watch(showThemeDropdown, (v) => {
   else document.removeEventListener('click', onThemeDocClick)
 })
 
-const themeList = [
-  { value: 'light', label: '海盐蓝', color: '#edf4fa' },
-  { value: 'green', label: '薄荷清绿', color: '#edf7f2' },
-  { value: 'orange', label: '奶油橘', color: '#fcf3eb' },
-  { value: 'pink', label: '烟粉蔷薇', color: '#faf0f4' },
-  { value: 'dark', label: '暗夜绿', color: '#1a2b24' },
-  { value: 'blue', label: '深海蓝', color: '#172330' },
-  { value: 'red', label: '极夜红', color: '#2a171a' },
-  { value: 'purple', label: '暗玫紫', color: '#272036' },
-  { value: 'c_light', label: '经典浅色', color: '#f5f7fa' },
-  { value: 'c_dark', label: '经典深色', color: '#0d1117' },
-  { value: 'c_blue', label: '经典藏青', color: '#0a1628' },
-  { value: 'c_green', label: '经典青绿', color: '#f0f7f0' },
-  { value: 'c_purple', label: '经典梦幻紫', color: '#f5f0ff' },
-  { value: 'c_pink', label: '经典樱花粉', color: '#fff0f5' },
-  { value: 'c_orange', label: '经典暖橘', color: '#fff8f0' },
-  { value: 'c_red', label: '经典中国红', color: '#fff5f5' }
-]
+// 主题清单已收敛到 @/config/themeList(此前与 SettingsView 各存一份重复列表)
 
 function selectTheme(value) {
   appStore.applyTheme(value)
@@ -163,13 +142,15 @@ function onTopbarDblClick(e) {
 // 最大化状态(切换图标)
 const isMaximized = ref(false)
 let _offWinState = null
+function onTopbarEsc() { showThemeDropdown.value = false }
 onMounted(() => {
   document.addEventListener('click', closeDropdown)
   _offWinState = window.electronAPI?.onWindowState?.((max) => { isMaximized.value = max })
-  document.addEventListener('soundflow:esc', () => { showThemeDropdown.value = false })
+  document.addEventListener('soundflow:esc', onTopbarEsc)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeDropdown)
+  document.removeEventListener('soundflow:esc', onTopbarEsc)
   if (_offWinState) _offWinState()
 })
 </script>
@@ -284,9 +265,10 @@ onUnmounted(() => {
   width: 36px; height: 28px;
   display: flex; align-items: center; justify-content: center;
   color: var(--text-secondary);
+  border-radius: 6px;
   transition: all var(--transition-fast);
 }
-.win-btn:hover { background: var(--bg-hover); }
+.win-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .win-btn--close:hover { background: #e81123; color: white; }
 .win-btn svg { width: 12px; height: 12px; }
 </style>

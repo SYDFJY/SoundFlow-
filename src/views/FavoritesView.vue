@@ -7,7 +7,7 @@
       </div>
       <div class="header-right">
         <button v-if="musicStore.favoriteCount > 0" class="play-all-btn" @click="playAll">
-          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          <Icon name="play" :size="14" fill="currentColor" />
           <span>播放全部</span>
         </button>
       </div>
@@ -17,7 +17,8 @@
         :songs="sortedFavorites"
         :sort-field="musicStore.sortField"
         @sort="musicStore.setSortField"
-        empty-text="还没有收藏歌曲，在歌曲列表中点击 ♡ 收藏" empty-icon="♡"
+        @reorder="onReorder"
+        empty-text="还没有收藏歌曲,在歌曲列表中点击心形按钮收藏" empty-icon="favorite"
         empty-actions empty-cta-label="去音乐库逛逛" @empty-cta="gotoLibrary"
       />
     </div>
@@ -31,6 +32,7 @@ import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
+import Icon from '@/components/icons/Icon.vue'
 
 const musicStore = useMusicStore()
 const appStore = useAppStore()
@@ -40,6 +42,10 @@ const sortedFavorites = computed(() => musicStore.sortSongs(musicStore.favoriteS
 
 function gotoLibrary() {
   appStore.currentView = 'home'
+}
+
+function onReorder({ from, to, pos }) {
+  musicStore.moveFavorite(from, to, pos)
 }
 
 function playAll() {

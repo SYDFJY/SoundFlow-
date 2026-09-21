@@ -276,6 +276,68 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  // 辅助变量推导:语义色 / 遮罩 / 浮层面板 / 输入框 / 空状态 / 播放页遮罩
+  // 按主题明暗自适应,保证 16 套主题下弹层、面板、文字都可读
+  function hexLuminance(hex) {
+    if (typeof hex !== 'string' || !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) return 1
+    let h = hex.slice(1)
+    if (h.length === 3) h = h.split('').map(c => c + c).join('')
+    const r = parseInt(h.slice(0, 2), 16)
+    const g = parseInt(h.slice(2, 4), 16)
+    const b = parseInt(h.slice(4, 6), 16)
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  }
+  function deriveAuxVars(vars) {
+    const dark = hexLuminance(vars['--bg-primary']) < 0.5
+    return dark ? {
+      '--color-danger': '#f26d6d',
+      '--color-danger-alpha': 'rgba(242,109,109,0.15)',
+      '--color-success': '#3dd68c',
+      '--color-warning': '#f5a623',
+      '--overlay-mask': 'rgba(0,0,0,0.62)',
+      '--modal-bg': 'rgba(22,27,34,0.95)',
+      '--modal-border': 'rgba(255,255,255,0.09)',
+      '--panel-bg': 'rgba(24,30,40,0.92)',
+      '--panel-border': 'rgba(255,255,255,0.10)',
+      '--panel-text': '#e6edf3',
+      '--panel-text-secondary': '#9aa7b4',
+      '--panel-text-tertiary': '#7a8794',
+      '--panel-hover': 'rgba(255,255,255,0.07)',
+      '--panel-active': 'rgba(255,255,255,0.12)',
+      '--input-bg': 'rgba(13,17,23,0.9)',
+      '--input-border': 'rgba(255,255,255,0.13)',
+      '--input-focus-ring': 'rgba(68,147,248,0.22)',
+      '--empty-icon': 'rgba(255,255,255,0.16)',
+      '--tooltip-bg': '#e6edf3',
+      '--tooltip-text': '#0d1117',
+      '--player-overlay-strong': 'rgba(0,0,0,0.50)',
+      '--player-overlay-soft': 'rgba(0,0,0,0.16)'
+    } : {
+      '--color-danger': '#e5484d',
+      '--color-danger-alpha': 'rgba(229,72,77,0.12)',
+      '--color-success': '#2f9e63',
+      '--color-warning': '#d97706',
+      '--overlay-mask': 'rgba(15,23,42,0.45)',
+      '--modal-bg': 'rgba(255,255,255,0.94)',
+      '--modal-border': 'rgba(15,23,42,0.08)',
+      '--panel-bg': 'rgba(255,255,255,0.88)',
+      '--panel-border': 'rgba(15,23,42,0.10)',
+      '--panel-text': '#1c2c3b',
+      '--panel-text-secondary': '#5c7288',
+      '--panel-text-tertiary': '#8497ab',
+      '--panel-hover': 'rgba(15,23,42,0.06)',
+      '--panel-active': 'rgba(43,134,216,0.12)',
+      '--input-bg': 'rgba(255,255,255,0.92)',
+      '--input-border': 'rgba(15,23,42,0.14)',
+      '--input-focus-ring': 'rgba(43,134,216,0.18)',
+      '--empty-icon': 'rgba(15,23,42,0.18)',
+      '--tooltip-bg': '#142230',
+      '--tooltip-text': '#f5f8fc',
+      '--player-overlay-strong': 'rgba(0,0,0,0.42)',
+      '--player-overlay-soft': 'rgba(0,0,0,0.10)'
+    }
+  }
+
   // 自定义主色(洛雪 pickr 思路):替换 --color-primary 三档,存 localStorage,主题切换后保留
   function shade(hex, amt) {
     const n = parseInt(hex.replace('#', ''), 16)
@@ -311,6 +373,10 @@ export const useAppStore = defineStore('app', () => {
     const root = document.documentElement
     Object.entries(vars).forEach(([key, value]) => {
       root.style.setProperty(key, value)
+    })
+    // 注入派生辅助变量(语义色/遮罩/浮层/输入框等,按主题明暗自适应)
+    Object.entries(deriveAuxVars(vars)).forEach(([k, v]) => {
+      root.style.setProperty(k, v)
     })
     theme.value = key
     localStorage.setItem('soundflow_theme', key)

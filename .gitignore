@@ -7,3 +7,24 @@ test-media/
 index-UPPuBtm9.js
 .reasonix/
 reasonix.toml
+
+# ===== Electron 打包产物(此前散落在仓库根目录,污染 git status)=====
+*.exe
+*.dll
+*.pak
+*.bin
+*.dat
+*.json.orig
+locales/
+resources/
+LICENSES.chromium.html
+LICENSE.electron.txt
+build/icon-src/
+build/icon.ico.before-*
+build/thumb/
+
+# ===== 编辑器/工具残留 =====
+*.tmp.*
+.serena/
+.zcode/
+.zcodeignore

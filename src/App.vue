@@ -3,18 +3,20 @@
     <!-- 拖放导入遮罩 -->
     <div v-if="dragOver" class="drop-overlay">
       <div class="drop-box">
-        <div class="drop-icon">🎵</div>
+        <div class="drop-icon"><Icon name="music" :size="44" /></div>
         <div class="drop-text">松开导入音乐</div>
         <div class="drop-sub">支持音频文件与文件夹(自动扫描)</div>
       </div>
     </div>
     <!-- 播放器全屏模式：不显示侧边栏、顶部栏、底部播放栏 -->
     <template v-if="isFullscreen">
-      <router-view v-slot="{ Component, route }">
-        <transition name="page-fade">
-          <component :is="Component" :key="route.path" />
-        </transition>
-      </router-view>
+      <div class="fullscreen-page">
+        <router-view v-slot="{ Component }">
+          <KeepAlive>
+            <component :is="Component" />
+          </KeepAlive>
+        </router-view>
+      </div>
     </template>
 
     <!-- 普通模式 -->
@@ -23,24 +25,25 @@
       <div class="app-body">
         <Sidebar />
         <main class="main-content">
-          <router-view v-slot="{ Component, route }">
-            <transition name="page-fade">
-              <component :is="Component" :key="route.path" />
-            </transition>
+          <router-view v-slot="{ Component }">
+            <KeepAlive>
+              <component :is="Component" />
+            </KeepAlive>
           </router-view>
         </main>
       </div>
       <PlayerBar />
     </template>
     <ToastHost />
+    <ConfirmDialog />
     <SongNotifyCard />
     <!-- 快捷键帮助面板 -->
     <teleport to="body">
       <div v-if="showShortcutHelp" class="shortcut-help-mask" @click.self="showShortcutHelp = false">
         <div class="shortcut-help">
           <div class="sh-header">
-            <h3>⌨️ 快捷键</h3>
-            <button class="sh-close" @click="showShortcutHelp = false">✕</button>
+            <h3><Icon name="keyboard" :size="16" />快捷键</h3>
+            <button class="sh-close" title="关闭" aria-label="关闭快捷键面板" @click="showShortcutHelp = false"><Icon name="close" :size="16" /></button>
           </div>
           <div class="sh-list">
             <div v-for="(it, i) in shortcutHelpItems" :key="i" class="sh-item">
@@ -60,7 +63,7 @@
     <teleport to="body">
       <div v-if="playerStore.translateNotice" class="translate-notice-mask" @click.self="playerStore.translateNotice = ''">
         <div class="translate-notice">
-          <div class="tn-icon">🌐</div>
+          <div class="tn-icon"><Icon name="globe" :size="34" /></div>
           <h3>翻译服务暂不可用</h3>
           <p class="tn-desc">{{ playerStore.translateNotice === 'quota' ? 'MyMemory 免费翻译今日额度已用完,每日会自动恢复。' : '翻译服务暂时无法连接,请稍后重试。' }}</p>
           <p class="tn-hint">配置 <b>DeepSeek API Key</b> 可立即继续翻译,且无每日次数限制、翻译质量更好。</p>
@@ -84,11 +87,16 @@ import TopBar from '@/components/TopBar.vue'
 import Sidebar from '@/components/Sidebar.vue'
 import PlayerBar from '@/components/PlayerBar.vue'
 import ToastHost from '@/components/ToastHost.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import SongNotifyCard from '@/components/SongNotifyCard.vue'
+import Icon from '@/components/icons/Icon.vue'
 import { toast, toastState } from '@/composables/useToast'
+import { confirmDialog } from '@/composables/useConfirm'
 
 // 全局 Toast 入口:任意组件/普通 JS 均可 window.$toast(...)
 if (typeof window !== 'undefined') window.$toast = toast
+// 非组件代码(store/utils)也能弹确认框,与 $toast 同一套路
+if (typeof window !== 'undefined') window.$confirm = confirmDialog
 // 供模板引用
 const _toastState = toastState
 
@@ -136,8 +144,16 @@ function onDrop(e) {
   e.preventDefault()
   _dragDepth = 0
   dragOver.value = false
-  const paths = [...(e.dataTransfer?.files || [])].map(f => f.path).filter(Boolean)
-  if (paths.length) musicStore.importDropped(paths)
+  // Electron 32+ 已移除 File.path,须经 preload 的 webUtils.getPathForFile 取真实路径
+  const files = [...(e.dataTransfer?.files || [])]
+  const paths = files
+    .map(f => window.electronAPI?.getPathForFile?.(f) || f.path || '')
+    .filter(Boolean)
+  if (!paths.length) {
+    toast(files.length ? '未能读取文件路径，请改用「添加文件」按钮导入' : '未检测到可导入的文件', 'error', 4000)
+    return
+  }
+  musicStore.importDropped(paths)
 }
 
 // 播放器页面和歌词悬浮窗全屏显示
@@ -233,6 +249,13 @@ onMounted(async () => {
     } catch (_) {}
   }
   window.addEventListener('keydown', onGlobalKey)
+  // 硬件加速状态 → body class:开启时启用毛玻璃(性能允许),关闭(软件渲染)时禁用 blur 防卡
+  if (window.electronAPI && window.electronAPI.getHardwareAccel) {
+    try {
+      const hw = await window.electronAPI.getHardwareAccel()
+      document.body.classList.toggle('hw-accel', !!hw)
+    } catch (_) {}
+  }
   // 按钮涟漪(全局委托:公共按钮类点击注入水波纹)
   window.addEventListener('pointerdown', onRipple, true)
   // 拖放导入:文件/文件夹拖入窗口
@@ -273,6 +296,11 @@ onMounted(async () => {
     } catch (_) {}
     window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
     window.electronAPI.on('player:set-volume', (v) => { if (typeof v === 'number') playerStore.setVolume(v) })
+    window.electronAPI.on('player:seek', (t) => { if (Number.isFinite(t)) playerStore.seek(t) })
+    // 启动自动检查:发现新版本时提示(详情在设置-关于手动检查)
+    window.electronAPI.on('update-available', () => {
+      try { window.$toast?.('发现新版本,可到 设置 → 关于 检查更新', 'info', 5000) } catch {}
+    })
     // 迷你窗右键菜单改背景/透明度 → 同步 localStorage(设置页)与全局状态
     window.electronAPI.on('mini:bg-sync', (cfg) => {
       if (!cfg) return
@@ -292,11 +320,12 @@ onMounted(async () => {
   playerStore.restoreQueue()
   playerStore.initAudio()
   playerStore.initMediaSession()
-  // 启动自动续播:开启后等 UI 稳定(2.5s)再继续播放,避免启动卡顿
+  // 启动自动续播:开启后等 UI 稳定(2.5s)再继续播放,避免启动卡顿;用户已提前手动播放则跳过,不覆盖
   if (appStore.autoPlay && playerStore.playQueue.length > 0 && playerStore.currentIndex >= 0) {
     setTimeout(() => {
       try {
-        playerStore.loadAndPlay(playerStore.currentIndex, false)
+        // pinia setup store 已解包 ref,此处取到的是布尔值,不能再加 .value
+        if (!playerStore.userStartedPlay) playerStore.loadAndPlay(playerStore.currentIndex, false)
       } catch {}
     }, 2500)
   }
@@ -328,8 +357,8 @@ onMounted(async () => {
           let song = musicStore.songs.find(s => s.path === path)
           if (!song) {
             // 曲库无此歌:用元数据解析构造临时歌曲并播放
-            const meta = await window.electronAPI.parseMetadata(path)
-            song = { path, title: meta?.title || path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || '未知', artist: meta?.artist || '未知艺术家', album: meta?.album || '', duration: meta?.duration || 0, coverUrl: meta?.coverUrl || '' }
+          const meta = await window.electronAPI.parseMetadata(path)
+          song = { path, title: meta?.title || path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || '未知', artist: meta?.artist || '未知艺术家', album: meta?.album || '', duration: meta?.duration || 0, coverUrl: meta?.coverUrl || '', addedTime: Date.now() }
           }
           playerStore.setPlayQueue([song], 0, false)
           window.$toast?.(`正在播放: ${song.title}`, 'info')
@@ -368,7 +397,7 @@ onMounted(async () => {
     if (document.hidden) return
     try {
       playerStore.saveSettings()
-      musicStore.saveToStorage(true)
+      musicStore.saveToStorage() // 走空闲调度,避免定期同步深拷贝阻塞主线程
     } catch (e) { console.error(e) }
   }, 300000)
 })
@@ -386,9 +415,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 页面淡入过渡(只 enter,不 out-in,避免旧版卡顿) */
-.page-fade-enter-active { transition: opacity 0.22s ease; }
-.page-fade-enter-from { opacity: 0; }
+/* 页面切换:直接显示(用户反馈过渡造成"慢半拍",移除动画) */
+.page-fade-enter-active { transition: opacity 0.12s ease; }
+.page-fade-enter-from { opacity: 0.4; }
 .app {
   width: 100vw;
   height: 100vh;
@@ -398,8 +427,13 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-.app-body {
-  flex: 1;
+/* 全屏播放页容器:懒加载/过渡期间显示主题背景,避免空白帧 */
+.fullscreen-page {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-primary);
+}
+.app-body {  flex: 1;
   display: flex;
   overflow: hidden;
 }
@@ -410,7 +444,7 @@ onUnmounted(() => {
   background: var(--bg-primary);
 }
 .translate-notice-mask {
-  position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; z-index: var(--z-modal); display: flex; align-items: center; justify-content: center;
   background: rgba(0,0,0,0.45); backdrop-filter: blur(2px);
 }
 .translate-notice {
@@ -433,7 +467,7 @@ onUnmounted(() => {
 .tn-btn--primary:hover { filter: brightness(1.1); }
 /* 拖放导入遮罩 */
 .drop-overlay {
-  position: fixed; inset: 0; z-index: 99999;
+  position: fixed; inset: 0; z-index: var(--z-nested); /* 全屏拖放遮罩:通知仍在其上 */ /* 全屏拖放遮罩 */
   background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
   pointer-events: none;
@@ -445,12 +479,12 @@ onUnmounted(() => {
   border: 2px dashed var(--color-primary, #4096ff);
   color: var(--text-primary, #fff);
 }
-.drop-icon { font-size: 44px; }
+.drop-icon { color: var(--color-primary); display: flex; justify-content: center; }
 .drop-text { font-size: 20px; font-weight: 600; }
 .drop-sub { font-size: 13px; color: var(--text-secondary, rgba(255,255,255,0.6)); }
 /* 快捷键帮助面板 */
 .shortcut-help-mask {
-  position: fixed; inset: 0; z-index: 99998;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   background: rgba(0,0,0,0.5); backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
 }

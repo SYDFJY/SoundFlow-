@@ -1,8 +1,6 @@
 <template>
   <div class="search-bar" @keydown="onKeydown">
-    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
-    </svg>
+    <Icon name="search" class="search-icon" :size="16" />
     <input
       ref="inputRef"
       v-model="query"
@@ -10,30 +8,38 @@
       class="search-input"
       placeholder="搜索歌曲、歌手、专辑..."
       @input="onInput"
-      @focus="showSuggestions = suggestions.length > 0"
+      @focus="onFocus"
       @blur="hideSuggestions"
     />
     <button v-if="query" class="search-clear" @click="clear" title="清除">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-      </svg>
+      <Icon name="close" :size="14" />
     </button>
     <transition name="suggest-fade">
-      <div v-if="showSuggestions && suggestions.length > 0" class="suggest-dropdown">
+      <div v-if="showSuggestions" class="suggest-dropdown">
+        <div v-if="!query.trim() && history.length" class="suggest-hist-head">
+          <span class="suggest-hist-title">最近搜索</span>
+          <button class="suggest-hist-clear" @mousedown.prevent="clearHistory">清除</button>
+        </div>
         <div
-          v-for="(item, idx) in suggestions"
-          :key="item.path"
+          v-for="(entry, idx) in dropdownList"
+          :key="entry.type + (entry.item ? entry.item.path : entry.text)"
           class="suggest-item"
           :class="{ 'suggest-item--active': idx === activeIndex }"
-          @mousedown.prevent="selectSuggestion(item)"
+          @mousedown.prevent="onPick(entry)"
           @mouseenter="activeIndex = idx"
         >
-          <span class="suggest-icon">♫</span>
-          <div class="suggest-info">
-            <span class="suggest-title text-ellipsis">{{ item.title }}</span>
-            <span class="suggest-artist text-ellipsis">{{ item.artist }}</span>
-          </div>
-          <span class="suggest-format">{{ item.format }}</span>
+          <span v-if="entry.type === 'hist'" class="suggest-icon"><Icon name="history" :size="17" /></span>
+          <span v-else class="suggest-icon"><Icon name="music" :size="17" /></span>
+          <template v-if="entry.type === 'hist'">
+            <span class="suggest-title text-ellipsis">{{ entry.text }}</span>
+          </template>
+          <template v-else>
+            <div class="suggest-info">
+              <span class="suggest-title text-ellipsis">{{ entry.item.title }}</span>
+              <span class="suggest-artist text-ellipsis">{{ entry.item.artist }}</span>
+            </div>
+            <span class="suggest-format">{{ entry.item.format }}</span>
+          </template>
         </div>
       </div>
     </transition>
@@ -41,10 +47,11 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import Icon from '@/components/icons/Icon.vue'
 
 const musicStore = useMusicStore()
 const router = useRouter()
@@ -54,6 +61,35 @@ const query = ref(musicStore.searchQuery || '')
 const showSuggestions = ref(false)
 const activeIndex = ref(-1)
 let debounceTimer = null
+let hideSugTimer = null // 收折下拉的延时句柄,便于卸载/快速切换时取消
+
+// Ctrl+F 全局聚焦搜索框(任意界面按 Ctrl+F 快速搜索)
+function onGlobalSearchKey(e) {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+    e.preventDefault()
+    inputRef.value?.focus()
+    inputRef.value?.select()
+  }
+}
+onMounted(() => document.addEventListener('keydown', onGlobalSearchKey))
+onUnmounted(() => {
+  document.removeEventListener('keydown', onGlobalSearchKey)
+  if (debounceTimer) clearTimeout(debounceTimer)
+  if (hideSugTimer) clearTimeout(hideSugTimer)
+})
+
+// 最近搜索词(本地存储,最多 10 条)
+const HISTORY_KEY = 'soundflow_search_history'
+const history = ref([])
+try { history.value = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]') } catch { history.value = [] }
+function saveHistory() { try { localStorage.setItem(HISTORY_KEY, JSON.stringify(history.value)) } catch {} }
+function pushHistory(word) {
+  const w = (word || '').trim()
+  if (!w) return
+  history.value = [w, ...history.value.filter(h => h !== w)].slice(0, 10)
+  saveHistory()
+}
+function clearHistory() { history.value = []; saveHistory() }
 
 const suggestions = computed(() => {
   const q = query.value.trim().toLowerCase()
@@ -63,11 +99,22 @@ const suggestions = computed(() => {
     .slice(0, 8)
 })
 
+// 下拉统一列表:有输入→歌曲建议;空输入→最近搜索
+const dropdownList = computed(() => {
+  if (query.value.trim()) return suggestions.value.map(s => ({ type: 'suggest', item: s }))
+  return history.value.map(h => ({ type: 'hist', text: h }))
+})
+
 function onInput() {
   activeIndex.value = -1
-  showSuggestions.value = suggestions.value.length > 0
+  showSuggestions.value = dropdownList.value.length > 0
   clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => musicStore.setSearchQuery(query.value), 250)
+}
+
+function onFocus() {
+  activeIndex.value = -1
+  showSuggestions.value = dropdownList.value.length > 0
 }
 
 function clear() {
@@ -78,7 +125,24 @@ function clear() {
 }
 
 function hideSuggestions() {
-  setTimeout(() => { showSuggestions.value = false }, 150)
+  if (hideSugTimer) clearTimeout(hideSugTimer) // 快速 blur→focus 时取消上一轮的延时关闭,避免刚打开下拉又被关掉
+  hideSugTimer = setTimeout(() => { hideSugTimer = null; showSuggestions.value = false }, 150)
+}
+
+function onPick(entry) {
+  if (entry.type === 'hist') {
+    useHistory(entry.text)
+  } else {
+    selectSuggestion(entry.item)
+  }
+}
+
+function useHistory(text) {
+  query.value = text
+  musicStore.setSearchQuery(text)
+  pushHistory(text)
+  showSuggestions.value = false
+  router.push('/home') // 回首页列表,让搜索结果可见
 }
 
 function selectSuggestion(item) {
@@ -91,10 +155,16 @@ function selectSuggestion(item) {
 }
 
 function onKeydown(e) {
-  if (!showSuggestions.value || suggestions.value.length === 0) return
-  if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex.value = Math.min(activeIndex.value + 1, suggestions.value.length - 1) }
+  if (e.key === 'Enter') {
+    // 记录搜索词到最近搜索
+    if (query.value.trim()) pushHistory(query.value.trim())
+    if (!showSuggestions.value || dropdownList.value.length === 0) { showSuggestions.value = false; return }
+    if (activeIndex.value >= 0) { e.preventDefault(); onPick(dropdownList.value[activeIndex.value]) }
+    return
+  }
+  if (!showSuggestions.value || dropdownList.value.length === 0) return
+  if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex.value = Math.min(activeIndex.value + 1, dropdownList.value.length - 1) }
   else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex.value = Math.max(activeIndex.value - 1, 0) }
-  else if (e.key === 'Enter' && activeIndex.value >= 0) { e.preventDefault(); selectSuggestion(suggestions.value[activeIndex.value]) }
 }
 
 watch(() => musicStore.searchQuery, (v) => { if (v !== query.value) query.value = v })
@@ -176,8 +246,11 @@ watch(() => musicStore.searchQuery, (v) => { if (v !== query.value) query.value 
   transition: background var(--transition-fast);
 }
 .suggest-item:hover, .suggest-item--active { background: var(--bg-hover); }
+.suggest-hist-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px 4px; font-size: 12px; color: var(--text-tertiary); border-bottom: 1px solid var(--border-color); }
+.suggest-hist-clear { font-size: 12px; color: var(--text-tertiary); padding: 2px 6px; border-radius: 4px; }
+.suggest-hist-clear:hover { color: var(--color-danger, #ff4d4f); background: transparent; }
 
-.suggest-icon { font-size: 18px; color: var(--color-primary); }
+.suggest-icon { display: inline-flex; align-items: center; color: var(--color-primary); }
 .suggest-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .suggest-title { font-size: var(--font-size-base); color: var(--text-primary); }
 .suggest-artist { font-size: var(--font-size-xs); color: var(--text-secondary); }

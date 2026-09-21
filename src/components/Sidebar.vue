@@ -4,20 +4,20 @@
       <div class="menu-section">
         <div class="menu-label">{{ t('nav.library') }}</div>
         <router-link to="/home" class="menu-item" :class="{ active: $route.path === '/home' }">
-          <Home :size="16" />
+          <Icon name="home" :size="16" />
           <span>{{ t('nav.home') }}</span>
         </router-link>
         <router-link to="/favorites" class="menu-item" :class="{ active: $route.path === '/favorites' }">
-          <Heart :size="16" />
+          <Icon name="favorite" :size="16" />
           <span>{{ t('nav.favorites') }}</span>
           <span v-if="musicStore.favoriteCount > 0" class="menu-badge">{{ musicStore.favoriteCount }}</span>
         </router-link>
         <router-link to="/stats" class="menu-item" :class="{ active: $route.path === '/stats' }">
-          <BarChart3 :size="16" />
+          <Icon name="stats" :size="16" />
           <span>{{ t('nav.stats') }}</span>
         </router-link>
         <router-link to="/recommend" class="menu-item" :class="{ active: $route.path === '/recommend' }">
-          <Sparkles :size="16" />
+          <Icon name="recommend" :size="16" />
           <span>{{ t('nav.recommend') }}</span>
         </router-link>
       </div>
@@ -25,15 +25,15 @@
       <div class="menu-section">
         <div class="menu-label">{{ t('common.all') }}</div>
         <router-link to="/artist" class="menu-item" :class="{ active: $route.path === '/artist' }">
-          <Users :size="16" />
+          <Icon name="artist" :size="16" />
           <span>{{ t('nav.artists') }}</span>
         </router-link>
         <router-link to="/album" class="menu-item" :class="{ active: $route.path === '/album' }">
-          <Disc3 :size="16" />
+          <Icon name="album" :size="16" />
           <span>{{ t('nav.albums') }}</span>
         </router-link>
         <router-link to="/folder" class="menu-item" :class="{ active: $route.path === '/folder' }">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+          <Icon name="folder" :size="16" />
           <span>{{ t('nav.folders') }}</span>
         </router-link>
       </div>
@@ -42,7 +42,7 @@
         <div class="menu-label">
           {{ t('nav.playlists') }}
           <button class="add-playlist-btn" @click="openCreateModal" :title="t('pl.create')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <Icon name="add" :size="14" />
           </button>
         </div>
         <div v-if="musicStore.playlists.length === 0" class="menu-empty">{{ t('pl.empty') }}</div>
@@ -56,15 +56,15 @@
           :class="{ active: $route.path === `/playlist/${pl.id}`, 'drag-over': dragPlaylistTarget === pl.id }"
           @contextmenu.prevent="showPlaylistMenu($event, pl)"
         >
-          <img v-if="getPlaylistCover(pl)" :src="getPlaylistCover(pl)" class="pl-cover" />
+          <img v-if="getPlaylistCover(pl)" :src="getPlaylistCover(pl)" class="pl-cover" alt="" />
           <div v-else-if="getPlaylistCovers(pl).length" class="pl-cover-grid">
-            <img v-for="(c, ci) in getPlaylistCovers(pl)" :key="ci" :src="c" />
+            <img v-for="(c, ci) in getPlaylistCovers(pl)" :key="ci" :src="c" alt="" />
           </div>
-          <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <Icon v-else name="music" :size="16" />
           <span class="text-ellipsis">{{ pl.name }}</span>
           <span class="menu-count">{{ pl.songs.length }}</span>
-          <span class="pl-order" @click.stop.prevent="movePlaylist(plIdx, -1)" title="上移">⇧</span>
-          <span class="pl-order" @click.stop.prevent="movePlaylist(plIdx, 1)" title="下移">⇩</span>
+          <button class="pl-order" @click.stop.prevent="movePlaylist(plIdx, -1)" title="上移" aria-label="歌单上移"><Icon name="expand" :size="12" /></button>
+          <button class="pl-order" @click.stop.prevent="movePlaylist(plIdx, 1)" title="下移" aria-label="歌单下移"><Icon name="collapse" :size="12" /></button>
         </router-link>
         </div>
       </div>
@@ -72,7 +72,7 @@
 
     <div class="sidebar-footer">
       <button class="add-folder-btn" @click="addFolder">
-        <FolderPlus :size="16" />
+        <Icon name="folderPlus" :size="16" />
         <span>{{ t('common.add') }}</span>
       </button>
     </div>
@@ -121,12 +121,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import Sortable from 'sortablejs'
-import { Home, Heart, Users, Disc3, ListMusic, FolderPlus, BarChart3, Sparkles } from '@lucide/vue'
+import Icon from '@/components/icons/Icon.vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { dragSongPath, clearDragSong } from '@/composables/useDragSong'
 import { t } from '@/i18n'
+import { confirmDialog } from '@/composables/useConfirm'
 
 const musicStore = useMusicStore()
 // 拖歌入歌单(JS 拖拽:全局 dragSongPath + document mouseup 检测歌单项)
@@ -150,9 +151,11 @@ function onDocDragUp(e) {
     const pl = musicStore.playlists.find(p => p.id === id)
     musicStore.addSongToPlaylist(id, dragSongPath.value)
     try { window.$toast?.('已添加到歌单「' + (pl ? pl.name : '') + '」', 'success') } catch {}
+    // 命中歌单才清除拖拽状态(加入歌单后);未命中保留,
+    // 让后执行的 MusicList mouseup 正常 emit reorder(此前无条件清除导致列表内排序永远不生效)
+    clearDragSong()
   }
   dragPlaylistTarget.value = null
-  clearDragSong()
 }
 onMounted(() => {
   document.addEventListener('mouseup', onDocDragUp)
@@ -224,6 +227,11 @@ function startResize(e) {
 // 歌单封面:自定义封面优先,否则取歌单第一首歌的封面
 // 歌单封面(缓存:模板每行渲染会重复查全库)
 const _plCoverCache = new Map()
+// 歌单歌曲变化(加歌/删歌/重排/换封面)时失效封面缓存,自动取新首曲封面
+watch(
+  () => musicStore.playlists.map(p => p.id + '|' + (p.songs || []).join(',') + '|' + (p.cover || '')),
+  () => { _plCoverCache.clear(); _plCoversCache.clear() }
+)
 function getPlaylistCover(pl) {
   if (pl.cover) return pl.cover
   if (_plCoverCache.has(pl.id)) return _plCoverCache.get(pl.id)
@@ -282,9 +290,9 @@ function renamePlaylist() {
   nextTick(() => { if (modalInput.value) { modalInput.value.focus(); modalInput.value.select() } })
 }
 
-function deletePlaylist() {
+async function deletePlaylist() {
   if (!contextMenu.value.playlist) return
-  if (confirm(`确定删除歌单「${contextMenu.value.playlist.name}」？`)) {
+  if (await confirmDialog({ message: `确定删除歌单「${contextMenu.value.playlist.name}」？`, detail: '歌单内的歌曲不会从曲库删除', confirmText: '删除', danger: true })) {
     musicStore.deletePlaylist(contextMenu.value.playlist.id)
   }
   contextMenu.value.show = false
@@ -326,6 +334,19 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .menu-item.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.25)); outline: 1px dashed var(--color-primary); color: var(--text-primary); }
 .menu-item:hover { background: var(--bg-hover); color: var(--text-primary); transform: translateX(3px); }
 .menu-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 600; box-shadow: inset 0 0 0 1px var(--color-primary-alpha, rgba(64,150,255,0.35)); }
+/* 激活态左侧指示条(主流播放器风格) */
+.menu-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 3px;
+  background: var(--color-primary);
+  box-shadow: 0 0 6px var(--color-primary-alpha);
+}
 .menu-item.menu-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
 .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 .menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-base); }
@@ -338,8 +359,9 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
   gap: 1px; border-radius: 4px; overflow: hidden; background: var(--bg-hover);
 }
 .pl-cover-grid img { width: 100%; height: 100%; object-fit: cover; }
-.pl-order { display: none; font-size: var(--font-size-xs); color: var(--text-tertiary); padding: 0 2px; cursor: pointer; }
-.menu-item:hover .pl-order { display: inline; }
+.pl-order { display: none; align-items: center; color: var(--text-tertiary); padding: 2px; border-radius: 4px; cursor: pointer; background: none; border: none; }
+.pl-order:hover { background: var(--bg-hover); }
+.menu-item:hover .pl-order { display: inline-flex; }
 .pl-order:hover { color: var(--color-primary); }
 .menu-empty { padding: 8px 20px; font-size: var(--font-size-xs); color: var(--text-tertiary); }
 .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border-color); }
@@ -353,7 +375,7 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .context-menu button.danger { color: var(--color-danger); }
 .context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
 
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 300; }
+.modal-overlay { position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.4)); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 300; }
 .modal-card { background: var(--bg-secondary); border-radius: var(--radius-xl); padding: 24px; width: 360px; box-shadow: var(--shadow-lg); }
 .modal-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 16px; }
 .modal-input { width: 100%; padding: 10px 14px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: var(--font-size-base); color: var(--text-primary); outline: none; transition: border-color var(--transition-fast); }

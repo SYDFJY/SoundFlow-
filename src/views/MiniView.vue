@@ -2,49 +2,78 @@
   <div class="mini-player" :class="{ 'mini-player--transparent': miniBgMode === 'transparent' }" :style="playerStyle" @dblclick="restoreMain" title="双击恢复主窗口">
     <div class="mini-left">
       <div class="mini-cover" :class="{ spinning: isPlaying }">
-        <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
-        <div v-else class="cover-placeholder">🎵</div>
+        <img v-if="miniCover" :src="miniCover" @error="onCoverError" alt="" />
+        <div v-else class="cover-placeholder"><Icon name="music" :size="20" /></div>
       </div>
       <div class="mini-info">
-        <div class="mini-title text-ellipsis">{{ title || 'SoundFlow' }}</div>
+        <div class="mini-title text-ellipsis" :title="title || 'SoundFlow'">{{ title || 'SoundFlow' }}</div>
         <div class="mini-artist text-ellipsis">{{ artist || '声流音乐' }}</div>
         <div class="mini-time">{{ formatTime(currentTime) }} / {{ formatTime(duration) }}</div>
       </div>
     </div>
     <div class="mini-right">
       <button class="mini-btn" @click="prev">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+        <Icon name="prev" :size="18" fill="currentColor" />
       </button>
       <button class="mini-btn mini-btn--play" @click="togglePlay">
-        <svg v-if="isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-        <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+        <Icon v-if="isPlaying" name="pause" :size="20" fill="currentColor" />
+        <Icon v-else name="play" :size="20" fill="currentColor" />
       </button>
       <button class="mini-btn" @click="next">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
+        <Icon name="next" :size="18" fill="currentColor" />
       </button>
     </div>
-    <div class="mini-progress">
-      <div class="mini-progress-fill" :style="{ width: progressPercent + '%' }"></div>
-    </div>
-    <div class="mini-vol">
-      <svg class="mini-vol-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 00-2.5-4v8a4.5 4.5 0 002.5-4zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/></svg>
-      <input class="mini-vol-slider" type="range" min="0" max="1" step="0.01" :value="volume" @input="onVolInput" @change="onVolChange" />
+    <div class="mini-progress" ref="progressEl" @mousedown="onProgressDown" title="拖动调整播放进度">
+      <div class="mini-progress-fill" :style="{ width: (dragPct !== null ? dragPct : progressPercent) + '%' }"></div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { formatDuration as formatTime } from '@/utils/time'
+import Icon from '@/components/icons/Icon.vue'
 
 const title = ref('')
 const artist = ref('')
 const coverUrl = ref(null)
+// 封面预加载:切歌瞬间保持旧封面,新图就绪后才换(消除迷你窗切歌露底)
+const miniCover = ref(null)
+watch(coverUrl, (url) => {
+  if (!url) { miniCover.value = null; return }
+  const img = new Image()
+  img.onload = () => { miniCover.value = url }
+  img.onerror = () => { miniCover.value = url }
+  img.src = url
+})
 const isPlaying = ref(false)
 const currentTime = ref(0)
 const duration = ref(0)
-const volume = ref(0.8)
 
 const progressPercent = computed(() => duration.value ? (currentTime.value / duration.value) * 100 : 0)
+// 进度条拖拽:拖动中实时预览,松手 seek 主窗播放器
+const progressEl = ref(null)
+const dragPct = ref(null)
+function onProgressDown(e) {
+  if (!duration.value) return
+  e.preventDefault()
+  const move = (ev) => {
+    const r = progressEl.value.getBoundingClientRect()
+    const pct = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width))
+    dragPct.value = pct * 100
+  }
+  const up = (ev) => {
+    document.removeEventListener('mousemove', move)
+    document.removeEventListener('mouseup', up)
+    if (dragPct.value !== null) {
+      try { if (window.electronAPI?.send) window.electronAPI.send('mini:seek', (dragPct.value / 100) * duration.value) } catch {}
+      dragPct.value = null
+    }
+  }
+  move(e)
+  document.addEventListener('mousemove', move)
+  document.addEventListener('mouseup', up)
+}
 
 // ===== 迷你窗背景模式(深色/白色/自定义/透明),文字按背景亮度自适应 =====
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
@@ -67,9 +96,10 @@ const subText = computed(() => isDarkText.value ? 'rgba(28,36,48,0.62)' : 'rgba(
 const dimText = computed(() => isDarkText.value ? 'rgba(28,36,48,0.4)' : 'rgba(255,255,255,0.35)')
 const playerBg = computed(() => {
   if (miniBgMode.value === 'transparent') return `rgba(0,0,0,${miniBgAlpha.value})` // 对齐悬浮歌词:窗口透明+低透明度黑底+内容清晰
-  if (miniBgMode.value === 'white') return '#ffffff'
+  // 深色/白色模式走主题变量而不是固定色 —— 此前写死 #161b22,16 套主题对迷你窗完全无效
+  if (miniBgMode.value === 'white') return 'var(--bg-secondary, #ffffff)'
   if (miniBgMode.value === 'custom') return miniBgColor.value
-  return '#161b22'
+  return 'var(--player-bg-dark, #161b22)'
 })
 const playerStyle = computed(() => ({
   background: playerBg.value,
@@ -78,12 +108,7 @@ const playerStyle = computed(() => ({
   '--mc3': dimText.value
 }))
 
-function formatTime(sec) {
-  if (!sec || !isFinite(sec)) return '00:00'
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
-}
+// 时长格式化已改为从 @/utils/time 引入(同名别名 formatTime,模板无需改动)
 
 // 封面容灾
 function onCoverError() {
@@ -91,7 +116,17 @@ function onCoverError() {
 }
 
 onMounted(() => {
+  // /mini 独立窗口:标记 body 以启用全局透明背景(让窗口级 transparent 生效,避免浑浊主题色块)
+  document.body.classList.add('mini-window')
   if (window.electronAPI) {
+    // 主进程会先回放一次最近状态、再等这个回报才显示窗口。
+    // 目的:用户看到的第一帧就是正确内容,而不是先闪一下空默认界面(标题 SoundFlow / 🎵 占位)。
+    let readySent = false
+    const signalReady = () => {
+      if (readySent) return
+      readySent = true
+      window.electronAPI.send('mini:ready')
+    }
     window.electronAPI.on('mini:update', (data) => {
       title.value = data.title || ''
       artist.value = data.artist || ''
@@ -99,7 +134,8 @@ onMounted(() => {
       isPlaying.value = data.isPlaying || false
       currentTime.value = data.currentTime || 0
       duration.value = data.duration || 0
-      if (typeof data.volume === 'number') volume.value = data.volume
+      // 首个状态已套用,可以显示窗口了
+      signalReady()
     })
     // 主进程右键菜单改背景/透明度 → 刷新本窗口样式
     window.electronAPI.on('mini:bg-sync', (cfg) => {
@@ -108,17 +144,14 @@ onMounted(() => {
       if (cfg.color) miniBgColor.value = cfg.color
       if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
     })
+    // 兜底:主进程若没有可回放的状态(例如刚启动还没播过歌),这里也必须放行,
+    // 否则窗口会一直不显示,只能等主进程 600ms 的兜底 —— 那一下会显得很迟钝。
+    setTimeout(signalReady, 300)
   }
 })
-
-function onVolInput(e) {
-  volume.value = parseFloat(e.target.value)
-}
-
-function onVolChange(e) {
-  volume.value = parseFloat(e.target.value)
-  if (window.electronAPI) window.electronAPI.send('mini:volume', volume.value)
-}
+onUnmounted(() => {
+  document.body.classList.remove('mini-window')
+})
 
 function togglePlay() {
   if (window.electronAPI) {
@@ -187,7 +220,8 @@ function restoreMain() {
   background: var(--color-primary);
   color: white !important;
 }
-.mini-btn--play svg { width: 18px; height: 18px; }
+/* 播放键比两侧的上一曲/下一曲略大:36px 按钮配 20px 图标才不显单薄 */
+.mini-btn--play svg { width: 20px; height: 20px; }
 
 .mini-progress {
   position: absolute;
@@ -195,46 +229,25 @@ function restoreMain() {
   left: 0;
   right: 0;
   height: 3px;
+  cursor: pointer;
   background: var(--mc3, rgba(255,255,255,0.1));
 }
-
-/* 音量滑杆(进度条上方) */
-.mini-vol {
-  position: absolute;
-  bottom: 8px;
-  left: 10px;
-  right: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  opacity: 0.55;
-  transition: opacity 0.2s;
-}
-.mini-player:hover .mini-vol { opacity: 0.9; }
-.mini-vol-icon { width: 12px; height: 12px; flex-shrink: 0; opacity: 0.7; }
-.mini-vol-slider {
-  flex: 1;
-  height: 3px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--mc3, rgba(255,255,255,0.15));
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-}
-.mini-vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--mc1, #fff);
-  border: none;
-  cursor: pointer;
-}
+/* 3px 视觉高度低于可点击最小高度(4px):用透明伪元素把命中区扩到 7px,拖动更稳 */
+.mini-progress::before { content: ''; position: absolute; left: 0; right: 0; top: -4px; height: 7px; }
 
 .mini-progress-fill {
   height: 100%;
   background: var(--color-primary);
   transition: width 0.2s linear;
+}
+</style>
+
+<style>
+/* /mini 独立窗口:整链透明背景,让窗口级 transparent 真正生效,避免浑浊主题色块(仅带 mini-window 类的窗口 body) */
+body.mini-window,
+body.mini-window #app,
+body.mini-window .app,
+body.mini-window .fullscreen-page {
+  background: transparent !important;
 }
 </style>

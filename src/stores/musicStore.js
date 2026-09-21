@@ -1,5 +1,10 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
+import { noteFailure } from '@/utils/failures'
+import { SCHEMA_VERSION, applyMigrations, parseVersion } from '@/config/storageSchema'
+
+/** localStorage 里记录存储模式版本的键(不入 DEFAULTS:它是元数据不是用户设置) */
+const LS_SCHEMA_VERSION = 'soundflow_schema_version'
 
 export const useMusicStore = defineStore('music', () => {
   const songs = ref([])
@@ -37,46 +42,66 @@ export const useMusicStore = defineStore('music', () => {
 
   // 从 localStorage 恢复
   function loadFromStorage() {
-    try {
-      const saved = localStorage.getItem('soundflow_library')
-      if (saved) songs.value = JSON.parse(saved)
-
-      // 全局手动排序(Home 拖拽):按保存顺序重排,新歌曲追加末尾
-      const order = localStorage.getItem('soundflow_song_order')
-      if (order) {
-        try {
-          const arr = JSON.parse(order)
-          const byPath = new Map(songs.value.map(s => [s.path, s]))
-          const seen = new Set()
-          const ordered = []
-          for (const p of arr) {
-            const s = byPath.get(p)
-            if (s && !seen.has(p)) { ordered.push(s); seen.add(p) }
-          }
-          for (const s of songs.value) if (!seen.has(s.path)) ordered.push(s)
-          songs.value = ordered
-        } catch {}
+    // 逐键独立解析:此前 7 个 JSON.parse 共用一个 try/catch,
+    // 任何一个键损坏都会静默跳过其后所有数据集(表现为「收藏/歌单/历史一起没了」)
+    const readKey = (key, fallback) => {
+      try {
+        const raw = localStorage.getItem(key)
+        if (raw == null) return fallback
+        return JSON.parse(raw)
+      } catch (e) {
+        noteFailure('storage.load', `本地数据损坏,该项已退回默认值:${key}`, e)
+        return fallback
       }
+    }
 
-      const fav = localStorage.getItem('soundflow_favorites')
-      if (fav) _syncFavorites(JSON.parse(fav))
+    const snap = {
+      library: readKey('soundflow_library', []),
+      favorites: readKey('soundflow_favorites', []),
+      playlists: readKey('soundflow_playlists', []),
+      playCounts: readKey('soundflow_play_counts', {}),
+      history: readKey('soundflow_history', []),
+      scanFolders: readKey('soundflow_scan_folders', []),
+      lyricFolders: readKey('soundflow_lyric_folders', [])
+    }
 
-      const pl = localStorage.getItem('soundflow_playlists')
-      if (pl) playlists.value = JSON.parse(pl)
+    // 版本迁移:此前没有任何版本字段,故缺失一律视为 0(见 config/storageSchema.js)
+    const fromVersion = parseVersion(readKey(LS_SCHEMA_VERSION, 0))
+    const { data, applied } = applyMigrations(snap, fromVersion)
 
-      const pc = localStorage.getItem('soundflow_play_counts')
-      if (pc) playCounts.value = JSON.parse(pc)
+    songs.value = data.library
+    _syncFavorites(data.favorites)
+    playlists.value = data.playlists
+    playCounts.value = data.playCounts
+    history.value = data.history
+    scanFolders.value = data.scanFolders
+    lyricFolders.value = data.lyricFolders
 
-      const h = localStorage.getItem('soundflow_history')
-      if (h) history.value = JSON.parse(h)
+    // 全局手动排序(Home 拖拽):按保存顺序重排,新歌曲追加末尾
+    const order = readKey('soundflow_song_order', null)
+    if (Array.isArray(order) && order.length) {
+      const byPath = new Map(songs.value.map(s => [s.path, s]))
+      const seen = new Set()
+      const ordered = []
+      for (const p of order) {
+        const s = byPath.get(p)
+        if (s && !seen.has(p)) { ordered.push(s); seen.add(p) }
+      }
+      for (const s of songs.value) if (!seen.has(s.path)) ordered.push(s)
+      songs.value = ordered
+    }
+    const favOrder = readKey('soundflow_favorite_order', null)
+    if (Array.isArray(favOrder)) favoriteOrderOverride.value = favOrder
 
-      const sf = localStorage.getItem('soundflow_scan_folders')
-      if (sf) scanFolders.value = JSON.parse(sf)
-
-      const lf = localStorage.getItem('soundflow_lyric_folders')
-      if (lf) lyricFolders.value = JSON.parse(lf)
-    } catch (e) {
-      console.error('[存储] 恢复失败:', e)
+    // 迁移执行过或首次建立版本号时落盘,并同步给主进程 JSON(常量只在 storageSchema.js 维护)
+    if (applied.length || fromVersion !== SCHEMA_VERSION) {
+      try { localStorage.setItem(LS_SCHEMA_VERSION, String(SCHEMA_VERSION)) } catch (e) {
+        noteFailure('storage.migrate', '版本号写入 localStorage 失败', e)
+      }
+      try { window.electronAPI?.storeSet?.('schemaVersion', SCHEMA_VERSION) } catch (e) {
+        noteFailure('storage.migrate', '版本号同步给主进程失败', e)
+      }
+      if (applied.length) console.info(`[存储] 已应用存储迁移:${applied.join(' → ')} → v${SCHEMA_VERSION}`)
     }
   }
 
@@ -119,16 +144,19 @@ export const useMusicStore = defineStore('music', () => {
     const known = new Set(songs.value.map(s => s.path))
     const wanted = [...favorites.toArray(), ...playlists.value.flatMap(p => p.songs || [])]
     if (wanted.some(p => !known.has(p)) && scanFolders.value.length > 0) {
-      console.log('[存储] 收藏/歌单中有路径不在曲库,增量扫描已保存的目录')
       for (const folder of scanFolders.value) {
         await scanFolder(folder) // addSongs 自动去重
       }
       saveToStorage()
     }
+    // 5. 老曲库回填「入库时间」(不阻塞启动:回填完成后再落盘)
+    backfillAddedTime()
   }
 
   // 防抖合并:收藏/歌单/进度等频繁操作时,2s 内多次保存合并为一次全量写,避免反复全量序列化卡主线程
   let _saveDebounce = null
+  // 最近一次 localStorage 写入失败的键集合签名:用于去重配额告警(见 doSaveNow)
+  let _lastQuotaFailSig = ''
   function saveToStorage(immediate = false) {
     if (immediate) {
       if (_saveDebounce) { clearTimeout(_saveDebounce); _saveDebounce = null }
@@ -146,9 +174,11 @@ export const useMusicStore = defineStore('music', () => {
   }
   function doSaveNow() {
     try {
+      const failed = []
       const safeSet = (key, value) => {
-        try { localStorage.setItem(key, JSON.stringify(value)) } catch (e) { console.warn('[存储] localStorage 写入失败:', key, e.message) }
-      } 
+        try { localStorage.setItem(key, JSON.stringify(value)) }
+        catch (e) { failed.push(key) }
+      }
       safeSet('soundflow_library', songs.value)
       safeSet('soundflow_favorites', favorites.toArray())
       safeSet('soundflow_playlists', playlists.value)
@@ -156,6 +186,21 @@ export const useMusicStore = defineStore('music', () => {
       safeSet('soundflow_history', history.value)
       safeSet('soundflow_scan_folders', scanFolders.value)
       safeSet('soundflow_lyric_folders', lyricFolders.value)
+
+      // 配额失败此前只写一行 console.warn,用户完全无感(表现为「重启后数据回到旧状态」)。
+      // 这里按「失败键集合」去重:同一组键连续失败只提示一次,恢复后再失败会重新提示,
+      // 避免每 2 秒弹一次 toast 把界面刷爆。
+      const sig = failed.slice().sort().join(',')
+      if (sig !== _lastQuotaFailSig) {
+        _lastQuotaFailSig = sig
+        if (failed.length) {
+          noteFailure('storage.save', `localStorage 写入失败(可能配额已满),已改用文件存储:${sig}`, null)
+          try { window.$toast?.('本地存储写入失败,数据已改存文件;建议导出备份以防丢失', 'warning', 6000) } catch (e) {
+            noteFailure('storage.save', '配额告警提示未能显示', e)
+          }
+        }
+      }
+
       if (window.electronAPI) {
         // 一次深拷贝 + 一次 IPC 批量写入(避免 7 次全量深拷贝 + 7 次 storeSet + 7 次全量写盘)
         const toPlain = (v) => JSON.parse(JSON.stringify(v))
@@ -180,8 +225,39 @@ export const useMusicStore = defineStore('music', () => {
         }
       }
     } catch (e) {
-      console.error('[存储] 保存失败:', e)
+      noteFailure('storage.save', '保存曲库数据失败', e)
     }
+  }
+
+  // 统一排序比较器:主列表(filteredSongs)与各视图列表(sortSongs)共用,避免两处逻辑漂移
+  // 两个坑:
+  //   1. playCount 存在独立的 playCounts map 中,不是 song 对象上的字段,必须单独取值;
+  //   2. 数值字段不能当字符串比(会按字典序),此前只有 playCount 有分支 ——
+  //      新增 addedTime(毫秒时间戳)时把「数值字段」抽成一张表,避免再加一个字段又漏一次。
+  const NUMERIC_SORT_FIELDS = new Set(['playCount', 'addedTime'])
+  function compareSongs(a, b, field, order) {
+    const numeric = NUMERIC_SORT_FIELDS.has(field)
+    let va, vb
+    if (field === 'playCount') {
+      va = playCounts.value[a.path] || 0
+      vb = playCounts.value[b.path] || 0
+    } else if (numeric) {
+      va = a[field] || 0
+      vb = b[field] || 0
+      // 缺失值(尚未回填的老记录)恒排末尾 —— 升序降序都是
+      const missA = !va, missB = !vb
+      if (missA !== missB) return missA ? 1 : -1
+    } else {
+      va = a[field] || ''
+      vb = b[field] || ''
+    }
+    if (!numeric) {
+      if (typeof va === 'string') va = va.toLowerCase()
+      if (typeof vb === 'string') vb = vb.toLowerCase()
+    }
+    if (va < vb) return order === 'asc' ? -1 : 1
+    if (va > vb) return order === 'asc' ? 1 : -1
+    return 0
   }
 
   // 过滤和排序后的歌曲列表
@@ -195,15 +271,10 @@ export const useMusicStore = defineStore('music', () => {
         (s.album || '').toLowerCase().includes(q)
       )
     }
-    list.sort((a, b) => {
-      let va = sortField.value === 'playCount' ? (playCounts.value[a.path] || 0) : (a[sortField.value] || '')
-      let vb = sortField.value === 'playCount' ? (playCounts.value[b.path] || 0) : (b[sortField.value] || '')
-      if (typeof va === 'string') va = va.toLowerCase()
-      if (typeof vb === 'string') vb = vb.toLowerCase()
-      if (va < vb) return sortOrder.value === 'asc' ? -1 : 1
-      if (va > vb) return sortOrder.value === 'asc' ? 1 : -1
-      return 0
-    })
+    // null = 不排序(自定义顺序,拖拽后生效);有值时按列头排序
+    if (sortField.value) {
+      list.sort((a, b) => compareSongs(a, b, sortField.value, sortOrder.value))
+    }
     return list
   })
 
@@ -211,8 +282,31 @@ export const useMusicStore = defineStore('music', () => {
   const favoriteCount = computed(() => favorites.size)
 
   const favoriteSongs = computed(() => {
-    return songs.value.filter(s => favorites.has(s.path))
+    const favs = songs.value.filter(s => favorites.has(s.path))
+    if (favoriteOrderOverride.value.length) {
+      const m = new Map(favoriteOrderOverride.value.map((p, i) => [p, i]))
+      return [...favs].sort((a, b) => (m.get(a.path) ?? 1e9) - (m.get(b.path) ?? 1e9))
+    }
+    return favs
   })
+
+  // 收藏拖拽顺序(路径数组;空=按音乐库顺序)
+  const favoriteOrderOverride = ref([])
+  function moveFavorite(fromPath, toPath, pos = 'after') {
+    let base = favoriteOrderOverride.value.length
+      ? [...favoriteOrderOverride.value]
+      : songs.value.filter(s => favorites.has(s.path)).map(s => s.path)
+    const fi = base.indexOf(fromPath)
+    if (fi < 0) return
+    base.splice(fi, 1)
+    const ti = base.indexOf(toPath)
+    if (ti < 0) return
+    base.splice(pos === 'before' ? ti : ti + 1, 0, fromPath)
+    favoriteOrderOverride.value = base
+    // 拖拽后解除排序遮蔽(先于持久化)
+    sortField.value = null
+    try { localStorage.setItem('soundflow_favorite_order', JSON.stringify(base)) } catch {}
+  }
 
   // 添加歌曲（去重）
   function addSongs(newSongs) {
@@ -223,11 +317,45 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 移除歌曲
-  function removeSongs(paths) {
+  // 移除歌曲。keepFavorites 用于「自动刷新曲库」等非用户主动操作:
+  // 收藏是用户意图,文件暂时不在(外接盘未插、网络盘掉线)不该连收藏一起抹掉,
+  // 留成孤儿路径并由首页「失效歌曲」横幅提示用户确认
+  function removeSongs(paths, { keepFavorites = false } = {}) {
     const pathSet = new Set(paths)
     songs.value = songs.value.filter(s => !pathSet.has(s.path))
-    paths.forEach(p => favorites.delete(p))
+    if (!keepFavorites) paths.forEach(p => favorites.delete(p))
     saveToStorage()
+  }
+
+  // 存量曲库回填「入库时间」:「按添加时间」排序依赖 addedTime,老记录没有该字段时
+  // 会全部堆到末尾。值由主进程按文件创建时间给出,只回填缺失项并写回,只做一次。
+  let _backfillRunning = false
+  async function backfillAddedTime() {
+    if (_backfillRunning) return
+    if (!window.electronAPI?.backfillAddedTime) return
+    const missing = songs.value.filter(s => s && typeof s.addedTime !== 'number').map(s => s.path)
+    if (!missing.length) return
+    _backfillRunning = true
+    try {
+      const map = await window.electronAPI.backfillAddedTime(missing)
+      if (!map || typeof map !== 'object') return
+      let n = 0
+      songs.value = songs.value.map(s => {
+        if (s && typeof s.addedTime !== 'number' && map[s.path]) {
+          n++
+          return { ...s, addedTime: map[s.path] }
+        }
+        return s
+      })
+      if (n) {
+        saveToStorage(true)
+        console.info(`[曲库] 已为 ${n} 首老记录回填添加时间`)
+      }
+    } catch (e) {
+      noteFailure('library.addedTime', '添加时间回填失败(这些歌在「按添加时间」排序时会排在末尾)', e)
+    } finally {
+      _backfillRunning = false
+    }
   }
 
   // 切换收藏
@@ -364,6 +492,8 @@ export const useMusicStore = defineStore('music', () => {
     if (ti < 0) arr.unshift(item)
     else arr.splice(pos === 'before' ? ti : ti + 1, 0, item)
     songs.value = arr
+    // 拖拽后解除列头排序遮蔽(先于 saveToStorage,杜绝遮蔽残留)
+    sortField.value = null
     saveToStorage()
     try { localStorage.setItem('soundflow_song_order', JSON.stringify(arr.map(s => s.path))) } catch {}
   }
@@ -384,19 +514,12 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 排序
-  // 通用排序:供各视图列表使用(歌手/专辑/歌单/收藏)
+  // 通用排序:供各视图列表使用(歌手/专辑/歌单/收藏);sortField 为 null 时返回原序(自定义顺序)
   function sortSongs(list) {
+    if (!sortField.value) return [...list]
     const f = sortField.value
     const o = sortOrder.value
-    return [...list].sort((a, b) => {
-      let va = a[f] || ''
-      let vb = b[f] || ''
-      if (typeof va === 'string') va = va.toLowerCase()
-      if (typeof vb === 'string') vb = vb.toLowerCase()
-      if (va < vb) return o === 'asc' ? -1 : 1
-      if (va > vb) return o === 'asc' ? 1 : -1
-      return 0
-    })
+    return [...list].sort((a, b) => compareSongs(a, b, f, o))
   }
 
   function setSortField(field) {
@@ -426,6 +549,7 @@ export const useMusicStore = defineStore('music', () => {
       }
     } catch (e) {
       console.error('[扫描] 失败:', e)
+      try { window.$toast?.('扫描文件夹失败:' + ((e && e.message) || ''), 'warning') } catch {}
     } finally {
       isScanning.value = false
     }
@@ -439,6 +563,7 @@ export const useMusicStore = defineStore('music', () => {
       addSongs(results)
     } catch (e) {
       console.error('[扫描] 失败:', e)
+      try { window.$toast?.('扫描文件失败:' + ((e && e.message) || ''), 'warning') } catch {}
     }
   }
 
@@ -511,6 +636,8 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 检测失效歌曲(文件已被移动/删除),返回缺失的歌曲对象数组
+  // 返回「确认失效」的歌曲列表。检测本身失败时返回 null(区别于 [] = 全部存在),
+  // 避免 IPC 出错时界面谎称「所有歌曲文件均存在」
   async function checkMissingSongs() {
     if (!window.electronAPI || songs.value.length === 0) return []
     try {
@@ -519,7 +646,7 @@ export const useMusicStore = defineStore('music', () => {
       return songs.value.filter(s => missingSet.has(s.path))
     } catch (e) {
       console.error('[检测] 失效歌曲检测失败:', e)
-      return []
+      return null
     }
   }
 
@@ -527,6 +654,11 @@ export const useMusicStore = defineStore('music', () => {
   async function startupMissingCheck() {
     try {
       const missing = await checkMissingSongs()
+      if (missing === null) {
+        // 检测失败:明确告知,而不是当作「没有失效歌曲」静默通过
+        if (window.$toast) window.$toast('曲库失效检测未能完成，可在首页手动重新检测', 'warning')
+        return
+      }
       startupMissing.value = missing
       if (missing.length > 0) {
         console.warn(`[检测] 启动检测到 ${missing.length} 首歌曲文件已失效,可在首页清理`)
@@ -542,6 +674,49 @@ export const useMusicStore = defineStore('music', () => {
   // 更新单首歌曲
   function updateSong(path, updates) {
     songs.value = songs.value.map(s => s.path === path ? { ...s, ...updates } : s)
+    saveToStorage()
+  }
+
+  // 重命名文件后迁移所有以 path 为键的引用
+  // 修:此前 confirmRename 只调 updateSong({path}),导致重命名的歌从收藏/歌单/
+  // 播放次数/历史/自定义排序里全部消失(表现为「重命名后收藏没了、播放次数归零」)
+  function renameSongPath(oldPath, newPath) {
+    if (!oldPath || !newPath || oldPath === newPath) return
+    songs.value = songs.value.map(s => s.path === oldPath ? { ...s, path: newPath } : s)
+
+    if (_favoritesSet.has(oldPath)) {
+      _favoritesSet.delete(oldPath)
+      _favoritesSet.add(newPath)
+    }
+
+    playlists.value = playlists.value.map(pl => {
+      if (!pl.songs || !pl.songs.includes(oldPath)) return pl
+      return { ...pl, songs: pl.songs.map(p => p === oldPath ? newPath : p) }
+    })
+
+    if (playCounts.value[oldPath] !== undefined) {
+      const { [oldPath]: count, ...rest } = playCounts.value
+      playCounts.value = { ...rest, [newPath]: count }
+    }
+
+    history.value = history.value.map(h => h.path === oldPath ? { ...h, path: newPath } : h)
+
+    if (favoriteOrderOverride.value.includes(oldPath)) {
+      favoriteOrderOverride.value = favoriteOrderOverride.value.map(p => p === oldPath ? newPath : p)
+      try { localStorage.setItem('soundflow_favorite_order', JSON.stringify(favoriteOrderOverride.value)) } catch {}
+    }
+
+    // 全局手动排序(Home 拖拽)单独存在 localStorage,不在上述任何容器里
+    try {
+      const raw = localStorage.getItem('soundflow_song_order')
+      if (raw) {
+        const arr = JSON.parse(raw)
+        if (Array.isArray(arr) && arr.includes(oldPath)) {
+          localStorage.setItem('soundflow_song_order', JSON.stringify(arr.map(p => p === oldPath ? newPath : p)))
+        }
+      }
+    } catch {}
+
     saveToStorage()
   }
 
@@ -578,12 +753,15 @@ export const useMusicStore = defineStore('music', () => {
     if (_folderWatchAttached || !window.electronAPI?.on) return
     _folderWatchAttached = true
     window.electronAPI.on('library-folder-changed', async ({ added, removed } = {}) => {
-      if (removed && removed.length) removeSongs(removed)
+      // 自动刷新只从曲库摘除文件,不动收藏(收藏是用户意图;盘符卸载/网络盘掉线恢复后歌曲会回来)
+      if (removed && removed.length) removeSongs(removed, { keepFavorites: true })
       if (added && added.length) {
         try {
           const songs = await window.electronAPI.scanFiles(added)
           if (songs && songs.length) addSongs(songs)
-        } catch {}
+        } catch (e) {
+          console.error('[监控] 新增文件解析失败:', e)
+        }
       }
     })
   }
@@ -594,12 +772,13 @@ export const useMusicStore = defineStore('music', () => {
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
+    backfillAddedTime,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
-    addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, getPlaylistSongs,
+    addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, moveFavorite, getPlaylistSongs,
     setSortField, setSearchQuery, scanFolder, scanFiles, addFolder, addFiles, importDropped,
     addLyricFolder, removeLyricFolder,
-    findDuplicates, batchUpdateMeta, updateSong, clearHistory,
+    findDuplicates, batchUpdateMeta, updateSong, renameSongPath, clearHistory,
     checkMissingSongs, startupMissingCheck,
     initPlayListener, initFolderWatch
   }

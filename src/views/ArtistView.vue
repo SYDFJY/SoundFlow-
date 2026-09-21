@@ -6,16 +6,16 @@
     </div>
     <div class="view-content">
       <div v-if="artists.length === 0" class="empty-state">
-        <div class="empty-icon">👤</div>
-        <div class="empty-text">{{ t('common.empty') }}</div>
+        <div class="es-icon"><Icon name="artist" :size="48" /></div>
+        <div class="es-text">{{ t('common.empty') }}</div>
       </div>
       <div v-else class="artist-grid">
         <div v-for="artist in artists" :key="artist.name" class="artist-card" style="content-visibility: auto; contain-intrinsic-size: 150px 190px;" @click="selectArtist(artist)">
           <div class="artist-avatar">
-            <img v-if="artist.coverUrl" :src="artist.coverUrl" loading="lazy" class="artist-cover" />
+            <img v-if="artist.coverUrl" :src="artist.coverUrl" loading="lazy" class="artist-cover" alt="" />
             <div v-else class="avatar-placeholder">{{ artist.name[0] }}</div>
             <button class="artist-play" title="播放全部" @click.stop="playArtistDirect(artist.name)">
-              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+              <Icon name="play" :size="16" fill="currentColor" />
             </button>
           </div>
           <div class="artist-name text-ellipsis">{{ artist.name }}</div>
@@ -27,7 +27,7 @@
     <!-- 歌手详情 -->
     <transition name="fade">
       <div v-if="selectedArtist" class="detail-overlay" @click.self="selectedArtist = null">
-        <div class="detail-card">
+        <div class="modal-card detail-card">
           <div class="detail-header">
             <div class="detail-avatar">{{ selectedArtist.name[0] }}</div>
             <div class="detail-info">
@@ -35,10 +35,10 @@
               <span>{{ selectedArtist.count }} 首歌曲</span>
             </div>
             <button class="play-all-btn" @click="playArtist">
-              <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+              <Icon name="play" :size="16" fill="currentColor" />
               播放全部
             </button>
-            <button class="close-btn" @click="selectedArtist = null">✕</button>
+            <button class="close-btn" title="关闭" aria-label="关闭歌手详情" @click="selectedArtist = null"><Icon name="close" :size="15" /></button>
           </div>
           <div class="detail-content">
             <MusicList :songs="sortedArtistSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" />
@@ -55,6 +55,7 @@ import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
+import Icon from '@/components/icons/Icon.vue'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
@@ -98,7 +99,7 @@ function playArtistDirect(name) {
 .header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
 .view-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
 
-.artist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
+.artist-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr)); gap: var(--card-gap); }
 .artist-card {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   padding: 16px; border-radius: var(--radius-lg);
@@ -110,7 +111,7 @@ function playArtistDirect(name) {
 .artist-play {
   position: absolute; right: -2px; bottom: -2px;
   width: 30px; height: 30px; border-radius: 50%;
-  background: rgba(22,119,230,0.92); color: #fff;
+  background: var(--color-primary, rgba(22,119,230,0.92)); color: #fff;
   display: flex; align-items: center; justify-content: center;
   opacity: 0; transform: scale(0.8); transition: all 0.2s;
 }
@@ -131,12 +132,12 @@ function playArtistDirect(name) {
 }
 .artist-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: var(--text-tertiary); }
-.empty-icon { font-size: 48px; margin-bottom: 12px; animation: float-y 2.6s ease-in-out infinite; display: inline-block; }
-.empty-text { font-size: var(--font-size-base); }
+.es-icon { margin-bottom: 12px; animation: float-y 2.6s ease-in-out infinite; display: inline-flex; color: var(--empty-icon, var(--text-tertiary)); }
 
-.detail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.detail-card { background: var(--bg-secondary); border-radius: var(--radius-xl); width: 700px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: var(--shadow-lg); }
+.detail-overlay { position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.4)); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: var(--z-modal); /* 100 → 模态档:此前低于右键菜单(200),菜单会盖在详情层上面 */ }
+.detail-card {
+  padding: 0; width: 700px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column;
+}
 .detail-header { display: flex; align-items: center; gap: 16px; padding: 24px; border-bottom: 1px solid var(--border-color); }
 .detail-avatar { width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, var(--color-primary-alpha), var(--color-primary)); display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: 700; color: white; flex-shrink: 0; }
 .detail-info { flex: 1; min-width: 0; }

@@ -1,16 +1,16 @@
 <template>
   <div class="settings-view">
     <div class="view-header">
-      <button class="back-btn" @click="$router.back()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      <button class="back-btn" @click="$router.back()" title="返回" aria-label="返回">
+        <Icon name="back" :size="16" />
       </button>
       <h1 class="header-title">设置</h1>
     </div>
 
     <div class="settings-search">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>
+      <Icon name="search" :size="15" />
       <input v-model="searchQuery" placeholder="搜索设置项…(如 歌词 / 字体 / 开机自启)" />
-      <button v-if="searchQuery" class="search-clear" @click="searchQuery = ''">✕</button>
+      <button v-if="searchQuery" class="search-clear" title="清除搜索" aria-label="清除搜索" @click="searchQuery = ''"><Icon name="close" :size="14" /></button>
     </div>
 
     <div class="settings-content">
@@ -40,9 +40,8 @@
             <span class="label-text">启动自动续播</span>
             <span class="label-desc">打开应用后自动继续播放上次的歌曲</span>
           </div>
-          <button class="switch" :class="{ on: appStore.autoPlay }" @click="toggleAutoPlay">
+          <button class="switch" role="switch" :aria-checked="appStore.autoPlay" aria-label="启动自动续播" :class="{ on: appStore.autoPlay }" @click="toggleAutoPlay">
             <span class="switch-track"></span>
-            <span>{{ appStore.autoPlay ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div class="setting-item">
@@ -50,9 +49,8 @@
             <span class="label-text">跟随系统深色模式</span>
             <span class="label-desc">系统切换深色/浅色时自动切换主题(手动选主题将关闭此功能)</span>
           </div>
-          <button class="switch" :class="{ on: appStore.followSystemTheme }" @click="appStore.setFollowSystemTheme(!appStore.followSystemTheme)">
+          <button class="switch" role="switch" :aria-checked="appStore.followSystemTheme" aria-label="跟随系统深色模式" :class="{ on: appStore.followSystemTheme }" @click="appStore.setFollowSystemTheme(!appStore.followSystemTheme)">
             <span class="switch-track"></span>
-            <span>{{ appStore.followSystemTheme ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div class="setting-item">
@@ -95,9 +93,17 @@
             <span class="label-text">响度均衡</span>
             <span class="label-desc">ReplayGain — 换歌音量均衡(开启后后台分析,可能占用少量 CPU)</span>
           </div>
-          <button class="switch" :class="{ on: playerStore.replayGainEnabled }" @click="toggleReplayGain">
+          <button class="switch" role="switch" :aria-checked="playerStore.replayGainEnabled" aria-label="响度均衡" :class="{ on: playerStore.replayGainEnabled }" @click="toggleReplayGain">
             <span class="switch-track"></span>
-            <span>{{ playerStore.replayGainEnabled ? '已开启' : '已关闭' }}</span>
+          </button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">切歌续播</span>
+            <span class="label-desc">记忆上次播放进度(默认关 = 切歌从头播放;开启后切回未播完的歌会从上次进度继续)</span>
+          </div>
+          <button class="switch" role="switch" :aria-checked="playerStore.resumeProgress" aria-label="切歌续播" :class="{ on: playerStore.resumeProgress }" @click="playerStore.resumeProgress = !playerStore.resumeProgress; playerStore.saveSettings()">
+            <span class="switch-track"></span>
           </button>
         </div>
         <div class="setting-item">
@@ -201,9 +207,8 @@
             <span class="label-text">自动刷新曲库</span>
             <span class="label-desc">监听扫描目录,新增/删除文件自动同步(事件驱动,无后台轮询)</span>
           </div>
-          <button class="switch" :class="{ on: folderWatchOn }" @click="toggleFolderWatch">
+          <button class="switch" role="switch" :aria-checked="folderWatchOn" aria-label="自动刷新曲库" :class="{ on: folderWatchOn }" @click="toggleFolderWatch">
             <span class="switch-track"></span>
-            <span>{{ folderWatchOn ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
       </div>
@@ -216,9 +221,8 @@
             <span class="label-text">在线歌词</span>
             <span class="label-desc">本地无 .lrc 时自动从所选来源获取同步歌词（需联网）</span>
           </div>
-          <button class="switch" :class="{ on: onlineLyric }" @click="toggleOnlineLyric">
+          <button class="switch" role="switch" :aria-checked="onlineLyric" aria-label="在线歌词" :class="{ on: onlineLyric }" @click="toggleOnlineLyric">
             <span class="switch-track"></span>
-            <span>{{ onlineLyric ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div class="setting-item" v-if="onlineLyric">
@@ -241,8 +245,8 @@
           </div>
           <div v-if="translateService === 'deepseek'" class="deepseek-key-row">
             <input v-model="deepseekKey" :type="showDeepseekKey ? 'text' : 'password'" class="deepseek-key-input" :placeholder="deepseekKey ? '已配置(输入可更换)' : '输入 DeepSeek API Key(仅保存在本地)'" @blur="saveDeepseekKey" />
-            <button class="key-eye" @click="showDeepseekKey = !showDeepseekKey" :title="showDeepseekKey ? '隐藏' : '显示'">{{ showDeepseekKey ? '🙈' : '👁' }}</button>
-            <span v-if="deepseekKey" class="key-configured">已配置 ✓</span>
+            <button class="key-eye" :aria-label="showDeepseekKey ? '隐藏密钥' : '显示密钥'" @click="showDeepseekKey = !showDeepseekKey" :title="showDeepseekKey ? '隐藏' : '显示'"><Icon :name="showDeepseekKey ? 'darkMode' : 'lightMode'" :size="14" /></button>
+            <span v-if="deepseekKey" class="key-configured">已配置<Icon name="check" :size="12" /></span>
           </div>
         </div>
         <div class="setting-item">
@@ -280,14 +284,14 @@
           <transition name="fade">
             <div v-if="batchLyric.showResult" class="batch-done-overlay" @click.self="batchLyric.showResult = false">
               <div class="batch-done-card">
-                <div class="done-icon">✅</div>
+                <div class="done-icon"><Icon name="check" :size="46" /></div>
                 <h3>歌词下载完成</h3>
                 <div class="done-row">成功下载 <b>{{ batchLyric.success }}</b> 首 &nbsp;·&nbsp; 已有 <b>{{ batchLyric.skipped }}</b> 首</div>
                 <div class="done-row" v-if="batchLyric.matchFail || batchLyric.saveFail || batchLyric.failed">未匹配 <b>{{ batchLyric.matchFail }}</b> 首 · 写入失败 <b>{{ batchLyric.saveFail }}</b> 首 · 其他失败 <b>{{ batchLyric.failed }}</b> 首</div>
                 <div class="done-row muted">用时 {{ batchLyric.elapsed }} · 完成时间 {{ batchLyric.finishedAt }}</div>
                 <div class="done-folder" :title="batchLyric.folder">下载到：{{ batchLyric.folder }}</div>
                 <div class="done-btns">
-                  <button class="btn" @click="openLyricFolder">📂 打开歌词文件夹</button>
+                  <button class="btn" @click="openLyricFolder"><Icon name="opendir" :size="15" />打开歌词文件夹</button>
                   <button class="btn--ghost btn--sm" @click="batchLyric.showResult = false">关闭</button>
                 </div>
               </div>
@@ -298,7 +302,7 @@
           暂未设置歌词文件夹（歌词也可放在歌曲同目录同名 .lrc 自动识别）
         </div>
         <div v-for="folder in musicStore.lyricFolders" :key="folder" class="folder-item">
-          <svg class="folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--color-primary);flex-shrink:0"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <Icon name="lyrics" :size="16" />
           <span class="folder-path text-ellipsis">{{ folder }}</span>
           <button class="remove-btn" @click="removeLyricFolder(folder)">移除</button>
         </div>
@@ -312,9 +316,8 @@
             <span class="label-text">均衡器 / 音效</span>
             <span class="label-desc">10 段 EQ + 预设 + 重低音 + 空间声场(Web Audio 实时处理)</span>
           </div>
-          <button class="switch" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
+          <button class="switch" role="switch" :aria-checked="playerStore.eqSettings.enabled" aria-label="均衡器 / 音效" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
             <span class="switch-track"></span>
-            <span>{{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div v-if="playerStore.eqSettings.enabled" class="eq-area">
@@ -441,9 +444,8 @@
             <span class="label-text">开机自启</span>
             <span class="label-desc">Start with Windows</span>
           </div>
-          <button class="switch" :class="{ on: loginItem }" @click="toggleLoginItem">
+          <button class="switch" role="switch" :aria-checked="loginItem" aria-label="开机自启" :class="{ on: loginItem }" @click="toggleLoginItem">
             <span class="switch-track"></span>
-            <span>{{ loginItem ? '已开启' : '已关闭' }}</span>
           </button>
         </div>
         <div class="setting-item">
@@ -455,11 +457,20 @@
             <option value="exit">退出应用</option>
           </select>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">硬件加速(GPU 渲染)</span>
+            <span class="label-desc">界面更流畅清晰;若花屏/白屏请关闭。重启生效</span>
+          </div>
+          <button class="switch" role="switch" :aria-checked="hardwareAccel" aria-label="硬件加速" :class="{ on: hardwareAccel }" @click="toggleHardwareAccel">
+            <span class="switch-track"></span>
+          </button>
+        </div>
       </div>
 
       <!-- 数据安全 -->
       <div class="settings-section">
-        <h3 class="section-title">🛡️ 数据安全</h3>
+        <h3 class="section-title"><Icon name="warning" :size="15" />数据安全</h3>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">自动备份</span>
@@ -503,7 +514,7 @@
         </div>
         <div class="about-card">
           <div class="about-logo">
-            <img src="/icon.jpg" alt="logo" style="width:48px;height:48px;border-radius:12px;object-fit:cover;" />
+            <img src="/icon.png" alt="logo" style="width:48px;height:48px;border-radius:12px;object-fit:cover;" />
           </div>
           <div class="about-info">
             <h4>SoundFlow 声流音乐</h4>
@@ -553,7 +564,7 @@
 
   <!-- 本地歌词管理弹窗 -->
   <div v-if="lyricMgrOpen" class="save-queue-mask" @click.self="lyricMgrOpen = false">
-    <div class="save-queue-card lyric-mgr-card">
+    <div class="modal-card save-queue-card lyric-mgr-card">
       <h3>本地歌词管理</h3>
       <div class="lyric-mgr-stats" v-if="!lyricMgrBusy">
         共 {{ filteredSongs.length }} 首 · <span style="color:var(--color-primary)">有歌词 {{ withLyricCount }}</span> · <span style="color:#ff8f8f">缺失 {{ filteredSongs.length - withLyricCount }}</span>
@@ -566,8 +577,8 @@
             <div class="lyric-mgr-title text-ellipsis">{{ s.title }}</div>
             <div class="lyric-mgr-artist text-ellipsis">{{ s.artist }}</div>
           </div>
-          <span class="lyric-mgr-status" :class="{ ok: lyricStatus[s.path] }">{{ lyricStatus[s.path] ? '✓ 有' : '✗ 无' }}</span>
-          <button v-if="lyricStatus[s.path]" class="lyric-mgr-del" @click="deleteMgrLyric(s)" title="删除本地歌词">🗑</button>
+          <span class="lyric-mgr-status" :class="{ ok: lyricStatus[s.path] }"><Icon :name="lyricStatus[s.path] ? 'check' : 'close'" :size="12" />{{ lyricStatus[s.path] ? '有' : '无' }}</span>
+          <button v-if="lyricStatus[s.path]" class="lyric-mgr-del" title="删除本地歌词" aria-label="删除本地歌词" @click="deleteMgrLyric(s)"><Icon name="remove" :size="12" /></button>
         </div>
         <div v-if="!filteredSongs.length" class="rank-empty">无匹配歌曲</div>
       </div>
@@ -581,6 +592,9 @@ import { useAppStore } from '@/stores/appStore'
 import { t, i18n, setLang } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import { THEME_LIST as themeOptions } from '@/config/themeList'
+import Icon from '@/components/icons/Icon.vue'
+import { confirmDialog } from '@/composables/useConfirm'
 
 const appStore = useAppStore()
 function toggleReplayGain() {
@@ -656,21 +670,58 @@ async function toggleLoginItem() {
   window.$toast?.(v ? '已开启开机自启' : '已关闭开机自启', 'success')
 }
 loadLoginItem()
+
+// 硬件加速(GPU 渲染):默认关(软件渲染稳定),用户自测开启,重启生效
+const hardwareAccel = ref(false)
+async function loadHardwareAccel() {
+  try { if (window.electronAPI && window.electronAPI.getHardwareAccel) hardwareAccel.value = await window.electronAPI.getHardwareAccel() } catch {}
+}
+async function toggleHardwareAccel() {
+  const v = !hardwareAccel.value
+  hardwareAccel.value = v
+  try { if (window.electronAPI && window.electronAPI.setHardwareAccel) await window.electronAPI.setHardwareAccel(v) } catch {}
+  window.$toast?.(v ? '已开启硬件加速,重启应用生效' : '已关闭硬件加速,重启应用生效', 'success', 3200)
+}
+loadHardwareAccel()
 const searchQuery = ref('')
+// 设置项搜索。
+// 原实现对每个设置项交替「读 textContent → 写 style.display」:写之后再读会强制同步回流,
+// 12 个分区约 60 个条目、每敲一键跑一遍,是设置页搜索卡顿的来源。
+// 这里:① 先一次性读完所有文本 ② 再只做写入 ③ 加去抖,并改用 class 而非内联 style
+// (内联 display 会被 Vue 的重新渲染绕开,新出现的条目不会继承过滤状态)。
+let _searchTimer = null
+let _pendingQuery = ''
 function applySearch(q) {
   const qq = (q || '').trim().toLowerCase()
-  document.querySelectorAll('.settings-section').forEach(sec => {
-    let any = false
-    sec.querySelectorAll('.setting-item').forEach(item => {
-      const text = (item.textContent || '').toLowerCase()
-      const hit = !qq || text.includes(qq)
-      item.style.display = hit ? '' : 'none'
-      if (hit) any = true
-    })
-    sec.style.display = (!qq || any) ? '' : 'none'
-  })
+  const sections = [...document.querySelectorAll('.settings-section')]
+  const content = document.querySelector('.settings-content')
+  const secs = []
+  const pairs = []
+  for (const sec of sections) {
+    secs.push({ sec, any: false })
+    for (const item of sec.querySelectorAll('.setting-item')) pairs.push([item, secs.length - 1])
+  }
+  // 读阶段
+  const texts = pairs.map(([item]) => (item.textContent || '').toLowerCase())
+  // 写阶段(与读完全分离,不再触发逐项回流)
+  for (let i = 0; i < pairs.length; i++) {
+    const hit = !qq || texts[i].includes(qq)
+    pairs[i][0].classList.toggle('search-hit', hit)
+    if (hit) secs[pairs[i][1]].any = true
+  }
+  for (const s of secs) s.sec.classList.toggle('search-any', s.any)
+  // 容器标记:配合 :not(.search-hit) 规则,让「过滤期间才被 v-if 渲染出来」的条目默认隐藏,
+  // 而不是因为它没有内联状态就漏出来(旧实现写内联 style,无法覆盖这种情况)
+  if (content) content.classList.toggle('searching', !!qq)
 }
-watch(searchQuery, applySearch)
+function scheduleSearch(q) {
+  _pendingQuery = q
+  if (_searchTimer) clearTimeout(_searchTimer)
+  _searchTimer = setTimeout(() => { _searchTimer = null; applySearch(_pendingQuery) }, 120)
+}
+watch(searchQuery, scheduleSearch)
+// 语言切换会改变条目文本,重新套用当前查询(否则按旧语言匹配的结果会残留)
+watch(() => i18n.lang, () => { if (searchQuery.value) applySearch(searchQuery.value) })
 const currentLang = computed(() => i18n.lang)
 // 检查更新(自动更新骨架;未配置发布源时提示)
 const checkingUpdate = ref(false)
@@ -722,8 +773,20 @@ const lyricMgrBusy = ref(false)
 
 // Esc 关闭弹窗
 function onSettingsEsc() { lyricMgrOpen.value = false }
+// 迷你窗背景同步(命名函数便于卸载时移除,避免监听泄漏)
+function onMiniBgSynced(e) {
+  const cfg = e.detail
+  if (!cfg) return
+  if (cfg.mode) miniBgMode.value = cfg.mode
+  if (cfg.color) miniBgColor.value = cfg.color
+  if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
+}
 onMounted(() => document.addEventListener('soundflow:esc', onSettingsEsc))
-onUnmounted(() => document.removeEventListener('soundflow:esc', onSettingsEsc))
+onUnmounted(() => {
+  document.removeEventListener('soundflow:esc', onSettingsEsc)
+  document.removeEventListener('mini-bg-synced', onMiniBgSynced)
+  if (_searchTimer) { clearTimeout(_searchTimer); _searchTimer = null }
+})
 const filteredSongs = computed(() => {
   const q = lyricMgrSearch.value.trim().toLowerCase()
   const list = musicStore.songs || []
@@ -743,6 +806,9 @@ async function scanLyricStatusAll() {
 }
 async function openLyricManager() {
   lyricMgrOpen.value = true
+  if (!musicStore.lyricFolders || !musicStore.lyricFolders.length) {
+    try { window.$toast?.('未配置歌词文件夹,将仅检查歌曲同目录 .lrc(可在设置-歌词添加歌词文件夹)', 'info', 3600) } catch {}
+  }
   await scanLyricStatusAll()
 }
 async function deleteMgrLyric(s) {
@@ -810,13 +876,13 @@ async function loadTagBackups() {
   try { tagBackups.value = (await window.electronAPI.listTagBackups()) || [] } catch { tagBackups.value = [] }
 }
 async function restoreTag(b) {
-  if (!confirm(`还原「${b.name}」到修改标签前的版本?\n当前文件将被备份副本覆盖(仅恢复该文件)`)) return
+  if (!(await confirmDialog({ message: `还原「${b.name}」到修改标签前的版本？`, detail: '当前文件将被备份副本覆盖(仅恢复该文件)', confirmText: '还原' }))) return
   const r = await window.electronAPI.restoreTagBackup(b.id)
   if (r && r.ok) { window.$toast?.('已还原原文件', 'success'); loadTagBackups() }
   else { window.$toast?.(r?.error || '还原失败', 'error') }
 }
 async function clearTagBackups() {
-  if (!confirm('确定清空全部标签备份?清空后无法再还原到旧标签')) return
+  if (!(await confirmDialog({ message: '确定清空全部标签备份？', detail: '清空后无法再还原到旧标签', confirmText: '清空', danger: true }))) return
   const r = await window.electronAPI.clearTagBackups()
   if (r && r.ok) { window.$toast?.('已清空', 'success'); tagBackups.value = [] }
   else { window.$toast?.(r?.error || '清空失败', 'error') }
@@ -876,33 +942,10 @@ onMounted(() => {
   // 初始化迷你窗色板(当前色 → 色相/点位)
   initPickr()
   initPrimaryPickr()
-  document.addEventListener('mini-bg-synced', (e) => {
-    const cfg = e.detail
-    if (!cfg) return
-    if (cfg.mode) miniBgMode.value = cfg.mode
-    if (cfg.color) miniBgColor.value = cfg.color
-    if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
-  })
+  document.addEventListener('mini-bg-synced', onMiniBgSynced)
 })
 
-const themeOptions = [
-  { value: 'light', label: '海盐蓝', color: '#edf4fa' },
-  { value: 'green', label: '薄荷清绿', color: '#edf7f2' },
-  { value: 'orange', label: '奶油橘', color: '#fcf3eb' },
-  { value: 'pink', label: '烟粉蔷薇', color: '#faf0f4' },
-  { value: 'dark', label: '暗夜绿', color: '#1a2b24' },
-  { value: 'blue', label: '深海蓝', color: '#172330' },
-  { value: 'red', label: '极夜红', color: '#2a171a' },
-  { value: 'purple', label: '暗玫紫', color: '#272036' },
-  { value: 'c_light', label: '经典浅色', color: '#f5f7fa' },
-  { value: 'c_dark', label: '经典深色', color: '#0d1117' },
-  { value: 'c_blue', label: '经典藏青', color: '#0a1628' },
-  { value: 'c_green', label: '经典青绿', color: '#f0f7f0' },
-  { value: 'c_purple', label: '经典梦幻紫', color: '#f5f0ff' },
-  { value: 'c_pink', label: '经典樱花粉', color: '#fff0f5' },
-  { value: 'c_orange', label: '经典暖橘', color: '#fff8f0' },
-  { value: 'c_red', label: '经典中国红', color: '#fff5f5' }
-]
+// 主题清单已收敛到 @/config/themeList(此前与 TopBar 各存一份重复列表)
 
 async function addFolder() {
   await musicStore.addFolder()
@@ -1192,10 +1235,33 @@ async function batchDownloadLyrics() {
 .back-btn svg { width: 20px; height: 20px; }
 .header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
 
-.settings-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
+.settings-content { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--page-pad-x) var(--page-pad-x); }
+/* 超宽屏下标签与开关此前相距近 1800px,阅读时要横跨整屏 —— 限制内容宽度并居中 */
+.settings-content > * { max-width: 1040px; margin-left: auto; margin-right: auto; }
+@media (max-width: 1100px) {
+  /* 窄窗:标签与控件改为纵向排列,长中文标签不再被挤成两行 */
+  .setting-item { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
 
-.settings-section { margin-bottom: 28px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 18px 20px; }
-.section-title { font-size: var(--font-size-sm); font-weight: 600; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 6px; }
+.settings-section {
+  margin-bottom: var(--gap-section); background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg); padding: 18px 20px;
+  transition: box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+.settings-section:hover { box-shadow: var(--shadow-sm); border-color: var(--panel-border, var(--border-color)); }
+.section-title {
+  font-size: var(--font-size-sm); font-weight: 600; color: var(--text-tertiary);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 12px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 7px;
+}
+/* 分区标题主色竖条(分组视觉统一) */
+.section-title::before {
+  content: '';
+  width: 3px; height: 14px; border-radius: 2px;
+  background: var(--color-primary);
+  box-shadow: 0 0 6px var(--color-primary-alpha);
+  flex-shrink: 0;
+}
 
 /* 快捷键总览:键帽卡片 */
 .shortcut-overview {
@@ -1213,13 +1279,15 @@ async function batchDownloadLyrics() {
   font-family: inherit; font-size: 11px; color: var(--text-primary);
 }
 .setting-item {
-  display: flex; align-items: center; justify-content: space-between;  padding: 13px 2px;
+  display: flex; align-items: center; justify-content: space-between;  padding: 13px 10px;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border-color);
-  border-radius: 0;
-  margin-bottom: 0;
+  border-radius: var(--radius-md);
+  margin: 0 -6px;
+  transition: background var(--transition-fast);
 }
+.setting-item:hover { background: var(--bg-hover); }
 .setting-item:last-child { border-bottom: none; }
 
 .setting-label { flex: 1; }
@@ -1304,7 +1372,7 @@ select {
 .deepseek-key-row .deepseek-key-input { flex: 1; margin-top: 0; }
 .key-eye { flex-shrink: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; }
 .key-eye:hover { border-color: var(--color-primary); }
-.key-configured { flex-shrink: 0; font-size: 11px; color: #42c988; font-weight: 500; }
+.key-configured { flex-shrink: 0; font-size: 11px; color: var(--color-success, #42c988); font-weight: 500; }
 .font-row { display: flex; align-items: center; gap: 10px; }
 .font-select {
   flex: 1; padding: 7px 10px; font-size: var(--font-size-sm);
@@ -1348,8 +1416,8 @@ select {
 .batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }
 
 .batch-done-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-  display: flex; align-items: center; justify-content: center; z-index: 200;
+  position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.45));
+  display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
 }
 .batch-done-card {
   width: 360px; max-width: 90vw; padding: 24px;
@@ -1399,6 +1467,16 @@ select {
 .search-clear { background: none; border: none; color: var(--text-tertiary); cursor: pointer; margin-left: -26px; font-size: 13px; }
 .search-clear:hover { color: var(--text-primary); }
 /* 歌词管理弹窗(复用 save-queue 弹窗类需自带定义) */
+.save-queue-mask {
+  position: fixed; inset: 0; z-index: var(--z-nested);
+  background: var(--overlay-mask, rgba(0,0,0,0.5));
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.save-queue-card {
+ 
+}
 .lyric-mgr-card { width: 460px; max-width: 90vw; max-height: 72vh; display: flex; flex-direction: column; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); padding: 18px; }
 .lyric-mgr-card h3 { margin: 0 0 10px; font-size: 16px; }
 .lyric-mgr-stats { font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
@@ -1408,8 +1486,13 @@ select {
 .lyric-mgr-info { flex: 1; min-width: 0; }
 .lyric-mgr-title { font-size: 13px; color: var(--text-primary); }
 .lyric-mgr-artist { font-size: 11px; color: var(--text-secondary); }
-.lyric-mgr-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: rgba(255,143,143,0.15); color: #ff8f8f; flex-shrink: 0; }
-.lyric-mgr-status.ok { background: rgba(80,220,140,0.15); color: #50dc8c; }
+.lyric-mgr-status { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--color-danger-alpha, rgba(255,143,143,0.15)); color: var(--color-danger, #ff8f8f); flex-shrink: 0; }
+.lyric-mgr-status.ok { background: var(--color-success-alpha, rgba(80,220,140,0.15)); color: var(--color-success, #50dc8c); }
 .lyric-mgr-del { background: none; border: none; cursor: pointer; font-size: 13px; opacity: 0.6; }
 .lyric-mgr-del:hover { opacity: 1; }
+/* 搜索过滤:用 class 而非内联 style,避免与 Vue 的渲染互抢 DOM。
+   容器带 .searching 时,未标记 search-hit / search-any 的一律隐藏 —— 这样过滤期间
+   才被 v-if 渲染出来的条目也会默认隐藏,不会漏出来。 */
+.settings-content.searching .setting-item:not(.search-hit) { display: none; }
+.settings-content.searching .settings-section:not(.search-any) { display: none; }
 </style>

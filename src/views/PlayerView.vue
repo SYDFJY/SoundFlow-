@@ -1,10 +1,10 @@
 <template>
-  <div class="player-view" :style="[bgStyle, { '--bg-bright': bgBrightness + '%' }]" :data-bg="bgMode">
+  <div class="player-view" :style="[bgStyle, { '--bg-bright': bgBrightness + '%' }]" :data-bg="bgMode" @wheel="onViewWheel">
     <div class="player-overlay" :class="{ 'overlay-theme': bgMode === 'theme' }">
       <!-- 顶部栏 -->
       <div class="player-topbar">
         <button class="back-btn" @click="goBack">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+          <Icon name="back" :size="16" />
           <span>{{ t('playerView.back') }}</span>
         </button>
         <div class="tab-switcher">
@@ -13,28 +13,28 @@
         </div>
         <div class="topbar-right">
           <button class="icon-btn" @click="showBgPanel = !showBgPanel" title="播放页背景设置">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+            <Icon name="cover" :size="18" />
           </button>
         </div>
         <!-- 背景设置面板 -->
         <div v-if="showBgPanel" class="bg-panel" @click.stop>
           <div class="panel-title">播放页背景</div>
+          <!-- 四个模式:主题(跟随皮肤) / 封面(封面铺底) / 纯色(可自由取色) / 自定义图片。
+               此前的「主色」与「封面」视觉重叠(都是跟着封面走),「渐变」只能从 5 条写死的
+               配色里挑、用户改不了 —— 已移除,渐变存档会自动迁移到纯色。 -->
           <div class="bg-mode-btns">
             <button :class="{ active: bgMode === 'theme' }" @click="setBgMode('theme')">主题</button>
             <button :class="{ active: bgMode === 'cover' }" @click="setBgMode('cover')">{{ t('playerView.cover') }}</button>
-            <button :class="{ active: bgMode === 'auto' }" @click="setBgMode('auto')">主色</button>
             <button :class="{ active: bgMode === 'color' }" @click="setBgMode('color')">纯色</button>
-            <button :class="{ active: bgMode === 'gradient' }" @click="setBgMode('gradient')">渐变</button>
-            <button :class="{ active: bgMode === 'image' }" @click="setBgMode('image')">图片</button>
+            <button :class="{ active: bgMode === 'image' }" @click="setBgMode('image')">自定义图片</button>
           </div>
           <div v-if="bgMode === 'color'" class="color-row">
             <button v-for="c in bgPresets.color" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: bgColor === c.value }" :title="c.name" @click="setBgColor(c.value)"></button>
-          </div>
-          <div v-else-if="bgMode === 'gradient'" class="gradient-list">
-            <button v-for="g in bgPresets.gradient" :key="g.name" class="gradient-item" :style="{ background: g.value }" :class="{ active: bgGradient === g.value }" @click="setBgGradient(g.value)">{{ g.name }}</button>
+            <!-- 自定义取色:复用项目已引入的 pickr(歌词色板同款) -->
+            <button class="color-dot color-dot-custom" ref="bgColorPickrEl" :style="{ background: bgColor }" :class="{ active: bgColorIsCustom }" title="自定义取色" aria-label="自定义背景色" @click="openBgColorPicker"></button>
           </div>
           <div v-else-if="bgMode === 'image'" class="bg-image-actions">
-            <button class="bg-import-btn" @click="importBgImage">🖼 导入自定义图片</button>
+            <button class="bg-import-btn" @click="importBgImage"><Icon name="cover" :size="14" />导入自定义图片</button>
             <button v-if="bgImageUrl" class="bg-clear-btn" @click="clearBgImage">清除(恢复封面)</button>
             <div v-if="bgImageUrl" class="bg-image-preview" :style="{ backgroundImage: `url(${bgImageUrl})` }"></div>
           </div>
@@ -51,23 +51,23 @@
         <div class="cover-left">
         <!-- 分栏:方形封面 + 半露旋转 CD(文档风格) -->
         <div v-if="useSplit" class="album-stage">
-          <div class="album-art">
-            <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
-            <div v-else class="cover-placeholder">🎵</div>
+          <div class="album-art" @dblclick.stop="toggleFullscreen">
+            <img v-if="coverUrl" :src="coverUrl" :class="{ 'img-loading': !coverLoaded }" @load="coverLoaded = true" @error="onCoverError" alt="" />
+            <div v-else class="cover-placeholder"><Icon name="music" :size="36" /></div>
           </div>
           <div class="cd-wrap">
             <div class="cd-half" :class="{ spinning: playerStore.isPlaying }" :key="'cd-' + (playerStore.currentSong?.path || 'none')">
-              <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
+              <img v-if="coverUrl" :src="coverUrl" :class="{ 'img-loading': !coverLoaded }" @load="coverLoaded = true" @error="onCoverError" alt="" />
             </div>
           </div>
         </div>
-        <div v-else class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'">
+        <div v-else class="disc-area" title="点击进入歌词" @click="activeTab = 'lyric'" @dblclick.stop="toggleFullscreen">
           <!-- 圆形环绕频谱:移入 disc-area 内,圆心=唱片圆心 -->
           <canvas v-show="specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
             <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
-              <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
-              <div v-else class="cover-placeholder">🎵</div>
+              <img v-if="coverUrl" :src="coverUrl" :class="{ 'img-loading': !coverLoaded }" @load="coverLoaded = true" @error="onCoverError" alt="" />
+              <div v-else class="cover-placeholder"><Icon name="music" :size="36" /></div>
             </div>
           </div>
         </div>
@@ -75,15 +75,19 @@
           <h2 class="song-title">{{ playerStore.currentSong?.title || t('player.notPlaying') }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
-          <div class="song-info" v-if="currentSongInfo">{{ currentSongInfo }}</div>
-          <button v-if="playerStore.currentSong && hasCoverAPI" class="cover-swap" @click="swapCover">🖼 更换封面</button>
+          <!-- 音质信息:原来只有一行「码率 · 采样率」,常见追问(位深?转码了吗?响度均衡生效了吗?)
+               只能靠猜。折成一行关键指标 + 悬停展开完整说明,不占版面。 -->
+          <div v-if="currentSongInfo.length" class="song-info" :title="infoTitle" tabindex="0">
+            <span v-for="(p, i) in currentSongInfo" :key="i" class="si-part" :class="p.tone">{{ p.text }}</span>
+          </div>
+          <button v-if="playerStore.currentSong && hasCoverAPI" class="cover-swap" @click="swapCover"><Icon name="cover" :size="14" />更换封面</button>
         </div>
         </div>
         <!-- 大屏分栏:右侧歌词(整行高亮,点击跳转) -->
         <div v-if="useSplit" class="split-lyrics" ref="splitLyricsEl">
           <div class="lyrics-scroll">
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
-              <div class="empty-icon">📝</div>
+              <div class="es-icon"><Icon name="lyrics" :size="44" /></div>
               <div>{{ t('playerView.noLyrics') }}</div>
             </div>
             <div v-else class="lyrics-content" :class="{ 'no-lyric-effect': !lyricEffect }">
@@ -117,8 +121,8 @@
         <div class="lyric-left">
           <div class="disc-small" :class="{ spinning: playerStore.isPlaying }" title="返回封面" @click="activeTab = 'cover'">
             <div class="disc-cover-small">
-              <img v-if="coverUrl" :src="coverUrl" @error="onCoverError" />
-              <div v-else class="cover-placeholder">🎵</div>
+              <img v-if="coverUrl" :src="coverUrl" :class="{ 'img-loading': !coverLoaded }" @load="coverLoaded = true" @error="onCoverError" alt="" />
+              <div v-else class="cover-placeholder"><Icon name="music" :size="36" /></div>
             </div>
           </div>
           <div class="song-meta-small">
@@ -127,43 +131,25 @@
           </div>
         </div>
         <div class="lyric-right">
-          <!-- 歌词来源切换等竖排按钮:absolute 固定右侧栏右上,不随歌词滚动(fixed 受 transform 影响失效,sticky 占位遮挡) -->
-          <div class="lyric-source-switch" :class="{ collapsed: lyricSidebarCollapsed }">
-            <!-- 收起/展开按钮:收起时侧边栏缩成小竖条 -->
-            <button class="ls-btn ls-collapse" :title="lyricSidebarCollapsed ? '展开侧边栏' : '收起侧边栏'" @click="lyricSidebarCollapsed = !lyricSidebarCollapsed; localStorage.setItem('soundflow_lyric_sidebar', lyricSidebarCollapsed ? '1' : '0')">{{ lyricSidebarCollapsed ? '«' : '»' }}</button>
-            <template v-if="!lyricSidebarCollapsed">
-            <button v-for="opt in lyricSourceOptions" :key="opt.value" class="ls-btn" :class="{ active: lyricSource === opt.value }" @click="switchLyricSource(opt.value)">{{ opt.label }}</button>
-            <button class="ls-btn" :class="{ active: showColorPanel }" title="歌词颜色" @click="showColorPanel = !showColorPanel">🎨</button>
-            <button class="ls-btn" :class="{ active: playerStore.showTranslation }" title="歌词翻译" @click="playerStore.toggleTranslation()">{{ playerStore.translating ? '译中…' : '译' }}</button>
-            <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" title="歌词对齐(居中/左)" @click="toggleLyricAlign">对齐</button>
-            <button class="ls-btn" :class="{ active: lyricEffect }" title="歌词特效(远近模糊/发光)" @click="lyricEffect = !lyricEffect; localStorage.setItem('soundflow_lyric_effect', lyricEffect ? '1' : '0')">✨</button>
-            <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :title="'歌词模式: ' + (lyricMode === 'word' ? '逐字高亮' : '整行高亮')" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
-            <button class="ls-btn ls-font" title="缩小歌词字号" @click="changeLyricFont(-2)">A−</button>
-            <button class="ls-btn ls-font" title="放大歌词字号" @click="changeLyricFont(2)">A+</button>
-            <button class="ls-btn ls-font" title="减小行距" @click="changeLyricGap(-0.15)">⭱</button>
-            <button class="ls-btn ls-font" title="增大行距" @click="changeLyricGap(0.15)">⭳</button>
-            </template>
-          </div>
-          <!-- 歌词颜色面板:跟随按钮组左侧 -->
-          <div v-if="showColorPanel" class="color-panel" @click.stop>
-            <div class="color-panel-title">歌词颜色</div>
-            <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
-            <button class="color-dot color-dot-custom" :style="{ background: lyricColor }" :class="{ active: lyricIsCustom }" title="自定义取色" @click="openLyricPicker"></button>
-          </div>
           <div class="lyrics-scroll" ref="lyricsPanel">
             <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">
               {{ playerStore.lyricOrigin }}歌词
-              <button v-if="playerStore.lyricOrigin === '本地'" class="ls-del-btn" title="删除本地歌词" @click="deleteLocalLyric">🗑</button>
+              <button v-if="playerStore.lyricOrigin === '本地'" class="ls-del-btn" title="删除本地歌词" @click="deleteLocalLyric"><Icon name="remove" :size="13" /></button>
             </div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
-              <div class="empty-icon">📝</div>
-              <div>{{ t('playerView.noLyrics') }}</div>
-              <div class="empty-hint">右键歌曲可导入 .lrc 文件<br/>或在设置中添加歌词文件夹</div>
-              <button class="search-lyric-btn" :disabled="searchingLyric" @click="searchLyric">
-                {{ searchingLyric ? '正在搜索…' : '🔍 在线搜索歌词并下载' }}
-              </button>
-              <button class="search-lyric-btn local" @click="importLocalLyric">📄 导入本地歌词文件</button>
-              <div v-if="searchLyricMsg" class="search-lyric-msg">{{ searchLyricMsg }}</div>
+              <template v-if="playerStore.lyricLoading">
+                <div class="lyric-loading-tip">歌词加载中…</div>
+              </template>
+              <template v-else>
+                <div class="es-icon"><Icon name="lyrics" :size="44" /></div>
+                <div>{{ t('playerView.noLyrics') }}</div>
+                <div class="empty-hint">右键歌曲可导入 .lrc 文件<br/>或在设置中添加歌词文件夹</div>
+                <button class="search-lyric-btn" :disabled="searchingLyric" @click="searchLyric">
+                  {{ searchingLyric ? '正在搜索…' : '在线搜索歌词并下载' }}
+                </button>
+                <button class="search-lyric-btn local" @click="importLocalLyric"><Icon name="lyrics" :size="14" />导入本地歌词文件</button>
+                <div v-if="searchLyricMsg" class="search-lyric-msg">{{ searchLyricMsg }}</div>
+              </template>
             </div>
             <div v-else class="lyrics-content" :class="{ 'no-lyric-effect': !lyricEffect }">
               <div style="height:40%"></div>
@@ -207,6 +193,94 @@
         </div>
       </div>
 
+      <!-- 显示条件:歌词页恒显示;封面页只在「分栏」时显示(单栏封面没有歌词);
+           分栏那一屏右半边就是歌词,所以这组控制同样适用 -->
+      <div v-if="showLyricToolbar" class="lyric-toolbar-layer">
+        <!-- 歌词工具栏:按「来源 / 外观 / 字号行距 / 同步」分组。
+             两处改动的原因:
+               1. 挂载层级 —— 此前写在 .lyric-mode > .lyric-right 内部,于是
+                  「分栏」那一屏(封面与歌词并排的同一个界面)完全没有这组控制;
+               2. 分组与图标 —— 改造前 14 个按钮挤成一列,文案(对齐/逐字/A−/A+)
+                  与 emoji(🎨✨)、几何符号(⭱⭳⇤⇥)混排,既没有分组也没有
+                  aria-pressed,用户看不出哪个是「来源」哪个是「字号」。 -->
+        <div
+          class="lyric-source-switch"
+          :class="{ collapsed: lyricSidebarCollapsed }"
+          role="toolbar"
+          aria-orientation="vertical"
+          :aria-label="lyricSidebarCollapsed ? '歌词工具栏(已收起)' : '歌词工具栏'"
+          @keydown="onSidebarKeydown"
+        >
+          <button
+            class="ls-btn ls-collapse"
+            :title="lyricSidebarCollapsed ? '展开歌词工具栏' : '收起歌词工具栏'"
+            :aria-label="lyricSidebarCollapsed ? '展开歌词工具栏' : '收起歌词工具栏'"
+            :aria-expanded="!lyricSidebarCollapsed"
+            @click="toggleLyricSidebar"
+          ><Icon :name="lyricSidebarCollapsed ? 'back' : 'forward'" :size="14" /></button>
+
+          <template v-if="!lyricSidebarCollapsed">
+            <div class="ls-group-label">来源</div>
+            <button
+              v-for="opt in lyricSourceOptions" :key="opt.value"
+              class="ls-btn" :class="{ active: lyricSource === opt.value }"
+              :aria-pressed="lyricSource === opt.value"
+              :title="'歌词来源:' + opt.label"
+              @click="switchLyricSource(opt.value)"
+            >{{ opt.label }}</button>
+
+            <div class="ls-sep" aria-hidden="true"></div>
+            <div class="ls-group-label">外观</div>
+            <button class="ls-btn" :class="{ active: showColorPanel }" :aria-pressed="showColorPanel" title="歌词颜色" aria-label="歌词颜色" @click="showColorPanel = !showColorPanel"><Icon name="color" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: playerStore.showTranslation }" :aria-pressed="playerStore.showTranslation" :title="playerStore.translating ? '翻译中…' : '歌词翻译'" aria-label="歌词翻译" @click="playerStore.toggleTranslation()"><Icon name="translate" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" :aria-pressed="lyricAlign === 'left'" :title="lyricAlign === 'left' ? '当前左对齐,点击改为居中' : '当前居中,点击改为左对齐'" aria-label="歌词对齐方式" @click="toggleLyricAlign"><Icon name="swap" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: lyricEffect }" :aria-pressed="lyricEffect" title="歌词特效(远近变淡/发光)" aria-label="歌词特效" @click="toggleLyricEffect"><Icon name="effect" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :aria-pressed="lyricMode === 'word'" :title="'歌词高亮: ' + (lyricMode === 'word' ? '逐字(点击改为整行)' : '整行(点击改为逐字)')" aria-label="歌词高亮方式" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
+
+              <div class="ls-sep" aria-hidden="true"></div>
+              <!-- 字号 / 行距 / 偏移 三组连续参数收进弹出面板:
+                   原先占 7 个按钮 + 2 个分组标题,竖条长到近半屏;改成滑杆后
+                   一眼能看到当前值,也能拖动连续调整(点按 A−/A+ 要按很多次) -->
+              <button
+                class="ls-btn" :class="{ active: showFormatPanel }" :aria-pressed="showFormatPanel"
+                :aria-expanded="showFormatPanel"
+                title="歌词排版(字号 / 行距 / 时间偏移)" aria-label="歌词排版"
+                @click="showFormatPanel = !showFormatPanel"
+              ><Icon name="settings" :size="15" /></button>
+          </template>
+        </div>
+        <!-- 歌词排版面板:字号 / 行距 / 偏移。与色板同构,锚在竖条左侧 -->
+        <div v-if="showFormatPanel" class="format-panel" @click.stop>
+          <div class="fp-title">歌词排版</div>
+          <div class="fp-row">
+            <span class="fp-label">字号</span>
+            <input class="h-slider fp-slider" type="range" min="12" max="36" step="1" :value="lyricFontSize" aria-label="歌词字号" @input="setLyricFont(+$event.target.value)" />
+            <span class="fp-val">{{ lyricFontSize }}</span>
+          </div>
+          <div class="fp-row">
+            <span class="fp-label">行距</span>
+            <input class="h-slider fp-slider" type="range" min="1.3" max="2.4" step="0.05" :value="lyricLineGap" aria-label="歌词行距" @input="setLyricGap(+$event.target.value)" />
+            <span class="fp-val">{{ lyricLineGap.toFixed(2) }}</span>
+          </div>
+          <div class="fp-row">
+            <span class="fp-label">偏移</span>
+            <input class="h-slider fp-slider" type="range" min="-1000" max="1000" step="20" :value="playerStore.lyricUserOffsetMs || 0" aria-label="歌词时间偏移(毫秒)" @input="slideLyricOffset(+$event.target.value)" @change="playerStore.setLyricUserOffset(+$event.target.value)" />
+            <span class="fp-val">{{ lyricOffsetLabel }}</span>
+          </div>
+          <div class="fp-sub">
+            <button class="fp-mini" title="提前 0.1 秒" aria-label="歌词提前 0.1 秒" @click="playerStore.nudgeLyricOffset(-100)"><Icon name="back" :size="13" /></button>
+            <button class="fp-mini" :disabled="!playerStore.lyricUserOffsetMs" title="偏移归零" aria-label="偏移归零" @click="playerStore.resetLyricUserOffset()">归零</button>
+            <button class="fp-mini" title="延后 0.1 秒" aria-label="歌词延后 0.1 秒" @click="playerStore.nudgeLyricOffset(100)"><Icon name="forward" :size="13" /></button>
+          </div>
+          <div class="fp-hint">偏移按曲记忆,换歌自动读回</div>
+        </div>
+        <!-- 歌词颜色面板:跟随按钮组左侧 -->
+        <div v-if="showColorPanel" class="color-panel" @click.stop>
+          <div class="color-panel-title">歌词颜色</div>
+          <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
+          <button class="color-dot color-dot-custom" :style="{ background: lyricColor }" :class="{ active: lyricIsCustom }" title="自定义取色" @click="openLyricPicker"></button>
+        </div>
+      </div>
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
       <canvas v-show="activeTab === 'cover' && specMode !== 'ring'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
 
@@ -217,20 +291,20 @@
           <div class="tools-group-left">
 <!-- 桌面歌词 -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              <Icon name="lyrics" :size="18" />
 
             </button>
 
             <!-- 迷你播放器 -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.miniOpen }" @click="toggleMini" title="迷你播放器(独立小窗)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="9" y="9" width="8" height="6" rx="1" fill="currentColor" stroke="none"/></svg>
+              <Icon name="miniPlayer" :size="18" />
             </button>
 
             <!-- 音量(默认收起,点击图标展开滑块) -->
             <div class="volume-control" :class="{ expanded: playerStore.volPanelOpen }">
               <button class="vol-btn" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen" :title="t('player.volume')">
-                <svg v-if="playerStore.isMuted || playerStore.volume === 0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 010 7.07"/></svg>
+                <Icon v-if="playerStore.isMuted || playerStore.volume === 0" name="mute" :size="18" />
+                <Icon v-else name="volume" :size="18" />
               </button>
               <transition name="vol-fade">
                 <div v-if="playerStore.volPanelOpen" class="vol-pop pop-panel">
@@ -248,21 +322,26 @@
 <!-- 播放控制组(居中:播放模式/上一曲/播放/下一曲/倍速,与播放栏一致) -->
           <div class="controls-group">
             <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" :title="t(playModeLabelKey)">
-              <svg v-if="playerStore.playMode === 'list'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-              <svg v-else-if="playerStore.playMode === 'repeat'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-              <svg v-else-if="playerStore.playMode === 'repeatOne'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/><text x="12" y="16" text-anchor="middle" font-size="9" fill="currentColor" stroke="none">1</text></svg>
-              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+              <Icon v-if="playerStore.playMode === 'list'" name="modeList" :size="18" />
+              <Icon v-else-if="playerStore.playMode === 'repeat'" name="modeRepeat" :size="18" />
+              <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
+              <Icon v-else name="modeShuffle" :size="18" />
             </button>
             <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+              <Icon name="prev" :size="20" fill="currentColor" />
             </button>
-            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()">
-              <svg v-if="playerStore.isPlaying" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-              <svg v-else viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
+              <Icon v-if="playerStore.isBuffering" class="player-spin" name="loadingCircle" :size="22" />
+              <Icon v-else-if="playerStore.isPlaying" name="pause" :size="22" fill="currentColor" />
+              <Icon v-else name="play" :size="22" fill="currentColor" />
             </button>
-            <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()">
-              <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z"/></svg>
-            </button>
+            <div class="next-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
+              <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()" title="下一曲" aria-label="下一曲">
+                <Icon name="next" :size="20" fill="currentColor" />
+              </button>
+              <!-- 与播放栏共用同一张预览卡(此前只有播放栏有,播放页没有) -->
+              <NextTrackHint :show="showNextHint" />
+            </div>
             <!-- 倍速(自定义) -->
             <div class="rate-control">
               <button class="ctrl-btn ctrl-btn--small" :class="{ active: playerStore.playbackRate !== 1 }" @click="showRatePanel = !showRatePanel" :title="t('player.rate', { x: playerStore.playbackRate })">
@@ -317,11 +396,11 @@
           <div class="tools-group">
 <!-- 分栏切换(大屏封面+歌词并排) -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: useSplit }" @click="toggleSplit" title="分栏/单栏切换(封面与歌词并排)">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/></svg>
+              <Icon name="splitView" :size="18" />
             </button>
             <!-- 音效 -->
             <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3z"/></svg>
+              <Icon name="equalizer" :size="18" />
             </button>
             <!-- 频谱模式与密度 -->
             <div class="spec-control">
@@ -349,116 +428,42 @@
 
             <!-- 播放列表 -->
             <button class="ctrl-btn ctrl-btn--small" data-queue-toggle :class="{ active: showQueuePanel }" @click="toggleQueuePanel" :title="t('player.queue')">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <Icon name="queue" :size="18" />
             </button>
           </div>
         </div>
 
         <!-- 音效面板 -->
         <transition name="queue-slide">
-          <div v-if="showEqPanel" class="eq-panel pop-panel" @click.stop>
-            <div class="queue-header">
-              <span class="queue-title">音效</span>
-              <button class="eq-toggle" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
-                {{ playerStore.eqSettings.enabled ? '已开启' : '已关闭' }}
-              </button>
-              <button class="queue-close" @click="showEqPanel = false">✕</button>
-            </div>
-            <div v-if="playerStore.eqSettings.enabled" class="eq-body">
-              <!-- 频响曲线预览 -->
-              <canvas ref="eqCurveCanvas" class="eq-curve"></canvas>
-              <!-- 自定义预设 -->
-              <div v-if="playerStore.customEqPresets.length" class="eq-group">
-                <div class="eq-group-name">我的预设</div>
-                <div class="eq-presets">
-                  <button v-for="p in playerStore.customEqPresets" :key="p.name" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === 'custom:' + p.name }" @click="playerStore.applyCustomEqPreset(p.name)">
-                    {{ p.name }}
-                    <span class="eq-preset-del" @click.stop="deleteCustom(p.name)" title="删除">✕</span>
-                  </button>
-                </div>
-              </div>
-              <button class="eq-save-btn" @click="openSaveEq">💾 保存当前设置为预设</button>
-              <div v-for="g in eqGroups" :key="g.name" class="eq-group">
-                <div class="eq-group-name">{{ g.name }}</div>
-                <div class="eq-presets">
-                  <button v-for="key in g.keys" :key="key" class="eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ playerStore.EQ_PRESETS[key].name }}</button>
-                </div>
-              </div>
-              <div class="eq-sliders">
-                <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
-                  <span class="eq-gain">{{ playerStore.eqSettings.gains[i] > 0 ? '+' : '' }}{{ playerStore.eqSettings.gains[i] }}</span>
-                  <input type="range" min="-12" max="12" step="1" :value="playerStore.eqSettings.gains[i]" @input="playerStore.setEqGain(i, parseInt($event.target.value))" />
-                  <span class="eq-freq">{{ f >= 1000 ? (f / 1000) + 'k' : f }}</span>
-                </div>
-              </div>
-              <div class="eq-extra">
-                <span class="label-text">重低音</span>
-                <span class="eq-extra-val">{{ playerStore.eqSettings.bass > 0 ? '+' : '' }}{{ playerStore.eqSettings.bass }} dB</span>
-                <input type="range" class="h-slider" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
-                <span class="label-text">声场</span>
-                <span class="eq-extra-val">{{ Math.round(playerStore.eqSettings.reverb * 100) }}%</span>
-                <input type="range" class="h-slider" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
-              </div>
-            </div>
-            <div v-else class="eq-off">开启音效后,可调节均衡器、预设、重低音与空间声场</div>
-            <!-- 保存自定义预设弹窗 -->
-            <div v-if="showSaveEqModal" class="save-queue-mask" @click.self="showSaveEqModal = false">
-              <div class="save-queue-card">
-                <h3>保存为预设</h3>
-                <input v-model="saveEqName" class="eq-name-input" placeholder="输入预设名称,如:我的最爱" @keyup.enter="confirmSaveEq" />
-                <div class="eq-save-actions">
-                  <button class="btn--ghost btn--sm" @click="showSaveEqModal = false">取消</button>
-                  <button class="btn btn--sm" @click="confirmSaveEq">保存</button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <EqPanel v-if="showEqPanel" :show="showEqPanel" @close="showEqPanel = false" />
         </transition>
         <div class="progress-row">
+          <button class="seek-jump" title="快退 10 秒" @click="jumpSeek(-10)">
+            <Icon name="rewind" :size="18" />
+          </button>
           <ProgressBar />
+          <button class="seek-jump" title="快进 10 秒" @click="jumpSeek(10)">
+            <Icon name="fastForward" :size="18" />
+          </button>
+          <!-- A-B 循环:点一次设 A,再点设 B 并立刻回到 A,第三次取消。
+               三种态在按钮文案上直接可读,不靠颜色让人猜 -->
+          <button
+            class="ab-btn"
+            :class="'ab-btn--' + playerStore.abState"
+            :aria-pressed="playerStore.abState === 'active'"
+            :title="abTitle"
+            :aria-label="abTitle"
+            @click="playerStore.cycleAB()"
+          >
+            <span class="ab-dot" :class="{ on: playerStore.abState !== 'off' }">A</span>
+            <span class="ab-dot" :class="{ on: playerStore.abState === 'active' }">B</span>
+          </button>
         </div>
 
         <!-- 播放列表面板(打开自动定位当前歌曲) -->
         <transition name="queue-slide">
-          <div v-if="showQueuePanel" class="queue-panel pop-panel" :style="{ width: queueW + 'px', height: queueH + 'px' }">
-            <div class="queue-header">
-              <span class="queue-title">播放列表</span>
-              <span class="queue-count">{{ playerStore.playQueue.length }} 首</span>
-              <button v-if="playerStore.playQueue.length" class="queue-save" title="保存为歌单" @click="openSaveQueue">💾</button>
-              <button v-if="playerStore.playQueue.length" class="queue-save" title="清空队列" @click="clearQueueConfirm">🗑</button>
-              <button class="queue-close" @click="showQueuePanel = false">✕</button>
-            </div>
-            <div class="queue-list" ref="queueListEl">
-              <div v-if="playerStore.playQueue.length === 0" class="queue-empty">队列为空</div>
-              <div v-for="(song, idx) in playerStore.playQueue" :key="song.path + '-' + idx"
-                class="queue-item" :class="{ active: idx === playerStore.currentIndex, 'drag-over': queueDragTarget === idx }"
-                :ref="el => { if (idx === playerStore.currentIndex) activeQueueEl = el }"
-                @click="playerStore.playIndex(idx)"
-                @mousedown="onQueueMouseDown($event, idx)">
-                <span class="queue-idx">{{ idx + 1 }}</span>
-                <div class="queue-info">
-                  <div class="queue-name text-ellipsis">{{ song.title }}</div>
-                  <div class="queue-artist text-ellipsis">{{ song.artist }}</div>
-                </div>
-                <button class="queue-remove" @click.stop="playerStore.removeFromQueue(idx)" title="移除">✕</button>
-              </div>
-            </div>
-            <!-- 右下角缩放手柄 -->
-            <div class="queue-resize" @mousedown="onQueueResizeStart" title="拖动调整大小"></div>
-          </div>
+          <QueuePanel v-if="showQueuePanel" :show="showQueuePanel" @close="showQueuePanel = false" />
         </transition>
-
-        <!-- 保存队列为歌单弹窗 -->
-        <div v-if="saveQueueModal" class="save-queue-mask" @click.self="saveQueueModal = false">
-          <div class="save-queue-card">
-            <h3>保存为歌单</h3>
-            <input v-model="saveQueueName" class="modal-input" placeholder="歌单名称" @keydown.enter="confirmSaveQueue" />
-            <div class="edit-actions">
-              <button class="modal-btn cancel" @click="saveQueueModal = false">取消</button>
-              <button class="modal-btn confirm" :disabled="!saveQueueName.trim()" @click="confirmSaveQueue">保存</button>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -466,12 +471,18 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import Sortable from 'sortablejs'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useMusicStore } from '@/stores/musicStore'
 import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
 import ProgressBar from '@/components/ProgressBar.vue'
+import EqPanel from '@/components/EqPanel.vue'
+import NextTrackHint from '@/components/NextTrackHint.vue'
+import QueuePanel from '@/components/QueuePanel.vue'
+import { useVolumeControl } from '@/composables/useVolumeControl'
+import { buildWordSegments } from '@/utils/lyricTiming'
+import { useSpectrum } from '@/composables/useSpectrum'
+import { usePlayerBackground } from '@/composables/usePlayerBackground'
 
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
@@ -485,158 +496,15 @@ function goBack() {
   else router.push('/home')
 }
 
-// 保存播放队列为歌单
-const saveQueueModal = ref(false)
-const saveQueueName = ref('')
-function openSaveQueue() {
-  saveQueueName.value = ''
-  saveQueueModal.value = true
-}
-function clearQueueConfirm() {
-  if (!confirm('确定清空播放列表？')) return
-  playerStore.stopPlayback()
-  window.$toast?.('播放列表已清空', 'success')
-}
-function confirmSaveQueue() {
-  const name = saveQueueName.value.trim()
-  if (!name || !playerStore.playQueue.length) return
-  const id = musicStore.createPlaylist(name)
-  for (const s of playerStore.playQueue) {
-    if (s && s.path) musicStore.addSongToPlaylist(id, s.path)
-  }
-  saveQueueModal.value = false
-  try { window.$toast?.(`已保存歌单「${name}」(${playerStore.playQueue.length} 首)`, 'success') } catch {}
-}
-const progressBar = ref(null)
 const lyricsPanel = ref(null)
 const activeLyricEl = ref(null)
 
 // 播放列表面板
 const showQueuePanel = ref(false)
-// 队列面板自由伸缩(尺寸记忆到 localStorage,min 260×240 / max 不超视口)
-const queueW = ref(parseInt(localStorage.getItem('soundflow_queue_w')) || 320)
-const queueH = ref(parseInt(localStorage.getItem('soundflow_queue_h')) || 380)
-function onQueueResizeStart(e) {
-  if (e.button !== 0) return
-  e.preventDefault()
-  e.stopPropagation()
-  const startX = e.clientX
-  const startY = e.clientY
-  const sw = queueW.value
-  const sh = queueH.value
-  const onMove = (ev) => {
-    queueW.value = Math.min(Math.max(sw + (ev.clientX - startX), 260), Math.min(560, window.innerWidth - 60))
-    queueH.value = Math.min(Math.max(sh + (ev.clientY - startY), 240), window.innerHeight - 150)
-  }
-  const onUp = () => {
-    document.removeEventListener('mousemove', onMove)
-    document.removeEventListener('mouseup', onUp)
-    try {
-      localStorage.setItem('soundflow_queue_w', String(queueW.value))
-      localStorage.setItem('soundflow_queue_h', String(queueH.value))
-    } catch {}
-  }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-const queueListEl = ref(null)
-let queueSortable = null
-// 队列拖拽排序(Sortable 直接绑定 DOM,元素渲染时才创建;结束回调重排+修正索引)
-function setupQueueSortable() {
-  if (!queueListEl.value) return
-  if (queueSortable) { try { queueSortable.destroy() } catch (_) {} }
-  queueSortable = Sortable.create(queueListEl.value, {
-    animation: 150,
-    ghostClass: 'queue-ghost',
-    onEnd: (evt) => {
-      if (evt.oldIndex === undefined || evt.newIndex === undefined || evt.oldIndex === evt.newIndex) return
-      const q = playerStore.playQueue
-      const moved = q.splice(evt.oldIndex, 1)[0]
-      q.splice(evt.newIndex, 0, moved)
-      playerStore.fixQueueIndex(evt.oldIndex, evt.newIndex)
-    }
-  })
-}
-watch(showQueuePanel, (v) => { if (v) nextTick(setupQueueSortable) })
-onUnmounted(() => { if (queueSortable) { try { queueSortable.destroy() } catch (_) {} } })
-window.removeEventListener('resize', onSplitResize)
-const activeQueueEl = ref(null)
-
-// 音效面板
+// 音效面板(播放页)
 const showEqPanel = ref(false)
-// 自定义预设保存弹窗
-const showSaveEqModal = ref(false)
-const saveEqName = ref('')
-function openSaveEq() { saveEqName.value = ''; showSaveEqModal.value = true }
-function confirmSaveEq() {
-  const r = playerStore.saveCustomEqPreset(saveEqName.value)
-  try { window.$toast?.(r.msg, r.ok ? 'success' : 'warning') } catch {}
-  if (r.ok) showSaveEqModal.value = false
-}
-function deleteCustom(name) {
-  playerStore.deleteCustomEqPreset(name)
-  try { window.$toast?.('已删除预设「' + name + '」', 'success') } catch {}
-}
-// 队列 JS 拖拽排序(HTML5 DnD 在 Electron 不稳定,改用鼠标事件)
-let queueDrag = null
-const queueDragTarget = ref(null)
-function onQueueMouseDown(e, idx) {
-  if (e.button !== 0) return
-  if (e.target.closest('button')) return
-  queueDrag = { idx, startX: e.clientX, startY: e.clientY, moved: false }
-  document.addEventListener('mousemove', onQueueDocMove)
-  document.addEventListener('mouseup', onQueueDocUp)
-}
-function onQueueDocMove(e) {
-  if (!queueDrag) return
-  if (!queueDrag.moved && (Math.abs(e.clientX - queueDrag.startX) > 6 || Math.abs(e.clientY - queueDrag.startY) > 6)) {
-    queueDrag.moved = true
-  }
-  if (queueDrag.moved) {
-    const el = document.elementFromPoint(e.clientX, e.clientY)
-    const row = el && el.closest('.queue-item')
-    if (row) {
-      const idx = [...row.parentElement.children].indexOf(row)
-      queueDragTarget.value = idx >= 0 ? idx : null
-    }
-  }
-}
-function onQueueDocUp() {
-  document.removeEventListener('mousemove', onQueueDocMove)
-  document.removeEventListener('mouseup', onQueueDocUp)
-  if (!queueDrag) return
-  if (queueDrag.moved && queueDragTarget.value !== null && queueDragTarget.value !== queueDrag.idx) {
-    playerStore.moveInQueue(queueDrag.idx, queueDragTarget.value)
-  }
-  queueDrag = null
-  queueDragTarget.value = null
-}
-function onQueueDragLeave(idx) {
-  if (queueDragTarget.value === idx) queueDragTarget.value = null
-}
-function onQueueDrop(idx) {
-  const from = queueDrag ? queueDrag.idx : null
-  if (from !== null && from !== idx) playerStore.moveInQueue(from, idx)
-  queueDrag = null
-  queueDragTarget.value = null
-}
-const eqGroups = [
-  { name: '常用', keys: ['flat', 'pop', 'rock', 'jazz', 'classical'] },
-  { name: '音乐风格', keys: ['electronic', 'hiphop', 'metal', 'blues', 'folk', 'dance'] },
-  { name: '人声增强', keys: ['vocal', 'aiVocal', 'ktv', 'podcast'] },
-  { name: '低音增强', keys: ['bass'] },
-  { name: '声场空间', keys: ['surround', '5.1', 'open', 'surroundHQ', 'stage', 'power'] },
-  { name: '动态力度', keys: ['dj', 'live'] },
-  { name: '场景模拟', keys: ['movie', 'tape', 'bathroom'] },
-  { name: '趣味特效', keys: ['telephone', 'acg'] },
-  { name: '综合智能', keys: ['auto', 'chinese'] }
-]
-
 function toggleQueuePanel() {
   showQueuePanel.value = !showQueuePanel.value
-  if (showQueuePanel.value) {
-    nextTick(() => scrollToActiveQueue())
-  }
 }
 // 综合空白关闭:任何面板打开时挂全局监听,点击面板/触发按钮之外区域全部关闭
 let _pvPanelWatch = null
@@ -652,60 +520,112 @@ function setupPvPanelsClickOutside() {
 }
 function onPvPanelDocClick(e) {
   // 音量滑杆拖动中(pointer 移出弹层)不关闭
-  if (_volDragging) { _volDragging = false; return }
+  if (consumeVolDragging()) return
   // 面板内 / 触发按钮上点击不关闭
-  if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .vol-pop, .rate-panel, .pitch-panel') ||
+  if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .format-panel, .vol-pop, .rate-panel, .pitch-panel') ||
       e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, [data-queue-toggle], .ls-btn')) return
   showQueuePanel.value = false
   showEqPanel.value = false
   showBgPanel.value = false
   showColorPanel.value = false
+  showFormatPanel.value = false
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
   showRatePanel.value = false
   showSpecPanel.value = false
 }
-
-// 打开/切换歌曲时,自动定位当前播放项
-function scrollToActiveQueue() {
-  const list = queueListEl.value
-  const el = activeQueueEl.value
-  if (!list || !el) return
-  // 用 getBoundingClientRect 相对定位,不依赖 offsetParent
-  const listRect = list.getBoundingClientRect()
-  const elRect = el.getBoundingClientRect()
-  const target = elRect.top - listRect.top + list.scrollTop - list.clientHeight / 2 + elRect.height / 2
-  list.scrollTop = Math.max(0, target)
-}
-watch(() => playerStore.currentIndex, () => {
-  if (showQueuePanel.value) nextTick(() => scrollToActiveQueue())
-})
 const activeTab = ref('cover')
+
+
+// 频谱可视化:状态与绘制全部由 useSpectrum 提供(原内联实现约 290 行)
+const { spectrumCanvas, spectrumRingCanvas, specMode, SPEC_MODES, SPEC_DENSITIES, barCount, setSpecDensity } = useSpectrum(playerStore, activeTab)
 const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
-// 高清封面(QQ 300px→800px,背景更清晰);非网络封面回退原图
+// 封面加载态:仅用于骨架动效。加载完成后必须停止 shimmer ——
+// 原先 animation: shimmer infinite 是无条件挂在 <img> 上的,图片渲染出来之后
+// 动画仍在空跑(img 自身的背景渐变已完全被图片覆盖,看不见但一直在耗)。
+const coverLoaded = ref(false)
+watch(coverUrl, () => { coverLoaded.value = false }, { immediate: true })
+// 封面预加载:切歌时保持旧封面,新图 new Image() 就绪后才切换 --cover-bg(消除切歌白帧)
+const bgCover = ref(null)
+
+// 背景系统:状态/预设/封面取主色/bgStyle 全部由 usePlayerBackground 提供(原内联实现约 148 行)
+const {
+  bgPresets, bgMode, bgBrightness, bgColor, bgGradient, bgImageUrl, bgStyle,
+  setBgMode, setBgBrightness, setBgColor, setBgGradient, importBgImage, clearBgImage
+} = usePlayerBackground({ coverUrl, bgCover })
 const hdCoverUrl = ref(null)
-watch(coverUrl, async (url) => {
+let _coverSeq = 0
+watch(coverUrl, (url) => {
+  const seq = ++_coverSeq
+  if (!url) { bgCover.value = null; hdCoverUrl.value = null; return }
+  // 预加载原图:就绪即切换(失败也切,避免永久空白)
+  const img = new Image()
+  img.onload = () => { if (seq === _coverSeq) bgCover.value = url }
+  img.onerror = () => { if (seq === _coverSeq) bgCover.value = url }
+  img.src = url
+  // 高清封面异步升级:hd 图也预加载成功后替换背景(失败保持原图,避免空白)
   hdCoverUrl.value = null
-  if (!url || !window.electronAPI?.getHdCover) return
-  try {
-    const r = await window.electronAPI.getHdCover(url)
-    if (r?.ok && r.url) hdCoverUrl.value = r.url
-  } catch { /* 网络失败保持原图 */ }
-})
+  if (!window.electronAPI?.getHdCover) return
+  window.electronAPI.getHdCover(url).then(r => {
+    if (seq !== _coverSeq || !r?.ok || !r.url) return
+    const hd = new Image()
+    hd.onload = () => { if (seq === _coverSeq) { hdCoverUrl.value = r.url; bgCover.value = r.url } }
+    hd.onerror = () => { /* hd 加载失败保持原图 */ }
+    hd.src = r.url
+  }).catch(() => { /* 网络失败保持原图 */ })
+}, { immediate: true })
 // 播放页信息行:比特率 · 采样率(数据来自 metadata 解析)
+// 音质信息:结构化返回(便于分别着色),悬停用 title 给完整说明
 const currentSongInfo = computed(() => {
   const s = playerStore.currentSong
-  if (!s) return ''
+  if (!s) return []
   const parts = []
-  if (s.bitrate) parts.push(s.bitrate + ' kbps')
-  if (s.sampleRate) parts.push((s.sampleRate / 1000).toFixed(1) + ' kHz')
-  if (bpmCache.value[s.path || '']) parts.push(bpmCache.value[s.path] + ' BPM')
-  return parts.join(' · ')
+  if (s.format) parts.push({ text: s.format, tone: 'fmt' })
+  if (s.bitDepth) parts.push({ text: s.bitDepth + 'bit', tone: '' })
+  if (s.sampleRate) parts.push({ text: (s.sampleRate / 1000).toFixed(1) + 'kHz', tone: '' })
+  if (s.bitrate) parts.push({ text: s.bitrate + 'kbps', tone: '' })
+  if (bpmCache.value[s.path || '']) parts.push({ text: bpmCache.value[s.path] + 'BPM', tone: '' })
+  if (playerStore.isTranscoded) parts.push({ text: '转码播放', tone: 'warn' })
+  if (playerStore.replayGainEnabled && playerStore.currentGainDb) {
+    const db = playerStore.currentGainDb
+    parts.push({ text: '响度' + (db > 0 ? '+' : '') + db + 'dB', tone: 'ok' })
+  }
+  if (playerStore.eqSettings.enabled) parts.push({ text: '音效', tone: 'ok' })
+  return parts
+})
+
+// 悬停展开的完整说明:把"为什么显示转码/位深为什么没有"这类疑问一次说清
+const infoTitle = computed(() => {
+  const s = playerStore.currentSong
+  if (!s) return ''
+  const lines = [
+    `格式:${s.format || '未知'}${playerStore.isTranscoded ? '(经 ffmpeg 转码为 FLAC 播放,Chromium 无法原生解码该格式)' : ''}`,
+    s.bitrate ? `码率:${s.bitrate} kbps` : '',
+    s.sampleRate ? `采样率:${s.sampleRate} Hz` : '',
+    s.bitDepth ? `位深:${s.bitDepth} bit` : '位深:该文件未提供(有损格式没有位深)',
+    s.duration ? `时长:${playerStore.formatTime(s.duration)}` : '',
+    playerStore.replayGainEnabled
+      ? `响度均衡:${playerStore.currentGainDb ? (playerStore.currentGainDb > 0 ? '提升 ' : '衰减 ') + playerStore.currentGainDb + ' dB' : '已开启,本曲无需调整'}`
+      : '响度均衡:未开启',
+    playerStore.eqSettings.enabled ? '音效:已开启' : '音效:未开启'
+  ]
+  return lines.filter(Boolean).join('\n')
+})
+
+// 按钮固定宽度、只显示 A / B 两个字母的点亮状态 —— 时间戳不放进按钮:
+// 生效时若写「1:23-1:47」会把按钮撑到旁边图标键的两倍宽,进度条被挤小、整行还会跳动。
+// 精确区间交给 tooltip 与进度条上的色带(那里才是它该出现的位置)。
+const abTitle = computed(() => {
+  const st = playerStore.abState
+  const t = (x) => playerStore.formatTime(x)
+  if (st === 'off') return 'A-B 循环:点击把当前位置设为起点 A'
+  if (st === 'setting') return `A-B 循环:已设 A = ${t(playerStore.abStart)},再点一次把当前位置设为终点 B(再点一次可取消)`
+  return `A-B 循环中:${t(playerStore.abStart)} - ${t(playerStore.abEnd)}(点击取消)`
 })
 // BPM 缓存(按歌曲路径;分析一次永久记住,切歌即时显示)
 const bpmCache = ref((() => { try { return JSON.parse(localStorage.getItem('soundflow_bpm_cache') || '{}') } catch { return {} } })())
 function _saveBpmCache() { try { localStorage.setItem('soundflow_bpm_cache', JSON.stringify(bpmCache.value)) } catch {} }
-let _bpmPending = ''
+let _bpmPendingSet = new Set() // 并发分析中歌曲路径集合,避免互相清空 pending 导致重复分析
 // 更换当前歌曲封面(信息区 hover 操作)
 async function swapCover() {
   const s = playerStore.currentSong
@@ -720,8 +640,8 @@ async function swapCover() {
 async function ensureBpm() {
   const s = playerStore.currentSong
   if (!s || !s.path) return
-  if (bpmCache.value[s.path] || _bpmPending === s.path) return
-  _bpmPending = s.path
+  if (bpmCache.value[s.path] || _bpmPendingSet.has(s.path)) return
+  _bpmPendingSet.add(s.path)
   try {
     if (window.electronAPI && window.electronAPI.analyzeBpm) {
       const r = await window.electronAPI.analyzeBpm(s.path)
@@ -731,7 +651,7 @@ async function ensureBpm() {
       }
     }
   } catch {}
-  _bpmPending = ''
+  _bpmPendingSet.delete(s.path)
 }
 
 // 封面容灾:封面文件丢失时重新生成
@@ -743,158 +663,7 @@ function onCoverError() {
     .then(url => { if (url) song.coverUrl = url })
     .catch(() => {})
 }
-const progressPercent = computed(() => playerStore.duration ? (playerStore.currentTime / playerStore.duration) * 100 : 0)
-
 // ===== 播放页背景设置(封面 / 纯色 / 渐变,持久化) =====
-const bgPresets = {
-  color: [
-    { name: '极夜黑', value: '#14161c' },
-    { name: '深蓝', value: '#0f2440' },
-    { name: '墨绿', value: '#12251c' },
-    { name: '酒红', value: '#3a1418' },
-    { name: '深紫', value: '#2a1745' },
-    { name: '深棕', value: '#2b1e16' }
-  ],
-  gradient: [
-    { name: '深蓝紫', value: 'linear-gradient(160deg, #1a1a3e 0%, #0d1b3a 50%, #1a1030 100%)' },
-    { name: '落日橙', value: 'linear-gradient(160deg, #3a1a10 0%, #2a1508 55%, #121212 100%)' },
-    { name: '森林绿', value: 'linear-gradient(160deg, #10241a 0%, #0d1a14 55%, #0a0f0c 100%)' },
-    { name: '极夜', value: 'linear-gradient(160deg, #101014 0%, #0a0a0e 55%, #050508 100%)' },
-    { name: '深海', value: 'linear-gradient(160deg, #0c2033 0%, #0a1724 55%, #070d14 100%)' }
-  ]
-}
-const bgMode = ref(localStorage.getItem('soundflow_player_bg_mode') || 'cover')
-const bgBrightness = ref(parseInt(localStorage.getItem('soundflow_bg_brightness')) || 110)
-const bgColor = ref(localStorage.getItem('soundflow_player_bg_color') || '#14161c')
-const bgGradient = ref(localStorage.getItem('soundflow_player_bg_gradient') || bgPresets.gradient[0].value)
-const bgImageUrl = ref(localStorage.getItem('soundflow_player_bg_image') || '')
-
-function setBgMode(mode) {
-  bgMode.value = mode
-  localStorage.setItem('soundflow_player_bg_mode', mode)
-}
-function setBgBrightness(v) {
-  bgBrightness.value = parseInt(v) || 110
-  localStorage.setItem('soundflow_bg_brightness', bgBrightness.value)
-}
-function setBgColor(v) {
-  bgColor.value = v
-  setBgMode('color')
-  localStorage.setItem('soundflow_player_bg_color', v)
-}
-function setBgGradient(v) {
-  bgGradient.value = v
-  setBgMode('gradient')
-  localStorage.setItem('soundflow_player_bg_gradient', v)
-}
-
-// ===== 封面主色自动背景(auto 模式) =====
-const bgAccent = ref(null)
-const _dominantCache = new Map() // 按封面 URL 缓存主色,切歌不闪烁
-function getDominantColor(imgUrl) {
-  if (_dominantCache.has(imgUrl)) return Promise.resolve(_dominantCache.get(imgUrl))
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.onload = () => {
-      try {
-        const c = document.createElement('canvas')
-        c.width = 32; c.height = 32
-        const ctx = c.getContext('2d')
-        if (!ctx) return resolve(null)
-        ctx.drawImage(img, 0, 0, 32, 32)
-        const data = ctx.getImageData(0, 0, 32, 32).data
-        let r = 0, g = 0, b = 0, n = 0
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i + 3] < 128) continue
-          r += data[i]; g += data[i + 1]; b += data[i + 2]; n++
-        }
-        if (!n) throw new Error('empty')
-        const color = [Math.round(r / n), Math.round(g / n), Math.round(b / n)]
-        _dominantCache.set(imgUrl, color)
-        if (_dominantCache.size > 200) _dominantCache.clear()
-        resolve(color)
-      } catch { resolve(null) }
-    }
-    img.onerror = () => resolve(null)
-    img.src = imgUrl
-  })
-}
-// auto 模式下封面变化时异步取色(不阻塞渲染;失败保持深色)
-watch([() => bgMode.value, coverUrl], async () => {
-  if (bgMode.value !== 'auto' || !coverUrl.value) return
-  bgAccent.value = await getDominantColor(coverUrl.value)
-}, { immediate: true })
-
-// 导入自定义背景图片
-async function importBgImage() {
-  if (!window.electronAPI) return
-  const url = await window.electronAPI.selectBgImage()
-  if (url) {
-    bgImageUrl.value = url
-    localStorage.setItem('soundflow_player_bg_image', url)
-    setBgMode('image')
-  }
-}
-function clearBgImage() {
-  bgImageUrl.value = ''
-  localStorage.removeItem('soundflow_player_bg_image')
-  setBgMode('cover')
-}
-
-// 播放页背景(跟随当前主题的深色沉浸色 --player-bg-dark)
-function getThemeDarkBg() {
-  try {
-    return getComputedStyle(document.documentElement).getPropertyValue('--player-bg-dark').trim() || '#14161c'
-  } catch { return '#14161c' }
-}
-
-// 主题色缓存:rAF 绘制循环里避免每帧 getComputedStyle(强制样式计算),10s TTL 防主题切换后长期旧色
-let _accentCache = ''
-let _accentT = 0
-function getAccentColor() {
-  const now = Date.now()
-  if (!_accentCache || now - _accentT > 10000) {
-    try { _accentCache = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff' } catch { _accentCache = '#4096ff' }
-    _accentT = now
-  }
-  return _accentCache
-}
-
-const bgStyle = computed(() => {
-  if (bgMode.value === 'theme') {
-    return { backgroundColor: getThemeDarkBg() }
-  }
-  if (bgMode.value === 'color') {
-    return { backgroundColor: bgColor.value }
-  }
-  if (bgMode.value === 'auto') {
-    // 封面主色自动背景:主色暗化渐变(取色失败回退深色)
-    if (bgAccent.value) {
-      const [r, g, b] = bgAccent.value
-      return {
-        backgroundImage: `linear-gradient(160deg, rgb(${Math.round(r / 2.6)},${Math.round(g / 2.6)},${Math.round(b / 2.6)}) 0%, rgb(${Math.round(r / 1.8)},${Math.round(g / 1.8)},${Math.round(b / 1.8)}) 45%, #0e1016 100%)`
-      }
-    }
-    return { backgroundColor: '#14161c' }
-  }
-  if (bgMode.value === 'gradient') {
-    return { backgroundImage: bgGradient.value }
-  }
-  if (bgMode.value === 'image' && bgImageUrl.value) {
-    return {
-      backgroundImage: `url(${bgImageUrl.value})`,
-      backgroundSize: 'cover',
-      backgroundPosition: 'center'
-    }
-  }
-  // 封面模式:封面铺底交给 .player-view[data-bg="cover"]::before(提亮,单层 filter 不触发 Electron 异常),此处只传 CSS 变量;高清封面可用时优先
-  if (coverUrl.value) {
-    return {
-      '--cover-bg': `url(${hdCoverUrl.value || coverUrl.value})`
-    }
-  }
-  return { backgroundColor: '#14161c' }
-})
 
 const playModeLabelKey = computed(() => {
   const keys = { list: 'player.mode.list', repeat: 'player.mode.repeat', repeatOne: 'player.mode.repeatOne', random: 'player.mode.random' }
@@ -930,35 +699,10 @@ watch(() => playerStore.currentSong, () => {
   ensureBpm() // 切歌自动分析新歌 BPM(有缓存即时显示)
 })
 
-function onProgressClick(e) {
-  if (!progressBar.value || !playerStore.duration) return
-  const rect = progressBar.value.getBoundingClientRect()
-  const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-  playerStore.seek(percent * playerStore.duration)
-}
-
-function onProgressMouseDown(e) {
-  onProgressClick(e)
-  const onMove = (ev) => onProgressClick(ev)
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp) }
-  document.addEventListener('mousemove', onMove)
-  document.addEventListener('mouseup', onUp)
-}
-
-function setVolume(e) { playerStore.setVolume(parseFloat(e.target.value)) }
-// 音量滑杆拖动标记:pointer 移出弹层时 click-outside 不误关弹层
-let _volDragging = false
-function volDragStart() { _volDragging = true }
-function volDragEnd() { setTimeout(() => { _volDragging = false }, 50) }
-// 自定义音量:数字输入(1-100),Enter/失焦确认(与播放栏一致)
-const volInput = ref(Math.round(playerStore.volume * 100))
-watch(() => playerStore.volume, (v) => { volInput.value = Math.round(v * 100) })
-function confirmVolInput() {
-  let v = Math.round(volInput.value)
-  if (isNaN(v)) v = Math.round(playerStore.volume * 100)
-  volInput.value = Math.min(100, Math.max(0, v))
-  playerStore.setVolume(volInput.value / 100)
-}
+// 音量控制(数字输入/滑杆拖动/滚轮调音量)由 useVolumeControl 统一提供
+const { volInput, setVolume, volDragStart, volDragEnd, consumeVolDragging, confirmVolInput, wheelVolume } = useVolumeControl(playerStore)
+// 播放页滚轮调音量:歌词区滚轮用于滚动歌词,不拦截(其余排除由 wheelVolume 内部处理)
+function onViewWheel(e) { wheelVolume(e, ['.lyrics-scroll, .lyrics-content, .lyric-mode']) }
 function toggleMini() { window.electronAPI?.toggleMiniWindow() }
 
 // 点击歌词跳转到对应播放进度
@@ -999,8 +743,29 @@ const lyricSourceOptions = [
   { value: 'qq', label: 'QQ音乐' }
 ]
 const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
+// 工具栏是否显示:歌词页恒显示;封面页仅在分栏时显示(分栏那一屏右半边就是歌词)
+const showLyricToolbar = computed(() => activeTab.value !== 'cover' || useSplit.value)
 // 歌词右侧栏收起状态(持久化)
 const lyricSidebarCollapsed = ref(localStorage.getItem('soundflow_lyric_sidebar') === '1')
+// 工具栏展开/收起:持久化从模板内联语句收进函数(此前写在 @click 里,与读取点分散在两处)
+function toggleLyricSidebar() {
+  lyricSidebarCollapsed.value = !lyricSidebarCollapsed.value
+  try { localStorage.setItem('soundflow_lyric_sidebar', lyricSidebarCollapsed.value ? '1' : '0') } catch {}
+}
+// 工具栏键盘导航:上下键在按钮间移动(role="toolbar" 的配套行为)
+function onSidebarKeydown(e) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
+  const btns = [...e.currentTarget.querySelectorAll('.ls-btn')]
+  const i = btns.indexOf(document.activeElement)
+  if (i < 0) return
+  e.preventDefault()
+  const next = e.key === 'ArrowDown' ? (i + 1) % btns.length : (i - 1 + btns.length) % btns.length
+  btns[next].focus()
+}
+function toggleLyricEffect() {
+  lyricEffect.value = !lyricEffect.value
+  try { localStorage.setItem('soundflow_lyric_effect', lyricEffect.value ? '1' : '0') } catch {}
+}
 
 // 歌词字号(可调,localStorage 持久化)
 const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_size')) || 18)
@@ -1009,8 +774,32 @@ function changeLyricFont(delta) {
   localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
 }
 
+// 歌词排版弹出面板(字号 / 行距 / 偏移)
+const showFormatPanel = ref(false)
+// 下一首预览卡(悬停"下一曲"时显示;内容由 NextTrackHint 按 store 状态给出)
+const showNextHint = ref(false)
+// 偏移滑杆节流:拖动期间每 150ms 落盘一次,松手的 @change 再补一次精确值。
+// playerStore.setLyricUserOffset 每次都会序列化整份「按曲偏移表」并同步写 localStorage,
+// 直接绑在 @input 上等于拖动过程中每秒上百次同步写。
+let _offsetSlideTs = 0
+function slideLyricOffset(v) {
+  const now = Date.now()
+  if (now - _offsetSlideTs < 150) return
+  _offsetSlideTs = now
+  playerStore.setLyricUserOffset(v)
+}
+// 滑杆用的绝对设定:与 changeLyricFont 共用同一夹取范围与持久化键
+function setLyricFont(v) {
+  lyricFontSize.value = Math.max(12, Math.min(36, Math.round(v) || 18))
+  localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
+}
+
 // 歌词行距(1.3-2.4,持久化)
 const lyricLineGap = ref(parseFloat(localStorage.getItem('soundflow_lyric_gap')) || 1.6)
+function setLyricGap(v) {
+  lyricLineGap.value = Math.max(1.3, Math.min(2.4, Math.round((Number(v) || 1.6) * 100) / 100))
+  localStorage.setItem('soundflow_lyric_gap', String(lyricLineGap.value))
+}
 function changeLyricGap(delta) {
   lyricLineGap.value = Math.max(1.3, Math.min(2.4, Math.round((lyricLineGap.value + delta) * 100) / 100))
   localStorage.setItem('soundflow_lyric_gap', String(lyricLineGap.value))
@@ -1028,6 +817,8 @@ const lyricColorOptions = [
   { name: '红色', value: '#ff7a7a' }
 ]
 import { getSetting } from '../config/defaults.js'
+import Icon from '@/components/icons/Icon.vue'
+import { confirmDialog } from '@/composables/useConfirm'
 const lyricColor = ref(getSetting('soundflow_lyric_color'))
 function setLyricColor(v) {
   lyricColor.value = v
@@ -1035,6 +826,25 @@ function setLyricColor(v) {
   try { window.$toast?.('歌词颜色已更新', 'success') } catch {}
 }
 const lyricIsCustom = computed(() => !lyricColorOptions.some(c => c.value === lyricColor.value))
+// 背景纯色自定义取色:当前色不在预设色板里时,给"自定义"色点加选中描边
+const bgColorIsCustom = computed(() => !bgPresets.color.some(c => c.value === bgColor.value))
+const bgColorPickrEl = ref(null)
+let _bgPickr = null
+function openBgColorPicker() {
+  const btn = bgColorPickrEl.value
+  if (!btn || typeof window.Pickr === 'undefined') return
+  if (_bgPickr) { _bgPickr.destroy(); _bgPickr = null }
+  _bgPickr = window.Pickr.create({
+    el: btn,
+    theme: 'nano',
+    default: bgColor.value,
+    swatches: bgPresets.color.map(c => c.value),
+    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
+  })
+  _bgPickr.on('change', (color) => { if (color) setBgColor(color.toHEXA().toString()) })
+  _bgPickr.on('save', (color) => { if (color) { setBgColor(color.toHEXA().toString()); _bgPickr?.hide() } })
+}
+
 let _lyricPickr = null
 function openLyricPicker() {
   const btn = document.querySelector('.color-dot-custom')
@@ -1123,321 +933,6 @@ function confirmRateInput() {
   playerStore.setPlaybackRate(v)
 }
 
-// 频响曲线可视化:随 EQ 滑块实时绘制
-const eqCurveCanvas = ref(null)
-function drawEqCurve() {
-  const canvas = eqCurveCanvas.value
-  if (!canvas) return
-  // DPR 适配:按实际显示尺寸 × 像素比设置画布,避免拉伸模糊
-  const dpr = window.devicePixelRatio || 1
-  const rect = canvas.getBoundingClientRect()
-  const fitW = Math.max(1, Math.round(rect.width * dpr))
-  const fitH = Math.max(1, Math.round(rect.height * dpr))
-  if (canvas.width !== fitW || canvas.height !== fitH) {
-    canvas.width = fitW
-    canvas.height = fitH
-  }
-  const ctx = canvas.getContext('2d')
-  const w = canvas.width, h = canvas.height
-  ctx.clearRect(0, 0, w, h)
-  const gains = playerStore.eqSettings.gains
-  const freqs = playerStore.EQ_FREQS
-  const padL = 22, padR = 8, padT = 10, padB = 22
-  const plotW = w - padL - padR, plotH = h - padT - padB
-  const minF = 20, maxF = 20000
-  const xOf = (f) => padL + Math.log10(f / minF) / Math.log10(maxF / minF) * plotW
-  const yOf = (g) => padT + (12 - g) / 24 * plotH
-  // 网格 + 0dB 参考线
-  ctx.strokeStyle = 'rgba(128,128,160,0.14)'
-  ctx.lineWidth = 1
-  for (let db = -12; db <= 12; db += 6) {
-    ctx.beginPath(); ctx.moveTo(padL, yOf(db)); ctx.lineTo(w - padR, yOf(db)); ctx.stroke()
-  }
-  ctx.strokeStyle = 'rgba(128,128,160,0.32)'
-  ctx.beginPath(); ctx.moveTo(padL, yOf(0)); ctx.lineTo(w - padR, yOf(0)); ctx.stroke()
-  // 频率刻度
-  ctx.fillStyle = 'rgba(200,200,220,0.45)'
-  ctx.font = '9px sans-serif'
-  ctx.textAlign = 'center'
-  freqs.forEach(f => { ctx.fillText(f >= 1000 ? (f / 1000) + 'k' : f, xOf(f), h - 7) })
-  // 曲线(贝塞尔平滑)
-  const pts = freqs.map((f, i) => ({ x: xOf(f), y: yOf(gains[i]) }))
-  const accent = getAccentColor()
-  ctx.beginPath()
-  ctx.moveTo(pts[0].x, pts[0].y)
-  for (let i = 1; i < pts.length; i++) {
-    const mx = (pts[i - 1].x + pts[i].x) / 2
-    ctx.quadraticCurveTo(pts[i - 1].x, pts[i - 1].y, mx, (pts[i - 1].y + pts[i].y) / 2)
-  }
-  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y)
-  ctx.strokeStyle = accent
-  ctx.lineWidth = 2.5
-  ctx.lineJoin = 'round'
-  ctx.stroke()
-  // 渐变填充
-  ctx.lineTo(pts[pts.length - 1].x, padT + plotH)
-  ctx.lineTo(pts[0].x, padT + plotH)
-  ctx.closePath()
-  const grad = ctx.createLinearGradient(0, padT, 0, padT + plotH)
-  grad.addColorStop(0, accent + '44')
-  grad.addColorStop(1, accent + '05')
-  ctx.fillStyle = grad
-  ctx.fill()
-  // 频点圆点
-  pts.forEach(p => {
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, 3, 0, Math.PI * 2)
-    ctx.fillStyle = accent
-    ctx.fill()
-  })
-}
-watch(() => playerStore.eqSettings.gains, () => nextTick(drawEqCurve), { deep: true })
-watch(showEqPanel, (v) => { if (v) nextTick(drawEqCurve) })
-
-// 频谱可视化(华丽版:左右对称镜像 + 圆头渐变条 + 峰值保持亮点 + 平滑动画)
-const spectrumCanvas = ref(null)
-const spectrumRingCanvas = ref(null)
-// 频谱模式:bar=直线 / ring=圆形 / both=两者同时(默认,localStorage 记忆)
-const specMode = ref((() => { try { return localStorage.getItem('soundflow_spec_mode') || 'both' } catch { return 'both' } })())
-const SPEC_MODES = [
-  { v: 'both', l: '两者同时' },
-  { v: 'bar', l: '直线' },
-  { v: 'ring', l: '圆形' }
-]
-// 柱数密度:细96 / 中72 / 粗48(localStorage 记忆)
-const SPEC_DENSITIES = [
-  { n: 96, l: '细(96)' },
-  { n: 72, l: '中(72)' },
-  { n: 48, l: '粗(48)' }
-]
-const barCount = ref((() => { try { return parseInt(localStorage.getItem('soundflow_spec_density')) || 96 } catch { return 96 } })())
-// (直线区风格已删:仅柱状)
-function setSpecDensity(n) {
-  barCount.value = n
-  try { localStorage.setItem('soundflow_spec_density', String(n)) } catch {}
-  initSpectrumArrays()
-  if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
-}
-let spectrumRAF = null
-let barVals = [], barPeaks = [], ringVals = [], ringPeaks = []
-function initSpectrumArrays() {
-  const n = barCount.value
-  barVals = new Array(n).fill(0)
-  barPeaks = new Array(n).fill(0)
-  ringVals = new Array(n).fill(0)
-  ringPeaks = new Array(n).fill(0)
-}
-initSpectrumArrays()
-function hexToRgb(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '')
-  return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null
-}
-let lastSpecTs = 0
-// 渐变缓存:主题色/高度不变时复用,避免每帧创建 gradient
-let gradCache = { key: '', grad: null }
-// 直线频谱绘制(纯绘制,由 spectrumLoop 统一调度)
-function paintBarSpectrum() {
-  const canvas = spectrumCanvas.value
-  if (!canvas) return
-  const playing = playerStore.isPlaying
-  // 不可见(隐藏/切tab)或未播放 → 跳过
-  const rect = canvas.getBoundingClientRect()
-  if (rect.width === 0 || rect.height === 0 || !playing) return
-  // DPR 适配:按实际显示尺寸 × 像素比设置画布,避免拉伸模糊
-  const dpr = window.devicePixelRatio || 1
-  const fitW = Math.max(1, Math.round(rect.width * dpr))
-  const fitH = Math.max(1, Math.round(rect.height * dpr))
-  if (canvas.width !== fitW || canvas.height !== fitH) {
-    canvas.width = fitW
-    canvas.height = fitH
-  }
-  // 每次取当前 canvas 的 context(切 tab 后 canvas 是新的,不能复用旧 context)
-  const ctx = canvas.getContext('2d')
-  const { width, height } = canvas
-  ctx.clearRect(0, 0, width, height)
-  const data = playerStore.getSpectrumData()
-  const half = barCount.value / 2
-  const barW = (width - (barCount.value - 1) * 3) / barCount.value
-  const step = Math.max(1, Math.floor((data ? data.length : 0) / half))
-  const accent = getAccentColor()
-  const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
-  // 渐变缓存:key = 颜色+高度,复用渐变对象
-  const gkey = (c.r + ',' + c.g + ',' + c.b) + '@' + height
-  if (gradCache.key !== gkey) {
-    const g = ctx.createLinearGradient(0, height, 0, 0)
-    g.addColorStop(0, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.18)')
-    g.addColorStop(0.7, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.85)')
-    g.addColorStop(1, 'rgba(' + Math.min(255, c.r + 80) + ',' + Math.min(255, c.g + 80) + ',' + Math.min(255, c.b + 80) + ',1)')
-    gradCache = { key: gkey, grad: g }
-  }
-  // 镜面基线:柱从中间基线向上,倒影向下(主流播放器风格)
-  const baseY = height * 0.56
-  const mirrorH = height * 0.44
-  for (let i = 0; i < barCount.value; i++) {
-    let target = 0
-    if (data && playing) {
-      // 左右对称:左半正序、右半镜像(呈现中间高两侧低的对称柱)
-      const src = i < half ? i : barCount.value - 1 - i
-      let v = 0
-      for (let j = 0; j < step; j++) v += data[src * step + j]
-      v = v / step / 255
-      target = Math.pow(v, 0.75) * (baseY - 6) // 提亮低能量段
-    }
-    // 平滑追高,回落稍快
-    const diff = target - barVals[i]
-    barVals[i] += diff * (diff > 0 ? 0.45 : 0.28)
-    // 峰值保持:高于峰值则顶起,否则缓慢下落
-    if (barVals[i] > barPeaks[i]) barPeaks[i] = barVals[i]
-    else barPeaks[i] = Math.max(0, barPeaks[i] - 1.1)
-
-    const barH = Math.max(3, barVals[i])
-    const x = i * (barW + 3) + 1
-    const y = baseY - barH
-    const radius = Math.min(3, Math.max(1, barW / 2 - 0.5))
-    // 按频率渐变配色:低频红/橙 → 高频青/蓝(主流频谱彩虹风格)
-    const hue = 4 + (i / barCount.value) * 190
-    const col = 'hsl(' + hue.toFixed(0) + ', 88%, 62%)'
-    const colTop = 'hsl(' + hue.toFixed(0) + ', 90%, 74%)'
-
-    // 镜面倒影(向下,透明度递减)
-    if (barH > 4) {
-      const mir = ctx.createLinearGradient(0, baseY, 0, baseY + mirrorH)
-      mir.addColorStop(0, 'hsla(' + hue.toFixed(0) + ', 88%, 62%, 0.30)')
-      mir.addColorStop(1, 'hsla(' + hue.toFixed(0) + ', 88%, 62%, 0)')
-      ctx.fillStyle = mir
-      ctx.beginPath()
-      ctx.roundRect(x, baseY, barW, Math.min(mirrorH, barH * 0.7), radius)
-      ctx.fill()
-    }
-
-    // 主体:圆角柱(渐变:底暗→顶亮)
-    const g2 = ctx.createLinearGradient(0, y, 0, baseY)
-    g2.addColorStop(0, colTop)
-    g2.addColorStop(1, col)
-    ctx.fillStyle = g2
-    ctx.beginPath()
-    ctx.roundRect(x, y, barW, barH, radius)
-    ctx.fill()
-
-    // 顶部高亮 cap(白色细亮条,金属感)
-    if (barH > 6) {
-      ctx.fillStyle = 'rgba(255,255,255,0.85)'
-      ctx.beginPath()
-      ctx.roundRect(x + 0.6, y + 1, barW - 1.2, Math.min(3, barH / 4), 1.4)
-      ctx.fill()
-    }
-
-    // 峰值辉光点:主色光晕 + 白色核心
-    if (barPeaks[i] > 3 && playing) {
-      const py = baseY - barPeaks[i] - 2
-      ctx.fillStyle = 'hsla(' + hue.toFixed(0) + ', 90%, 65%, 0.45)'
-      ctx.beginPath(); ctx.arc(x + barW / 2, py, 4.2, 0, Math.PI * 2); ctx.fill()
-      ctx.fillStyle = 'rgba(255,255,255,0.95)'
-      ctx.beginPath(); ctx.arc(x + barW / 2, py, 1.7, 0, Math.PI * 2); ctx.fill()
-    }
-  }
-  // 基线细线(随低音微微起伏)
-  const bass = data && playing ? Math.max(0.15, (data[0] || 0) / 255) : 0.15
-  ctx.globalAlpha = 0.35 + bass * 0.4
-  ctx.fillStyle = 'hsla(' + (4 + 95).toFixed(0) + ', 88%, 62%, 0.7)'
-  ctx.beginPath()
-  ctx.roundRect(1, baseY - 1, width - 2, 2, 1)
-  ctx.fill()
-  ctx.globalAlpha = 1
-}
-
-// ===== 圆形环绕频谱(唱片外圈,随音频跳动)=====
-function paintRingSpectrum() {
-  const canvas = spectrumRingCanvas.value
-  if (!canvas) return
-  const playing = playerStore.isPlaying
-  const rect = canvas.getBoundingClientRect()
-  if (rect.width === 0 || rect.height === 0 || !playing) return
-  const dpr = window.devicePixelRatio || 1
-  const fitW = Math.max(1, Math.round(rect.width * dpr))
-  const fitH = Math.max(1, Math.round(rect.height * dpr))
-  if (canvas.width !== fitW || canvas.height !== fitH) { canvas.width = fitW; canvas.height = fitH }
-  const ctx = canvas.getContext('2d')
-  const { width, height } = canvas
-  ctx.clearRect(0, 0, width, height)
-  const data = playerStore.getSpectrumData()
-  const cx = width / 2, cy = height / 2
-  const r0 = Math.min(width, height) * 0.30       // 环起始半径(贴唱片外圈)
-  const rMax = Math.min(width, height) * 0.47     // 最大半径(条顶)
-  const ringBars = { 96: 80, 72: 64, 48: 48 }[barCount.value] || 64
-  const step = Math.max(1, Math.floor((data ? data.length : 0) / ringBars))
-  const accent = getAccentColor()
-  const c = hexToRgb(accent) || { r: 64, g: 150, b: 255 }
-  ctx.lineCap = 'round'
-  for (let i = 0; i < ringBars; i++) {
-    let target = 0
-    if (data) {
-      let v = 0
-      for (let j = 0; j < step; j++) v += data[i * step + j]
-      v = v / step / 255
-      target = Math.pow(v, 0.75) * (rMax - r0)
-    }
-    const diff = target - ringVals[i]
-    ringVals[i] += diff * (diff > 0 ? 0.5 : 0.3)
-    if (ringVals[i] > ringPeaks[i]) ringPeaks[i] = ringVals[i]
-    else ringPeaks[i] = Math.max(0, ringPeaks[i] - 1.2)
-    const h = Math.max(3, ringVals[i])
-    const angle = (i / ringBars) * Math.PI * 2 - Math.PI / 2
-    const x1 = cx + Math.cos(angle) * r0, y1 = cy + Math.sin(angle) * r0
-    const x2 = cx + Math.cos(angle) * (r0 + h), y2 = cy + Math.sin(angle) * (r0 + h)
-    // 渐变:近根透明 → 外端亮色
-    const g = ctx.createLinearGradient(x1, y1, x2, y2)
-    g.addColorStop(0, 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.15)')
-    g.addColorStop(1, 'rgba(' + Math.min(255, c.r + 80) + ',' + Math.min(255, c.g + 80) + ',' + Math.min(255, c.b + 80) + ',0.95)')
-    ctx.strokeStyle = g
-    ctx.lineWidth = Math.max(2, (rMax - r0) / 40)
-    // 柔光辉光(主色光晕,主流环绕频谱质感)
-    ctx.shadowColor = 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',0.55)'
-    ctx.shadowBlur = 8
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
-    ctx.shadowBlur = 0
-    // 峰值亮点
-    if (ringPeaks[i] > 4) {
-      const px = cx + Math.cos(angle) * (r0 + ringPeaks[i]), py = cy + Math.sin(angle) * (r0 + ringPeaks[i])
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'
-      ctx.beginPath(); ctx.arc(px, py, 1.6, 0, Math.PI * 2); ctx.fill()
-    }
-  }
-}
-
-// 频谱主循环:一次取数据、按模式画直线/圆形两个 canvas,统一 rAF 调度(省 CPU)
-function spectrumLoop(ts) {
-  // 30fps 限帧
-  if (ts && ts - lastSpecTs < 33) {
-    spectrumRAF = requestAnimationFrame(spectrumLoop)
-    return
-  }
-  lastSpecTs = ts || 0
-  const playing = playerStore.isPlaying
-  // 任一 canvas 可见才继续;全部不可见/未播放 → 停
-  const barVisible = spectrumCanvas.value && specMode.value !== 'ring'
-  const ringVisible = spectrumRingCanvas.value && specMode.value !== 'bar'
-  if (!playing || (!barVisible && !ringVisible)) { spectrumRAF = null; return }
-  if (barVisible) paintBarSpectrum()
-  if (ringVisible) paintRingSpectrum()
-  spectrumRAF = requestAnimationFrame(spectrumLoop)
-}
-// 组件挂载后启动常驻绘制
-function startSpectrum() {
-  spectrumLoop()
-}
-// 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)—— 仅播放时存在,暂停/卸载即清
-let spectrumTimer = null
-function ensureSpectrumTimer() {
-  if (spectrumTimer) return
-  spectrumTimer = setInterval(() => {
-    if (playerStore.isPlaying && !spectrumRAF) startSpectrum()
-  }, 1000)
-}
-// 切回封面 tab 立即恢复频谱(canvas 常驻 v-show,切回瞬间即可绘制,无挂载延迟)
-watch(activeTab, (v) => {
-  if (v === 'cover' && playerStore.isPlaying && !spectrumRAF) startSpectrum()
-})
 // Esc 关闭播放页所有面板
 function onPvEsc() {
   showQueuePanel.value = false
@@ -1449,38 +944,46 @@ function onPvEsc() {
   showRatePanel.value = false
   showSpecPanel.value = false
 }
+// 双击封面全屏切换;ESC 退出全屏
+function toggleFullscreen() {
+  try { if (window.electronAPI?.toggleFullscreen) window.electronAPI.toggleFullscreen() } catch {}
+}
+// 快进/快退 ±N 秒
+function jumpSeek(delta) {
+  const t = Math.max(0, Math.min(playerStore.duration || 0, (playerStore.currentTime || 0) + delta))
+  playerStore.seek(t)
+}
+// 播放页滚轮调音量(歌词区滚轮用于滚动歌词,不拦截;可滚动区域让出给默认滚动)
+// 实现见上方 onViewWheel → wheelVolume(useVolumeControl)
+function onPvKeydown(e) {
+  // 输入框内不拦截方向键(避免影响光标移动)
+  const t = e.target
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+  if (e.key === 'Escape') {
+    try { if (window.electronAPI?.exitFullscreen) window.electronAPI.exitFullscreen() } catch {}
+  } else if (e.key === 'ArrowRight' && !e.ctrlKey && !e.metaKey) {
+    // ←/→ 快退/快进 10 秒(主流播放器全屏/播放页常用)
+    jumpSeek(10); e.preventDefault()
+  } else if (e.key === 'ArrowLeft' && !e.ctrlKey && !e.metaKey) {
+    jumpSeek(-10); e.preventDefault()
+  }
+}
 onMounted(() => {
   setupPvPanelsClickOutside()
   document.addEventListener('soundflow:esc', onPvEsc)
   window.addEventListener('resize', onSplitResize)
+  document.addEventListener('keydown', onPvKeydown)
   ensureBpm() // 进入播放页分析当前歌 BPM(有缓存秒出)
-  if (playerStore.isPlaying) { startSpectrum(); ensureSpectrumTimer() }
   // 进入播放页时若歌词尚未加载(未播放过/切源后),补一次读取;本地歌词删除/外部修改后也能立即反映
   if (playerStore.currentSong && playerStore.lyrics.length === 0) {
     playerStore.loadLyrics(playerStore.currentSong)
   }
 })
 onUnmounted(() => {
-  if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
-  if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
   document.removeEventListener('click', onPvPanelDocClick)
   document.removeEventListener('soundflow:esc', onPvEsc)
-})
-// 暂停时停止频谱 rAF(省 CPU),播放时恢复;定时器也随播放态启停
-watch(() => playerStore.isPlaying, (v) => {
-  if (v) { startSpectrum(); ensureSpectrumTimer() }
-  else {
-    if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
-    if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
-    if (spectrumCanvas.value) {
-      const ctx = spectrumCanvas.value.getContext('2d')
-      ctx.clearRect(0, 0, spectrumCanvas.value.width, spectrumCanvas.value.height)
-    }
-    if (spectrumRingCanvas.value) {
-      const ctx2 = spectrumRingCanvas.value.getContext('2d')
-      ctx2.clearRect(0, 0, spectrumRingCanvas.value.width, spectrumRingCanvas.value.height)
-    }
-  }
+  window.removeEventListener('resize', onSplitResize)
+  document.removeEventListener('keydown', onPvKeydown)
 })
 
 // 歌词对齐(居中/左,持久化)
@@ -1503,7 +1006,9 @@ const currentWordIdx = computed(() => {
   if (!line) return -1
   const segs = lyricWordSegments(line)
   if (!segs.length) return -1
-  const t = playerStore.currentTime
+  // 用共享的 lyricClock(已扣除歌词偏移)而不是原始 currentTime:
+  // 否则调整偏移后行高亮会跟着变、逐字高亮却不变,两者错位
+  const t = playerStore.lyricClock
   let idx = -1
   for (let i = 0; i < segs.length; i++) {
     if (segs[i].t <= t) idx = i
@@ -1511,50 +1016,38 @@ const currentWordIdx = computed(() => {
   }
   return idx
 })
-// 文本切分为高亮段:英文按单词(带尾空格),中文按字,其他符号单字符
-function splitLyricText(text) {
-  const s = (text || '').trim()
-  const out = []
-  let i = 0
-  while (i < s.length) {
-    const ch = s[i]
-    if (/[A-Za-z0-9]/.test(ch)) {
-      // 连续英文/数字视为一个单词
-      let j = i
-      while (j < s.length && /[A-Za-z0-9'’\-]/.test(s[j])) j++
-      out.push(s.slice(i, j) + ' ')
-      i = j
-    } else if (/[\u4e00-\u9fff\u3400-\u4dbf]/.test(ch)) {
-      out.push(ch)
-      i++
-    } else if (/\s/.test(ch)) {
-      i++ // 跳过空白
-    } else {
-      out.push(ch)
-      i++
-    }
-  }
-  return out
-}
-// 逐字渲染段:有增强时间戳直接用;无则按整行时长均分(英文逐词/中文逐字)
-// 缓存:同一行文本只切分一次(currentTime 4Hz 重渲染不再重复正则+数组分配)
+// 文本切分与权重计时已收敛到 @/utils/lyricTiming(可单测;原实现内联在本组件内)
+
+// 歌词偏移显示:用户微调值(正值=歌词延后),点一下即归零
+const lyricOffsetLabel = computed(() => {
+  const ms = playerStore.lyricUserOffsetMs || 0
+  if (!ms) return '±0'
+  return `${ms > 0 ? '+' : ''}${(ms / 1000).toFixed(1)}s`
+})
+const lyricOffsetTitle = computed(() => {
+  const parts = []
+  const user = playerStore.lyricUserOffsetMs || 0
+  parts.push(user ? `本曲微调 ${user > 0 ? '+' : ''}${user}ms(点击归零)` : '本曲未微调')
+  const file = playerStore.lyricFileOffsetMs || 0
+  if (file) parts.push(`文件 [offset:${file > 0 ? '+' : ''}${file}]`)
+  const eff = playerStore.lyricOffsetSeconds || 0
+  parts.push(`有效偏移 ${eff > 0 ? '+' : ''}${(eff * 1000).toFixed(0)}ms(${eff > 0 ? '歌词延后' : eff < 0 ? '歌词提前' : '无偏移'})`)
+  return parts.join(';')
+})
+// 逐字渲染段:有增强时间戳直接用;无则由 utils/lyricTiming 按权重推算
+// (标点不计时、拉丁词按长度加权、CJK 逐字,详见该模块)
+// 缓存键必须带开始时间:只用行文本的话,重复出现的副歌行会共用第一次算出的时间戳
 const _wordSegCache = new Map()
 function lyricWordSegments(line) {
   if (!line) return []
   if (line.words && line.words.length) return line.words
-  if (_wordSegCache.has(line.text)) return _wordSegCache.get(line.text)
-  // 近似:按均分当前行到下一行之间的时长
-  const cur = playerStore.lyrics[playerStore.currentLyricIndex]
-  const next = playerStore.lyrics[playerStore.currentLyricIndex + 1]
-  const start = cur ? cur.time : 0
-  const end = next ? next.time : start + 4
-  const dur = Math.max(0.5, end - start)
-  const tokens = splitLyricText(line.text)
-  if (!tokens.length) return []
-  const per = dur / tokens.length
-  const out = tokens.map((c, i) => ({ t: start + i * per, c }))
+  const curIdx = playerStore.currentLyricIndex
+  const next = playerStore.lyrics[curIdx + 1]
+  const key = `${line.time}|${line.text}`
+  if (_wordSegCache.has(key)) return _wordSegCache.get(key)
+  const out = buildWordSegments(line, next ? next.time : null)
   if (_wordSegCache.size > 300) _wordSegCache.clear()
-  _wordSegCache.set(line.text, out)
+  _wordSegCache.set(key, out)
   return out
 }
 
@@ -1567,7 +1060,7 @@ function lyricFoldersForSave() {
 async function deleteLocalLyric() {
   const song = playerStore.currentSong
   if (!song || !window.electronAPI) return
-  if (!window.confirm('确定删除这首歌的本地歌词文件吗?\n删除后播放时将使用在线歌词。')) return
+  if (!(await confirmDialog({ message: '确定删除这首歌的本地歌词文件？', detail: '删除后播放时将改用在线歌词', confirmText: '删除', danger: true }))) return
   let folders = []
   try { folders = JSON.parse(localStorage.getItem('soundflow_lyric_folders') || '[]') } catch {}
   const r = await window.electronAPI.deleteLyricFile(song.path, folders)
@@ -1635,10 +1128,10 @@ async function searchLyric() {
 
 .player-overlay {
   position: absolute; inset: 0;
-  /* 纯净深色氛围:均匀暗角(无白色高光,封面本色呈现;歌词已有描边保证对比) */
+  /* 主题化遮罩:深浅主题各自适配(深色主题更深,浅色主题适度),保留封面本色呈现 */
   background:
-    radial-gradient(90% 45% at 50% 100%, rgba(0, 0, 0, 0.22), transparent 70%),
-    linear-gradient(180deg, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.06) 45%, rgba(0,0,0,0.40) 100%);
+    radial-gradient(90% 45% at 50% 100%, var(--player-overlay-strong, rgba(0, 0, 0, 0.22)), transparent 70%),
+    linear-gradient(180deg, var(--player-overlay-soft, rgba(0,0,0,0.15)) 0%, rgba(0,0,0,0.06) 45%, var(--player-overlay-strong, rgba(0,0,0,0.40)) 100%);
   display: flex; flex-direction: column;
 }
 /* 封面背景:伪元素高清提亮(不模糊,封面原图铺底;单层 filter,避开 Electron 叠加渲染异常);z-index 0 垫底 */
@@ -1706,7 +1199,7 @@ async function searchLyric() {
 .cover-mode.split { flex-direction: row; justify-content: center; align-items: center; gap: 48px; padding: 0 8vw; }
 .cover-mode.split .cover-left { display: flex; flex-direction: column; align-items: center; gap: var(--gap); flex-shrink: 0; }
 .split-lyrics { flex: 1; max-width: 560px; min-width: 0; height: 100%; overflow: hidden; }
-.split-lyrics .lyrics-scroll { height: 100%; overflow-y: auto; padding: 8px 12px; }
+.split-lyrics .lyrics-scroll { height: 100%; overflow-y: auto; padding: 8px 64px 8px 12px; } /* 右侧 64px 给浮动工具栏让位 */
 /* 分栏:方形封面 + 半露旋转 CD(文档可视化风格) */
 .album-stage { position: relative; width: calc(var(--disc) * 1.5); height: calc(var(--disc) * 1.5); }
 .album-art {
@@ -1714,7 +1207,13 @@ async function searchLyric() {
   box-shadow: 0 18px 48px rgba(0,0,0,0.5); position: absolute; left: 0; top: 15%;
   z-index: 2; /* 封面在上,盖住 CD 左半 */
 }
-.album-art img, .cd-half img { width: 100%; height: 100%; object-fit: cover; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; }
+.album-art img, .cd-half img { width: 100%; height: 100%; object-fit: cover; }
+/* 骨架动效只在加载期间挂着:加载完成后类被移除,避免动画在图片之下永远空跑 */
+.album-art img.img-loading, .cd-half img.img-loading, .disc-cover img.img-loading {
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
 .album-art .cover-placeholder, .cd-half .cover-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 48px; background: rgba(255,255,255,0.08); }
 /* cd-wrap 承担垂直定位(与 spin 动画 transform 隔离),CD 只做旋转 */
 .cd-wrap {
@@ -1760,7 +1259,16 @@ async function searchLyric() {
   border: 6px solid rgba(255,255,255,0.08);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
+  position: relative;
+  box-shadow: 0 10px 44px rgba(0,0,0,0.35);
   will-change: transform; /* 独立合成层,避免旋转触发整页重排 */
+}
+/* 唱片主色柔光晕(切歌/播放时氛围感) */
+.disc-ring::after {
+  content: '';
+  position: absolute; inset: -14px; border-radius: 50%;
+  background: radial-gradient(closest-side, transparent 86%, var(--color-primary-alpha) 100%);
+  pointer-events: none;
 }
 @keyframes disc-in {
   from { opacity: 0; transform: scale(0.9); }
@@ -1809,7 +1317,33 @@ async function searchLyric() {
 }
 .song-meta:hover .cover-swap { opacity: 1; transform: translateY(0); }
 .cover-swap:hover { background: rgba(255,255,255,0.18); }
-.song-info { font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 6px; letter-spacing: 0.3px; }
+/* 音质信息行:结构化片段 + 语义着色(转码=警示色,响度与音效生效=成功色) */
+.song-info { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 6px; letter-spacing: 0.3px; }
+.si-part { white-space: nowrap; }
+.si-part.fmt { color: var(--color-primary); font-weight: 600; letter-spacing: 0.3px; }
+.si-part.warn { color: var(--color-warning); }
+.si-part.ok { color: var(--color-success); }
+.song-info:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 4px; }
+
+/* A-B 循环按钮:定宽,内容固定为 A / B 两个字母,避免生效时按钮变宽挤动进度条 */
+.ab-btn {
+  width: 44px; height: 26px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  border-radius: 999px; font-size: 11px; font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.ab-btn:hover { background: rgba(255, 255, 255, 0.16); }
+.ab-btn--setting { background: rgba(255, 255, 255, 0.16); }
+.ab-btn--active { background: var(--color-primary); color: #fff; }
+
+/* 下一首预览的定位容器(卡片本体样式在 NextTrackHint 组件内) */
+.next-wrap { position: relative; display: flex; }
+/* 设定进度直接落在字母上:只设了 A → A 亮;B 也设了 → 同时亮 */
+.ab-dot { opacity: 0.45; transition: opacity var(--transition-fast), color var(--transition-fast); }
+.ab-dot.on { opacity: 1; color: #fff; }
+.ab-btn--active .ab-dot { opacity: 1; }
 
 /* ===== 歌词模式 ===== */
 .lyric-mode {
@@ -1864,7 +1398,17 @@ async function searchLyric() {
   align-items: center; justify-content: center; gap: 12px;
   color: rgba(255,255,255,0.35); font-size: 18px;
 }
-.empty-icon { font-size: 48px; }
+.lyric-loading-tip {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 14px; color: rgba(255,255,255,0.45);
+}
+.lyric-loading-tip::before {
+  content: ''; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--color-primary, #4096ff);
+  animation: lrc-spin 0.8s linear infinite;
+}
+@keyframes lrc-spin { to { transform: rotate(360deg); } }
+.es-icon { display: inline-flex; color: var(--empty-icon, var(--text-tertiary)); }
 .empty-hint { font-size: var(--font-size-sm); color: rgba(255,255,255,0.25); line-height: 1.6; }
 .search-lyric-btn { margin-top: 4px; padding: 8px 18px; background: var(--color-primary); color: #fff; border-radius: 20px; font-size: var(--font-size-sm); transition: all 0.2s; }
 .search-lyric-btn.local { background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.85); }
@@ -1905,6 +1449,14 @@ async function searchLyric() {
 /* 远离当前句:明度层次(不透明,避免 opacity/blur 合成层糊字) */
 .lyric-line.near { opacity: 1; filter: none; }
 .lyric-line.far { opacity: 1; filter: none; }
+/* 工具栏分组:此前 14 个按钮挤成一列没有分区,看不出哪些是「来源」哪些是「字号」 */
+.ls-group-label {
+  font-size: 10px; color: var(--panel-text-tertiary, rgba(255,255,255,0.45));
+  letter-spacing: 0.5px; padding: 2px 0 1px; text-align: center; user-select: none;
+}
+.ls-sep { height: 1px; width: 22px; margin: 3px auto; background: rgba(255,255,255,0.14); }
+.ls-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
 .lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65); }
 .lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 18px var(--color-primary); }
 .lyric-trans {
@@ -1933,6 +1485,17 @@ async function searchLyric() {
   padding: 2px 8px;
   border-radius: 10px;
 }
+/* 工具栏挂载层:必须脱离 flex 流(.player-overlay 是 flex column,
+   作为普通 flex 项参与布局会挤动封面/歌词区)——整层绝对定位只做定位容器,
+   自身不接收鼠标事件,由内部工具栏按需接收 */
+.lyric-toolbar-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+.lyric-toolbar-layer > * { pointer-events: auto; }
+
 .lyric-source-switch {
   position: absolute;
   top: 50%;
@@ -1960,13 +1523,15 @@ async function searchLyric() {
   width: 46px;
   padding: 6px 0;
   font-size: 11px;
-  color: rgba(255,255,255,0.5);
-  border-radius: 8px;
+  color: rgba(255,255,255,0.5);  border-radius: 8px;
   text-align: center;
   transition: all 0.2s;
 }
 .ls-btn:hover { color: #fff; }
 .ls-btn.active { background: var(--color-primary); color: #fff; }
+/* 偏移按钮:标签形如 +0.3s / ±0,比 A− 略宽且不允许换行 */
+.ls-offset { width: 52px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ls-offset.active { font-weight: 600; }
 
 /* 背景设置面板 */
 .bg-panel {
@@ -1990,12 +1555,44 @@ async function searchLyric() {
 .bg-mode-btns button:hover { color: #fff; }
 .bg-mode-btns button.active { background: var(--color-primary); color: #fff; }
 .color-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
-.gradient-list { display: flex; flex-direction: column; gap: 6px; }
-.gradient-item {
-  padding: 10px 12px; border-radius: 8px; font-size: var(--font-size-xs); color: #fff;
-  text-align: left; border: 2px solid transparent; transition: all 0.15s;
+
+/* 歌词排版面板:与色板同构(深色浮层,从竖条左侧弹出) */
+.format-panel {
+  position: absolute;
+  top: 50%;
+  right: 58px;
+  transform: translateY(-50%);
+  z-index: 999;
+  width: 232px;
+  padding: 12px 12px 10px;
+  background: rgba(16, 18, 26, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
 }
-.gradient-item.active { border-color: #fff; }
+.fp-title {
+  font-size: 11px; color: rgba(255,255,255,0.7); text-align: center;
+  border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 6px; margin-bottom: 8px;
+}
+.fp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.fp-label { width: 30px; flex-shrink: 0; font-size: 11px; color: rgba(255,255,255,0.62); }
+.fp-slider { flex: 1; min-width: 0; }
+.fp-val {
+  width: 46px; flex-shrink: 0; text-align: right;
+  font-size: 11px; color: var(--color-primary); font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.fp-sub { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 2px; }
+.fp-mini {
+  min-width: 30px; height: 22px; padding: 0 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; color: rgba(255,255,255,0.78);
+  background: rgba(255,255,255,0.08); border-radius: 6px;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.fp-mini:hover:not(:disabled) { background: var(--color-primary); color: #fff; }
+.fp-mini:disabled { opacity: 0.4; cursor: not-allowed; }
+.fp-hint { margin-top: 6px; font-size: 10px; color: rgba(255,255,255,0.4); text-align: center; }
 
 /* 歌词颜色面板 */
 .color-panel {
@@ -2029,9 +1626,12 @@ async function searchLyric() {
   border-color: rgba(255,255,255,0.35);
 }
 .color-dot-custom::after {
-  content: "🎨"; position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px;
+  /* 自定义取色按钮:此前用 🎨 emoji 当图标(由系统字体渲染,大小/基线不受控)——
+     改为纯 CSS 的白色描边小圆点表示"可自定义",与色板其它色点视觉一致 */
+  content: ""; position: absolute; inset: 0;
+  margin: auto; width: 6px; height: 6px;
+  border-radius: 50%; background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
 }
 .bg-image-actions { display: flex; flex-direction: column; gap: 8px; }
 .bg-import-btn { padding: 8px 0; font-size: var(--font-size-xs); color: #fff; background: var(--color-primary); border-radius: 6px; transition: all 0.15s; }
@@ -2092,138 +1692,39 @@ async function searchLyric() {
 .vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
 .vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
 
-/* 播放列表面板 */
-.queue-panel {
-  position: absolute;
-  bottom: 76px;
-  right: 20px;
-  display: flex;
-  flex-direction: column;
-  background: rgba(18, 20, 28, 0.94);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 14px;
-  box-shadow: 0 16px 44px rgba(0,0,0,0.55);
-  overflow: hidden;
-  z-index: 30;
-}
-.queue-header {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-.queue-title { font-size: var(--font-size-base); font-weight: 600; color: rgba(255,255,255,0.9); flex: 1; }
-.queue-count { font-size: var(--font-size-xs); color: rgba(255,255,255,0.4); }
-.queue-close { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.5); font-size: var(--font-size-sm); }
-.queue-close:hover { background: rgba(255,255,255,0.1); color: white; }
-.queue-save { background: none; border: none; color: var(--color-primary); font-size: 15px; cursor: pointer; padding: 2px 5px; }
-.save-queue-mask { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; }
-.save-queue-card { width: 320px; padding: 20px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); }
-.save-queue-card h3 { margin: 0 0 12px; font-size: 16px; }
-.queue-list { position: relative; flex: 1; overflow-y: auto; padding: 6px; }
-.queue-resize {
-  position: absolute; right: 2px; bottom: 2px;
-  width: 14px; height: 14px;
-  cursor: nwse-resize;
-  opacity: 0.35;
-  background: linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.55) 50%);
-  transition: opacity var(--transition-fast);
-  z-index: 5;
-}
-.queue-resize:hover { opacity: 1; }
-.queue-empty { text-align: center; color: rgba(255,255,255,0.35); font-size: var(--font-size-sm); padding: 30px 0; }
-.queue-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 10px; border-radius: 8px; cursor: pointer;
-  transition: background 0.15s;
-}
-.queue-item.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.25)); outline: 1px dashed var(--color-primary); }
-.queue-item[draggable="true"] { cursor: grab; }
-.queue-item[draggable="true"]:active { cursor: grabbing; }
-.queue-item:hover { background: rgba(255,255,255,0.07); }
-.queue-item.active { background: var(--color-primary-alpha); }
-.queue-item.queue-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
-.queue-item { cursor: grab; }
-.queue-item:active { cursor: grabbing; }
-.queue-idx { width: 20px; font-size: var(--font-size-xs); color: rgba(255,255,255,0.3); text-align: center; flex-shrink: 0; }
-.queue-item.active .queue-idx { color: var(--color-primary); }
-.queue-info { flex: 1; min-width: 0; }
-.queue-name { font-size: var(--font-size-sm); color: rgba(255,255,255,0.85); }
-.queue-item.active .queue-name { color: var(--color-primary); font-weight: 500; }
-.queue-artist { font-size: 11px; color: rgba(255,255,255,0.35); margin-top: 1px; }
-.queue-remove { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: rgba(255,255,255,0.4); font-size: 11px; opacity: 0; transition: all 0.15s; flex-shrink: 0; }
-.queue-item:hover .queue-remove { opacity: 1; }
-.queue-remove:hover { background: rgba(255,77,79,0.2); color: #ff6b6b; }
 .queue-slide-enter-active, .queue-slide-leave-active { transition: opacity 0.22s, transform 0.22s; }
 .queue-slide-enter-from, .queue-slide-leave-to { opacity: 0; transform: translateY(12px); }
-
-/* 音效面板(播放页) */
-.eq-panel {
-  position: absolute; bottom: 76px; right: 20px;
-  width: min(640px, 92vw); max-height: min(480px, 80vh);
-  border-radius: 14px;
-  display: flex; flex-direction: column; z-index: 40; overflow: hidden;
-}
-.eq-toggle { padding: 3px 12px; font-size: var(--font-size-xs); border-radius: var(--radius-md); background: rgba(255,255,255,0.1); color: #aab6cc; }
-.eq-toggle.on { background: var(--color-primary); color: #fff; }
-.eq-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-.eq-curve { display: block; width: 100%; height: 130px; margin: 2px 0 6px; background: rgba(128,128,160,0.05); border-radius: 8px; flex-shrink: 0; }
-.eq-off { padding: 24px; text-align: center; font-size: var(--font-size-sm); color: #7c879c; }
-.eq-group { display: flex; flex-direction: column; gap: 5px; }
-.eq-group-name { font-size: var(--font-size-xs); color: #7c879c; }
-.eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 12px; border-radius: 999px; background: rgba(255,255,255,0.08); color: #eaf2ff; transition: all var(--transition-fast); border: 1px solid transparent; cursor: pointer; }
-.eq-preset-btn:hover { background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9); }
-.eq-preset-btn.active { background: var(--color-primary); color: #fff; box-shadow: 0 0 12px var(--color-primary-alpha, rgba(64,150,255,0.55)); }
-.eq-preset-del { margin-left: 4px; opacity: 0.6; font-size: 10px; }
-.eq-preset-del:hover { opacity: 1; color: #ff6b6b; }
-.eq-save-btn { margin: 8px 0 2px; padding: 5px 12px; font-size: var(--font-size-xs); border-radius: 999px; background: rgba(255,255,255,0.06); color: #eaf2ff; border: 1px dashed rgba(255,255,255,0.25); cursor: pointer; transition: all var(--transition-fast); }
-.eq-save-btn:hover { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
-.eq-name-input { width: 100%; padding: 8px 10px; margin-bottom: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.06); color: var(--text-primary); outline: none; }
-.eq-save-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
-.eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
-.eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 100px; }
-/* 滑杆美化:渐变轨道 + 发光圆点手柄 */
-.eq-slider-col input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
-.eq-slider-col input[type="range"]::-webkit-slider-runnable-track {
-  width: 6px; border-radius: 3px;
-  background: linear-gradient(to top, var(--color-primary, #4096ff), rgba(64,150,255,0.15));
-}
-.eq-slider-col input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none;
-  width: 14px; height: 14px; border-radius: 50%;
-  background: #fff; border: 2px solid var(--color-primary, #4096ff);
-  box-shadow: 0 0 8px var(--color-primary-alpha, rgba(64,150,255,0.8));
-  margin-left: -4px; margin-top: 4px;
-}
-.eq-gain { font-size: 10px; color: #aab6cc; font-variant-numeric: tabular-nums; min-height: 13px; }
-/* 拖动滑杆时 dB 值高亮放大(气泡感) */
-.eq-slider-col:focus-within .eq-gain { color: var(--color-primary); font-weight: 700; transform: scale(1.2); }
-.eq-slider-col .eq-gain { transition: all 0.15s; }
-.eq-gain { font-size: 10px; color: #7c879c; }
-.eq-freq { font-size: 10px; color: #7c879c; }
-.eq-extra { display: flex; align-items: center; gap: 8px; }
-.eq-extra .label-text { min-width: 48px; color: rgba(255,255,255,0.75); font-size: var(--font-size-xs); }
-.eq-extra-val { min-width: 42px; font-size: 11px; color: var(--color-primary, #4096ff); font-weight: 700; font-variant-numeric: tabular-nums; }
-.eq-extra input[type="range"] { width: 110px; }
 
 .ctrl-btn {
   width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
   border-radius: 50%; color: rgba(255,255,255,0.8); font-size: 20px;
   transition: all 0.15s;
 }
-.ctrl-btn:hover { color: white; background: rgba(255,255,255,0.1); }
+.ctrl-btn:hover { color: white; background: rgba(255,255,255,0.1); box-shadow: 0 0 12px var(--color-primary-alpha); }
 .ctrl-btn svg { width: 24px; height: 24px; }
 
 .ctrl-btn--play {
   width: 56px; height: 56px;
   background: var(--color-primary); color: white !important;
+  box-shadow: 0 4px 18px var(--color-primary-alpha, rgba(0,0,0,0.4));
 }
-.ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); }
+.ctrl-btn--play:hover { background: var(--color-primary-light); transform: scale(1.05); box-shadow: 0 6px 24px var(--color-primary-alpha); }
 .ctrl-btn--play svg { width: 28px; height: 28px; }
+.ctrl-btn--play .player-spin { width: 28px; height: 28px; animation: pv-spin 0.8s linear infinite; }
+@keyframes pv-spin { to { transform: rotate(360deg); } }
 /* flex 流式对称:播放键居中,上/下曲贴靠,模式/倍速/变调对称两端 */
 .ctrl-prev, .ctrl-next, .ctrl-mode { position: static; }
 
 .progress-row { display: flex; align-items: center; gap: 12px; padding: 0 32px; }
+.seek-jump {
+  width: 34px; height: 34px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  color: rgba(255,255,255,0.7);
+  transition: all 0.15s;
+}
+.seek-jump:hover { color: white; background: rgba(255,255,255,0.1); }
+.seek-jump svg { width: 18px; height: 18px; }
 .time {
   font-size: var(--font-size-xs); color: rgba(255,255,255,0.45);
   min-width: 42px; text-align: center; font-variant-numeric: tabular-nums;
@@ -2383,5 +1884,33 @@ async function searchLyric() {
   .controls-row { flex-wrap: wrap; row-gap: 8px; min-height: 0; }
   .controls-group { order: -1; width: 100%; justify-content: center; flex-wrap: wrap; gap: 8px; }
   .controls-group .ctrl-btn--small, .controls-group .ctrl-btn { margin: 0 !important; }
+}
+
+/* ===== 播放页浮层面板统一:固定深色浮层(浮于深色播放背景上,16 主题可读)=====
+   软件渲染(默认):近不透明深色,可读不卡;
+   硬件加速(body.hw-accel):半透明毛玻璃,透出封面更精致 */
+.queue-panel, .eq-panel, .pitch-panel, .rate-panel, .spec-panel, .vol-pop,
+.bg-panel, .color-panel {
+  background: rgba(16, 18, 26, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  color: #eaf2ff;
+  --text-primary: #eaf2ff;
+  --text-secondary: #aab6cc;
+  --text-tertiary: #7c879c;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(255, 255, 255, 0.12);
+  --border-color: rgba(255, 255, 255, 0.12);
+}
+body.hw-accel .queue-panel,
+body.hw-accel .eq-panel,
+body.hw-accel .pitch-panel,
+body.hw-accel .rate-panel,
+body.hw-accel .spec-panel,
+body.hw-accel .vol-pop,
+body.hw-accel .bg-panel,
+body.hw-accel .color-panel {
+  background: rgba(16, 18, 26, 0.62) !important;
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
 }
 </style>

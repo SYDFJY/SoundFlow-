@@ -1,15 +1,17 @@
 <template>
   <Transition name="sn">
-    <div v-if="visible" class="song-notify" @click="openPlayer" @mouseenter="pauseHide" @mouseleave="resumeHide">
+    <!-- 切歌卡片此前对辅助技术不可见:加 role=status + aria-live 让切歌被朗读,
+         整卡可点击 -> 补键盘可达与可访问名 -->
+    <div v-if="visible" class="song-notify" role="status" aria-live="polite" tabindex="0" :aria-label="`正在播放:${title}${artist ? ' - ' + artist : ''}(回车打开播放页)`" @click="openPlayer" @keydown.enter.prevent="openPlayer" @keydown.space.prevent="openPlayer" @mouseenter="pauseHide" @mouseleave="resumeHide">
       <div class="sn-cover">
-        <img v-if="coverUrl" :src="coverUrl" />
-        <span v-else class="sn-note">♪</span>
+        <img v-if="coverUrl" :src="coverUrl" :alt="title ? title + ' 封面' : ''" />
+        <span v-else class="sn-note" aria-hidden="true"><Icon name="music" :size="20" /></span>
       </div>
       <div class="sn-info">
         <div class="sn-title">{{ title }}</div>
         <div class="sn-artist">{{ artist }}</div>
       </div>
-      <div class="sn-progress"><i :style="{ animationDuration: hideDelay + 'ms' }"></i></div>
+      <div class="sn-progress" aria-hidden="true"><i :style="{ animationDuration: hideDelay + 'ms' }"></i></div>
     </div>
   </Transition>
 </template>
@@ -18,6 +20,7 @@
 import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { usePlayerStore } from '../stores/playerStore'
+import Icon from './icons/Icon.vue'
 
 const playerStore = usePlayerStore()
 const router = useRouter()
@@ -54,7 +57,7 @@ onBeforeUnmount(() => clearTimeout(hideTimer))
   position: fixed;
   right: 16px;
   bottom: 96px;
-  z-index: 9998;
+  z-index: calc(var(--z-toast) - 1); /* 通知卡:紧贴通知层之下,不被 Toast 盖住 */
   display: flex;
   align-items: center;
   gap: 12px;
@@ -63,11 +66,15 @@ onBeforeUnmount(() => clearTimeout(hideTimer))
   border-radius: 12px;
   background: var(--bg-secondary, rgba(24, 26, 32, 0.92));
   border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
-  backdrop-filter: blur(14px);
+  backdrop-filter: none;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
   cursor: pointer;
   overflow: hidden;
   color: var(--text-primary, #fff);
+}
+body.hw-accel .song-notify {
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 .sn-cover {
   width: 44px;

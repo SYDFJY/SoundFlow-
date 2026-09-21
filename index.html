@@ -3,6 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- CSP:此前完全缺失。核心目的是挡住「数据注入成脚本」这类风险(歌曲元数据/封面 URL
+       来自本地文件与网络,一旦被拼进 DOM 执行,配合 IPC 即等于文件读写)。
+       script-src 仅允许自身 => 内联 <script> 与 on* 内联事件属性被禁止;
+       img/media 放开 file: 与 https: 分别对应本地封面/音频与网络封面;
+       style 需要 unsafe-inline,因为 Vue 运行时注入 <style> 且主题变量是内联样式。 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' file: data: blob: https:; media-src 'self' file: blob:; font-src 'self' file: data:; connect-src 'self' ws: wss:; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'" />
   <title>SoundFlow 声流音乐</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }

@@ -1,7 +1,7 @@
 <template>
   <div class="history-view">
     <div class="view-header">
-      <button class="btn--ghost" @click="$router.push('/stats')">← 返回统计</button>
+      <button class="btn--ghost" @click="$router.push('/stats')"><Icon name="back" :size="14" />返回统计</button>
       <div class="header-left">
         <h1 class="header-title">{{ t('history.title') }}</h1>
       </div>
@@ -28,11 +28,11 @@
             <div class="history-index">
               <span class="index-num">{{ historyEntries.indexOf(entry) + 1 }}</span>
               <button class="play-icon" @click.stop="playHistory(historyEntries.indexOf(entry))">
-                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+                <Icon name="play" :size="14" fill="currentColor" />
               </button>
             </div>
             <div class="history-cover" v-if="entry.coverUrl">
-              <img :src="entry.coverUrl" />
+              <img :src="entry.coverUrl" alt="" />
             </div>
             <div class="history-info">
               <div class="history-title text-ellipsis">{{ entry.title }}</div>
@@ -41,18 +41,18 @@
             <div class="history-time">{{ formatTime(entry.time) }}</div>
             <div class="history-actions">
               <button class="action-btn" @click.stop="toggleFav(entry)" :class="{ active: isFav(entry) }" title="收藏">
-                <svg viewBox="0 0 24 24" :fill="isFav(entry) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                <Icon name="favorite" :size="15" />
               </button>
               <button class="action-btn action-btn--del" @click.stop="removeHistory(entry)" title="删除该条记录">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                <Icon name="remove" :size="15" />
               </button>
             </div>
           </div>
         </template>
       </div>
       <div v-else class="empty-state">
-        <div class="empty-icon">📝</div>
-        <div class="empty-text">还没有播放记录</div>
+        <div class="es-icon"><Icon name="history" :size="48" /></div>
+        <div class="es-text">还没有播放记录</div>
       </div>
     </div>
 
@@ -66,7 +66,7 @@
         <div v-for="(item, idx) in rankedSongs" :key="item.path" class="rank-item" @dblclick="playAt(idx)">
           <div class="rank-num" :class="{ top: idx < 3 }">{{ idx + 1 }}</div>
           <div class="rank-cover" v-if="item.coverUrl">
-            <img :src="item.coverUrl" />
+            <img :src="item.coverUrl" alt="" />
           </div>
           <div class="rank-info">
             <div class="rank-title text-ellipsis">{{ item.title }}</div>
@@ -78,13 +78,13 @@
             <span class="count-label">次</span>
           </div>
           <button class="rank-play" @click.stop="playAt(idx)">
-            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+            <Icon name="play" :size="14" fill="currentColor" />
           </button>
         </div>
       </div>
       <div v-else class="empty-state">
-        <div class="empty-icon">📊</div>
-        <div class="empty-text">还没有播放记录</div>
+        <div class="es-icon"><Icon name="stats" :size="48" /></div>
+        <div class="es-text">还没有播放记录</div>
       </div>
     </div>
   </div>
@@ -95,6 +95,9 @@ import { ref, computed } from 'vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
+import { formatTimestamp as formatTime } from '@/utils/time'
+import Icon from '@/components/icons/Icon.vue'
+import { confirmDialog } from '@/composables/useConfirm'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
@@ -111,7 +114,8 @@ const historyEntries = computed(() => {
       result.push({ ...song, time: h.time })
     }
   }
-  return result
+  // 大历史性能保护:超过 800 条只渲染最近部分(history 最新在前),避免超长 DOM 卡顿
+  return result.slice(0, 800)
 })
 
 // 播放排行
@@ -180,23 +184,10 @@ function toggleFav(entry) {
   musicStore.toggleFavorite(entry.path)
 }
 
-function formatTime(ts) {
-  if (!ts) return ''
-  const d = new Date(ts)
-  const now = new Date()
-  const isToday = d.toDateString() === now.toDateString()
-  const yesterday = new Date(now)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const isYesterday = d.toDateString() === yesterday.toDateString()
+// 时间戳格式化已收敛到 @/utils/time(与 HistoryView 原本完全重复)
 
-  const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  if (isToday) return `今天 ${time}`
-  if (isYesterday) return `昨天 ${time}`
-  return `${d.getMonth() + 1}/${d.getDate()} ${time}`
-}
-
-function clearHistory() {
-  if (confirm('确定清空播放历史？')) {
+async function clearHistory() {
+  if (await confirmDialog({ message: '确定清空播放历史？', detail: '只清空记录,曲库与收藏不受影响', confirmText: '清空', danger: true })) {
     musicStore.clearHistory()
   }
 }
@@ -218,13 +209,15 @@ function clearHistory() {
 .clear-btn { padding: 6px 14px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-md); font-size: var(--font-size-sm); }
 .clear-btn:hover { background: rgba(255,77,79,0.1); color: var(--color-danger); }
 
-.view-content { flex: 1; overflow-y: auto; padding: 0 24px 24px; }
+.view-content { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--page-pad-x) var(--page-pad-x); }
 
 /* 播放记录列表 */
 .history-list { display: flex; flex-direction: column; gap: 2px; }
 .history-row {
   display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px;
+  /* 与歌曲列表同高(此前 10px 内边距 + 40px 封面 ≈ 60px,列表是 56px) */
+  min-height: var(--row-h);
+  padding: 0 16px;
   border-radius: var(--radius-md);  cursor: default;
   transition: background var(--transition-fast);
 }
@@ -297,7 +290,7 @@ function clearHistory() {
 .rank-num { width: 32px; text-align: center; font-size: var(--font-size-lg); font-weight: 700; color: var(--text-tertiary); flex-shrink: 0; }
 .rank-num.top { color: var(--color-primary); font-size: 18px; }
 
-.rank-cover { width: 40px; height: 40px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
+.rank-cover { width: var(--thumb); height: var(--thumb); border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
 .rank-cover img { width: 100%; height: 100%; object-fit: cover; }
 
 .rank-info { flex: 1; min-width: 0; }
@@ -314,7 +307,5 @@ function clearHistory() {
 .rank-play:hover { background: var(--color-primary-alpha); }
 .rank-play svg { width: 16px; height: 16px; }
 
-.empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 300px; color: var(--text-tertiary); }
-.empty-icon { font-size: 48px; margin-bottom: 12px; }
-.empty-text { font-size: var(--font-size-base); }
+.es-icon { margin-bottom: 12px; display: inline-flex; color: var(--empty-icon, var(--text-tertiary)); }
 </style>

@@ -2,20 +2,20 @@
   <div class="home-view">
     <div class="view-header">
       <div class="header-left">
-        <h1 class="header-title">{{ t('nav.home') }}</h1>
-        <span class="header-count">{{ t('home.count', { n: musicStore.totalCount }) }}</span>
+        <h1 class="header-title vh-title">{{ t('nav.home') }}</h1>
+        <span class="header-count vh-sub">{{ t('home.count', { n: musicStore.totalCount }) }}</span>
       </div>
       <div class="header-right">
         <button class="btn btn--sm" @click="addFiles" title="添加文件">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <Icon name="upload" :size="14" />
           <span>{{ t('home.addFiles') }}</span>
         </button>
         <button v-if="musicStore.totalCount > 0" class="btn btn--sm dup-btn" @click="openDuplicates" title="查重">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 15v-1a4 4 0 00-4-4H8m0 0l3 3m-3-3l3-3m9 14v5a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2h5"/></svg>
+          <Icon name="duplicate" :size="14" />
           <span>{{ t('home.dup') }}</span>
         </button>
         <button v-if="musicStore.totalCount > 0" class="btn btn--sm dup-btn" @click="openMissingCheck" title="检测已移动或删除的歌曲">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+          <Icon name="warning" :size="14" />
           <span>{{ t('home.missing') }}</span>
         </button>
       </div>
@@ -23,27 +23,27 @@
 
     <!-- 启动检测到失效歌曲:横幅提示 -->
     <div v-if="musicStore.startupMissing.length > 0" class="missing-banner" @click="openMissingCheck">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3z"/><line x1="9" y1="9" x2="15" y2="15"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
+      <Icon name="warning" :size="16" />
       <span>{{ t('home.missingBanner', { n: musicStore.startupMissing.length }) }}</span>
       <span class="missing-banner-action">{{ t('home.missingAction') }}</span>
     </div>
 
     <!-- 拖拽上传区 -->
     <div v-if="musicStore.totalCount === 0 && !isElectron" class="upload-zone" @click="addFiles" @dragover.prevent @drop.prevent="onDrop">
-      <div class="upload-icon">🎵</div>
+      <div class="upload-icon"><Icon name="music" :size="52" /></div>
       <div class="upload-title">拖拽音乐文件到此处</div>
       <div class="upload-desc">或点击选择文件（支持 MP3/FLAC/WAV/APE/M4A/OGG）</div>
     </div>
 
     <!-- 搜索结果提示 -->
     <div v-if="musicStore.searchQuery" class="search-indicator">
-      <svg class="indicator-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+      <Icon name="search" class="indicator-icon" :size="16" />
       <span>{{ t('home.searchResult', { q: musicStore.searchQuery, n: musicStore.filteredSongs.length }) }}</span>
       <button class="indicator-clear" @click="musicStore.setSearchQuery('')">{{ t('common.close') }}</button>
     </div>
 
     <!-- 歌曲列表 -->
-    <div class="view-content">
+    <div class="view-content page-body page-body--flush">
       <!-- 首次扫描/加载骨架屏 -->
       <div v-if="musicStore.isScanning && musicStore.totalCount === 0" class="skeleton-list">
         <div v-for="n in 8" :key="n" class="skeleton-row">
@@ -83,12 +83,12 @@
     <teleport to="body">
       <transition name="fade">
         <div v-if="showDupDialog" class="dialog-overlay" @click.self="closeDupDialog">
-          <div class="dup-dialog">
+          <div class="modal-card dup-dialog">
             <div class="dialog-header">
               <h3>重复歌曲检测</h3>
               <span class="dup-summary" v-if="dupGroups.length > 0">发现 {{ dupGroups.length }} 组重复，共 {{ dupTotalSongs }} 首</span>
               <button class="dialog-close" @click="closeDupDialog">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon name="close" :size="14" />
               </button>
             </div>
             <div class="dup-list" v-if="dupGroups.length > 0">
@@ -100,9 +100,9 @@
                   <button class="dup-keep-btn" @click="keepOne(gi)" title="只保留第一首">保留一首</button>
                 </div>
                 <div v-for="(song, si) in group" :key="song.path" class="dup-item" :class="{ selected: dupSelected.has(song.path) }">
-                  <input type="checkbox" :checked="dupSelected.has(song.path)" @change="toggleDupSelect(song.path)" />
+                  <input type="checkbox" class="sf-check" :checked="dupSelected.has(song.path)" :aria-label="`选择 ${song.title || '这首歌'}`" @change="toggleDupSelect(song.path)" />
                   <div class="dup-item-cover" v-if="song.coverUrl">
-                    <img :src="song.coverUrl" />
+                    <img :src="song.coverUrl" alt="" />
                   </div>
                   <div class="dup-item-info">
                     <div class="dup-item-title text-ellipsis">{{ song.title }}</div>
@@ -117,7 +117,7 @@
               </div>
             </div>
             <div v-else class="dup-empty">
-              <div class="dup-empty-icon">✅</div>
+              <div class="dup-empty-icon"><Icon name="check" :size="46" /></div>
               <div class="dup-empty-text">没有发现重复歌曲</div>
             </div>
             <div class="dialog-footer" v-if="dupGroups.length > 0">
@@ -128,21 +128,24 @@
             </div>
           </div>
         </div>
+      </transition>
 
-        <!-- 失效歌曲检测弹窗 -->
+      <!-- 失效歌曲检测弹窗 -->
+      <!-- Vue 3 的 Transition 只允许单个子元素,两个弹窗必须各自包一个 transition -->
+      <transition name="fade">
         <div v-if="showMissingDialog" class="dialog-overlay" @click.self="closeMissingDialog">
-          <div class="dup-dialog">
+          <div class="modal-card dup-dialog">
             <div class="dialog-header">
               <h3>失效歌曲检测</h3>
               <span class="dup-summary" v-if="missingSongs.length > 0">发现 {{ missingSongs.length }} 首文件已丢失</span>
               <button class="dialog-close" @click="closeMissingDialog">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                <Icon name="close" :size="14" />
               </button>
             </div>
             <div class="dup-list" v-if="missingSongs.length > 0">
               <div v-for="song in missingSongs" :key="song.path" class="dup-item">
                 <div class="dup-item-cover" v-if="song.coverUrl">
-                  <img :src="song.coverUrl" />
+                  <img :src="song.coverUrl" alt="" />
                 </div>
                 <div class="dup-item-info">
                   <div class="dup-item-title text-ellipsis">{{ song.title }}</div>
@@ -155,7 +158,7 @@
               </div>
             </div>
             <div v-else class="dup-empty">
-              <div class="dup-empty-icon">✅</div>
+              <div class="dup-empty-icon"><Icon name="check" :size="46" /></div>
               <div class="dup-empty-text">所有歌曲文件均存在</div>
             </div>
             <div class="dialog-footer" v-if="missingSongs.length > 0">
@@ -178,6 +181,8 @@ import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
+import Icon from '@/components/icons/Icon.vue'
+import { confirmDialog } from '@/composables/useConfirm'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
@@ -231,13 +236,23 @@ function openSettings() {
 
 function onDrop(e) {
   const files = e.dataTransfer?.files
-  if (files && files.length) {
-    const paths = []
-    for (let i = 0; i < files.length; i++) {
-      paths.push(files[i].path || files[i].name)
-    }
-    if (isElectron.value) musicStore.scanFiles(paths)
+  if (!files || !files.length) return
+  if (!isElectron.value) {
+    window.$toast?.('浏览器预览模式不支持拖拽导入，请使用桌面端', 'error', 4000)
+    return
   }
+  // Electron 32+ 已移除 File.path,须经 preload 的 webUtils.getPathForFile 取真实路径
+  // (旧代码退化用 files[i].name 只是裸文件名,主进程无法打开)
+  const paths = []
+  for (let i = 0; i < files.length; i++) {
+    const p = window.electronAPI?.getPathForFile?.(files[i]) || files[i].path || ''
+    if (p) paths.push(p)
+  }
+  if (!paths.length) {
+    window.$toast?.('未能读取文件路径，请改用「添加文件」按钮导入', 'error', 4000)
+    return
+  }
+  musicStore.scanFiles(paths)
 }
 
 function onReorder({ from, to, pos }) {
@@ -277,7 +292,13 @@ function closeDupDialog() {
 
 // 失效歌曲检测
 async function openMissingCheck() {
-  missingSongs.value = await musicStore.checkMissingSongs()
+  const missing = await musicStore.checkMissingSongs()
+  if (missing === null) {
+    // 检测失败:不要打开弹窗谎称「所有歌曲文件均存在」
+    window.$toast?.('失效检测未能完成，请稍后重试', 'error', 4000)
+    return
+  }
+  missingSongs.value = missing
   showMissingDialog.value = true
 }
 
@@ -286,9 +307,9 @@ function closeMissingDialog() {
   missingSongs.value = []
 }
 
-function removeMissingSongs() {
+async function removeMissingSongs() {
   if (missingSongs.value.length === 0) return
-  if (!confirm(`确定从曲库移除 ${missingSongs.value.length} 首失效歌曲？`)) return
+  if (!(await confirmDialog({ message: `确定从曲库移除这 ${missingSongs.value.length} 首失效歌曲？`, detail: '只从曲库移除,不会删除本地文件', confirmText: '移除', danger: true }))) return
   const paths = missingSongs.value.map(s => s.path)
   musicStore.removeSongs(paths)
   closeMissingDialog()
@@ -312,9 +333,9 @@ function keepOne(groupIdx) {
   dupSelected.value = s
 }
 
-function removeSelected() {
+async function removeSelected() {
   if (dupSelected.value.size === 0) return
-  if (!confirm(`确定从曲库移除选中的 ${dupSelected.value.size} 首重复歌曲？`)) return
+  if (!(await confirmDialog({ message: `确定从曲库移除选中的 ${dupSelected.value.size} 首重复歌曲？`, detail: '只从曲库移除,不会删除本地文件', confirmText: '移除', danger: true }))) return
   const paths = [...dupSelected.value]
   musicStore.removeSongs(paths)
   // 刷新查重结果
@@ -325,6 +346,8 @@ function removeSelected() {
 </script>
 
 <style scoped>
+/* 根容器改用全局 .page(高度/朝向/裁切一致);左右留白与页头间距统一走 --page-pad-*,
+   此前 24px 在页头里写死、横幅却是 margin:0 —— 横幅贴到 x=0,与标题错开 24px。 */
 .home-view {
   height: 100%;
   display: flex;
@@ -334,7 +357,7 @@ function removeSelected() {
 
 .missing-banner {
   display: flex; align-items: center; gap: 8px;
-  margin: 0 0 10px; padding: 9px 14px;
+  margin: 0 var(--page-pad-x) 10px; padding: 9px 14px;
   background: var(--bg-hover, rgba(255,255,255,0.06));
   border: 1px solid rgba(255, 170, 60, 0.35);
   border-radius: 8px;
@@ -352,16 +375,9 @@ function removeSelected() {
   white-space: nowrap;
 }
 
-.view-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px 12px;
-  flex-shrink: 0;
-}
-
 .header-left { display: flex; align-items: baseline; gap: 12px; }
-.header-title { font-size: 24px; font-weight: 700; color: var(--text-primary); }
+/* 字号/字重由全局 .view-header .vh-title 提供(统一页面标题 token),此处只管排布 */
+.header-title { color: var(--text-primary); }
 .header-count { font-size: var(--font-size-base); color: var(--text-secondary); }
 
 .header-right { display: flex; gap: 8px; }
@@ -397,7 +413,7 @@ function removeSelected() {
 
 .search-indicator {
   display: flex; align-items: center; gap: 8px;
-  padding: 8px 24px;
+  padding: 8px var(--page-pad-x);
   background: var(--color-primary-alpha);
   color: var(--color-primary);
   font-size: var(--font-size-sm);
@@ -412,11 +428,13 @@ function removeSelected() {
   font-size: var(--font-size-xs);
 }
 
-.view-content { flex: 1; overflow: hidden; }
+/* 列表区:.page-body--flush 交给自己滚动,内层限制最大宽度(超宽屏不再无限拉伸) */
+.view-content { flex: 1; min-height: 0; overflow: hidden; }
 
-.skeleton-list { padding: 4px 12px; display: flex; flex-direction: column; gap: 10px; }
-.skeleton-row { display: flex; align-items: center; gap: 12px; height: 44px; }
-.skeleton-cover { width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0; }
+/* 骨架屏与真实行对齐:此前骨架 44px/12px 缩进,真实行 56px/24px —— 加载完成瞬间会跳一下 */
+.skeleton-list { padding: 4px var(--page-pad-x); display: flex; flex-direction: column; gap: 10px; }
+.skeleton-row { display: flex; align-items: center; gap: 12px; height: var(--row-h); }
+.skeleton-cover { width: var(--thumb); height: var(--thumb); border-radius: 8px; flex-shrink: 0; }
 .skeleton-line { height: 14px; border-radius: 4px; }
 .scan-overlay {  position: fixed;
   inset: 0;
@@ -443,19 +461,13 @@ function removeSelected() {
 
 /* 查重弹窗 */
 .dialog-overlay {
-  position: fixed; inset: 0; z-index: 1000;
-  background: rgba(0,0,0,0.5);
+  position: fixed; inset: 0; z-index: var(--z-modal);
+  background: var(--overlay-mask, rgba(0,0,0,0.5));
   display: flex; align-items: center; justify-content: center;
   backdrop-filter: blur(4px);
 }
 .dup-dialog {
-  width: 720px; max-height: 85vh;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  display: flex; flex-direction: column;
-  overflow: hidden;
+  padding: 0; width: 720px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;
 }
 .dialog-header {
   display: flex; align-items: center; gap: 12px;
@@ -490,7 +502,7 @@ function removeSelected() {
 }
 .dup-item:hover { background: var(--bg-hover); }
 .dup-item.selected { background: var(--color-primary-alpha); }
-.dup-item input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--color-primary); cursor: pointer; flex-shrink: 0; }
+.dup-item input[type="checkbox"] { flex-shrink: 0; }
 .dup-item-cover { width: 32px; height: 32px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; }
 .dup-item-cover img { width: 100%; height: 100%; object-fit: cover; }
 .dup-item-info { flex: 1; min-width: 0; }

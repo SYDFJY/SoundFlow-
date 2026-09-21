@@ -1,0 +1,132 @@
+/**
+ * 控件层:复选框、按压/悬停交互原语。
+ *
+ * 为什么单独成文件而不是塞进 global.css:
+ *   - global.css 是"设计底座"(变量、基座类、弹窗/空状态等共享结构),已经 800+ 行;
+ *   - 这里是"控件皮肤",按控件类型成组增长,合在一起会让底座文件不断膨胀;
+ *   - 语义上它属于"可选增强":删掉它界面仍可用,只是控件回到系统默认外观。
+ *
+ * 交互原语取自 uiverse.io 的按钮/复选框风格(纯 CSS,无 JS 依赖),但**颜色与尺寸
+ * 全部改写为 SoundFlow 主题变量** —— 原组件的固定色在 16 套主题下会立刻穿帮。
+ * 项目已有自己的按压习惯(button:active 的 scale(0.97)),这里只做增量:
+ * 给图标按钮族补"下沉 + 内阴影"的按压深度与 1px 悬停抬升;
+ * 全部动效受 prefers-reduced-motion 门控。
+ */
+
+/* ===== 复选框:原生语义 + 主题化外观 =====
+   用 appearance:none 而不是换成 div —— 保留原生 <input> 的键盘/读屏/表单语义,
+   只接管外观。此前各处用原生复选框,16 套主题下由浏览器决定配色,浅色主题里
+   深色勾选框、深色主题里白底勾选框,与相邻控件完全不是一个体系。 */
+.sf-check {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border: 1.5px solid var(--border-color, rgba(128, 128, 128, 0.5));
+  border-radius: 5px;
+  background: var(--bg-primary, transparent);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.sf-check:hover { border-color: var(--color-primary); }
+.sf-check:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.sf-check:checked,
+.sf-check:indeterminate {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+/* 勾:用两条边框拼出的对勾,勾选瞬间描边展开(纯 CSS,无需图标文件) */
+.sf-check::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transform-origin: center;
+  transition: transform 0.14s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sf-check:checked::after { transform: rotate(45deg) scale(1); }
+/* 半选(全选按钮在"部分勾选"时):一横杠 */
+.sf-check:indeterminate::after {
+  left: 3px;
+  top: 6.5px;
+  width: 8px;
+  height: 0;
+  border-width: 0 0 2px 0;
+  transform: none;
+}
+.sf-check:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ===== 交互原语:按压深度与悬停抬升 =====
+   只作用于图标按钮族(不碰主要按钮的既有观感),且只用 transform/box-shadow,
+   不触发重排。软件渲染下同样廉价。 */
+.icon-btn,
+.ctrl-btn,
+.right-btn,
+.ls-btn,
+.win-btn,
+.toolbar-btn {
+  transition: background var(--transition-fast), color var(--transition-fast),
+              transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+.icon-btn:hover,
+.ctrl-btn:hover,
+.right-btn:hover,
+.win-btn:hover {
+  transform: translateY(-1px);
+}
+.icon-btn:active,
+.ctrl-btn:active,
+.right-btn:active,
+.win-btn:active,
+.ls-btn:active,
+.toolbar-btn:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+/* ===== 滑杆手柄:悬停放大 + 拖动光晕(与既有 .h-slider 习惯一致) ===== */
+input[type='range']::-webkit-slider-thumb {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+input[type='range']:hover::-webkit-slider-thumb { transform: scale(1.1); }
+input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 6px var(--color-primary-alpha, rgba(64, 150, 255, 0.2));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-check,
+  .sf-check::after,
+  .icon-btn,
+  .ctrl-btn,
+  .right-btn,
+  .ls-btn,
+  .win-btn,
+  .toolbar-btn,
+  input[type='range']::-webkit-slider-thumb {
+    transition: none;
+  }
+  .icon-btn:hover,
+  .ctrl-btn:hover,
+  .right-btn:hover,
+  .win-btn:hover,
+  .icon-btn:active,
+  .ctrl-btn:active,
+  .right-btn:active,
+  .win-btn:active,
+  .ls-btn:active,
+  .toolbar-btn:active {
+    transform: none;
+  }
+}

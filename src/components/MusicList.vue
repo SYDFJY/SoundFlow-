@@ -4,11 +4,11 @@
     <div class="list-toolbar" v-if="songs.length > 0">
       <div class="toolbar-left">
         <button class="toolbar-btn" @click="$emit('play-all')" title="播放全部">
-          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+          <Icon name="play" :size="14" fill="currentColor" />
           <span>播放全部</span>
         </button>
         <button v-if="songs.length > 0" class="toolbar-btn" @click="toggleBatch" :class="{ active: batchOn }">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          <Icon name="multiSelect" :size="14" />
           <span>批量</span>
         </button>
       </div>
@@ -18,52 +18,64 @@
           <button class="sort-btn" :class="{ active: sortField === 'artist' }" @click="$emit('sort', 'artist')">歌手</button>
           <button class="sort-btn" :class="{ active: sortField === 'album' }" @click="$emit('sort', 'album')">专辑</button>
           <button class="sort-btn" :class="{ active: sortField === 'duration' }" @click="$emit('sort', 'duration')">时长</button>
+          <button class="sort-btn" :class="{ active: sortField === 'addedTime' }" title="按文件进入曲库的时间排序" @click="showAddedCol = true; $emit('sort', 'addedTime')">添加时间</button>
         </div>
+        <button
+          class="col-toggle"
+          :class="{ active: showAddedCol }"
+          :title="showAddedCol ? '隐藏「添加时间」列' : '显示「添加时间」列'"
+          :aria-pressed="showAddedCol"
+          @click="toggleAddedCol"
+        >添加时间列</button>
       </div>
     </div>
 
     <!-- 表头 -->
     <div class="list-header" v-if="songs.length > 0">
       <div v-if="batchOn" class="col-check">
-        <input type="checkbox" :checked="allChecked" @change="toggleAll" />
+        <input type="checkbox" class="sf-check" :checked="allChecked" @change="toggleAll" aria-label="全选" />
       </div>
       <div class="col-index">#</div>
-      <div class="col-title sortable" @click="$emit('sort', 'title')">标题<span class="sort-arrow">{{ sortField === 'title' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
-      <div class="col-artist sortable" @click="$emit('sort', 'artist')">歌手<span class="sort-arrow">{{ sortField === 'artist' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
-      <div class="col-album sortable" @click="$emit('sort', 'album')">专辑<span class="sort-arrow">{{ sortField === 'album' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
-      <div class="col-duration sortable" @click="$emit('sort', 'duration')">时长<span class="sort-arrow">{{ sortField === 'duration' ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}</span></div>
+      <div class="col-title sortable" role="button" tabindex="0" :aria-label="`按标题排序${sortField === 'title' ? (musicStore.sortOrder === 'asc' ? '（当前升序）' : '（当前降序）') : ''}`" @click="$emit('sort', 'title')" @keydown.enter.prevent="$emit('sort', 'title')" @keydown.space.prevent="$emit('sort', 'title')">标题<span class="sort-arrow" aria-hidden="true"><Icon v-if="sortField === 'title'" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" /></span></div>
+      <div class="col-artist sortable" role="button" tabindex="0" :aria-label="`按歌手排序${sortField === 'artist' ? (musicStore.sortOrder === 'asc' ? '（当前升序）' : '（当前降序）') : ''}`" @click="$emit('sort', 'artist')" @keydown.enter.prevent="$emit('sort', 'artist')" @keydown.space.prevent="$emit('sort', 'artist')">歌手<span class="sort-arrow" aria-hidden="true"><Icon v-if="sortField === 'artist'" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" /></span></div>
+      <div class="col-album sortable" role="button" tabindex="0" :aria-label="`按专辑排序${sortField === 'album' ? (musicStore.sortOrder === 'asc' ? '（当前升序）' : '（当前降序）') : ''}`" @click="$emit('sort', 'album')" @keydown.enter.prevent="$emit('sort', 'album')" @keydown.space.prevent="$emit('sort', 'album')">专辑<span class="sort-arrow" aria-hidden="true"><Icon v-if="sortField === 'album'" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" /></span></div>
+      <div class="col-duration sortable" role="button" tabindex="0" :aria-label="`按时长排序${sortField === 'duration' ? (musicStore.sortOrder === 'asc' ? '（当前升序）' : '（当前降序）') : ''}`" @click="$emit('sort', 'duration')" @keydown.enter.prevent="$emit('sort', 'duration')" @keydown.space.prevent="$emit('sort', 'duration')">时长<span class="sort-arrow" aria-hidden="true"><Icon v-if="sortField === 'duration'" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" /></span></div>
+      <div v-if="showAddedCol" class="col-added sortable" role="button" tabindex="0" :aria-label="`按添加时间排序${sortField === 'addedTime' ? (musicStore.sortOrder === 'asc' ? '（当前升序）' : '（当前降序）') : ''}`" @click="$emit('sort', 'addedTime')" @keydown.enter.prevent="$emit('sort', 'addedTime')" @keydown.space.prevent="$emit('sort', 'addedTime')">添加时间<span class="sort-arrow" aria-hidden="true"><Icon v-if="sortField === 'addedTime'" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" /></span></div>
       <div class="col-actions"></div>
     </div>
 
     <!-- 列表(虚拟滚动:固定行高 56px,只渲染可视区 ±缓冲 的行,大列表 DOM 恒定) -->
-    <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" @scroll="onListScroll" tabindex="0" @keydown="onListKeydown" @click="clearKeyboardIdx">
-      <!-- 拖拽插入指示线 -->
-      <div class="drop-line" :style="{ top: dropLineTop + 'px', display: draggingPath ? 'block' : 'none' }"></div>
+    <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" role="listbox" aria-label="歌曲列表（上下键选择，回车播放）" @scroll="onListScroll" tabindex="0" @keydown="onListKeydown" @click="clearKeyboardIdx">
       <div class="list-spacer" :style="{ height: songs.length * ROW_H + 'px' }">
+        <!-- 拖拽插入指示线(内容坐标,随列表滚动) -->
+        <div class="drop-line" :style="{ top: dropLineTop + 'px', display: draggingPath ? 'block' : 'none' }"></div>
         <div class="list-virtual" :style="{ transform: 'translateY(' + virtualStart * ROW_H + 'px)' }">
           <div
             v-for="(song, i) in virtualSongs"
             :key="song.path"
             class="list-row"
+            role="option"
+            :aria-selected="selectedSet.has(song.path)"
             :data-path="song.path"
-            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), 'drag-over': jsDragTarget === song.path, dragging: draggingPath === song.path, 'keyboard-selected': keyboardIdx === virtualStart + i }"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), dragging: draggingPath === song.path, 'keyboard-selected': keyboardIdx === virtualStart + i }"
+            :style="rowStyle(virtualStart + i)"
             @dblclick="playSong(virtualStart + i)"
             @contextmenu.prevent="showContextMenu($event, song)"
             @mousedown="onRowMouseDown($event, song)"
           >
             <div v-if="batchOn" class="col-check" @click.stop>
-              <input type="checkbox" :checked="selectedSet.has(song.path)" @change="toggleSelect(virtualStart + i)" />
+              <input type="checkbox" class="sf-check" :checked="selectedSet.has(song.path)" :aria-label="`选择 ${song.title || '这首歌'}`" @change="toggleSelect(virtualStart + i)" />
             </div>
             <div class="col-index">
               <span v-if="isCurrentSong(song) && playerStore.isPlaying" class="eq-bars"><i></i><i></i><i></i></span>
               <span v-else class="index-num">{{ virtualStart + i + 1 }}</span>
-              <button class="play-icon" @click.stop="playSong(virtualStart + i)">
-                <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg>
+              <button class="play-icon" @click.stop="playSong(virtualStart + i)" :title="`播放 ${song.title || ''}`" :aria-label="`播放 ${song.title || '这首歌'}`">
+                <Icon name="play" :size="14" fill="currentColor" />
               </button>
             </div>
             <div class="col-title">
               <div class="song-cover">
-                <img v-if="song.coverUrl" :src="song.coverUrl" loading="lazy" decoding="async" @error="onCoverError(song)" />
+                <img v-if="song.coverUrl" :src="song.coverUrl" class="img-loading" loading="lazy" decoding="async" @load="markCoverLoaded" @error="markCoverLoaded($event); onCoverError(song)" alt="" />
               </div>
               <div class="song-info">
                 <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
@@ -73,12 +85,16 @@
             <div class="col-artist text-ellipsis" v-html="highlight(song.artist)"></div>
             <div class="col-album text-ellipsis" v-html="highlight(song.album)"></div>
             <div class="col-duration">{{ formatDuration(song.duration) }}</div>
+            <div v-if="showAddedCol" class="col-added" :title="addedTimeTitle(song)">{{ formatAddedTime(song.addedTime) }}</div>
             <div class="col-actions">
               <button class="action-btn" @click.stop="toggleFav(song)" :class="{ active: isFav(song) }" title="收藏">
-                <svg viewBox="0 0 24 24" :fill="isFav(song) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>
+                <Icon name="favorite" :size="16" :fill="isFav(song) ? 'currentColor' : 'none'" />
+              </button>
+              <button class="action-btn" @click.stop="rowAddToPlaylist(song)" title="加入歌单" v-if="playlists.length > 0">
+                <Icon name="add" :size="16" />
               </button>
               <button class="action-btn" @click.stop="showContextMenu($event, song)" title="更多">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                <Icon name="more" :size="16" />
               </button>
             </div>
           </div>
@@ -88,8 +104,8 @@
 
     <!-- 空状态 -->
     <div v-else class="list-empty">
-      <div class="empty-icon">{{ emptyIcon }}</div>
-      <div class="empty-text">{{ emptyText }}</div>
+      <div class="es-icon"><Icon :name="emptyIcon" :size="48" /></div>
+      <div class="es-text">{{ emptyText }}</div>
       <div v-if="emptyActions" class="empty-actions">
         <button class="btn btn--sm" @click="$emit('add-files')">添加文件</button>
         <button class="btn btn--ghost btn--sm" @click="$emit('add-folder')">添加文件夹</button>
@@ -101,7 +117,7 @@
     <div v-if="batchOn" class="batch-bar">
       <span class="batch-count">已选 {{ selectedSet.size }} 首</span>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openBatchEdit">编辑标签</button>
-      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAutoTag">✨ 自动补全</button>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAutoTag"><Icon name="effect" :size="13" />自动补全</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openRename">重命名</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAddToPlaylist">加入歌单</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="confirmRemoveSelected">删除</button>
@@ -111,8 +127,8 @@
     <!-- MusicBrainz 自动补全预览弹窗 -->
     <teleport to="body">
       <div v-if="autoTagModal.show" class="modal-mask" @click.self="autoTagModal.show = false">
-        <div class="edit-modal autotag-modal">
-          <h3>✨ 自动补全标签({{ autoTagModal.results.length }} 首匹配)</h3>
+        <div class="modal-card edit-modal autotag-modal">
+          <h3><Icon name="effect" :size="16" />自动补全标签({{ autoTagModal.results.length }} 首匹配)</h3>
           <div class="autotag-sources">
             <button v-for="s in [{ v: 'auto', l: '自动' }, { v: 'qq', l: 'QQ音乐' }, { v: 'netease', l: '网易云' }, { v: 'kugou', l: '酷狗' }, { v: 'musicbrainz', l: 'MusicBrainz' }]" :key="s.v"
               class="chip" :class="{ active: autoTagModal.source === s.v }" :disabled="autoTagModal.searching" @click="switchAutoTagSource(s.v)">
@@ -127,7 +143,7 @@
                 <span v-if="r.candidates.length" class="autotag-cands">
                   <label v-for="(c, ci) in r.candidates" :key="ci" class="autotag-opt" :class="{ checked: r.checked === ci }">
                     <input type="radio" :name="'at-' + r.path" :checked="r.checked === ci" @change="r.checked = ci" />
-                    <img v-if="c.coverUrl" class="autotag-cover" :src="c.coverUrl" loading="lazy" @error="$event.target.style.display='none'" />
+                    <img v-if="c.coverUrl" class="autotag-cover" :src="c.coverUrl" loading="lazy" @error="$event.target.style.display='none'" alt="" />
                     <span class="autotag-opt-text">{{ c.album }}{{ c.year ? '(' + c.year + ')' : '' }} <em class="autotag-src">{{ c.source || '' }}</em></span>
                   </label>
                 </span>
@@ -148,7 +164,7 @@
     <!-- 批量重命名弹窗 -->
     <teleport to="body">
       <div v-if="renameModal.show" class="modal-mask" @click.self="renameModal.show = false">
-        <div class="edit-modal rename-modal">
+        <div class="modal-card edit-modal rename-modal">
           <h3>批量重命名文件({{ renameModal.rows.length }} 首)</h3>
           <div class="rename-tpl">
             <button v-for="t in RENAME_TPLS" :key="t.v" class="chip" :class="{ active: renameModal.tpl === t.v }" @click="setRenameTpl(t.v)">{{ t.l }}</button>
@@ -173,7 +189,7 @@
     <!-- 批量编辑标签弹窗 -->
     <teleport to="body">
       <div v-if="batchEditModal.show" class="modal-mask" @click.self="batchEditModal.show = false">
-        <div class="edit-modal">
+        <div class="modal-card edit-modal">
           <h3>批量编辑标签({{ batchEditModal.count }} 首)</h3>
           <label>歌手<input v-model="batchEditModal.artist" placeholder="留空则不修改" /></label>
           <label>专辑<input v-model="batchEditModal.album" placeholder="留空则不修改" /></label>
@@ -191,7 +207,7 @@
     <teleport to="body">
       <transition name="fade">
         <div v-if="showPlaylistPicker" class="pl-picker-overlay" @click.self="showPlaylistPicker = false">
-          <div class="pl-picker-card">
+          <div class="modal-card pl-picker-card">
             <h3>添加到歌单</h3>
             <div v-if="playlists.length === 0" class="pl-picker-empty">暂无歌单,请先在侧边栏创建</div>
             <div v-for="pl in playlists" :key="pl.id" class="pl-picker-item" @click="addSelectedToPlaylist(pl.id)">{{ pl.name }} ({{ pl.songs.length }})</div>
@@ -204,30 +220,30 @@
     <!-- 右键菜单 -->
     <transition name="fade">
       <div v-if="ctxMenu.show" class="context-menu" :style="{ top: ctxMenu.y + 'px', left: ctxMenu.x + 'px' }">
-        <button @click="ctxPlay"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="8,5 19,12 8,19"/></svg> 播放 <span class="ctx-shortcut">空格</span></button>
-        <button @click="ctxEditInfo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg> 编辑信息</button>
-        <button @click="ctxPlayNext"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/></svg> 下一首播放</button>
-        <button @click="ctxToggleFav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg> 收藏</button>
+        <button @click="ctxPlay"><Icon name="play" :size="14" fill="currentColor" /> 播放 <span class="ctx-shortcut">空格</span></button>
+        <button @click="ctxEditInfo"><Icon name="edit" :size="16" /> 编辑信息</button>
+        <button @click="ctxPlayNext"><Icon name="next" :size="16" /> 下一首播放</button>
+        <button @click="ctxToggleFav"><Icon name="favorite" :size="16" /> 收藏</button>
         <div class="ctx-divider"></div>
         <button @click="ctxAddToPlaylist" v-if="playlists.length > 0">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> 添加到歌单
+          <Icon name="add" :size="16" /> 添加到歌单
         </button>
-        <button @click="ctxBindLyric"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg> 导入歌词文件</button>
-        <button @click="ctxOpenFile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg> 打开文件位置</button>
-        <button @click="ctxShowProps"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg> 文件属性</button>
+        <button @click="ctxBindLyric"><Icon name="lyrics" :size="16" /> 导入歌词文件</button>
+        <button @click="ctxOpenFile"><Icon name="folder" :size="16" /> 打开文件位置</button>
+        <button @click="ctxShowProps"><Icon name="settings" :size="16" /> 文件属性</button>
         <div class="ctx-divider"></div>
         <div class="ctx-sort-label">排序方式</div>
         <button v-for="sf in ctxSortFields" :key="sf.value" class="ctx-sort-btn" :class="{ active: musicStore.sortField === sf.value }" @click="ctxSort(sf.value)">
-          {{ sf.label }} {{ musicStore.sortField === sf.value ? (musicStore.sortOrder === 'asc' ? '↑' : '↓') : '' }}
+          {{ sf.label }}<Icon v-if="musicStore.sortField === sf.value" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" />
         </button>
         <div class="ctx-divider"></div>
-        <button class="danger" @click="ctxRemove"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg> 移除</button>
+        <button class="danger" @click="ctxRemove"><Icon name="remove" :size="16" /> 移除</button>
       </div>
     </transition>
 
     <!-- 编辑歌曲信息 -->
     <div v-if="editModal.show" class="modal-mask" @click.self="editModal.show = false">
-      <div class="edit-modal">
+      <div class="modal-card edit-modal">
         <h3>编辑歌曲信息</h3>
         <label>标题
           <input v-model="editModal.title" placeholder="标题" />
@@ -254,7 +270,7 @@
     </div>
     <!-- 文件属性 -->
     <div v-if="propModal.show" class="modal-mask" @click.self="propModal.show = false">
-      <div class="edit-modal prop-modal">
+      <div class="modal-card edit-modal prop-modal">
         <h3>文件属性</h3>
         <div class="prop-grid">
           <div class="prop-item"><span class="prop-k">文件名</span><span class="prop-v">{{ propModal.fileName }}</span></div>
@@ -278,6 +294,8 @@
 
 <script setup>
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { formatDuration as fmtDuration, formatAddedTime, formatTimestamp } from '@/utils/time'
+import Icon from '@/components/icons/Icon.vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { setDragSong, clearDragSong } from '@/composables/useDragSong'
@@ -287,19 +305,23 @@ const props = defineProps({
   sortField: { type: String, default: 'title' },
   batchMode: { type: Boolean, default: false },
   emptyText: { type: String, default: '暂无歌曲' },
-  emptyIcon: { type: String, default: '🎵' },
+  /** 语义图标名(见 icons/names.js),不再是 emoji 字符 */
+  emptyIcon: { type: String, default: 'music' },
   emptyActions: { type: Boolean, default: false },
   emptyCtaLabel: { type: String, default: '' },
   playlistContext: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selection-change', 'reorder', 'add-files', 'add-folder'])
-// ===== JS 拖拽排序(HTML5 DnD 在 Electron 拖动不稳定,改用鼠标事件) =====
-// 拖到侧边栏歌单通过全局 dragSongPath 传递(useDragSong)
-// 拖拽排序完善版:源行浮起 + 目标插入线(before/after) + 自动滚动 + 虚拟滚动适配
+// 拖拽排序(坐标计算手写实现:不切换渲染、不移动 DOM,避免 Sortable 与 Vue 虚拟 DOM 冲突卡住;
+// 目标索引由鼠标坐标直接计算,虚拟滚动下也能精确落点;拖到侧边栏歌单经全局 dragSongPath 传递)
 let jsDrag = null
-const jsDragTarget = ref(null)
 const draggingPath = ref(null)
+const dragDX = ref(0)
+const dragDY = ref(0)
+const jsDragSourceIdx = ref(-1)
+const jsDragTargetIdx = ref(-1)
+const jsDragTargetPath = ref(null)
 const jsDragPos = ref('after')
 const dropLineTop = ref(0)
 let jsAutoScrollTimer = null
@@ -321,73 +343,93 @@ function onRowMouseDown(e, song) {
     }
     return
   }
-  e.preventDefault() // 阻止拖动时文本选择(会破坏 elementFromPoint 命中)
+  e.preventDefault() // 阻止拖动时文本选择
   jsDrag = { path: song.path, startX: e.clientX, startY: e.clientY, moved: false }
   document.addEventListener('mousemove', onDocDragMove)
   document.addEventListener('mouseup', onDocDragUp)
 }
 function onDocDragMove(e) {
   if (!jsDrag) return
-  if (!jsDrag.moved && (Math.abs(e.clientX - jsDrag.startX) > 6 || Math.abs(e.clientY - jsDrag.startY) > 6)) {
+  if (!jsDrag.moved && (Math.abs(e.clientX - jsDrag.startX) > 3 || Math.abs(e.clientY - jsDrag.startY) > 3)) {
     jsDrag.moved = true
     draggingPath.value = jsDrag.path
     setDragSong(jsDrag.path)
+    jsDragSourceIdx.value = props.songs.findIndex(s => s.path === jsDrag.path)
   }
   if (!jsDrag.moved) return
-  // 自动滚动:拖动接近可视区上下边缘
+  // 源行跟手:CSS 变量直写(不走 Vue ref,避免每帧重渲染行,跟手零延迟)
   const body = listBodyEl.value
   if (body) {
-    const r = body.getBoundingClientRect()
-    if (e.clientY < r.top + 32) {
-      if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop -= 14 }, 30)
-    } else if (e.clientY > r.bottom - 32) {
-      if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop += 14 }, 30)
-    } else if (jsAutoScrollTimer) {
-      clearInterval(jsAutoScrollTimer)
-      jsAutoScrollTimer = null
-    }
+    body.style.setProperty('--drag-dx', (e.clientX - jsDrag.startX) + 'px')
+    body.style.setProperty('--drag-dy', (e.clientY - jsDrag.startY) + 'px')
   }
-  // 目标行 + 插入位置(行上半 → before,下半 → after)
-  // 记忆最后有效目标:真实拖动松手常在行间隙,兜底用最近一次命中
-  const el = document.elementFromPoint(e.clientX, e.clientY)
-  const row = el && el.closest('.list-row')
-  if (row) {
-    jsDragTarget.value = row.getAttribute('data-path')
-    const rr = row.getBoundingClientRect()
-    jsDragPos.value = e.clientY < rr.top + rr.height / 2 ? 'before' : 'after'
-    // 插入线位置(相对列表可视区):virtualStart*ROW_H + 行在虚拟区内 offsetTop + (after ? ROW_H : 0)
-    dropLineTop.value = virtualStart.value * ROW_H + row.offsetTop + (jsDragPos.value === 'after' ? ROW_H : 0)
-  } else if (body && e.clientY > body.getBoundingClientRect().top && e.clientY < body.getBoundingClientRect().bottom) {
-    // 鼠标在列表可视区内但落在间隙:保留最后目标(不置 null)
-  } else {
-    jsDragTarget.value = null
+  if (!body) return
+  const r = body.getBoundingClientRect()
+  // 自动滚动:拖动接近可视区上下边缘
+  if (e.clientY < r.top + 32) {
+    if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop -= 14 }, 30)
+  } else if (e.clientY > r.bottom - 32) {
+    if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop += 14 }, 30)
+  } else if (jsAutoScrollTimer) {
+    clearInterval(jsAutoScrollTimer); jsAutoScrollTimer = null
+  }
+  // 目标索引:内容Y = 可视区Y + scrollTop,直接坐标计算;节流:仅索引变化时更新(减少重渲染)
+  const contentY = e.clientY - r.top + body.scrollTop
+  let idx = Math.floor(contentY / ROW_H)
+  idx = Math.max(0, Math.min(Math.max(props.songs.length - 1, 0), idx))
+  if (idx !== jsDragTargetIdx.value) {
+    jsDragTargetIdx.value = idx
+    jsDragTargetPath.value = props.songs[idx]?.path || null
+    const rowOff = contentY - idx * ROW_H
+    if (rowOff < ROW_H / 2) { jsDragPos.value = 'before'; dropLineTop.value = idx * ROW_H }
+    else { jsDragPos.value = 'after'; dropLineTop.value = (idx + 1) * ROW_H }
   }
 }
-function onDocDragUp(e) {
+
+// 行 transform:源行跟手浮动(引用 CSS 变量,直写零延迟);源↔目标区间内的行实时让位(手机桌面式)
+function rowStyle(absIdx) {
+  if (absIdx === jsDragSourceIdx.value) {
+    return { transform: 'translate(var(--drag-dx, 0px), var(--drag-dy, 0px)) scale(0.98)', zIndex: 20, position: 'relative' }
+  }
+  const src = jsDragSourceIdx.value
+  const tgt = jsDragTargetIdx.value
+  if (src >= 0 && tgt >= 0 && absIdx !== src) {
+    if (tgt > src && absIdx > src && absIdx <= tgt) return { transform: 'translateY(-56px)' }
+    if (tgt < src && absIdx >= tgt && absIdx < src) return { transform: 'translateY(56px)' }
+  }
+  return null
+}
+// 拖动中注册在 document 上的监听与自动滚动定时器,统一在此清理
+// (此前只在松手时移除,若拖动途中组件被卸载则会永久泄漏到 document 上)
+function teardownDocDrag() {
   document.removeEventListener('mousemove', onDocDragMove)
   document.removeEventListener('mouseup', onDocDragUp)
   if (jsAutoScrollTimer) { clearInterval(jsAutoScrollTimer); jsAutoScrollTimer = null }
-  if (jsDrag) {
-    // 兜底:松手在间隙时,用坐标找最近行
-    let target = jsDragTarget.value
-    if (jsDrag.moved && !target) {
-      const rows = [...document.querySelectorAll('.list-row')]
-      let best = null, bestDist = 1e9
-      for (const r of rows) {
-        const b = r.getBoundingClientRect()
-        const dist = Math.abs(e.clientY - (b.top + b.height / 2))
-        if (dist < bestDist) { bestDist = dist; best = r.getAttribute('data-path') }
-      }
-      if (best && bestDist < 60) target = best
-    }
-    if (jsDrag.moved && target && target !== jsDrag.path) {
-      emit('reorder', { from: jsDrag.path, to: target, pos: jsDragPos.value })
+}
+function onDocDragUp(e) {
+  teardownDocDrag()
+  if (jsDrag && jsDrag.moved) {
+    // 确定性判据:松手点是否在列表可视区内(不依赖全局 dragSongPath 状态,消除任何竞争)
+    const body = listBodyEl.value
+    const inList = body && e.clientY >= body.getBoundingClientRect().top && e.clientY <= body.getBoundingClientRect().bottom
+    const to = jsDragTargetPath.value
+    if (inList && to && to !== jsDrag.path) {
+      emit('reorder', { from: jsDrag.path, to, pos: jsDragPos.value })
     }
   }
   clearDragSong()
   jsDrag = null
-  jsDragTarget.value = null
+  jsDragSourceIdx.value = -1
+  jsDragTargetIdx.value = -1
+  jsDragTargetPath.value = null
+  dropLineTop.value = 0
   draggingPath.value = null
+  // 清理 CSS 跟手变量
+  const body = listBodyEl.value
+  if (body) {
+    body.style.removeProperty('--drag-dx')
+    body.style.removeProperty('--drag-dy')
+  }
 }
 
 const musicStore = useMusicStore()
@@ -397,6 +439,7 @@ const listBodyEl = ref(null)
 let _scrollSaveTimer = null
 // 滚动位置按路由分 key,避免不同视图串扰
 import { useRoute } from 'vue-router'
+import { confirmDialog } from '@/composables/useConfirm'
 const _scrollRoute = useRoute()
 function scrollKey() { return 'soundflow_list_scroll_' + (_scrollRoute.path || 'home').replace(/[^\w-]/g, '_') }
 
@@ -467,7 +510,8 @@ async function saveEditInfo() {
       ok = !!r?.ok
       if (!ok) window.$toast?.('文件写入失败: ' + (r?.error || '未知错误'), 'warning')
     }
-    if (wasPlaying) playerStore2.restoreAudio(resumeTime)
+    // 写标签期间可能已切歌:仅当当前仍在播放被编辑的这首歌时才恢复进度,避免重置新歌进度
+    if (wasPlaying && playerStore2.currentSong?.path === m.path) playerStore2.restoreAudio(resumeTime)
     // 写入成功才更新内存曲库(保证列表与文件标签一致);写失败不改内存,提示用户
     if (ok) {
       musicStore.updateSong(m.path, { title: m.title || '未知歌曲', artist: m.artist || '', album: m.album || '', genre: m.genre || '', year: m.year ? Number(m.year) : null })
@@ -492,10 +536,24 @@ const ctxSortFields = [
   { value: 'artist', label: '按歌手' },
   { value: 'album', label: '按专辑' },
   { value: 'duration', label: '按时长' },
-  { value: 'playCount', label: '按播放次数' }
+  { value: 'playCount', label: '按播放次数' },
+  { value: 'addedTime', label: '按添加时间' }
 ]
 
+// 「添加时间」列默认隐藏(不打扰既有列表布局),但一旦按添加时间排序就自动显示 —— 
+// 否则用户看不到自己正在按哪个值排序。状态持久化,下次保持一致。
+const showAddedCol = ref(localStorage.getItem('soundflow_col_added') === '1')
+function toggleAddedCol() {
+  showAddedCol.value = !showAddedCol.value
+  try { localStorage.setItem('soundflow_col_added', showAddedCol.value ? '1' : '0') } catch {}
+}
+function addedTimeTitle(song) {
+  const ts = song.addedTime
+  return ts ? '添加到曲库:' + formatTimestamp(ts) : '添加时间未知(老记录,已尝试按文件创建时间回填)'
+}
+
 function ctxSort(field) {
+  if (field === 'addedTime') showAddedCol.value = true
   musicStore.setSortField(field)
 }
 
@@ -575,6 +633,14 @@ function onCoverError(song) {
   window.electronAPI.getCover(song.path)
     .then(url => { if (url) song.coverUrl = url })
     .catch(() => {})
+}
+
+// 封面就绪后摘掉骨架类。用 DOM 类而不是逐行响应式状态:列表是虚拟滚动的,
+// 每行都挂一个 ref 成本更高,而这里只需要"加载中"这一个瞬时语义。
+// shimmer 挂着不摘会在图片之下永远空跑 —— 列表里每行一张,累积起来很可观。
+function markCoverLoaded(e) {
+  const el = e && e.target
+  if (el && el.classList) el.classList.remove('img-loading')
 }
 
 const allChecked = computed(() => {
@@ -669,7 +735,12 @@ async function confirmRename() {
   for (const r of okRows) {
     try {
       const res = await window.electronAPI.renameSong(r.path, r.new)
-      if (res && res.ok) { ok++; musicStore.updateSong(r.path, { path: res.newPath }) }
+      if (res && res.ok) {
+        ok++
+        // 两侧都要迁移:曲库侧(收藏/歌单/次数/历史/自定义排序) + 播放侧(队列/当前曲/续播进度)
+        musicStore.renameSongPath(r.path, res.newPath)
+        playerStore.renameSongInQueue(r.path, res.newPath)
+      }
       else failMsg = (res && res.error) || '重命名失败'
     } catch (e) { failMsg = e.message || '重命名异常' }
   }
@@ -791,21 +862,24 @@ function toggleAll() {
 }
 
 // 批量操作:删除选中
-function confirmRemoveSelected() {
+async function confirmRemoveSelected() {
   if (selectedSet.value.size === 0) return
   const n = selectedSet.value.size
-  if (!confirm(`确定从曲库移除选中的 ${n} 首歌曲？`)) return
+  if (!(await confirmDialog({ message: `确定移除选中的 ${n} 首歌曲？`, detail: '只从曲库移除,不会删除本地文件', confirmText: '移除', danger: true }))) return
+  // 先取出这些歌的完整记录:曲库只按路径删,撤销需要原始对象(名称/时长/封面)
+  const removed = props.songs.filter(s => selectedSet.value.has(s.path))
   musicStore.removeSongs([...selectedSet.value])
   selectedSet.value = new Set()
   emit('selection-change', [])
   toggleBatch()
+  window.$toast?.(`已移除 ${removed.length} 首`, 'success', 6000, [
+    { label: '撤销', onClick: () => { musicStore.addSongs(removed); window.$toast?.('已撤销移除', 'info') } }
+  ])
 }
 
+// 列表列的时长占位符用 '--:--'(比播放器的 '00:00' 更能表达「未知」),故走共用工具的参数
 function formatDuration(sec) {
-  if (!sec || !isFinite(sec)) return '--:--'
-  const m = Math.floor(sec / 60)
-  const s = Math.floor(sec % 60)
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  return fmtDuration(sec, '--:--')
 }
 
 function escapeHtml(str) {
@@ -875,6 +949,13 @@ function ctxAddToPlaylist() {
   }
 }
 
+// 行 hover 快捷按钮:加入歌单
+function rowAddToPlaylist(song) {
+  if (!song) return
+  pendingAddPaths = [song.path]
+  showPlaylistPicker.value = true
+}
+
 // 批量加入歌单(来自批量操作栏)
 function openAddToPlaylist() {
   if (selectedSet.value.size === 0) return
@@ -922,15 +1003,20 @@ async function ctxBindLyric() {
   closeCtx()
 }
 
-function ctxRemove() {
+async function ctxRemove() {
   if (ctxMenu.value.song) {
     if (props.playlistContext) {
       emit('context-action', 'remove-from-playlist', ctxMenu.value.song)
     } else {
       // 与批量删除一致:先确认再删(删库操作不可逆)
-      if (!confirm(`确定从曲库移除「${ctxMenu.value.song.title}」？`)) { closeCtx(); return }
-      musicStore.removeSongs([ctxMenu.value.song.path])
-      try { window.$toast?.('已从曲库移除', 'success') } catch {}
+      if (!(await confirmDialog({ message: `确定移除「${ctxMenu.value.song.title}」？`, detail: '只从曲库移除,不会删除本地文件', confirmText: '移除', danger: true }))) { closeCtx(); return }
+      const removedOne = ctxMenu.value.song
+      musicStore.removeSongs([removedOne.path])
+      try {
+        window.$toast?.(`已移除「${removedOne.title || ''}」`, 'success', 6000, [
+          { label: '撤销', onClick: () => { musicStore.addSongs([removedOne]); window.$toast?.('已撤销移除', 'info') } }
+        ])
+      } catch {}
     }
   }
   closeCtx()
@@ -986,7 +1072,13 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
   document.removeEventListener('soundflow:esc', onGlobalEsc)
+  // 拖动途中被卸载(如路由切换):清掉 document 上的拖动监听与自动滚动定时器
+  teardownDocDrag()
   if (_listResizeObserver) { try { _listResizeObserver.disconnect() } catch {} }
+  // 清理滚动/封面懒加载等定时器与 rAF,避免卸载后残留回调
+  if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null }
+  if (_scrollSaveTimer) { clearTimeout(_scrollSaveTimer); _scrollSaveTimer = null }
+  if (_coverScrollTimer) { clearTimeout(_coverScrollTimer); _coverScrollTimer = null }
 })
 // 当前歌曲变化时自动滚动到可视区(虚拟滚动:直接算 scrollTop,当前行不可见才滚动,不打断浏览)
 watch(() => playerStore.currentSong?.path, (p) => {
@@ -1011,18 +1103,29 @@ watch(() => playerStore.currentSong?.path, (p) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
+  gap: 8px;
+  /* 左边缘与页头/行文本统一为 --page-pad-x(此前工具栏 16、表头 20、行 24,
+     同一个组件里三种缩进,和页面标题也对不上) */
+  padding: 8px var(--page-pad-x);
   flex-shrink: 0;
+  /* 长列表中排序/批量入口不随滚动消失 */
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  background: var(--bg-primary);
+  flex-wrap: wrap;
+  row-gap: 6px;
 }
 
 .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 8px; }
 
 .toolbar-btn {
   display: flex; align-items: center; gap: 6px;
-  padding: 6px 14px;
+  height: var(--btn-h-sm);        /* 并入按钮体系(此前 padding 撑出约 29px,与 .btn--sm 的 28px 不一致) */
+  padding: 0 12px;
   background: var(--color-primary);
   color: white;
-  border-radius: var(--radius-md);
+  border-radius: var(--btn-radius);
   font-size: var(--font-size-sm);
   font-weight: 500;
   transition: all var(--transition-fast);
@@ -1047,7 +1150,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   display: flex;
   align-items: center;
   padding: 6px 16px;
-  margin: 0 4px;
+  margin: 0 8px;                  /* 4→8:表头文本与行文本左对齐(都是 24px) */
   border-bottom: 1px solid var(--border-color);
   font-size: var(--font-size-xs);
   color: var(--text-tertiary);
@@ -1062,13 +1165,20 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .list-spacer { position: relative; width: 100%; }
 .list-body { position: relative; }
 .drop-line { position: absolute; left: 8px; right: 8px; height: 2px; background: var(--color-primary); border-radius: 2px; z-index: 30; pointer-events: none; box-shadow: 0 0 6px var(--color-primary); }
-.list-row.dragging { opacity: 0.45; transform: scale(0.98); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); z-index: 20; pointer-events: none; }
+.list-row.dragging {
+  transform: scale(0.98);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  z-index: 20;
+  background: var(--bg-active, var(--color-primary-alpha));
+  outline: 1px solid var(--color-primary);
+}
+/* Sortable 拖拽幽灵(占位)行 —— 已弃用(坐标计算拖拽) */
 .list-virtual { position: relative; width: 100%; will-change: transform; }
 
 /* 批量操作栏 */
 .batch-bar {
   display: flex; align-items: center; gap: 10px;
-  padding: 8px 16px;
+  padding: 8px var(--page-pad-x);
   border-top: 1px solid var(--border-color);
   background: var(--bg-card);
 }
@@ -1086,13 +1196,11 @@ watch(() => playerStore.currentSong?.path, (p) => {
 
 /* 选择歌单弹窗 */
 .pl-picker-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.4));
   display: flex; align-items: center; justify-content: center; z-index: 300;
 }
 .pl-picker-card {
   width: 280px; padding: 18px;
-  background: var(--bg-card); border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
 }
 .pl-picker-card h3 { font-size: 15px; color: var(--text-primary); margin-bottom: 12px; }
 .pl-picker-empty { font-size: var(--font-size-sm); color: var(--text-tertiary); padding: 16px 0; text-align: center; }
@@ -1109,21 +1217,20 @@ watch(() => playerStore.currentSong?.path, (p) => {
   align-items: center;
   height: 56px;
   padding: 0 16px;
-  margin: 0 4px;
+  margin: 2px 8px;
+  border-radius: 8px;
   cursor: default;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), transform 0.15s ease;
   user-select: none;
 }
 .list-row.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.22)); outline: 1px dashed var(--color-primary); }
-.list-row[draggable="true"] { cursor: grab; }
-.list-row[draggable="true"]:active { cursor: grabbing; }
 .list-row:hover { background: var(--bg-hover); }
-.list-row.active { background: var(--color-primary-alpha); border-left: 3px solid var(--color-primary); }
+.list-row.active { background: var(--color-primary-alpha); box-shadow: inset 3px 0 0 var(--color-primary); }
 .list-row.keyboard-selected { outline: 1px solid var(--color-primary); outline-offset: -1px; }
 .list-row.selected { background: var(--color-primary-alpha); }
 
 .col-check { width: 36px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-.col-check input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--color-primary); cursor: pointer; }
+.col-check input[type="checkbox"] { /* 外观由 .sf-check 统一提供 */ }
 
 .col-index {
   width: 48px; flex-shrink: 0;
@@ -1152,7 +1259,13 @@ watch(() => playerStore.currentSong?.path, (p) => {
   display: flex; align-items: center; gap: 10px;
 }
 .song-cover { width: 36px; height: 36px; border-radius: var(--radius-sm); overflow: hidden; flex-shrink: 0; background: var(--bg-hover); }
-.song-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease; background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%); background-size: 800px 100%; animation: shimmer 1.4s infinite linear; }
+.song-cover img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s ease; }
+/* 骨架动效只在加载期间挂着(加载完成/失败后由 markCoverLoaded 摘掉类) */
+.song-cover img.img-loading {
+  background: linear-gradient(90deg, var(--bg-hover) 25%, var(--bg-active) 50%, var(--bg-hover) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
 .list-row:hover .song-cover img { transform: scale(1.1); }
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .song-name { font-size: var(--font-size-base); color: var(--text-primary); }
@@ -1161,7 +1274,19 @@ watch(() => playerStore.currentSong?.path, (p) => {
 
 .col-artist { width: 160px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-secondary); padding: 0 8px; }
 .col-album { width: 160px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-secondary); padding: 0 8px; }
+@media (max-width: 1200px) { .col-album { display: none; } }
+@media (max-width: 960px) { .col-artist { display: none; } }
 .col-duration { width: 60px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-tertiary); text-align: center; font-variant-numeric: tabular-nums; }
+/* 添加时间列:宽度与时长列一致,保证虚拟滚动行高与列对齐不受影响 */
+.col-added { width: 80px; flex-shrink: 0; font-size: var(--font-size-xs); color: var(--text-tertiary); text-align: center; font-variant-numeric: tabular-nums; }
+.col-toggle {
+  height: 24px; padding: 0 10px; border-radius: 999px;
+  font-size: var(--font-size-xs); color: var(--text-secondary);
+  background: var(--bg-hover); border: 1px solid transparent;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.col-toggle:hover { color: var(--color-primary); border-color: var(--color-primary); }
+.col-toggle.active { background: var(--color-primary-alpha); color: var(--color-primary); border-color: var(--color-primary); }
 
 .col-actions {
   width: 70px; flex-shrink: 0;
@@ -1191,12 +1316,11 @@ watch(() => playerStore.currentSong?.path, (p) => {
   gap: 12px;
   color: var(--text-tertiary);
 }
-.empty-icon { font-size: 48px; animation: float-y 2.6s ease-in-out infinite; display: inline-block; }
+.es-icon { animation: float-y 2.6s ease-in-out infinite; display: inline-flex; color: var(--empty-icon, var(--text-tertiary)); }
 .empty-actions { display: flex; gap: 8px; margin-top: 4px; }
-.empty-text { font-size: var(--font-size-base); }
 
 :deep(mark) {
-  background: rgba(22, 119, 230, 0.2);
+  background: var(--color-primary-alpha, rgba(22, 119, 230, 0.2));
   color: var(--color-primary);
   padding: 0 2px;
   border-radius: 2px;
@@ -1204,15 +1328,15 @@ watch(() => playerStore.currentSong?.path, (p) => {
 
 .context-menu {
   position: fixed;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
+  background: var(--modal-bg, var(--bg-secondary));
+  border: 1px solid var(--modal-border, var(--border-color));
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: 9999;
+  z-index: var(--z-menu);
   overflow-y: auto;
   max-height: calc(100vh - 16px);
   min-width: 180px;
-  padding: 4px;
+  padding: 6px;
 }
 .context-menu button {
   display: flex; align-items: center; gap: 8px;
@@ -1231,7 +1355,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   margin-left: auto; padding-left: 12px;
   font-size: 11px; color: var(--text-tertiary);
 }
-.context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
+.context-menu button.danger:hover { background: var(--color-danger-alpha, rgba(255, 77, 79, 0.1)); }
 .ctx-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
 .ctx-sort-label { font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.4)); padding: 4px 12px 2px; }
 .ctx-sort-btn { width: 100%; padding: 5px 12px; font-size: 12px; color: var(--text-secondary, rgba(255,255,255,0.65)); text-align: left; background: none; border: none; cursor: pointer; }
@@ -1245,14 +1369,13 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .prop-v { font-size: 13px; color: var(--text-primary, #fff); word-break: break-all; }
 /* 编辑歌曲信息弹窗 */
 .modal-mask {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 300;
+  position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.45)); z-index: var(--z-modal);
   display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 .edit-modal {
-  width: 340px; background: var(--bg-secondary, #1e2433);
-  border: 1px solid var(--border-color, rgba(255,255,255,0.1));
-  border-radius: 12px; padding: 18px 20px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  width: 340px; padding: 18px 20px;
 }
 .edit-modal h3 { font-size: 15px; margin-bottom: 12px; color: var(--text-primary); }
 .edit-modal label { display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }

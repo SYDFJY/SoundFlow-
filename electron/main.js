@@ -5,16 +5,28 @@ const iconv = require('iconv-lite')
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker, nativeTheme, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const { readdir, stat, readFile, writeFile, mkdir } = require('fs/promises')
+const { readdir, stat, readFile, writeFile, mkdir, access, rename, unlink } = require('fs/promises')
 const os = require('os')
 const crypto = require('crypto')
 const { execFile } = require('child_process')
 const log = require('electron-log')
+// 外部网络请求统一超时:歌词源一直有 8s 超时,但搜索/封面下载此前没有,
+// 导致音源或网络卡住时「自动匹配」会永久停在「搜索中…」
+const NET_TIMEOUT_MS = 10000
 // 高分屏支持:强制开启(默认即 1,显式声明防止个别环境被降级;零运行时负担)
 app.commandLine.appendSwitch('high-dpi-support', '1')
-// 禁用 GPU 硬件加速:Windows 上 GPU/合成器崩溃是无痕闪退(无日志/无崩溃事件)的头号原因,
-// 尤其在透明窗口、封面大图解码、频谱动画场景;软件合成换取稳定性
-app.disableHardwareAcceleration()
+// 禁用"被遮挡窗口后台化":最小化/完全遮挡时 Chromium 仍持续渲染并呈现新帧,
+// 配合 backgroundThrottling:false,最小化切歌时任务栏缩略图(DWM 快照)实时跟随封面/状态
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
+// 硬件加速设置(设置页开关,持久化到 userData/hardware-accel.txt;默认关=软件渲染)
+// GPU 加速在部分 Windows 显卡/透明窗口/封面大图解码场景可能闪退,故默认保守关闭,
+// 用户可在设置页自测开启:流畅则保留,花屏/白屏则关闭并重启(重启生效)
+let hwAccel = false
+try {
+  const hwAccelFile = path.join(app.getPath('userData'), 'hardware-accel.txt')
+  hwAccel = fs.readFileSync(hwAccelFile, 'utf8').trim() === '1'
+} catch (_) { hwAccel = false }
+if (!hwAccel) app.disableHardwareAcceleration()
 
 // ===== 强制退出追踪(electron-log 是异步写盘,强杀时日志可能丢失;这里同步写独立文件)=====
 const exitTracePath = path.join(app.getPath('userData'), 'logs', 'exit-trace.log')
@@ -51,32 +63,33 @@ const localDist = path.join(__dirname, '..', 'dist')
 const isDev = !app.isPackaged && !fs.existsSync(localDist)
 
 // ========== 窗口引用 ==========
+// 主题→窗口底色映射(消除启动时窗口底色与主题不符的闪色;
+// 渲染进程首帧渲染前,窗口底色直接匹配目标主题)
+const THEME_BG = {
+  light: '#edf4fa', green: '#edf7f2', orange: '#fcf3eb', pink: '#faf0f4',
+  dark: '#1a2b24', blue: '#172330', red: '#2a171a', purple: '#272036',
+  c_light: '#f5f7fa', c_dark: '#0d1117', c_blue: '#0a1628', c_green: '#f0f7f0',
+  c_purple: '#f5f0ff', c_pink: '#fff0f5', c_orange: '#fff8f0', c_red: '#fff5f5'
+}
+function themeBgColor() {
+  return THEME_BG[storageData.theme] || '#f5f7fa'
+}
+
 let mainWindow = null
 let miniWindow = null
 let lyricWindow = null
 let lyricLocked = false
+// 迷你窗最近一次收到的播放状态。迷你窗是独立窗口,渲染端只有 mini:update 事件、
+// 没有初始状态拉取,所以新建时必须把这份缓存回放给它,否则首帧是空默认值(会闪一下)。
+let lastMiniUpdate = null
+// 迷你窗「可显示」回调:由渲染端 mini:ready 或兜底定时器触发,只会生效一次
+let _showMiniOnce = null
+// 渲染端就绪信号。必须独立记录:渲染端脚本在 did-finish-load 之前就已执行,
+// 所以 mini:ready 有可能先到 —— 只用一个回调变量会漏掉这个信号,导致每次都退化成兜底等待。
+let _miniReadySignaled = false
 
-// ffmpeg 探测(用于响度分析):与 ffprobe 同路径探测
-let ffmpegPathForLoudness = null
-function detectFFmpegLoudness() {
-  try {
-    const dirs = [
-      path.join(process.resourcesPath || '', 'ffmpeg'),
-      path.dirname(process.execPath),
-      path.join(__dirname, '..'),
-      'C:\\ffmpeg\\bin',
-      'C:\\Program Files\\ffmpeg\\bin',
-      'C:\\Program Files (x86)\\ffmpeg\\bin',
-      path.join(os.homedir(), 'ffmpeg', 'bin'),
-      path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin')
-    ]
-    for (const dir of dirs) {
-      const p = path.join(dir, 'ffmpeg.exe')
-      if (fs.existsSync(p)) { ffmpegPathForLoudness = p; return }
-    }
-    ffmpegPathForLoudness = 'ffmpeg'
-  } catch {}
-}
+// 音频工具链(ffmpeg/ffprobe)的解析集中在下方「音频工具链」小节:单一入口 resolveAudioTools()。
+// 此前响度分析有一套含 resourcesPath 的探测,转码却只查 ffprobe 同级目录与 PATH,两套不一致。
 let lastLyricData = null
 let tray = null
 
@@ -180,78 +193,108 @@ async function migrateCovers() {
   }
 }
 
-// ========== FFprobe ==========
+// ========== 音频工具链(ffmpeg / ffprobe)==========
+// 单一解析入口,按「打包资源 → exe 同目录 → 项目根 → 常见安装位置 → PATH」查找。
+// 背景:package.json 的 extraResources 把 ffmpeg 放在 resources/ffmpeg/,但转码路径此前
+// 只查「ffprobe 同级目录」与 PATH,从不看 resourcesPath —— 装了系统 ffmpeg 的机器一切正常,
+// 干净机器上 APE/WMA/AIFF/ALAC 全部播放失败;ffprobe 更是从未打包,导致 m4a 内 ALAC
+// 探测静默失效(当成可原生播放),报错只表现为「播放失败,自动跳下一首」。
+let ffmpegPath = null
 let ffprobePath = null
 
-function detectFFprobe() {
-  try {
-    const exeDir = path.dirname(process.execPath)
-    // 1. 打包后 exe 同目录
-    const candidate = path.join(exeDir, 'ffprobe.exe')
-    if (fs.existsSync(candidate)) { ffprobePath = candidate; return }
-    // 2. 开发模式项目根目录
-    const devCandidate = path.join(__dirname, '..', 'ffprobe.exe')
-    if (fs.existsSync(devCandidate)) { ffprobePath = devCandidate; return }
-    // 3. 常见 ffmpeg 安装路径(系统装了 ffmpeg 但未加入 PATH 的情况)
-    const commonDirs = [
-      'C:\\ffmpeg\\bin',
-      'C:\\Program Files\\ffmpeg\\bin',
-      'C:\\Program Files (x86)\\ffmpeg\\bin',
-      path.join(os.homedir(), 'ffmpeg', 'bin'),
-      path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin'),
-      path.join(os.homedir(), 'AppData', 'Local', 'ffmpeg', 'bin')
-    ]
-    for (const dir of commonDirs) {
-      const p = path.join(dir, 'ffprobe.exe')
-      if (fs.existsSync(p)) { ffprobePath = p; return }
-    }
-    // 4. 系统 PATH
-    ffprobePath = 'ffprobe'
-  } catch (_) {}
+function audioToolDirs() {
+  const dirs = []
+  try { if (process.resourcesPath) dirs.push(path.join(process.resourcesPath, 'ffmpeg')) } catch (_) {}
+  try { dirs.push(path.dirname(process.execPath)) } catch (_) {}
+  dirs.push(path.join(__dirname, '..'))
+  dirs.push(
+    'C:\\ffmpeg\\bin',
+    'C:\\Program Files\\ffmpeg\\bin',
+    'C:\\Program Files (x86)\\ffmpeg\\bin',
+    path.join(os.homedir(), 'ffmpeg', 'bin'),
+    path.join(os.homedir(), 'scoop', 'apps', 'ffmpeg', 'current', 'bin'),
+    path.join(os.homedir(), 'AppData', 'Local', 'ffmpeg', 'bin')
+  )
+  return dirs
 }
 
-function getFFprobeDuration(filePath) {
+// 命中返回绝对路径;都没有则返回裸命令名,交给 execFile 按 PATH 解析(解析不到时上层降级)
+function findAudioTool(exeName, bareName) {
+  for (const dir of audioToolDirs()) {
+    try {
+      const p = path.join(dir, exeName)
+      if (fs.existsSync(p)) return p
+    } catch (_) {}
+  }
+  return bareName
+}
+
+function resolveAudioTools() {
+  if (!ffmpegPath) ffmpegPath = findAudioTool('ffmpeg.exe', 'ffmpeg')
+  if (!ffprobePath) ffprobePath = findAudioTool('ffprobe.exe', 'ffprobe')
+  return { ffmpeg: ffmpegPath, ffprobe: ffprobePath }
+}
+
+// 是否是磁盘上真实存在的工具(裸命令名不算 —— 那种情况要按「不可信」处理并准备降级)
+function isRealTool(p) { return !!p && p !== 'ffmpeg' && p !== 'ffprobe' && fs.existsSync(p) }
+
+function getFfmpegPath() { resolveAudioTools(); return ffmpegPath }
+
+// ffprobe 缺席时的探测兜底:`ffmpeg -i <file>` 不带输出参数会把容器/流信息打到 stderr
+// 并以非 0 退出 —— 这是「只做分析」的常规用法,不是失败。输出结构对齐 ffprobe -of json,
+// 调用方无需分支。这样只打包一个 ffmpeg 也能判定 ALAC/APE 并拿到兜底时长。
+function probeWithFfmpeg(filePath) {
   return new Promise((resolve) => {
-    if (!ffprobePath) return resolve(0)
-    execFile(ffprobePath, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath], {
-      timeout: 15000, windowsHide: true, encoding: 'utf8'
-    }, (err, stdout) => {
-      if (err) return resolve(0)
-      const dur = parseFloat((stdout || '').trim())
-      resolve(Number.isFinite(dur) && dur > 0 ? Math.round(dur) : 0)
-    })
+    execFile(getFfmpegPath(), ['-hide_banner', '-i', filePath], { timeout: 15000, windowsHide: true, encoding: 'utf8' },
+      (err, _stdout, stderr) => {
+        const text = String(stderr || '')
+        if (!text) return resolve(null)
+        const dm = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(text)
+        const duration = dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + parseFloat(dm[3]) : 0
+        const line = text.split('\n').find((l) => /Stream #\d+:\d+.*Audio:/.test(l)) || ''
+        if (!line && !duration) return resolve(null)
+        const codec = (/Audio:\s*([A-Za-z0-9_]+)/.exec(line) || [])[1] || ''
+        const sr = (/,\s*(\d+)\s*Hz/.exec(line) || [])[1]
+        const chWord = (/Hz,\s*([^,]+)/.exec(line) || [])[1] || ''
+        const chNum = chWord === 'mono' ? 1 : chWord === 'stereo' ? 2 : (parseInt(chWord, 10) || 0)
+        const br = (/,\s*(\d+)\s*kb\/s/.exec(line) || [])[1]
+        resolve({
+          format: { duration, bit_rate: br ? String(Number(br) * 1000) : undefined },
+          streams: [{ codec_type: 'audio', codec_name: codec, sample_rate: sr ? Number(sr) : undefined, channels: chNum || undefined }]
+        })
+      })
   })
 }
 
-function getFFprobeMetadata(filePath) {
-  return new Promise((resolve) => {
-    if (!ffprobePath) return resolve(null)
-    execFile(ffprobePath, [
-      '-v', 'error',
-      '-show_entries', 'format=duration,bit_rate:stream=sample_rate,channels,codec_name',
-      '-of', 'json',
-      filePath
-    ], { timeout: 15000, windowsHide: true, encoding: 'utf8' }, (err, stdout) => {
-      if (err) return resolve(null)
-      try {
-        const data = JSON.parse(stdout)
-        resolve(data)
-      } catch { resolve(null) }
+// 探测媒体信息:优先 ffprobe(更精确),缺 ffprobe 时退回 ffmpeg stderr 解析
+async function probeMedia(filePath) {
+  resolveAudioTools()
+  if (isRealTool(ffprobePath)) {
+    const viaFfprobe = await new Promise((resolve) => {
+      execFile(ffprobePath, [
+        '-v', 'error',
+        '-show_entries', 'format=duration,bit_rate:stream=codec_type,codec_name,sample_rate,channels',
+        '-of', 'json',
+        filePath
+      ], { timeout: 15000, windowsHide: true, encoding: 'utf8' }, (err, stdout) => {
+        if (err) return resolve(null)
+        try { resolve(JSON.parse(stdout)) } catch { resolve(null) }
+      })
     })
-  })
+    if (viaFfprobe) return viaFfprobe
+  }
+  return await probeWithFfmpeg(filePath)
 }
+
+async function getFFprobeDuration(filePath) {
+  const meta = await probeMedia(filePath)
+  const dur = parseFloat(meta?.format?.duration)
+  return Number.isFinite(dur) && dur > 0 ? Math.round(dur) : 0
+}
+
+function getFFprobeMetadata(filePath) { return probeMedia(filePath) }
 
 // ========== 音频转码(播放 Chromium 不支持的格式,如 APE/WMA/AIFF/ALAC/WV) ==========
-// 与 ffprobe 同目录的 ffmpeg;找不到则尝试 PATH
-function getFfmpegPath() {
-  try {
-    if (ffprobePath && ffprobePath !== 'ffprobe' && fs.existsSync(ffprobePath)) {
-      const p = path.join(path.dirname(ffprobePath), 'ffmpeg.exe')
-      if (fs.existsSync(p)) return p
-    }
-  } catch {}
-  return 'ffmpeg'
-}
 
 // 判断是否需要转码:非原生扩展名,或 m4a/mp4 容器内是 alac 编码
 async function needsTranscode(filePath) {
@@ -267,29 +310,120 @@ async function needsTranscode(filePath) {
 }
 
 // 转码为 FLAC(无损、体积小、Chromium 原生支持),带缓存
-async function transcodeAudio(filePath) {
+// 缓存策略:产物先写 .part,校验后再原子改名到最终路径 —— 因此最终路径上的文件必定完整。
+// 旧实现直接写最终路径,中断/超时会留下半截 FLAC 并被 existsSync 快路径长期复用。
+const TRANSCODE_DIR_NAME = 'soundflow-transcode'
+const TRANSCODE_MAX_BYTES = 2 * 1024 * 1024 * 1024 // 缓存上限 2GB(超出按最久未用淘汰)
+function transcodeDir() { return path.join(app.getPath('temp'), TRANSCODE_DIR_NAME) }
+
+// 完整性校验:至少 8KB 且带 FLAC magic(残件/空文件一律判不可用)
+function isUsableFlac(fp) {
+  try {
+    if (fs.statSync(fp).size < 8192) return false
+    const fd = fs.openSync(fp, 'r')
+    try {
+      const head = Buffer.alloc(4)
+      fs.readSync(fd, head, 0, 4, 0)
+      return head.toString('latin1') === 'fLaC'
+    } finally { fs.closeSync(fd) }
+  } catch { return false }
+}
+
+let _transcodeSweepRunning = false
+// 清理转码缓存:先删所有 .part 残件,再按 LRU 把总量压到上限内
+async function sweepTranscodeCache(force = false) {
+  if (_transcodeSweepRunning) return
+  _transcodeSweepRunning = true
+  try {
+    const dir = transcodeDir()
+    let names = []
+    try { names = await readdir(dir) } catch { return }
+    const entries = []
+    let total = 0
+    for (const name of names) {
+      const fp = path.join(dir, name)
+      if (name.endsWith('.part')) { try { await unlink(fp) } catch (_) {} ; continue }
+      try {
+        const st = await stat(fp)
+        total += st.size
+        // Windows 上 atime 常不可靠,取 max(atime, mtime) 作为「最近使用」近似
+        entries.push({ fp, size: st.size, used: Math.max(st.atimeMs || 0, st.mtimeMs || 0) })
+      } catch (_) {}
+    }
+    if (!force && total <= TRANSCODE_MAX_BYTES) return
+    if (total > TRANSCODE_MAX_BYTES) {
+      entries.sort((a, b) => a.used - b.used)
+      for (const e of entries) {
+        if (total <= TRANSCODE_MAX_BYTES) break
+        try { await unlink(e.fp); total -= e.size } catch (_) {}
+      }
+      log.info('[转码] 缓存已清理,当前占用 ' + Math.round(total / 1048576) + 'MB')
+    }
+  } catch (e) {
+    log.warn('[转码] 缓存清理失败:', e && e.message)
+  } finally {
+    _transcodeSweepRunning = false
+  }
+}
+
+// 转码串行化:预载下一曲时会同时发起第二个转码请求。ffmpeg 各占 2 线程,
+// 并发跑会互相抢 CPU(播放刚起步时尤其糟)。用 promise 链把请求排队,
+// 且后到的同文件请求会命中缓存直接返回。
+let _transcodeChain = Promise.resolve()
+function transcodeAudioQueued(filePath, onProgress) {
+  const run = () => transcodeAudio(filePath, onProgress)
+  const p = _transcodeChain.then(run, run)
+  _transcodeChain = p.catch(() => {})
+  return p
+}
+
+// onProgress(processedSec):仅上报已处理秒数,百分比由渲染端用歌曲时长换算(无需额外探测)
+async function transcodeAudio(filePath, onProgress) {
   const ffmpeg = getFfmpegPath()
-  const dir = path.join(app.getPath('temp'), 'soundflow-transcode')
+  const dir = transcodeDir()
   await mkdir(dir, { recursive: true })
   const st = await stat(filePath)
   const hash = crypto.createHash('md5')
     .update(`${filePath}|${st.size}|${st.mtimeMs}`)
     .digest('hex').slice(0, 16)
   const outPath = path.join(dir, `${hash}.flac`)
-  if (fs.existsSync(outPath)) return outPath
+  if (isUsableFlac(outPath)) return outPath
+  const partPath = outPath + '.part'
+  try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath) } catch (_) {}
 
+  let lastEmit = 0
   await new Promise((resolve, reject) => {
     execFile(ffmpeg, [
       '-y', '-hide_banner', '-loglevel', 'error',
       '-threads', '2', // 限制线程数,避免转码吃满 CPU 导致程序/系统假死
       '-i', filePath,
       '-vn', '-c:a', 'flac',
-      '-f', 'flac', outPath
-    ], { timeout: 180000, windowsHide: true }, (err) => {
-      if (err) reject(err)
-      else resolve()
+      '-progress', 'pipe:1', // 进度走 stdout(key=value 行),错误仍走 stderr
+      '-f', 'flac', partPath
+    ], { timeout: 180000, windowsHide: true }, (err, stdout) => {
+      if (err) {
+        try { fs.unlinkSync(partPath) } catch (_) {}
+        reject(err)
+        return
+      }
+      resolve()
+    }).stdout?.on('data', (chunk) => {
+      if (typeof onProgress !== 'function') return
+      const m = /out_time_us=(\d+)/.exec(String(chunk))
+      if (!m) return
+      const sec = Math.round(Number(m[1]) / 1e6)
+      const now = Date.now()
+      if (now - lastEmit < 250) return // 节流:进度事件最多 4Hz
+      lastEmit = now
+      try { onProgress(sec) } catch (_) {}
     })
   })
+  if (!isUsableFlac(partPath)) {
+    try { fs.unlinkSync(partPath) } catch (_) {}
+    throw new Error('转码产物不完整(已丢弃)')
+  }
+  await rename(partPath, outPath) // 原子改名:最终路径上的文件必定完整
+  sweepTranscodeCache().catch(() => {})
   return outPath
 }
 
@@ -391,6 +525,7 @@ async function parseMetadata(filePath) {
   let duration = 0
   let bitrate = 0
   let sampleRate = 0
+  let bitDepth = 0 // 位深(FLAC/WAV 有,MP3/AAC 等有损格式没有)
   let coverUrl = null
 
   // 尝试 music-metadata
@@ -407,6 +542,7 @@ async function parseMetadata(filePath) {
       if (fmt.duration && fmt.duration > 0) duration = Math.round(fmt.duration)
       if (fmt.bitrate) bitrate = Math.round(fmt.bitrate / 1000)
       if (fmt.sampleRate) sampleRate = fmt.sampleRate
+      if (fmt.bitsPerSample) bitDepth = fmt.bitsPerSample
       if (cm.picture && cm.picture.length > 0) {
         const pic = cm.picture[0]
         // 封面存为 256px JPEG 文件,避免超大 base64 进入曲库数据
@@ -425,15 +561,34 @@ async function parseMetadata(filePath) {
     coverUrl = findCoverInDir(filePath)
   }
 
-  return { title, artist, album, year, genre, duration, bitrate, sampleRate, coverUrl, format: ext.replace('.', '').toUpperCase() }
+  return { title, artist, album, year, genre, duration, bitrate, sampleRate, bitDepth, coverUrl, format: ext.replace('.', '').toUpperCase() }
+}
+
+// ========== 入库时间(addedTime)==========
+// 「按添加时间」排序需要一个每首歌都有、且重扫不会变的字段。取文件创建时间的理由:
+//   - 首次导入整个音乐目录时若用 Date.now(),全库会拿到同一个秒级时间戳 —— 排序等于没排;
+//   - 文件创建时间对拷贝/下载进来的文件就是「落到本地的时间」,先后顺序可信;
+//   - 老曲库的回填只做一次,之后重扫保留原值(见渲染端 backfillAddedTime)。
+// 兜底顺序:创建时间 → 修改时间 → 当前时间(极少数文件系统不提供创建时间)。
+async function fileAddedTime(filePath) {
+  try {
+    const st = await stat(filePath)
+    return Math.round(st.birthtimeMs || st.mtimeMs || Date.now())
+  } catch {
+    return Date.now()
+  }
 }
 
 // ========== 文件扫描 ==========
-async function scanFolderRecursive(folderPath) {
+// diagnostics.complete 会被置为 false,当任一子目录 readdir 失败
+// (移动硬盘拔出/网络盘休眠/权限错误时 readdir 抛错,旧实现静默返回空数组,
+//  与「目录真的是空的」无法区分,导致监控据此把整个盘的歌都判为已删除)
+async function scanFolderRecursive(folderPath, diagnostics) {
   const results = []
+  let complete = true
   async function walk(dir) {
     let entries
-    try { entries = await readdir(dir, { withFileTypes: true }) } catch { return }
+    try { entries = await readdir(dir, { withFileTypes: true }) } catch { complete = false; return }
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name)
       if (entry.isDirectory()) {
@@ -447,6 +602,7 @@ async function scanFolderRecursive(folderPath) {
     }
   }
   await walk(folderPath)
+  if (diagnostics) diagnostics.complete = complete
   return results
 }
 
@@ -457,19 +613,40 @@ const folderSnapshots = new Map()  // dir -> Map(filePath -> mtimeMs|size)
 let folderWatchEnabled = false
 let folderWatchDebounce = null
 
-function buildFolderSnapshot(dir) {
-  return scanFolderRecursive(dir).then(files => {
-    const snap = new Map()
-    return Promise.all(files.map(f =>
-      stat(f).then(st => snap.set(f, st.mtimeMs + '|' + st.size)).catch(() => {})
-    )).then(() => snap)
-  })
+// 构建目录快照;返回 { snap, complete }
+// complete=false 表示扫描期间有目录/文件读不到,快照不完整,绝不能据此判定删除
+async function buildFolderSnapshot(dir, prevSnap) {
+  const diagnostics = {}
+  const files = await scanFolderRecursive(dir, diagnostics)
+  const snap = new Map()
+  let complete = diagnostics.complete !== false
+  await Promise.all(files.map(async (f) => {
+    try {
+      const st = await stat(f)
+      snap.set(f, st.mtimeMs + '|' + st.size)
+    } catch {
+      // 单文件 stat 失败:沿用旧值留在快照里,避免被误判为「已删除」
+      if (prevSnap && prevSnap.has(f)) snap.set(f, prevSnap.get(f))
+      else complete = false
+    }
+  }))
+  return { snap, complete }
 }
 
 async function refreshFolderSnapshot(dir) {
   const oldSnap = folderSnapshots.get(dir)
-  if (!oldSnap) { folderSnapshots.set(dir, await buildFolderSnapshot(dir)); return }
-  const newSnap = await buildFolderSnapshot(dir)
+  if (!oldSnap) {
+    const { snap } = await buildFolderSnapshot(dir)
+    folderSnapshots.set(dir, snap)
+    return
+  }
+  const { snap: newSnap, complete } = await buildFolderSnapshot(dir, oldSnap)
+  if (!complete) {
+    // 目录暂时不可读(盘符卸载、网络盘掉线、权限异常):保留原快照并跳过本次刷新,
+    // 既不推送删除也不推送新增,等目录恢复可读后再对比
+    log.warn('[监控] 目录暂时不可读,已跳过本次刷新(不判定任何删除):', dir)
+    return
+  }
   const added = []
   const removed = []
   for (const f of newSnap.keys()) if (!oldSnap.has(f)) added.push(f)
@@ -531,6 +708,25 @@ function getAppIcon() {
   return undefined
 }
 
+// 统一加固所有窗口的导航行为:
+// 1) 拒绝一切新窗口(防止 window.open / target=_blank 打开未受控的浏览器窗口)
+// 2) 拒绝渲染进程被导航到外部地址(歌词/封面里的站外内容若触发跳转,不应把应用带走)
+// 3) 站外链接改用系统浏览器打开,保持应用内页面不被替换
+function hardenWindow(win) {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) { try { shell.openExternal(url) } catch (_) {} }
+    return { action: 'deny' }
+  })
+  win.webContents.on('will-navigate', (event, url) => {
+    const isDevServer = isDev && /^https?:\/\/localhost:\d+/i.test(url)
+    if (isDevServer) return
+    if (!url.startsWith('file://')) {
+      event.preventDefault()
+      if (/^https?:\/\//i.test(url)) { try { shell.openExternal(url) } catch (_) {} }
+    }
+  })
+}
+
 function createMainWindow() {
   // 恢复上次窗口大小/位置(独立小文件,避免每次移动触发全量存储写盘)
   const winBoundsFile = path.join(app.getPath('userData'), 'window-bounds.json')
@@ -551,16 +747,20 @@ function createMainWindow() {
     minWidth: 960,
     minHeight: 600,
     frame: false,
-    backgroundColor: '#f5f7fa',
+    backgroundColor: themeBgColor(),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: false
+      webSecurity: false,
+      // 最小化/隐藏到托盘时也持续渲染(封面背景/进度等变化实时反映到任务栏缩略图预览,
+      // 否则 Chromium 后台节流暂停合成,任务栏缩略图停留旧画面)
+      backgroundThrottling: false
     },
     show: false,
     icon: getAppIcon()
   })
+  hardenWindow(mainWindow)
 
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173')
@@ -583,7 +783,14 @@ function createMainWindow() {
     try { mainWindow.webContents.send('window-state', !!mainWindow.isMaximized()) } catch (_) {}
   })
   mainWindow.on('show', () => {
-    setTimeout(() => updateThumbarButtons(lastThumbState), 300)
+    setTimeout(() => updateThumbarButtons(lastThumbState, lastThumbTitle), 300)
+  })
+  // 从最小化/隐藏恢复时强制刷新缩略图按钮(规避隐藏期间跳过导致的过期状态)
+  mainWindow.on('restore', () => {
+    setTimeout(() => updateThumbarButtons(lastThumbState, lastThumbTitle), 250)
+  })
+  mainWindow.on('focus', () => {
+    setTimeout(() => updateThumbarButtons(lastThumbState, lastThumbTitle), 250)
   })
   // 最大化状态同步(供顶栏切换"最大化/还原"图标 + 双击标题栏)
   mainWindow.on('maximize', () => {
@@ -717,7 +924,7 @@ function createMiniWindow() {
     skipTaskbar: true,
     show: false, // 渲染完成前不显示,避免闪现一帧空白/默认画面
     ...(miniTransparent
-      ? { transparent: true }
+      ? { transparent: true, backgroundColor: '#00000000' } // 透明窗口:显式透明底,避免渲染前露黑/白底闪色
       : { backgroundColor: miniBg.mode === 'white' ? '#ffffff' : miniBg.color }),
     ...(pos ? { x: pos.x, y: pos.y } : {}),
     webPreferences: {
@@ -727,6 +934,7 @@ function createMiniWindow() {
       webSecurity: false // 允许加载本地 file:// 封面(与主窗口一致)
     }
   })
+  hardenWindow(miniWindow)
 
   if (isDev) {
     miniWindow.loadURL('http://localhost:5173/#/mini')
@@ -735,9 +943,32 @@ function createMiniWindow() {
     miniWindow.loadURL('file:///' + distFile + '#/mini')
   }
   // 渲染完成后再显示,消除打开时闪现一帧;transparent 窗口 ready-to-show 可能提前,加 did-finish-load 兜底
-  const showMini = () => { try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.show() } catch {} }
-  miniWindow.once('ready-to-show', showMini)
-  miniWindow.webContents.once('did-finish-load', () => setTimeout(showMini, 60))
+  // 显示时机:等渲染端套用初始状态后回报(mini:ready)再显示,这样用户看到的第一帧
+  // 就是正确内容,而不是"先闪一下空默认界面再填上"。
+  // 兜底:若渲染端出错/未回报,600ms 后照常显示 —— 窗口不显示比闪一下严重得多。
+  let miniShown = false
+  const showMini = () => {
+    if (miniShown) return
+    miniShown = true
+    try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.show() } catch {}
+  }
+  _showMiniOnce = showMini
+  _miniReadySignaled = false
+  miniWindow.webContents.once('did-finish-load', () => {
+    // 回放最近一次状态,让渲染端在显示之前就有正确内容
+    if (lastMiniUpdate) {
+      try { miniWindow.webContents.send('mini:update', lastMiniUpdate) } catch (e) {
+        log.warn('[迷你窗] 初始状态回放失败:', e && e.message)
+      }
+    }
+    // 信号可能已经先到(渲染端脚本早于 did-finish-load 执行)
+    if (_miniReadySignaled) showMini()
+    else setTimeout(showMini, 600)
+  })
+  miniWindow.on('closed', () => {
+    _showMiniOnce = null
+    _miniReadySignaled = false
+  })
 
   // 位置记忆(拖动后保存,重启恢复)
   let posSaveTimer = null
@@ -863,6 +1094,7 @@ function createLyricWindow() {
       contextIsolation: true
     }
   })
+  hardenWindow(lyricWindow)
 
   if (isDev) {
     lyricWindow.loadURL('http://localhost:5173/lyric.html')
@@ -915,11 +1147,19 @@ function setLyricLocked(locked) {
 
 // ========== 系统托盘 ==========
 // 托盘图标:内嵌 16px PNG base64(createFromPath 读不到 asar 内文件,打包后 build/icon.ico 不存在会变透明)
-const TRAY_ICON_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAACmUlEQVQ4jUWTO49bVRRG1z6Pa8czjglDREg0L2lIAEWggSZINCB+BT+SEiRokFJAlTQBKZAMeIZHQZyJx76+957H3hSORPsVS6v4lsxOv2zt7nvRf/yJSYyCKgaIgFZFVAGHqiJmaFVs0yE/P8bO/yDw/gfRffpZLLUYuQi18hoBqoAgpogavAboaIycPsCVStD7p2ZdZ5ayIYKZgoKp4gWsAkDqE2qK9w6rBRGPHt4jaM5CX8Q5T6lVzP5XTSkTg6ekzP7RHZaLVywXS0IUTAGrBOsTqgk1qGqYVjDDSuHN2S6vXl5R+4R1G65PJ1xe/I3FAAakRLB+g5aE5orzDi/C0PccHO+ztzdD1KgqTI+OePL1t4RRhCEhzkEpuLJeUTc94yZC21FXLWMf8E3Do28eEnen9P8ueP79Q1xJSFFEHNq2aLvGxWbEZDJm5Bw3br9NfnHJeHKNxfwv3LBh9ec/uBDofn+OD5G48wbWDRgRqhB08YKcMqvVmtnJMbODd8B7Ns/O8ALdfM61o3fxISI7e6TzX9GhAz9CtOLq1Rq6jsYL7dPfcFVJ83PsaomkAbe6JM/P8G8dUOdPkdUlQSt+aLFuhTRffJWwGgFL3SAMCRcD4jy1ZsgFckaaCIB3Hi8CgNVCoOsQjJoz9+7cohsGFi+XeGcIjpPDQ3bGkV/OLhhSRlUpKSMiaFWCDR3eOVLb8eH+LT46OeByuUacQ1Bu37zJs/kFD+4ec+P6Lt/99JgffnxEMxljpSLN/c+TiETUDESa4HAimCqlbn+8aTdMdyaoVmqtqCpmgmkh2HphNpoiCLVWSg/bGAwRwIzGOzbtGgAngrDdSWuC5F409Vic4J3floOCbS1EBMzwCGAYRq0FygbvPP8B9n2dYfXygM0AAAAASUVORK5CYII='
+const TRAY_ICON_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAAXNSR0IArs4c6QAAAfxJREFUOI1NUk1PE1EUPXc6nWkjJmoISkgNghBcsakbCQQW7tz4k0z8ERpD/PoDujVIWHRDjDHqRj5FIqAltbS0M5SZd46LmRZeXm5uzrv33HvfuZamqQESBUACJAmScMlKyB16BgCCwSAMrskgAAYMbHZ8ibCM64KeIiTr48Kgkry8k360JEcXBkEYBGmaklmrUB5APyfIGnQuKBYtLO/t7ki6MznFJIqiqFDwkM0p+YIMEGlAWB7a3t9rNjuvl1+CrN6vTk1U5uYXzrpN51IAkCzpxYKsWGx3Oic7vz59WKl9/pqODFsQbHz7vrTwoFAMHj96eHd6Io5iiB7pBKjZrL9/9+bJ0163e9M0+68x45JSuZz4hWfLr+qnHcWxSxJSHsk0Sfhzq3VjePXcDq5d/xKWf1cqjcOjRbjRen24UGivrR2ufJRndKl1TpsmemHYarX/HBzVauura7XRsVuJ5+3/2FwaH6uOV0buTVXm59Lzc5HWPjk2GOk8sytXhzY3ts96vecv3gKsVmdvT4wvLc61Wy0XxRIl2knjbza+IOdcEBRLpWBra1fizPRkt9ON48jMcjFIaxwfGnJdAJGkc6UwkBRFsRnMIGaSUqKv7JdysZllRlEs5fpQUoZLJH06Zxcrmj9kfOw7fUQSfedcJvsgTpe2+jKeVfgPLibZFPpam4EAAAAASUVORK5CYII='
+// HiDPI 下再用一份 32px 表示,避免托盘图标被放大发虚(由 tools/make-icons.mjs 生成)
+const TRAY_ICON_DATA_URL_2X = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAAXNSR0IArs4c6QAABY9JREFUSImtVl2sVFcV/tY+e849M+fO/ekFothAgUBrobaakhCt4eH6YAq82JiGBwOk2likUeOjSWOiL0RfDGn6YEONhGiVqG00tCVtqbw0thXBAKXW1j54LRfuzL3D3Lmcc/Zenw/n555BUB6YTCb7zFrnW2t/e69vLcmyzIgoKQKQICgkISQEJEmIEABJ5B8SADHkBgJCECAp+Q9U1RoRMWKqdw2EEECMkAREhII8pgA5ECBA4YYirgEIAJTCLgJArJKGVVKA5u7U8k8U+bGeO7Rwp+ZOZe7VGiShpIFAcpjqp4aVe1+PzmVP1vxr6Hk4CGHAgkDU3uQtovPG6PlChACNEJAqyO1BZwlD0FKYH9ftRS8WhOUto5MkPQkREZH/jw4StCDFoH5nbpw7aW0QNGIALh24zOVmEblJ7kXGVgT8n+jeK1Vtw3Y63T+//VeCWz93/6qVUySV6jJ3s9zzy2kri9wInWSzFQMGwN/fP73vG9/x3v3ht79ojrYuX7ocN6PJiXGvnoQRQKTMmxWtloQYCOvoIOnVgwitff5Xx85duPjQF7atWjk12h71LmuPt3/8k0M/PfSzHV+e/uWRZ1RpjKRp6pyrHyQrZRAStWIANWzYZmusGbeDkdaRF1/54cFDL7/6p6hhvXPeewGSa2m/v5ikaZJkZ86ee/udM53uvDGmgMkljCRhS4krjkC9C0eaZz/48MUXXtoyET+07s6dTdPauHZ1O14KwxQIRaA0xhhjomjk40uXdn3la7Ozs0cOP/3o7kd6nW4QmBKPAC2VMLmGAqoSRYkE6ak31hz/vYua/ent4y7bPjXx4Plz+uz83e34rbmuNmwASsmGMcaYAEJSQYUJ4LSsERpSkcuSet9sLv7j/fTQQfvehRNB6+BVb/fs+ePoxPcufnTsk5+a2nLPk3H0o5WT4czMnPeOFJLOGRFjBM6LGI2itNcjSNX8axRUVapqI1w6cTw7+ly0/Uv/nN7x5uWFpg2k3x8jx0Xi8fH5bdu+/e8r7xqzdOT56XPnt62YTMSwPeoBp9T2aDJI3n3qBx8d/jmiSNUrqaSBV5BKhXN2xUr79f3h/Q8Gg37au9qd73lVDyipLgsW+1bkN3MLVx/fO9i44avt1mMLndljv5uwwR2tKH395IUnvmnHxlbv2+sXF8liEzavF5LM0mDLfUGapUu9u9avObB/z0gYxu0WqDa0JjAqFCNtxWTcfCuKnv7X7OPr1x2YmflW3EjDiU90O1P7nxh74DPs99W5qritkkZBUgQcLBFIwE0b1t333U9D1XnX7fbmOwv9/kAoICjInG95bWTZTNxe89T3k1076dyKDesmx8eSuQ6MQdUyqZZUQgiWvQkCJkkyWBqQGAnDnQ9Pb1i/9ouf35okqbUGniAboY3bcRxII1m6595NYsRdS671FhBI0eSKQlBZ6MwaU5aaQKquDQpBMo6bxgQmtCdfO7V7zwHv3K+PPrN5892zs1eaUTQx3lbNJRZSVNiy2Kh6mZ+7JGJKdLKoCEApUood1Vo7v9D7y+m/kfzsA5tXTd2hVKpmzkmp5aVOsJJx9SrdKx+LSCF+pb1oc8VmkBMYBKbVjAAMBoMsc7kKS6XOlbQvP0JVraoaIxzuNfkOqRRAwXy/LnPz1xYIGhFBPleQqKWOZRHNM1RVy6o1lLwXeqoQsOo2+UKMlPzVOuAyPbV+UD5YUqlSTHC5VQp0LXfCWl7VpFLxXvpUwMtKR6rNy5lkMQRWuf8X6FAsLO8ctUg5A5VVix1QqCwYYSGTNWKH4MsYpUXq/FTcoTyEkiIwnxXrSDWKh0+vbOLF6IgbpVLYqbYgf3lWHLoa9SZezRdAHW7IrTbHkoAqLb2qlAVw/aWujWjD1wXX5zuMUL6iyv8AtEefg1MdOQYAAAAASUVORK5CYII='
 function createTray() {
   let icon
   try {
     icon = nativeImage.createFromDataURL(TRAY_ICON_DATA_URL)
+    // HiDPI:补一份 2x 表示,避免高 DPI 下托盘图标被放大而发虚
+    if (!icon.isEmpty() && TRAY_ICON_DATA_URL_2X) {
+      try { icon.addRepresentation({ scaleFactor: 2, dataURL: TRAY_ICON_DATA_URL_2X }) } catch (e) {
+        log.warn('[托盘] 2x 图标表示添加失败:', e && e.message)
+      }
+    }
     // 开发模式兜底:读本地真实文件
     if (icon.isEmpty()) {
       const iconPath = path.join(__dirname, '..', 'build', 'icon.ico')
@@ -966,6 +1206,7 @@ function createTray() {
 
 // ========== 任务栏缩略图按钮 (SMTC 的一部分) ==========
 let lastThumbState = 'paused'
+let lastThumbTitle = ''
 let thumbTimer = null
 
 // 内嵌 base64 图标(createFromDataURL 不依赖 asar 文件系统,nativeImage.createFromPath 读不到 asar 内文件)
@@ -989,27 +1230,45 @@ function getThumbIcon(name) {
   return nativeImage.createEmpty()
 }
 
-function updateThumbarButtons(state) {
+function updateThumbarButtons(state, title) {
   lastThumbState = state === 'playing' ? 'playing' : 'paused'
+  if (title) lastThumbTitle = title
   // 节流:播放/暂停/切歌快速变化时合并,避免频繁同步 COM 调用卡主进程
   if (thumbTimer) return
   thumbTimer = setTimeout(() => {
     thumbTimer = null
-    doSetThumbar(lastThumbState)
+    doSetThumbar(lastThumbState, lastThumbTitle)
   }, 120)
 }
-function doSetThumbar(state) {
+function doSetThumbar(state, title) {
   if (!mainWindow || typeof mainWindow.setThumbarButtons !== 'function') return
 
-  // 窗口不可见时设置会触发 Electron bug(#28319),按钮会永久不显示,必须等窗口显示后再设
-  if (!mainWindow.isVisible()) return
+  // 可见性判断:最小化时 isVisible() 为 false,但任务栏缩略图仍可见且应实时更新;
+  // 仅当窗口完全隐藏(托盘收起、非最小化)时跳过,规避 Electron bug #28319(隐藏态设置会永久不显示)
+  const minimized = mainWindow.isMinimized()
+  const hidden = !mainWindow.isVisible() && !minimized
+  if (hidden) return
+  // 最小化时强制 DWM 重捕获任务栏缩略图:Windows 对最小化窗口的缩略图是静态快照,
+  // 通过临时改 setThumbnailClip 裁剪区域触发 DWM 重新抓取当前窗口内容(播放页封面)
+  if (minimized && typeof mainWindow.setThumbnailClip === 'function') {
+    try {
+      const [cw, ch] = mainWindow.getContentSize()
+      mainWindow.setThumbnailClip({ x: 0, y: 0, width: 1, height: 1 })
+      setTimeout(() => {
+        try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setThumbnailClip({ x: 0, y: 0, width: cw, height: ch }) } catch (_) {}
+      }, 80)
+    } catch (_) {}
+  }
   const send = (cmd) => {
     try { mainWindow.webContents.send('tray-command', cmd) } catch (_) {}
   }
   const isPlaying = state === 'playing'
+  const midTooltip = isPlaying ? `暂停 · ${title || ''}` : `播放 · ${title || ''}`
+  // 任务栏缩略图 tooltip 同步当前歌名(Windows;同时触发 DWM 感知窗口内容变化,协助刷新缩略图预览)
+  try { if (typeof mainWindow.setThumbnailToolTip === 'function') mainWindow.setThumbnailToolTip(title ? `正在播放:${title}` : 'SoundFlow 声流音乐') } catch (_) {}
   const buttons = [
     { tooltip: '上一曲', icon: getThumbIcon('prev.png'), click: () => send('prev') },
-    { tooltip: isPlaying ? '暂停' : '播放', icon: getThumbIcon(isPlaying ? 'pause.png' : 'play.png'), click: () => send('toggle-play') },
+    { tooltip: midTooltip, icon: getThumbIcon(isPlaying ? 'pause.png' : 'play.png'), click: () => send('toggle-play') },
     { tooltip: '下一曲', icon: getThumbIcon('next.png'), click: () => send('next') }
   ]
   try {
@@ -1018,7 +1277,9 @@ function doSetThumbar(state) {
     mainWindow.setThumbarButtons([])
     setTimeout(() => {
       try {
-        if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+        // 最小化时 isVisible() 为 false 但仍需更新(任务栏缩略图可见);仅完全隐藏(托盘)跳过
+        const visibleNow = mainWindow && !mainWindow.isDestroyed() && (mainWindow.isVisible() || mainWindow.isMinimized())
+        if (visibleNow) {
           mainWindow.setThumbarButtons(buttons)
         }
       } catch (e2) { console.error('[任务栏] 重设缩略图按钮失败:', e2.message) }
@@ -1030,6 +1291,19 @@ function doSetThumbar(state) {
 function setupIPC() {
   // 窗口控制
   ipcMain.on('minimize-window', () => mainWindow?.minimize())
+  ipcMain.handle('hardware-accel-get', () => {
+    try {
+      const f = path.join(app.getPath('userData'), 'hardware-accel.txt')
+      return fs.readFileSync(f, 'utf8').trim() === '1'
+    } catch (_) { return false }
+  })
+  ipcMain.handle('hardware-accel-set', async (event, on) => {
+    try {
+      const f = path.join(app.getPath('userData'), 'hardware-accel.txt')
+      await writeFile(f, on ? '1' : '0')
+      return true
+    } catch (_) { return false }
+  })
   ipcMain.on('maximize-window', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize()
     else mainWindow?.maximize()
@@ -1037,6 +1311,14 @@ function setupIPC() {
   ipcMain.on('close-window', () => {
     // 统一走 close 事件流程,尊重"关闭时退出/最小化到托盘"设置
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close()
+  })
+  // 播放页双击封面:窗口全屏切换
+  ipcMain.on('toggle-fullscreen', () => {
+    try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setFullScreen(!mainWindow.isFullScreen()) } catch (_) {}
+  })
+  // ESC:仅退出全屏(非全屏时无副作用)
+  ipcMain.on('exit-fullscreen', () => {
+    try { if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isFullScreen()) mainWindow.setFullScreen(false) } catch (_) {}
   })
 
   // 选择文件夹
@@ -1128,8 +1410,8 @@ function setupIPC() {
     }
     return runConcurrent(audioPaths, 4, async (filePath) => {
       try {
-        const meta = await parseMetadata(filePath)
-        return { path: filePath, ...meta }
+        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
+        return { path: filePath, ...meta, addedTime }
       } catch (e) {
         console.error('[拖放导入] 解析失败:', filePath, e.message)
         return null
@@ -1137,13 +1419,26 @@ function setupIPC() {
     })
   })
 
+  // 存量曲库回填「入库时间」:老记录没有该字段,不回填的话「按添加时间」排序会把它们全堆在末尾。
+  // 值取自文件创建时间,只回填缺失项;渲染端只调用一次并把结果写回曲库。
+  ipcMain.handle('backfill-added-time', async (event, paths) => {
+    const out = {}
+    const list = Array.isArray(paths) ? paths.slice(0, 50000) : []
+    await runConcurrent(list, 8, async (p) => {
+      if (typeof p !== 'string' || !p) return null
+      out[p] = await fileAddedTime(p)
+      return null
+    })
+    return out
+  })
+
   // 扫描文件夹(4 并发解析,大曲库提速数倍)
   ipcMain.handle('scan-folder', async (event, folderPath) => {
     const files = await scanFolderRecursive(folderPath)
     return runConcurrent(files, 4, async (filePath) => {
       try {
-        const meta = await parseMetadata(filePath)
-        return { path: filePath, ...meta }
+        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
+        return { path: filePath, ...meta, addedTime }
       } catch (e) {
         console.error('[扫描] 解析失败:', filePath, e.message)
         return null
@@ -1157,8 +1452,8 @@ function setupIPC() {
     for (const filePath of filePaths) {
       if (!AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) continue
       try {
-        const meta = await parseMetadata(filePath)
-        results.push({ path: filePath, ...meta })
+        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
+        results.push({ path: filePath, ...meta, addedTime })
       } catch {}
     }
     return results
@@ -1274,9 +1569,10 @@ function setupIPC() {
         fs.unlinkSync(sameDir)
         return { ok: true, deleted: sameDir }
       }
-      // 2. 歌词文件夹完全同名(仅精确匹配,不模糊)
-      if (lyricFolders && lyricFolders.length) {
-        for (const folder of lyricFolders) {
+      // 2. 歌词文件夹完全同名(仅精确匹配,不模糊;且只认主进程记录的目录)
+      const trusted = (lyricFolders || []).filter(isTrustedLyricFolder)
+      if (trusted.length) {
+        for (const folder of trusted) {
           const exact = path.join(folder, base + '.lrc')
           if (fs.existsSync(exact)) {
             fs.unlinkSync(exact)
@@ -1359,23 +1655,27 @@ function readLrc(fp) {
   ipcMain.handle('scan-lyric-status', async (event, songs, lyricFolders) => {
     const result = {}
     if (!Array.isArray(songs)) return result
+    // 异步扫描歌词文件夹(同步 readdirSync/逐首 existsSync 会阻塞主进程,大曲库卡死)
     const lrcNames = new Set()
-    for (const folder of lyricFolders || []) {
+    await Promise.all((lyricFolders || []).map(async (folder) => {
       try {
-        for (const f of fs.readdirSync(folder)) {
-          if (f.toLowerCase().endsWith('.lrc')) lrcNames.add(normalizeName(path.basename(f, '.lrc')))
-        }
+        const entries = await readdir(folder)
+        for (const f of entries) if (f.toLowerCase().endsWith('.lrc')) lrcNames.add(normalizeName(path.basename(f, '.lrc')))
       } catch (_) {}
-    }
-    for (const s of songs) {
-      try {
-        const ext = path.extname(s.path)
-        const base = path.basename(s.path, ext)
-        // 同目录同名 .lrc
-        const sameDir = s.path.substring(0, s.path.length - ext.length) + '.lrc'
-        const has = fs.existsSync(sameDir) || lrcNames.has(normalizeName(base))
-        result[s.path] = has
-      } catch { result[s.path] = false }
+    }))
+    // 分批异步检查(每批 60,避免并发过多)
+    const batch = 60
+    for (let i = 0; i < songs.length; i += batch) {
+      await Promise.all(songs.slice(i, i + batch).map(async (s) => {
+        try {
+          const ext = path.extname(s.path)
+          const base = path.basename(s.path, ext)
+          const sameDir = s.path.substring(0, s.path.length - ext.length) + '.lrc'
+          let has = false
+          try { await access(sameDir); has = true } catch (_) { has = lrcNames.has(normalizeName(base)) }
+          result[s.path] = has
+        } catch { result[s.path] = false }
+      }))
     }
     return result
   })
@@ -1652,10 +1952,13 @@ async function searchLyricAuto(info) {
     try {
       const ext = path.extname(audioPath)
       const base = path.basename(audioPath, ext)
+      if (!isSafeBaseName(base)) return { ok: false, error: '歌曲文件名不合法' }
       // 优先保存到歌词文件夹(已设置时),否则存歌曲同目录
       let target
-      if (lyricFolders && lyricFolders.length) {
-        target = path.join(lyricFolders[0], base + '.lrc')
+      // 只接受主进程记录的歌词目录(渲染端传入的列表不可信)
+      const trusted = (lyricFolders || []).filter(isTrustedLyricFolder)
+      if (trusted.length) {
+        target = path.join(trusted[0], base + '.lrc')
       } else {
         target = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
       }
@@ -1667,11 +1970,33 @@ async function searchLyricAuto(info) {
     }
   })
 
+  // ===== IPC 路径校验 =====
+  // 渲染进程传来的目录/文件名一律不可信:一旦发生 XSS,攻击者可借这些参数把 .lrc
+  // 写进任意可写目录、或删掉任意同名文件。这里只认主进程自己记录的歌词目录。
+  function isTrustedLyricFolder(dir) {
+    if (typeof dir !== 'string' || !dir) return false
+    let resolved
+    try { resolved = path.resolve(dir) } catch { return false }
+    const known = Array.isArray(storageData.lyricFolders) ? storageData.lyricFolders : []
+    return known.some(k => {
+      try { return path.resolve(String(k)) === resolved } catch { return false }
+    })
+  }
+  // 基名不得含路径分隔符或 Windows 保留字符(冒号可构造备用数据流路径)
+  function isSafeBaseName(base) {
+    return typeof base === 'string' && base.length > 0 && base.length < 200 &&
+      base !== '.' && base !== '..' && !/[\\/:*?"<>|]/.test(base)
+  }
+
   // 保存歌词到指定歌词文件夹(<音频文件名>.lrc,供批量下载使用)
   ipcMain.handle('save-lyric-to-folder', (event, audioPath, lrcText, folderPath) => {
     try {
-      fs.mkdirSync(folderPath, { recursive: true }) // 文件夹不存在时自动创建
+      if (!isTrustedLyricFolder(folderPath)) {
+        return { ok: false, error: '目标目录不在已配置的歌词文件夹中' }
+      }
       const base = path.basename(audioPath, path.extname(audioPath))
+      if (!isSafeBaseName(base)) return { ok: false, error: '歌曲文件名不合法' }
+      fs.mkdirSync(folderPath, { recursive: true }) // 文件夹不存在时自动创建
       const target = path.join(folderPath, base + '.lrc')
       fs.writeFileSync(target, lrcText, 'utf8')
       return { ok: true, path: target }
@@ -1785,9 +2110,12 @@ async function searchLyricAuto(info) {
       // 保留最近 10 份
       const files = fs.readdirSync(backupDir).filter(f => f.startsWith('soundflow-') && f.endsWith('.json')).sort()
       while (files.length > 10) {
-        try { fs.unlinkSync(path.join(backupDir, files.shift())) } catch {}
+        try { fs.unlinkSync(path.join(backupDir, files.shift())) } catch (e) { log.warn('[备份] 清理旧备份失败:', e.message) }
       }
-    } catch (_) {}
+    } catch (e) {
+      // 此前静默吞掉:界面写着「自动备份(10 份轮换)」,备份实际失败用户却毫不知情
+      log.error('[备份] 自动备份失败:', e && e.message ? e.message : e)
+    }
   })
   ipcMain.handle('store-delete', (event, key) => {
     delete storageData[key]
@@ -1942,8 +2270,10 @@ async function searchLyricAuto(info) {
   // 检查文件是否存在,返回不存在的路径列表(用于失效歌曲检测)
   ipcMain.handle('check-files-exist', (event, filePaths) => {
     if (!Array.isArray(filePaths)) return []
+    // 返回「确认不存在」的路径。读取异常时保守处理为存在(不报缺失),
+    // 避免盘符卸载/网络盘掉线时把整个曲库误报成失效
     return filePaths.filter(p => {
-      try { return !fs.existsSync(p) } catch { return true }
+      try { return !fs.existsSync(p) } catch { return false }
     })
   })
 
@@ -2010,13 +2340,23 @@ async function searchLyricAuto(info) {
   ipcMain.handle('prepare-audio', async (event, filePath) => {
     const fallback = { url: `file:///${filePath.replace(/\\/g, '/')}`, transcoded: false }
     if (typeof filePath !== 'string' || !filePath) return fallback
+    let needTranscode = false
     try {
-      if (!(await needsTranscode(filePath))) return fallback
-      const outPath = await transcodeAudio(filePath)
+      needTranscode = await needsTranscode(filePath)
+      if (!needTranscode) return fallback
+      const outPath = await transcodeAudioQueued(filePath, (processedSec) => {
+        // 转码可能耗时数十秒(整张 APE),把已处理秒数推给发起请求的窗口,
+        // 让播放栏/播放页显示「转码中 0:42」而不是一个没有反馈的缓冲圈
+        try {
+          if (!event.sender.isDestroyed()) event.sender.send('transcode-progress', { path: filePath, processedSec })
+        } catch (_) {}
+      })
       return { url: `file:///${outPath.replace(/\\/g, '/')}`, transcoded: true }
     } catch (e) {
+      // 需要转码却失败:把原因带回去,渲染端才能提示「该格式需要 ffmpeg」而不是笼统的播放失败
+      const noTool = !isRealTool(ffmpegPath)
       console.error('[转码] 失败,回退原文件:', filePath, e.message)
-      return fallback
+      return { ...fallback, transcodeFailed: true, needFfmpeg: noTool, reason: e.message }
     }
   })
 
@@ -2026,10 +2366,13 @@ async function searchLyricAuto(info) {
   // 文件夹监控开关(自动刷新曲库)
   ipcMain.on('set-folder-watch', (event, enabled) => setFolderWatchEnabled(!!enabled))
   // 切歌系统通知(模式 system 时由渲染进程触发;需 AUMID 关联快捷方式才能弹出)
+  // 替换式通知:关闭旧实例再发新——快速连切只保留最新一条,避免 Windows 通知排队堆积
+  let _lastNotify = null
   ipcMain.on('notify-song', (event, info) => {
     try {
       if (!info || !info.title) return
       if (!Notification.isSupported()) return
+      if (_lastNotify) { try { _lastNotify.close() } catch (_) {} }
       // 不传 icon:完全依赖 AUMID(开始菜单快捷方式已注册 com.soundflow.music),
       // Windows 自动在通知左上角显示唯一的应用图标;传 icon 会与 AUMID 图标叠加成两个
       const n = new Notification({
@@ -2037,10 +2380,12 @@ async function searchLyricAuto(info) {
         body: info.artist ? `正在播放:${info.artist}` : '正在播放',
         silent: true
       })
-      n.show()
+      n.on('close', () => { if (_lastNotify === n) _lastNotify = null })
       n.on('click', () => {
         try { if (mainWindow) { mainWindow.show(); mainWindow.focus() } } catch (_) {}
       })
+      _lastNotify = n
+      n.show()
     } catch {}
   })
   ipcMain.handle('get-folder-watch', () => !!storageData.folderWatch)
@@ -2161,10 +2506,26 @@ async function searchLyricAuto(info) {
   })
 
   ipcMain.on('mini:update', (event, data) => {
+    // 缓存最近一次状态(见 lastMiniUpdate 注释):迷你窗可能在之后才被创建
+    lastMiniUpdate = data
     if (miniWindow) miniWindow.webContents.send('mini:update', data)
   })
 
+  // 迷你窗渲染端已在显示前套用初始状态 → 现在可以显示了。
+  // 校验发送方是当前迷你窗:旧的/别的窗口发的信号不应影响新窗口的显示时机。
+  ipcMain.on('mini:ready', (event) => {
+    if (!miniWindow || miniWindow.isDestroyed()) return
+    if (event.sender !== miniWindow.webContents) return
+    _miniReadySignaled = true
+    if (_showMiniOnce) _showMiniOnce()
+  })
+
   // 迷你播放器控制命令转发到主窗口
+  ipcMain.on('mini:seek', (event, seconds) => {
+    if (mainWindow && !mainWindow.isDestroyed() && Number.isFinite(seconds)) {
+      mainWindow.webContents.send('player:seek', seconds)
+    }
+  })
   ipcMain.on('mini:volume', (event, v) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('player:set-volume', v)
   })
@@ -2189,8 +2550,11 @@ async function searchLyricAuto(info) {
 
   // SMTC 播放状态 → 更新任务栏缩略图按钮 + 防休眠
   let _powerSaveId = null
-  ipcMain.on('smtc:playback-state', (event, state) => {
-    updateThumbarButtons(state === 'playing' ? 'playing' : 'paused')
+  ipcMain.on('smtc:playback-state', (event, data) => {
+    // 兼容字符串(旧)与对象(新,带歌名)
+    const state = typeof data === 'string' ? data : data?.state
+    const title = typeof data === 'object' && data ? (data.title || '') : ''
+    updateThumbarButtons(state === 'playing' ? 'playing' : 'paused', title)
     // 播放时阻止系统休眠/熄屏
     try {
       if (state === 'playing') {
@@ -2201,24 +2565,44 @@ async function searchLyricAuto(info) {
     } catch {}
   })
 
-  // 响度分析(ReplayGain):ffmpeg volumedetect → 目标 -14dB 的增益
+  // 响度分析(ReplayGain):ffmpeg loudnorm 单遍测量(EBU R128 集成响度 + 真峰值)→ 目标 -14 LUFS 增益
+  // 旧实现取 volumedetect 的 mean_volume 当响度基准:均值对静音段落与动态大的曲目偏差明显,
+  // 而且增益被 clamp 在 element.volume 上只能衰减、不能提升,「均衡」名不副实。
+  // loudnorm 的 input_i 是正经的集成响度,input_tp 还能算出「提上去但不削顶」的上限。
+  const LOUDNESS_TARGET_LUFS = -14
+  const LOUDNESS_PEAK_CEILING_DB = -0.3
+  async function measureLoudness(filePath) {
+    const out = await new Promise((resolve, reject) => {
+      execFile(getFfmpegPath(), [
+        '-hide_banner', '-threads', '2', '-i', filePath,
+        '-af', 'loudnorm=print_format=json', '-f', 'null', '-'
+      ], { timeout: 90000 }, (err, stdout, stderr) => {
+        const text = String(stderr || '')
+        // `-f null -` 是「只分析不产出」的常规用法,ffmpeg 仍可能以非 0 退出,不能凭退出码判失败
+        if (!/input_i/.test(text)) { reject(err || new Error('loudnorm 无输出')); return }
+        resolve(text)
+      })
+    })
+    const s = out.lastIndexOf('{'), e = out.lastIndexOf('}')
+    if (s < 0 || e <= s) return null
+    let m
+    try { m = JSON.parse(out.slice(s, e + 1)) } catch { return null }
+    const i = parseFloat(m.input_i)
+    const tp = parseFloat(m.input_tp)
+    // -inf/静音文件(loudnorm 给 -inf 或极小值)不做增益
+    if (!Number.isFinite(i) || i <= -70) return null
+    let gain = LOUDNESS_TARGET_LUFS - i
+    if (Number.isFinite(tp)) gain = Math.min(gain, LOUDNESS_PEAK_CEILING_DB - tp)
+    return Math.round(gain * 10) / 10
+  }
+
   // 队列化 + 慢速串行(1.5s 间隔):后台空闲分析,绝不抢占播放 CPU
   const _loudnessQueue = []
   let _loudnessRunning = false
   async function analyzeLoudnessOne(filePath) {
     try {
-      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
-      const { execFile } = require('child_process')
-      const out = await new Promise((resolve, reject) => {
-        execFile(ffmpegPathForLoudness, ['-hide_banner', '-threads', '2', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 90000 }, (err, stdout, stderr) => {
-          if (err && !String(stderr).includes('mean_volume')) { reject(err); return }
-          resolve(String(stderr))
-        })
-      })
-      const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(out)
-      if (!m) return
-      const mean = parseFloat(m[1])
-      const gain = Math.round((-14 - mean) * 10) / 10
+      const gain = await measureLoudness(filePath)
+      if (gain == null) return
       if (!storageData.replayGain) storageData.replayGain = {}
       storageData.replayGain[filePath] = gain
       saveStorage(true)
@@ -2255,18 +2639,8 @@ async function searchLyricAuto(info) {
 
   ipcMain.handle('analyze-loudness', async (event, filePath) => {
     try {
-      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
-      const { execFile } = require('child_process')
-      const out = await new Promise((resolve, reject) => {
-        execFile(ffmpegPathForLoudness, ['-hide_banner', '-i', filePath, '-af', 'volumedetect', '-f', 'null', '-'], { timeout: 60000 }, (err, stdout, stderr) => {
-          if (err && !String(stderr).includes('mean_volume')) { reject(err); return }
-          resolve(String(stderr))
-        })
-      })
-      const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(out)
-      if (!m) return null
-      const mean = parseFloat(m[1])
-      const gain = Math.round((-14 - mean) * 10) / 10
+      const gain = await measureLoudness(filePath)
+      if (gain == null) return null
       if (!storageData.replayGain) storageData.replayGain = {}
       storageData.replayGain[filePath] = gain
       saveStorage(true)
@@ -2281,10 +2655,10 @@ async function searchLyricAuto(info) {
   // 音频 BPM 分析(ffmpeg 解码 60s PCM → 能量峰值间距 → BPM;后台计算,结果缓存)
   ipcMain.handle('analyze-bpm', async (event, filePath) => {
     try {
-      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
+      const ffmpeg = getFfmpegPath()
       const { execFile } = require('child_process')
       const pcm = await new Promise((resolve, reject) => {
-        execFile(ffmpegPathForLoudness, ['-hide_banner', '-loglevel', 'error', '-t', '60', '-i', filePath, '-ac', '1', '-ar', '44100', '-f', 's16le', '-'], { timeout: 90000, maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
+        execFile(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-t', '60', '-i', filePath, '-ac', '1', '-ar', '44100', '-f', 's16le', '-'], { timeout: 90000, maxBuffer: 1024 * 1024 * 20 }, (err, stdout, stderr) => {
           if (err && !stdout.length) reject(new Error(String(stderr || err.message).slice(0, 150)))
           else resolve(stdout)
         })
@@ -2375,6 +2749,8 @@ async function searchLyricAuto(info) {
         r.on('end', () => { try { resolve(JSON.parse(d)) } catch (e) { reject(e) } })
       })
       req.on('error', reject)
+      // 无超时的请求在网络卡住时会永久挂起(自动匹配一直停在「搜索中…」)
+      req.setTimeout(NET_TIMEOUT_MS, () => req.destroy(new Error('请求超时')))
       req.end()
     })
   }
@@ -2422,7 +2798,7 @@ async function searchLyricAuto(info) {
       const artist = (song && song.artist || '').trim()
       if (!title) return []
       const q = encodeURIComponent(title + (artist ? ' ' + artist : ''))
-      const res = await fetch('https://music.163.com/api/search/get/web?s=' + q + '&type=1&limit=8&offset=0', { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      const res = await fetch('https://music.163.com/api/search/get/web?s=' + q + '&type=1&limit=8&offset=0', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
       if (!res.ok) return []
       const data = await res.json()
       const songs = (data.result && data.result.songs) || []
@@ -2434,7 +2810,7 @@ async function searchLyricAuto(info) {
         let coverUrl = '', year = ''
         try {
           await _srcThrottle()
-          const d = await fetch('https://music.163.com/api/song/detail?id=' + s.id + '&ids=%5B' + s.id + '%5D', { headers: { 'User-Agent': 'Mozilla/5.0' } })
+          const d = await fetch('https://music.163.com/api/song/detail?id=' + s.id + '&ids=%5B' + s.id + '%5D', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
           if (d.ok) { const dj = await d.json(); const so = dj.songs && dj.songs[0]; if (so && so.album) { coverUrl = so.album.picUrl || ''; const t = so.album.publishTime; if (t) year = String(new Date(t).getFullYear()) } }
         } catch {}
         out.push({
@@ -2462,6 +2838,7 @@ async function searchLyricAuto(info) {
           r.on('end', () => resolve(Buffer.concat(chunks)))
         })
         req.on('error', reject)
+        req.setTimeout(NET_TIMEOUT_MS, () => req.destroy(new Error('封面下载超时')))
         req.end()
       })
       if (!buf.length) return { ok: false, error: '空响应' }
@@ -2493,6 +2870,7 @@ async function searchLyricAuto(info) {
           r.on('end', () => resolve(Buffer.concat(chunks)))
         })
         req.on('error', reject)
+        req.setTimeout(NET_TIMEOUT_MS, () => req.destroy(new Error('高清封面下载超时')))
         req.end()
       })
       if (!buf.length || buf.length < 1000) return { ok: false, url: coverUrl }
@@ -2515,7 +2893,7 @@ async function searchLyricAuto(info) {
       const artist = (song && song.artist || '').trim()
       if (!title) return []
       const kw = encodeURIComponent(title + (artist ? ' ' + artist : ''))
-      const res = await fetch('https://songsearch.kugou.com/song_search_v2?keyword=' + kw + '&page=1&pagesize=8', { headers: { 'User-Agent': 'Mozilla/5.0' } })
+      const res = await fetch('https://songsearch.kugou.com/song_search_v2?keyword=' + kw + '&page=1&pagesize=8', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
       if (!res.ok) return []
       const data = await res.json()
       const list = (data.data && data.data.lists) || []
@@ -2555,7 +2933,7 @@ async function searchLyricAuto(info) {
       if (!title) return []
       const q = encodeURIComponent(`recording:"${title}"${artist ? ` AND artist:"${artist}"` : ''}`)
       const url = `https://musicbrainz.org/ws/2/recording/?query=${q}&limit=5&fmt=json`
-      const res = await fetch(url, { headers: { 'User-Agent': 'SoundFlowMusic/1.0 (local music player)' } })
+      const res = await fetch(url, { headers: { 'User-Agent': 'SoundFlowMusic/1.0 (local music player)' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
       if (!res.ok) return []
       const data = await res.json()
       // 提取候选:标题/艺术家/专辑/年份(去重按专辑)
@@ -2576,7 +2954,7 @@ async function searchLyricAuto(info) {
 
   ipcMain.handle('write-tags', async (event, filePath, tags, coverPath) => {
     try {
-      if (!ffmpegPathForLoudness) detectFFmpegLoudness()
+      const ffmpeg = getFfmpegPath()
       const { execFile } = require('child_process')
       const fs = require('fs')
       // 封面内嵌:可选 coverPath(本地封面文件)→ attached_pic(不重编码音频)
@@ -2628,7 +3006,7 @@ async function searchLyricAuto(info) {
       if (tags && tags.year) args.push('-metadata', 'date=' + tags.year)
       args.push(tmp)
       const runFfmpeg = (a) => new Promise((res, rej) => {
-        execFile(ffmpegPathForLoudness, a, { timeout: 60000 }, (err, stdout, stderr) => {
+        execFile(ffmpeg, a, { timeout: 60000 }, (err, stdout, stderr) => {
           if (err) rej(new Error((err.message || 'ffmpeg失败') + ' ' + String(stderr || '').slice(0, 300)))
           else res()
         })
@@ -2901,7 +3279,9 @@ ipcMain.handle('check-updates', async () => {
 app.whenReady().then(async () => {
   log.info('[exit] app ready,启动初始化开始')
   await ensureParseFile()
-  detectFFprobe()
+  resolveAudioTools()
+  log.info('[工具链] ffmpeg=' + ffmpegPath + ' ffprobe=' + ffprobePath)
+  sweepTranscodeCache() // 启动清理:删残件 + 按 LRU 压到 2GB 以内(异步,不阻塞启动)
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
 
   createMenu()
@@ -2960,6 +3340,12 @@ app.on('activate', () => {
 
 app.on('will-quit', () => {
   try { globalShortcut.unregisterAll() } catch (_) {}
+  // 清掉转码残件:缓存本身按 LRU 保留(下次复用),但 .part 一定是中断产物
+  try {
+    for (const name of fs.readdirSync(transcodeDir())) {
+      if (name.endsWith('.part')) { try { fs.unlinkSync(path.join(transcodeDir(), name)) } catch (_) {} }
+    }
+  } catch (_) {}
   if (storagePath) {
     try {
       // 退出前同步兜底写盘(worker 异步可能来不及)+ 备份一次
