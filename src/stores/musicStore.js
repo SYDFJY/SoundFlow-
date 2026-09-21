@@ -783,6 +783,10 @@ export const useMusicStore = defineStore('music', () => {
       // 再按重连后的结果报告失效。这一步只改引用,不动曲库(那条失效记录仍留着由用户决定清理)
       let relinkable = []
       if (missing.length > 0) relinkable = await filterReachableMissing(missing)
+      // 指纹匹配要求"新路径已经在曲库里"。应用关闭期间被改名的文件,新路径谁都没见过 ——
+      // 所以先把这些失效文件所在的目录重扫一遍(解析缓存命中,成本主要是 readdir),
+      // 让它们以新路径回到曲库,再重连。只在确实存在失效文件时才做,且限制目录数量。
+      if (relinkable.length) await rescanDirsOf(relinkable)
       const { count, reconciled } = relinkMissingRefs({ missing: relinkable })
       // 已按指纹对上新位置的记录已经从曲库移除,不该再出现在"失效待清理"里
       const rest = missing.filter(s => !reconciled.includes(s.path))
@@ -798,6 +802,25 @@ export const useMusicStore = defineStore('music', () => {
       }
     } catch (e) {
       console.error('[检测] 启动失效检测失败:', e)
+    }
+  }
+
+  /**
+   * 重扫一批失效文件所在目录:让"被改名/移动"的文件以新路径回到曲库,供指纹重连使用。
+   * 直接调主进程扫描而**不走 scanFolder**,因此不会污染扫描根、不触发扫描进度 UI。
+   * 拿到的新记录交给 addSongs(按 path 去重,已在库里的不会重复)。
+   */
+  async function rescanDirsOf(records) {
+    if (!window.electronAPI?.scanFolder || records.length === 0) return
+    const dirs = [...new Set(records.map(s => dirOf(s.path)).filter(Boolean))].slice(0, 20)
+    for (const dir of dirs) {
+      try {
+        const res = await window.electronAPI.scanFolder(dir, 'recover-' + Date.now())
+        const items = Array.isArray(res) ? res : (res && res.items) || []
+        if (items.length) addSongs(items)
+      } catch (e) {
+        noteFailure('relink.rescan', `恢复扫描失败:${dir}`, e)
+      }
     }
   }
 

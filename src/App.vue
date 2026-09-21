@@ -317,13 +317,15 @@ onMounted(async () => {
   musicStore.initPlayListener()
   musicStore.initFolderWatch()
   // 启动自动检测失效歌曲(延迟等 UI 就绪,不抢占启动资源)
-  setTimeout(() => musicStore.startupMissingCheck(), 6000)
+  // 只在主窗执行:迷你窗加载的是同一个入口,重复跑会重复扫描(可能触发恢复扫描)与重复提示
+  const isMiniWindow = window.location.hash.indexOf('/mini') !== -1
+  if (!isMiniWindow) setTimeout(() => musicStore.startupMissingCheck(), 6000)
   playerStore.loadSettings()
   playerStore.restoreQueue()
   // 稳定 ID:文件在应用关闭期间被改名/移动的,此刻曲库与队列都已就绪,正好按指纹重连
   // (必须在 restoreQueue 之后:重连要顺带修正队列里的路径)
   playerStore.initRelinkSync()
-  musicStore.relinkMissingRefs()
+  if (!isMiniWindow) musicStore.relinkMissingRefs()
   playerStore.initAudio()
   playerStore.initMediaSession()
   // 启动自动续播:开启后等 UI 稳定(2.5s)再继续播放,避免启动卡顿;用户已提前手动播放则跳过,不覆盖
