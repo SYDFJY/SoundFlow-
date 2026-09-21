@@ -518,6 +518,7 @@ function parseFilename(filename) {
 // (或启动时补齐收藏引用)要解析 5000 次,而多数文件根本没变。键含 mtime+size,
 // 文件改动即失效;整体是一个 path|mtime|size 的扁平表。
 const mdCache = require('./lib/metadataCache')
+const fingerprintLib = require('./lib/fingerprint')
 let mdCacheEntries = {} // 独立于 storageData:缓存不该进用户数据文件与备份
 let mdCacheLoaded = false
 let mdCacheSaveTimer = null
@@ -561,7 +562,9 @@ async function parseMetadata(filePath) {
   if (key && mdCacheEntries[key]) {
     mdCacheStats.hit++
     mdCacheEntries[key] = mdCache.touch(mdCacheEntries[key], Date.now())
-    return mdCacheEntries[key].v
+    // 指纹在返回时现算:它的输入(大小来自本次 stat,其余来自解析结果)两条路径都齐,
+    // 所以不必进缓存,也就不会因为加指纹而让整片旧缓存失效
+    return fingerprintLib.withFingerprint(mdCacheEntries[key].v, st)
   }
   mdCacheStats.miss++
 
@@ -621,7 +624,8 @@ async function parseMetadata(filePath) {
       saveMdCache()
     }
   }
-  return out
+  // 内容指纹(与路径无关的身份):供渲染端在文件被改名/移动后重连收藏、歌单、播放次数等
+  return fingerprintLib.withFingerprint(out, st)
 }
 
 // ========== 入库时间(addedTime)==========

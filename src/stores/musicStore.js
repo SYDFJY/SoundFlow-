@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import { noteFailure } from '@/utils/failures'
+import { matchRelink, dirOf, isUnder, normSep } from '@/utils/relink'
 import { SCHEMA_VERSION, applyMigrations, parseVersion } from '@/config/storageSchema'
 
 /** localStorage 里记录存储模式版本的键(不入 DEFAULTS:它是元数据不是用户设置) */
@@ -93,6 +94,9 @@ export const useMusicStore = defineStore('music', () => {
     const favOrder = readKey('soundflow_favorite_order', null)
     if (Array.isArray(favOrder)) favoriteOrderOverride.value = favOrder
 
+    // 稳定 ID:载入路径→指纹登记表(重连用的墓碑在这里)
+    loadPathFp()
+
     // 迁移执行过或首次建立版本号时落盘,并同步给主进程 JSON(常量只在 storageSchema.js 维护)
     if (applied.length || fromVersion !== SCHEMA_VERSION) {
       try { localStorage.setItem(LS_SCHEMA_VERSION, String(SCHEMA_VERSION)) } catch (e) {
@@ -175,6 +179,8 @@ export const useMusicStore = defineStore('music', () => {
   function doSaveNow() {
     try {
       const failed = []
+      // 稳定 ID:落盘前刷新「被引用路径 → 内容指纹」登记表(路径不变时是空操作)
+      syncPathFp()
       const safeSet = (key, value) => {
         try { localStorage.setItem(key, JSON.stringify(value)) }
         catch (e) { failed.push(key) }
@@ -594,6 +600,9 @@ export const useMusicStore = defineStore('music', () => {
       isScanning.value = false
       _scanJobId = null
       scanCurrent.value = ''
+      // 稳定 ID:这次扫描可能正是"用户把目录挪了个位置再重新添加"——
+      // 新路径入库后,把还指着旧路径的引用接过来(允许弱匹配:扫描本身就是文件位置的重新确认)
+      try { relinkMissingRefs({ weak: true }) } catch (e) { noteFailure('relink.scan', '扫描后重连失败', e) }
     }
   }
 
@@ -619,6 +628,8 @@ export const useMusicStore = defineStore('music', () => {
       isScanning.value = false
       _scanJobId = null
       scanCurrent.value = ''
+      // 稳定 ID:用户手动重新添加了被移动的文件 → 把还指着旧路径的引用接过来
+      try { relinkMissingRefs({ weak: true }) } catch (e) { noteFailure('relink.scan', '扫描后重连失败', e) }
     }
   }
 
@@ -731,15 +742,51 @@ export const useMusicStore = defineStore('music', () => {
         if (window.$toast) window.$toast('曲库失效检测未能完成，可在首页手动重新检测', 'warning')
         return
       }
-      startupMissing.value = missing
-      if (missing.length > 0) {
-        console.warn(`[检测] 启动检测到 ${missing.length} 首歌曲文件已失效,可在首页清理`)
+      // 稳定 ID:失效记录里有一部分其实是"被改名/移动"—— 先按内容指纹重连引用,
+      // 再按重连后的结果报告失效。这一步只改引用,不动曲库(那条失效记录仍留着由用户决定清理)
+      let relinkable = []
+      if (missing.length > 0) relinkable = await filterReachableMissing(missing)
+      const { count, reconciled } = relinkMissingRefs({ missing: relinkable })
+      // 已按指纹对上新位置的记录已经从曲库移除,不该再出现在"失效待清理"里
+      const rest = missing.filter(s => !reconciled.includes(s.path))
+      startupMissing.value = rest
+      if (rest.length > 0) {
+        console.warn(`[检测] 启动检测到 ${rest.length} 首歌曲文件已失效,可在首页清理`)
         if (window.$toast) {
-          window.$toast(`检测到 ${missing.length} 首歌曲文件已失效,可在首页一键清理`, 'warning')
+          const text = count > 0
+            ? `检测到 ${missing.length} 首文件失效,其中 ${count} 首已按内容指纹找回;另有 ${rest.length} 首可在首页清理`
+            : `检测到 ${rest.length} 首歌曲文件已失效,可在首页一键清理`
+          window.$toast(text, 'warning')
         }
       }
     } catch (e) {
       console.error('[检测] 启动失效检测失败:', e)
+    }
+  }
+
+  /**
+   * 稳定 ID 的安全阀:失效记录中,只有「所在目录与扫描根都仍然可达」的那些才允许指纹重连。
+   *
+   * 为什么需要:整棵树不可达 = 移动硬盘拔出 / 网络盘掉线 / 目录被拔走。那时把所有歌都当
+   * 「文件被改名」去匹配,一旦本地存在同内容的副本,引用就会被悄悄改到副本上;等盘插回来
+   * 反而对不上了。宁可这次不重连(下次插着盘启动时会成功),也不能猜。
+   */
+  async function filterReachableMissing(missing) {
+    if (missing.length === 0) return []
+    if (!window.electronAPI?.checkFilesExist) return []
+    const roots = scanFolders.value.map(normSep)
+    const parents = [...new Set(missing.map(s => dirOf(s.path)))]
+    try {
+      const absent = new Set(await window.electronAPI.checkFilesExist([...parents, ...roots]))
+      return missing.filter(s => {
+        const dir = dirOf(s.path)
+        if (absent.has(dir)) return false
+        if (roots.some(r => isUnder(s.path, r) && absent.has(r))) return false
+        return true
+      })
+    } catch (e) {
+      noteFailure('relink.reachability', '可达性检测失败,本次不做指纹重连', e)
+      return []
     }
   }
 
@@ -792,6 +839,161 @@ export const useMusicStore = defineStore('music', () => {
     saveToStorage()
   }
 
+  // ===== 稳定 ID:路径 → 内容指纹登记表 =====
+  // 引用(收藏/歌单/次数/历史/自定义排序/队列/续播进度)全部以 path 为键,文件一改名、
+  // 移动或换盘符就整体指空(用户看到的是「收藏没了、次数归零、队列变空」)。
+  // 这里为**被引用的路径**记下它的内容指纹(electron/lib/fingerprint.js),
+  // 路径消失后仍能凭指纹找到它的新位置并改指过去。
+  //
+  // 只记被引用的路径(通常几百条),不记整库:体积可控,且不再被引用时自动淘汰。
+  // 「记录还在、路径已不在曲库」= 一条墓碑,重连时用的就是它。
+  const PATH_FP_KEY = 'soundflow_path_fp'
+  const pathFp = ref({})
+
+  function loadPathFp() {
+    try {
+      const raw = localStorage.getItem(PATH_FP_KEY)
+      const v = raw ? JSON.parse(raw) : null
+      pathFp.value = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {}
+    } catch (e) {
+      noteFailure('storage.load', '指纹登记表损坏,已重建(改名重连需重新积累)', e)
+      pathFp.value = {}
+    }
+  }
+
+  function savePathFp() {
+    try { localStorage.setItem(PATH_FP_KEY, JSON.stringify(pathFp.value)) }
+    catch (e) { noteFailure('storage.save', '指纹登记表写入失败', e) }
+  }
+
+  // 当前被引用的全部路径。播放侧的引用(队列、续播进度)也存在 localStorage 里,
+  // 一并登记 —— 否则「换盘符后播放队列变空」这类问题不在覆盖范围内。
+  function referencedPaths() {
+    const set = new Set()
+    for (const p of favorites.toArray()) set.add(p)
+    for (const pl of playlists.value) for (const p of pl.songs || []) set.add(p)
+    for (const p of Object.keys(playCounts.value)) set.add(p)
+    for (const h of history.value) if (h && h.path) set.add(h.path)
+    for (const p of favoriteOrderOverride.value || []) set.add(p)
+    try {
+      const raw = localStorage.getItem('soundflow_song_order')
+      if (raw) for (const p of JSON.parse(raw) || []) set.add(p)
+    } catch {}
+    for (const key of ['soundflow_queue', 'soundflow_progress']) {
+      try {
+        const raw = localStorage.getItem(key)
+        if (!raw) continue
+        const v = JSON.parse(raw)
+        if (key === 'soundflow_queue') {
+          if (Array.isArray(v && v.queue)) for (const p of v.queue) if (typeof p === 'string') set.add(p)
+        } else if (v && typeof v === 'object' && !Array.isArray(v)) {
+          for (const p of Object.keys(v)) set.add(p)
+        }
+      } catch {}
+    }
+    return set
+  }
+
+  // 登记/刷新指纹:被引用的路径若在曲库中,记下当前指纹;已消失的保留旧记录(墓碑)。
+  // 每次落盘前调用,开销是「被引用路径数」级别,可忽略。
+  function syncPathFp() {
+    const refs = referencedPaths()
+    const live = new Map()
+    for (const s of songs.value) if (s && s.path) live.set(s.path, s)
+    const next = {}
+    let changed = false
+    for (const p of refs) {
+      const s = live.get(p)
+      if (s && s.fp) {
+        // 仍在线:刷新(文件被替换后指纹会变,旧指纹不该继续用于匹配)
+        if (!pathFp.value[p] || pathFp.value[p].fp !== s.fp || pathFp.value[p].fpk !== s.fpk) changed = true
+        next[p] = { fp: s.fp, fpk: s.fpk }
+      } else if (pathFp.value[p]) {
+        next[p] = pathFp.value[p] // 墓碑:路径已不在曲库,记录留着等重连
+      }
+    }
+    if (Object.keys(next).length !== Object.keys(pathFp.value).length) changed = true
+    if (changed) {
+      pathFp.value = next
+      savePathFp()
+    }
+  }
+
+  /**
+   * 按内容指纹重连引用:文件被改名/移动后,让收藏、歌单、播放次数、历史、队列
+   * 跟着**内容**走,而不是跟着路径走。
+   *
+   * 触发点必须是「文件确实动过」的证据,不能仅凭"路径不在曲库里"就重连 ——
+   * 移动硬盘拔掉时歌曲会整批从曲库摘除,那时任何猜测都可能把引用改到别的文件上。
+   *
+   * @param {{weak?:boolean, missing?:Array<object>}} [opts]
+   *   weak    = true 时允许用「大小+时长」匹配(仅在系统报告了文件移动/用户确认清理时)
+   *   missing = 曲库中文件已确认不存在的记录(启动检测传入;其所在目录必须仍可达)
+   */
+  function relinkMissingRefs(opts = {}) {
+    const weak = opts.weak === true
+    if (songs.value.length === 0) return { count: 0, skipped: 0 }
+
+    const live = new Set(songs.value.map(s => s.path))
+    const gone = []
+    // 来源 1:被引用、但已不在曲库里的路径(靠墓碑里的指纹)
+    for (const p of referencedPaths()) {
+      if (live.has(p)) continue
+      const rec = pathFp.value[p]
+      if (rec && (rec.fp || rec.fpk)) gone.push({ old: p, fp: rec.fp, fpk: rec.fpk })
+    }
+    // 来源 2:曲库里文件已消失的记录(本身也是一条引用:它占着曲库与排序位置)
+    for (const s of opts.missing || []) {
+      if (!s || !s.path || !s.fp) continue
+      if (!gone.some(g => g.old === s.path)) gone.push({ old: s.path, fp: s.fp, fpk: s.fpk })
+    }
+    if (gone.length === 0) return { count: 0, skipped: 0 }
+
+    const { pairs, skipped } = matchRelink(songs.value, gone, { weak })
+    if (pairs.length === 0) return { count: 0, skipped: skipped.length }
+
+    const missingByPath = new Map((opts.missing || []).map(s => [s.path, s]))
+    const stale = []
+    for (const { old: oldPath, new: newPath } of pairs) {
+      if (missingByPath.has(oldPath)) {
+        // 失效记录要先从曲库摘掉:留着再调 renameSongPath 会把它的 path 一起改掉,
+        // 曲库里就出现两条指向同一文件的记录(其中一条永远打不开)。
+        // 这里不走 removeSongs —— 它同时会删收藏,而收藏正要接到新路径上去。
+        stale.push({ ...missingByPath.get(oldPath) })
+        songs.value = songs.value.filter(s => s.path !== oldPath)
+      }
+      renameSongPath(oldPath, newPath)
+    }
+    if (stale.length) saveToStorage()
+    // 播放侧(队列/当前歌曲/续播进度)由 playerStore 自己改 —— 用事件,避免 store 互相 import
+    try {
+      window.dispatchEvent(new CustomEvent('soundflow:relinked', { detail: { pairs } }))
+    } catch (e) {
+      noteFailure('relink.notify', '播放侧重连通知失败', e)
+    }
+    syncPathFp()
+    saveToStorage()
+    console.info('[稳定 ID] 已按指纹重连引用:', pairs)
+    if (window.$toast) {
+      window.$toast(`检测到文件被改名/移动,已恢复 ${pairs.length} 处收藏、歌单与播放记录`, 'info', 5000)
+    }
+    return { count: pairs.length, skipped: skipped.length, reconciled: stale.map(s => s.path) }
+  }
+
+  /**
+   * 只读查询:某个已消失的路径现在对应曲库里的哪首歌(唯一候选才有答案)。
+   * 供 playerStore 恢复队列时使用 —— 队列里存的是上次的路径,文件改过名也要能接着播。
+   * @returns {string|null} 新路径;无法确定时返回 null(调用方按"找不到"处理)
+   */
+  function resolveRelinkedPath(oldPath) {
+    if (!oldPath) return null
+    if (songs.value.some(s => s.path === oldPath)) return oldPath
+    const rec = pathFp.value[oldPath]
+    if (!rec || !rec.fp) return null
+    const { pairs } = matchRelink(songs.value, [{ old: oldPath, fp: rec.fp, fpk: rec.fpk }])
+    return pairs.length === 1 ? pairs[0].new : null
+  }
+
   // 清空历史
   function clearHistory() {
     history.value = []
@@ -835,6 +1037,14 @@ export const useMusicStore = defineStore('music', () => {
           console.error('[监控] 新增文件解析失败:', e)
         }
       }
+      // 稳定 ID:系统在这一批事件里报告了文件消失又出现 = 改名/移动的强证据,
+      // 此时允许用「大小+时长」匹配(无标签文件改名后标签指纹会变,只能靠它)。
+      // 真删除时找不到候选,这里自然什么都不做。
+      if ((removed && removed.length) || (added && added.length)) {
+        try { relinkMissingRefs({ weak: true }) } catch (e) {
+          noteFailure('relink.watch', '监控重连失败', e)
+        }
+      }
     })
   }
 
@@ -853,6 +1063,7 @@ export const useMusicStore = defineStore('music', () => {
     addLyricFolder, removeLyricFolder,
     findDuplicates, batchUpdateMeta, updateSong, renameSongPath, clearHistory,
     checkMissingSongs, startupMissingCheck,
+    relinkMissingRefs, resolveRelinkedPath,
     initPlayListener, initFolderWatch
   }
 })

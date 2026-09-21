@@ -71,6 +71,8 @@ export const LOCAL_ONLY = {
     'soundflow_eq', 'soundflow_custom_eq_presets', 'soundflow_custom_fonts',
     'soundflow_custom_themes', 'soundflow_favorite_order', 'soundflow_song_order',
     'soundflow_queue_h', 'soundflow_queue_w', 'soundflow_list_scroll_',
+    // 稳定 ID:被引用路径 → 内容指纹。丢了不会损坏数据,只是这一次改名的文件重连不上
+    'soundflow_path_fp',
     // 按曲的歌词偏移微调:用户逐首调出来的结果,丢了要重调
     'soundflow_lyric_offsets',
   ],

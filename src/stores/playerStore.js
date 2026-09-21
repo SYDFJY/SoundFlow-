@@ -815,8 +815,13 @@ export const usePlayerStore = defineStore('player', () => {
       // 新格式 queue 为 path 数组 → 映射回歌曲对象(避免序列化整个队列);旧格式对象数组兼容
       if (typeof state.queue[0] === 'string') {
         try {
-          const songMap = new Map(useMusicStore().songs.map(s => [s.path, s]))
-          const mapped = state.queue.map(p => songMap.get(p)).filter(Boolean)
+          const ms = useMusicStore()
+          const songMap = new Map(ms.songs.map(s => [s.path, s]))
+          // 稳定 ID:队列里存的是上次的路径。文件改过名/换过盘符时直接映射会全部落空
+          // (表现为「重启后队列变空」),因此查不到就按内容指纹找回 —— 唯一候选才算数
+          const mapped = state.queue
+            .map(p => songMap.get(p) || songMap.get(ms.resolveRelinkedPath(p)))
+            .filter(Boolean)
           if (mapped.length > 0) {
             state.queue = mapped
             if (typeof state.index === 'number' && state.index >= mapped.length) state.index = mapped.length - 1
@@ -1982,6 +1987,11 @@ export const usePlayerStore = defineStore('player', () => {
       playQueue.value = playQueue.value.map(s => (s && s.path === oldPath) ? { ...s, path: newPath } : s)
       changed = true
     }
+    if (_originalQueue.some(s => s && s.path === oldPath)) {
+      // 乱序播放的「原始顺序」里也存着 path,漏改会让关闭乱序后回到旧路径
+      _originalQueue = _originalQueue.map(s => (s && s.path === oldPath) ? { ...s, path: newPath } : s)
+      changed = true
+    }
     if (currentSong.value && currentSong.value.path === oldPath) {
       currentSong.value = { ...currentSong.value, path: newPath }
       changed = true
@@ -1992,6 +2002,20 @@ export const usePlayerStore = defineStore('player', () => {
       changed = true
     }
     if (changed) saveSettings()
+  }
+
+  // 稳定 ID:曲库侧检测到文件被改名/移动并完成指纹重连后,播放侧跟上
+  // (队列、当前歌曲、续播进度)。用事件而非直接调用,避免 music ↔ player 互相 import。
+  let _relinkSyncAttached = false
+  function initRelinkSync() {
+    if (_relinkSyncAttached) return
+    _relinkSyncAttached = true
+    window.addEventListener('soundflow:relinked', (e) => {
+      const pairs = (e && e.detail && e.detail.pairs) || []
+      for (const p of pairs) {
+        if (p && p.old && p.new) renameSongInQueue(p.old, p.new)
+      }
+    })
   }
 
   function saveSettings() {
@@ -2042,6 +2066,6 @@ export const usePlayerStore = defineStore('player', () => {
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,
     getSpectrumData,
-    initMediaSession
+    initMediaSession, initRelinkSync
   }
 })

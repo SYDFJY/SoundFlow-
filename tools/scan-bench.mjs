@@ -52,6 +52,41 @@ app.whenReady().then(async () => {
   if (cold.ms > 0) {
     console.log(`提速 ${(cold.ms / Math.max(1, warm.ms)).toFixed(1)}×(${cold.ms}ms → ${warm.ms}ms)`)
   }
+
+  // 内容指纹(稳定 ID 的地基)端到端检查:必须**每个文件都有**,且改名后不变。
+  // 单测只能证明纯函数的性质,这里证明它真的从解析路径里出来了 —— 少了这一步,
+  // "指纹没接上"会让改名重连整个功能静默失效(表现为收藏照样丢,且毫无提示)。
+  const fpOf = (path) =>
+    win.webContents.executeJavaScript(
+      `(async () => {
+         const res = await window.electronAPI.scanFiles([${JSON.stringify(path)}], 'fp-check')
+         const it = (res && res.items) || []
+         return it[0] ? { fp: it[0].fp, fpk: it[0].fpk, title: it[0].title } : null
+       })()`,
+      true
+    )
+  const listed = await win.webContents.executeJavaScript(
+    `(async () => { const res = await window.electronAPI.scanFolder(${JSON.stringify(dir)}, 'fp-list'); return res.items.map(i => ({ path: i.path, fp: i.fp, fpk: i.fpk })) })()`,
+    true
+  )
+  const withFp = listed.filter((i) => i.fp && i.fpk).length
+  console.log(`指纹: ${withFp}/${listed.length} 个文件带 fp`)
+  if (withFp !== listed.length) console.error('指纹缺失:解析路径没有把 fp/fpk 带上')
+
+  if (listed.length > 0) {
+    const target = listed[0]
+    const renamed = target.path.replace(/(\.[^.]*)?$/, '_renamed$1')
+    try {
+      const fs = require('node:fs')
+      fs.renameSync(target.path, renamed)
+      const after = await fpOf(renamed)
+      const same = after && after.fp === target.fp
+      console.log(`改名后指纹:${same ? '一致 ✓' : '不一致 ✗'}(fp ${target.fp} → ${after && after.fp})`)
+      fs.renameSync(renamed, target.path) // 复原,别把测试目录改了
+    } catch (e) {
+      console.error('改名检查失败:', e.message)
+    }
+  }
   // 等一会再退:解析缓存的落盘有 3 秒防抖、electron-log 也需要时间刷新,
   // 立刻退出会导致"缓存文件没生成、命中率日志也看不到"(验证时踩过一次)
   await new Promise((r) => setTimeout(r, 4500))

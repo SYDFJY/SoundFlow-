@@ -322,6 +322,9 @@ async function removeMissingSongs() {
   if (missingSongs.value.length === 0) return
   if (!(await confirmDialog({ message: `确定从曲库移除这 ${missingSongs.value.length} 首失效歌曲？`, detail: '只从曲库移除,不会删除本地文件', confirmText: '移除', danger: true }))) return
   const paths = missingSongs.value.map(s => s.path)
+  // 稳定 ID:用户刚确认这些文件确实不在了 —— 借这个强证据再试一次指纹重连,
+  // 把还指着它们的收藏/歌单/播放次数接到同内容的现存文件上(接不上的才真的消失)
+  musicStore.relinkMissingRefs({ weak: true, missing: missingSongs.value.slice() })
   musicStore.removeSongs(paths)
   closeMissingDialog()
 }

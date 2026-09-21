@@ -320,6 +320,10 @@ onMounted(async () => {
   setTimeout(() => musicStore.startupMissingCheck(), 6000)
   playerStore.loadSettings()
   playerStore.restoreQueue()
+  // 稳定 ID:文件在应用关闭期间被改名/移动的,此刻曲库与队列都已就绪,正好按指纹重连
+  // (必须在 restoreQueue 之后:重连要顺带修正队列里的路径)
+  playerStore.initRelinkSync()
+  musicStore.relinkMissingRefs()
   playerStore.initAudio()
   playerStore.initMediaSession()
   // 启动自动续播:开启后等 UI 稳定(2.5s)再继续播放,避免启动卡顿;用户已提前手动播放则跳过,不覆盖
