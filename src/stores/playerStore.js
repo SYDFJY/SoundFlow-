@@ -5,6 +5,7 @@ import { parseLRCWithMeta } from '@/utils/lrc'
 import { resolveLyricOffset } from '@/utils/lyricTiming'
 import { formatDuration } from '@/utils/time'
 import { noteFailure } from '@/utils/failures'
+import { createShufflePool } from '@/utils/shufflePool'
 import { describeChain, formatChainLog, compareChain } from '@/services/playbackGraph'
 import { SoundTouch } from 'soundtouchjs'
 // 静态导入 musicStore(其不依赖 playerStore,通过 window 事件解耦,无循环依赖)
@@ -104,7 +105,10 @@ export const usePlayerStore = defineStore('player', () => {
   let _fadeGen = 0
   let _fadeBaseVol = null
   // 原始队列顺序(供随机/顺序切换时恢复)
-  let _originalQueue = []
+  // 乱序池:一轮不重复的排列 + 游标 + 后退历史(见 utils/shufflePool.js)。
+  // 旧实现是"打乱队列 + 每次 Math.random 选下一首",既重复又无法前后回溯,
+  // 而且打乱后的队列顺序从未被真正使用(队列面板显示的顺序是假的)。
+  const _pool = createShufflePool()
 
   // 系统媒体控制 (MediaSession / SMTC)
   let _mediaSessionInited = false
@@ -684,19 +688,11 @@ export const usePlayerStore = defineStore('player', () => {
     saveEqSettings()
   }
 
-  // 拖拽排序后同步原始队列(随机模式恢复时保持一致)
-  function syncOriginalQueue() {
-    if (_originalQueue.length === playQueue.value.length) {
-      _originalQueue = playQueue.value.map(s => ({ ...s }))
-    }
-  }
-
   // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
-  // 同时记录原始顺序,供随机/顺序切换时恢复
   function setPlayQueue(songs, startIndex = 0) {
+    _pool.reset() // 队列结构变了,旧排列的索引不再可靠(重开一轮)
     userStartedPlay.value = true
     playQueue.value = songs.map(withQid)
-    _originalQueue = playQueue.value.map(s => ({ ...s }))
     currentIndex.value = startIndex
     if (songs.length > 0 && startIndex >= 0 && startIndex < songs.length) {
       loadAndPlay(startIndex, true)
@@ -706,18 +702,18 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 插入到下一首
   function insertNext(song) {
+    _pool.reset() // 队列结构变了,旧排列的索引不再可靠(重开一轮)
     const insertIdx = currentIndex.value + 1
     const item = withQid(song)
     playQueue.value.splice(insertIdx, 0, item)
-    _originalQueue.splice(insertIdx, 0, { ...item }) // 同步原始队列(保持顺序一致)
     saveQueueState()
   }
 
   // 追加到播放列表末尾(拖歌曲到播放栏等场景)
   function addToQueue(song) {
+    _pool.reset() // 队列结构变了,旧排列的索引不再可靠(重开一轮)
     const item = withQid(song)
     playQueue.value.push(item)
-    _originalQueue.push({ ...item })
     saveQueueState()
   }
 
@@ -728,7 +724,6 @@ export const usePlayerStore = defineStore('player', () => {
     currentSong.value = null
     currentIndex.value = -1
     playQueue.value = []
-    _originalQueue = []
     isPlaying.value = false
     currentTime.value = 0
     duration.value = 0
@@ -739,14 +734,13 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 从队列中移除(允许移除当前播放歌曲,移除后自动播放下一首)
   function removeFromQueue(index) {
+    _pool.reset() // 队列结构变了,旧排列的索引不再可靠(重开一轮)
     if (index < 0 || index >= playQueue.value.length) return
     const wasCurrent = index === currentIndex.value
     const removed = playQueue.value[index]
     playQueue.value.splice(index, 1)
     // 同步原始队列:按 _qid 精确移除(队列含重复歌曲时按 path 会删错那一条)
     if (removed && removed._qid != null) {
-      const oi = _originalQueue.findIndex(s => s._qid === removed._qid)
-      if (oi >= 0) _originalQueue.splice(oi, 1)
     }
     if (wasCurrent) {
       if (playQueue.value.length === 0) {
@@ -778,13 +772,13 @@ export const usePlayerStore = defineStore('player', () => {
 
   // 队列拖拽排序重排(播放栏/播放页共用):Sortable 触发 onEnd 后此处统一完成 splice + 修正索引引用
   function reorderQueue(oldIndex, newIndex) {
+    _pool.reset() // 队列结构变了,旧排列的索引不再可靠(重开一轮)
     const q = playQueue.value
     if (!Number.isInteger(oldIndex) || !Number.isInteger(newIndex) || oldIndex === newIndex) return
     if (oldIndex < 0 || oldIndex >= q.length || newIndex < 0 || newIndex >= q.length) return
     const moved = q.splice(oldIndex, 1)[0]
     q.splice(newIndex, 0, moved)
     fixQueueIndex(oldIndex, newIndex)
-    syncOriginalQueue() // 拖拽即新顺序,随机模式恢复时保持一致
   }
 
   // 播放列表持久化:保存队列与当前索引(重启后恢复)
@@ -830,7 +824,6 @@ export const usePlayerStore = defineStore('player', () => {
       }
       // 恢复自持久化数据:补齐稳定 id(旧数据没有 _qid,且同一首歌可能在队列里出现多次)
       playQueue.value = state.queue.filter(s => s && s.path).map(withQid)
-      _originalQueue = playQueue.value.map(s => ({ ...s }))
       if (playQueue.value.length === 0) return
       currentIndex.value = (state.index >= 0 && state.index < playQueue.value.length) ? state.index : 0
       currentSong.value = playQueue.value[currentIndex.value]
@@ -1500,7 +1493,12 @@ export const usePlayerStore = defineStore('player', () => {
 
   function playIndex(index) {
     userStartedPlay.value = true
-    if (index >= 0 && index < playQueue.value.length) loadAndPlay(index, true)
+    if (index >= 0 && index < playQueue.value.length) {
+      // 用户手动点歌(播放栏/队列面板):把乱序游标对齐到这首,
+      // 之后的"下一首"从这里继续,而不是回到原来那一轮的位置
+      _pool.seek(index, playQueue.value.length)
+      loadAndPlay(index, true)
+    }
   }
 
   function playPrev() {
@@ -1508,7 +1506,10 @@ export const usePlayerStore = defineStore('player', () => {
     if (playQueue.value.length === 0) return
     let idx
     if (playMode.value === 'random') {
-      idx = Math.floor(Math.random() * playQueue.value.length)
+      // 乱序下的"上一首"= 刚听过的那首(池里的历史),不是另一个随机歌;
+      // 本轮刚开头没有历史时原地不动,而不是重播当前这首
+      idx = _pool.back()
+      if (idx < 0 || idx >= playQueue.value.length) return
     } else {
       idx = (currentIndex.value - 1 + playQueue.value.length) % playQueue.value.length
     }
@@ -1520,7 +1521,8 @@ export const usePlayerStore = defineStore('player', () => {
     if (playQueue.value.length === 0) return
     let idx
     if (playMode.value === 'random') {
-      idx = Math.floor(Math.random() * playQueue.value.length)
+      // 走池:一轮之内不重复,走完再开新一轮(首曲避开刚播完的这首)
+      idx = _pool.advance(playQueue.value.length, currentIndex.value)
     } else if (playMode.value === 'repeatOne') {
       idx = currentIndex.value
     } else {
@@ -1684,8 +1686,13 @@ export const usePlayerStore = defineStore('player', () => {
   const nextUpSong = computed(() => {
     const q = playQueue.value
     if (!q.length) return null
-    if (playMode.value === 'random') return null // 随机不做假预告
     if (playMode.value === 'repeatOne') return q[currentIndex.value] || null
+    if (playMode.value === 'random') {
+      // 乱序也能预告了:池的 peek 只预测不消费,且预告的就是随后 advance 会给的那首。
+      // 依赖 currentIndex 触发重算,保证换歌后预告跟着变
+      const i = _pool.peek(q.length, currentIndex.value)
+      return i >= 0 && i < q.length ? q[i] : null
+    }
     const i = currentIndex.value + 1
     return q[i < q.length ? i : 0] || null
   })
@@ -1751,58 +1758,21 @@ export const usePlayerStore = defineStore('player', () => {
     sendLyricUpdate()
   }
 
-  function setPlayMode(mode) { playMode.value = mode }
+  function setPlayMode(mode) {
+    const prev = playMode.value
+    if (prev === mode) return
+    playMode.value = mode
+    // 进入/离开乱序都重开一轮:避免把上一次乱序的游标与历史带到新模式里
+    if (prev === 'random' || mode === 'random') _pool.reset()
+    try { localStorage.setItem('soundflow_play_mode', mode) } catch {}
+  }
 
-  // 切换播放方式:进入随机模式时打乱队列(当前歌曲保持原位),退出时恢复原始顺序
+  // 切换播放方式。乱序不再改动队列本身:队列顺序在乱序播放时也是真实的,
+  // 退到其它模式自然就是原顺序,不需要"恢复原始队列"这一步(旧实现改了队列,
+  // 却仍用随机选曲,队列面板显示的顺序是假的)
   function cyclePlayMode() {
     const modes = ['list', 'repeat', 'repeatOne', 'random']
-    playMode.value = modes[(modes.indexOf(playMode.value) + 1) % modes.length]
-    if (playMode.value === 'random') {
-      applyRandomShuffle()
-    } else if (_originalQueue.length > 0) {
-      restoreOriginalQueue()
-    }
-    localStorage.setItem('soundflow_play_mode', playMode.value)
-  }
-
-  // 随机模式:当前歌曲保持在当前位置,其余歌曲 Fisher-Yates 洗牌
-  function applyRandomShuffle() {
-    if (playQueue.value.length <= 2) return
-    const curPath = currentSong.value?.path
-    const others = playQueue.value.filter((s, i) => i !== currentIndex.value)
-    for (let i = others.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      ;[others[i], others[j]] = [others[j], others[i]]
-    }
-    const newQueue = [...others]
-    const insertAt = Math.min(Math.max(currentIndex.value, 0), newQueue.length)
-    if (curPath) {
-      // 当前歌曲放回原索引(若有)
-      const curSong = playQueue.value.find(s => s.path === curPath)
-      // 分配新的 _qid:当前歌的副本此时已不在 others 里,复用旧 id 会与队列中
-      // 同名的另一条重复(展开会复制 _qid),造成 v-for key 冲突
-      if (curSong) newQueue.splice(insertAt, 0, withQid(curSong))
-    }
-    playQueue.value = newQueue
-    // 重新定位当前歌曲索引
-    if (curPath) {
-      const idx = playQueue.value.findIndex(s => s.path === curPath)
-      if (idx >= 0) currentIndex.value = idx
-    }
-    saveQueueState()
-  }
-
-  // 退出随机:恢复原始顺序,当前歌曲跟随
-  function restoreOriginalQueue() {
-    const curPath = currentSong.value?.path
-    playQueue.value = _originalQueue.map(s => ({ ...s }))
-    if (curPath) {
-      const idx = playQueue.value.findIndex(s => s.path === curPath)
-      if (idx >= 0) currentIndex.value = idx
-    } else if (currentIndex.value >= playQueue.value.length) {
-      currentIndex.value = Math.max(0, playQueue.value.length - 1)
-    }
-    saveQueueState()
+    setPlayMode(modes[(modes.indexOf(playMode.value) + 1) % modes.length])
   }
 
   // ===== 变调(变速不变调):AudioWorklet + SoundTouch(独立线程,不卡主线程) =====
@@ -1987,11 +1957,6 @@ export const usePlayerStore = defineStore('player', () => {
       playQueue.value = playQueue.value.map(s => (s && s.path === oldPath) ? { ...s, path: newPath } : s)
       changed = true
     }
-    if (_originalQueue.some(s => s && s.path === oldPath)) {
-      // 乱序播放的「原始顺序」里也存着 path,漏改会让关闭乱序后回到旧路径
-      _originalQueue = _originalQueue.map(s => (s && s.path === oldPath) ? { ...s, path: newPath } : s)
-      changed = true
-    }
     if (currentSong.value && currentSong.value.path === oldPath) {
       currentSong.value = { ...currentSong.value, path: newPath }
       changed = true
@@ -2055,7 +2020,7 @@ export const usePlayerStore = defineStore('player', () => {
     pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
-    initAudio, setPlayQueue, insertNext, addToQueue, removeFromQueue, reorderQueue, fixQueueIndex, syncOriginalQueue, loadAndPlay, togglePlay,
+    initAudio, setPlayQueue, insertNext, addToQueue, removeFromQueue, reorderQueue, fixQueueIndex, loadAndPlay, togglePlay,
     playIndex, playPrev, playNext, stopPlayback, setVolume, toggleMute, seek,
     loadLyrics,
     setPlayMode, cyclePlayMode, setPlaybackRate, cyclePlaybackRate,
