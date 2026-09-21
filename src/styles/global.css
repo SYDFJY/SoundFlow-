@@ -62,6 +62,7 @@
   --z-modal: 300;      /* 模态遮罩与卡片 */
   --z-menu: 400;       /* 右键菜单(需盖住模态详情层) */
   --z-nested: 9000;    /* 从模态里再开的模态 */
+  --z-tooltip: 9500;   /* 悬停提示(要盖住浮层与模态,但不挡通知) */
   --z-toast: 9999;     /* 通知与提示,永远最上 */
 
   --page-pad-x: 24px;      /* 页面左右留白(所有视图统一) */
@@ -385,42 +386,28 @@ input, select, textarea {
   outline: none;
 }
 
+/* 文本输入基座(设置页行式输入、搜索框、数字输入共用)。
+   聚焦反馈取自 uiverse.io 的 Inputs 做法:边框变主色 + 外扩一圈柔和光环,
+   并给未聚焦态一点内阴影表示"可输入"。只改基座,各页面结构不动。 */
 input[type="text"], input[type="search"], input[type="number"] {
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
+  background: var(--input-bg, var(--bg-hover));
+  border: 1px solid var(--input-border, var(--border-color));
   border-radius: var(--radius-md);
   padding: 8px 12px;
-  transition: border-color var(--transition-fast);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
-
-input[type="text"]:focus, input[type="search"]:focus {
+input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover {
+  border-color: var(--color-primary-alpha, var(--border-color));
+}
+input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus {
+  background: var(--bg-secondary);
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-alpha);
+  box-shadow: 0 0 0 3px var(--input-focus-ring, var(--color-primary-alpha));
 }
 
-/* 工具提示 */
-[data-tooltip] {
-  position: relative;
-}
-
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 8px;
-  background: var(--text-primary);
-  color: var(--bg-secondary);
-  font-size: var(--font-size-xs);
-  border-radius: var(--radius-sm);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-fast);
-}
-
-[data-tooltip]:hover::after { opacity: 1; }
+/* 提示(data-tooltip)的实现已迁到 src/styles/controls.css:
+   旧实现只能朝上、无箭头、无延迟,且全项目无人使用。 */
 
 /* 动画 */
 @keyframes fadeIn {

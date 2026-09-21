@@ -22,6 +22,8 @@ LICENSE.electron.txt
 build/icon-src/
 build/icon.ico.before-*
 build/thumb/
+vk_swiftshader_icd.json
+swiftshader/
 
 # ===== 编辑器/工具残留 =====
 *.tmp.*

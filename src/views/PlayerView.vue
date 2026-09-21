@@ -12,7 +12,7 @@
           <button class="tab-btn" :class="{ active: activeTab === 'lyric' }" @click="activeTab = 'lyric'">{{ t('playerView.lyrics') }}</button>
         </div>
         <div class="topbar-right">
-          <button class="icon-btn" @click="showBgPanel = !showBgPanel" title="播放页背景设置">
+          <button class="icon-btn" @click="showBgPanel = !showBgPanel" v-tooltip:bottom="'播放页背景设置'">
             <Icon name="cover" :size="18" />
           </button>
         </div>
@@ -138,13 +138,14 @@
             </div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
               <template v-if="playerStore.lyricLoading">
-                <div class="lyric-loading-tip">歌词加载中…</div>
+                <!-- 加载动效取自 uiverse.io(MIT,by Fadhilmagass),颜色尺寸已改为主题 token -->
+                <div class="lyric-loading-tip"><span class="sf-dots"><i></i><i></i><i></i><i></i><i></i></span>歌词加载中…</div>
               </template>
               <template v-else>
                 <div class="es-icon"><Icon name="lyrics" :size="44" /></div>
                 <div>{{ t('playerView.noLyrics') }}</div>
                 <div class="empty-hint">右键歌曲可导入 .lrc 文件<br/>或在设置中添加歌词文件夹</div>
-                <button class="search-lyric-btn" :disabled="searchingLyric" @click="searchLyric">
+                <button class="search-lyric-btn" :class="{ 'is-loading': searchingLyric }" :disabled="searchingLyric" @click="searchLyric">
                   {{ searchingLyric ? '正在搜索…' : '在线搜索歌词并下载' }}
                 </button>
                 <button class="search-lyric-btn local" @click="importLocalLyric"><Icon name="lyrics" :size="14" />导入本地歌词文件</button>
@@ -232,7 +233,7 @@
             <div class="ls-sep" aria-hidden="true"></div>
             <div class="ls-group-label">外观</div>
             <button class="ls-btn" :class="{ active: showColorPanel }" :aria-pressed="showColorPanel" title="歌词颜色" aria-label="歌词颜色" @click="showColorPanel = !showColorPanel"><Icon name="color" :size="15" /></button>
-            <button class="ls-btn" :class="{ active: playerStore.showTranslation }" :aria-pressed="playerStore.showTranslation" :title="playerStore.translating ? '翻译中…' : '歌词翻译'" aria-label="歌词翻译" @click="playerStore.toggleTranslation()"><Icon name="translate" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: playerStore.showTranslation, 'is-loading': playerStore.translating }" :aria-pressed="playerStore.showTranslation" v-tooltip:top="playerStore.translating ? '翻译中…' : '歌词翻译'"aria-label="歌词翻译" @click="playerStore.toggleTranslation()"><Icon name="translate" :size="15" /></button>
             <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" :aria-pressed="lyricAlign === 'left'" :title="lyricAlign === 'left' ? '当前左对齐,点击改为居中' : '当前居中,点击改为左对齐'" aria-label="歌词对齐方式" @click="toggleLyricAlign"><Icon name="swap" :size="15" /></button>
             <button class="ls-btn" :class="{ active: lyricEffect }" :aria-pressed="lyricEffect" title="歌词特效(远近变淡/发光)" aria-label="歌词特效" @click="toggleLyricEffect"><Icon name="effect" :size="15" /></button>
             <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :aria-pressed="lyricMode === 'word'" :title="'歌词高亮: ' + (lyricMode === 'word' ? '逐字(点击改为整行)' : '整行(点击改为逐字)')" aria-label="歌词高亮方式" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
@@ -321,7 +322,7 @@
 
 <!-- 播放控制组(居中:播放模式/上一曲/播放/下一曲/倍速,与播放栏一致) -->
           <div class="controls-group">
-            <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" :title="t(playModeLabelKey)">
+            <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" v-tooltip:top="t(playModeLabelKey)">
               <Icon v-if="playerStore.playMode === 'list'" name="modeList" :size="18" />
               <Icon v-else-if="playerStore.playMode === 'repeat'" name="modeRepeat" :size="18" />
               <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
@@ -330,8 +331,8 @@
             <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()">
               <Icon name="prev" :size="20" fill="currentColor" />
             </button>
-            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
-              <Icon v-if="playerStore.isBuffering" class="player-spin" name="loadingCircle" :size="22" />
+            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" v-tooltip:top="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
+              <span v-if="playerStore.isBuffering" class="sf-dots sf-dots--sm" aria-label="缓冲中"><i></i><i></i><i></i><i></i><i></i></span>
               <Icon v-else-if="playerStore.isPlaying" name="pause" :size="22" fill="currentColor" />
               <Icon v-else name="play" :size="22" fill="currentColor" />
             </button>
@@ -395,11 +396,11 @@
           <!-- 右工具组(分栏 / 音效 / 频谱 / 播放列表) -->
           <div class="tools-group">
 <!-- 分栏切换(大屏封面+歌词并排) -->
-            <button class="ctrl-btn ctrl-btn--small" :class="{ active: useSplit }" @click="toggleSplit" title="分栏/单栏切换(封面与歌词并排)">
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: useSplit }" @click="toggleSplit" v-tooltip:top="'分栏/单栏切换(封面与歌词并排)'">
               <Icon name="splitView" :size="18" />
             </button>
             <!-- 音效 -->
-            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
+            <button class="ctrl-btn ctrl-btn--small" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" v-tooltip:top="t('player.eq')">
               <Icon name="equalizer" :size="18" />
             </button>
             <!-- 频谱模式与密度 -->
@@ -427,7 +428,7 @@
             </div>
 
             <!-- 播放列表 -->
-            <button class="ctrl-btn ctrl-btn--small" data-queue-toggle :class="{ active: showQueuePanel }" @click="toggleQueuePanel" :title="t('player.queue')">
+            <button class="ctrl-btn ctrl-btn--small" data-queue-toggle :class="{ active: showQueuePanel }" @click="toggleQueuePanel" v-tooltip:top="t('player.queue')">
               <Icon name="queue" :size="18" />
             </button>
           </div>
@@ -1402,12 +1403,6 @@ async function searchLyric() {
   display: flex; align-items: center; gap: 10px;
   font-size: 14px; color: rgba(255,255,255,0.45);
 }
-.lyric-loading-tip::before {
-  content: ''; width: 14px; height: 14px; border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.2); border-top-color: var(--color-primary, #4096ff);
-  animation: lrc-spin 0.8s linear infinite;
-}
-@keyframes lrc-spin { to { transform: rotate(360deg); } }
 .es-icon { display: inline-flex; color: var(--empty-icon, var(--text-tertiary)); }
 .empty-hint { font-size: var(--font-size-sm); color: rgba(255,255,255,0.25); line-height: 1.6; }
 .search-lyric-btn { margin-top: 4px; padding: 8px 18px; background: var(--color-primary); color: #fff; border-radius: 20px; font-size: var(--font-size-sm); transition: all 0.2s; }
@@ -1748,18 +1743,7 @@ async function searchLyric() {
 .vol-btn:hover { color: white; }
 .vol-btn svg { width: 18px; height: 18px; }
 
-.vol-slider {
-  /* 竖直音量滑块:低在下、高在上 */
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 4px; height: 100px;
-  background: rgba(255,255,255,0.15); border-radius: 2px; outline: none;
-}
-.vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 13px; height: 13px;
-  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
-  border: none;
-}
+/* .vol-slider 已收敛到 src/styles/controls.css(替换废弃的 slider-vertical) */
 
 /* 变调控件 */
 .pitch-control { position: relative; display: flex; align-items: center; }

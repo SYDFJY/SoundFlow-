@@ -21,7 +21,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const GLOBAL_CSS = readFileSync(path.join(ROOT, 'src/styles/global.css'), 'utf8')
 
 /** 刻度顺序:数值可调,顺序不可乱 */
-const ORDER = ['--z-toolbar', '--z-popover', '--z-panel', '--z-modal', '--z-menu', '--z-nested', '--z-toast']
+const ORDER = ['--z-toolbar', '--z-popover', '--z-panel', '--z-modal', '--z-menu', '--z-nested', '--z-tooltip', '--z-toast']
 
 function tokenValue(name) {
   const m = new RegExp(`${name}\\s*:\\s*(\\d+)`).exec(GLOBAL_CSS)
@@ -54,6 +54,12 @@ describe('z-index 刻度', () => {
 
   it('右键菜单高于模态(在模态详情层里右键歌曲时菜单不能被盖住)', () => {
     expect(tokenValue('--z-menu')).toBeGreaterThan(tokenValue('--z-modal'))
+  })
+
+  it('悬停提示高于菜单与模态,但低于通知', () => {
+    expect(tokenValue('--z-tooltip')).toBeGreaterThan(tokenValue('--z-menu'))
+    expect(tokenValue('--z-tooltip')).toBeGreaterThan(tokenValue('--z-modal'))
+    expect(tokenValue('--z-tooltip')).toBeLessThan(tokenValue('--z-toast'))
   })
 
   it('通知高于嵌套模态(提示永远可见)', () => {

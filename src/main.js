@@ -3,13 +3,18 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import { useAppStore } from './stores/appStore'
+import tooltip from './directives/tooltip'
+
 import './styles/global.css'
 import './styles/controls.css'
+import './styles/glass.css'
+import './styles/loaders.css'
 
 const app = createApp(App)
 const pinia = createPinia()
 app.use(pinia)
 app.use(router)
+app.directive('tooltip', tooltip)
 
 // 全局错误兜底:此前未捕获异常与未处理的 Promise 拒绝完全静默,出问题只能靠猜。
 // console.error 会被主进程的 console-message 监听写入 electron-log,便于事后排查。

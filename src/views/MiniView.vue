@@ -12,14 +12,14 @@
       </div>
     </div>
     <div class="mini-right">
-      <button class="mini-btn" @click="prev">
+      <button class="mini-btn" @click="prev" v-tooltip:top="'上一曲'" aria-label="上一曲">
         <Icon name="prev" :size="18" fill="currentColor" />
       </button>
-      <button class="mini-btn mini-btn--play" @click="togglePlay">
+      <button class="mini-btn mini-btn--play" @click="togglePlay" v-tooltip:top="'播放 / 暂停'" aria-label="播放 / 暂停">
         <Icon v-if="isPlaying" name="pause" :size="20" fill="currentColor" />
         <Icon v-else name="play" :size="20" fill="currentColor" />
       </button>
-      <button class="mini-btn" @click="next">
+      <button class="mini-btn" @click="next" v-tooltip:top="'下一曲'" aria-label="下一曲">
         <Icon name="next" :size="18" fill="currentColor" />
       </button>
     </div>

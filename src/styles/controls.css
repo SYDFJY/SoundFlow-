@@ -130,3 +130,82 @@ input[type='range']:active::-webkit-slider-thumb {
     transform: none;
   }
 }
+
+/* ===== 竖直 range 滑杆(音量) =====
+   替换已废弃的 `-webkit-appearance: slider-vertical`(Chromium 117 起标记废弃,
+   主题色/尺寸都改不动,命中区只有 4px 宽、很难拖)。
+   现代写法:writing-mode 把水平滑杆转成竖直,direction:rtl 让 0 在底部、100% 在顶部
+   (与音量直觉一致)。轨道必须用**逻辑属性** inline-size/block-size 指定尺寸 ——
+   在竖直书写模式下写死的 width/height 不生效,轨道会完全画不出来(实测)。
+   手柄由 Chromium 自动在轨道上居中,不需要负边距;外层宽度 20px 提供舒适命中区。
+   以下四个值经 tools/render-probe.mjs 渲染截图确认过。 */
+.vol-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 100px;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+}
+.vol-slider::-webkit-slider-runnable-track {
+  inline-size: 100%;
+  block-size: 4px;
+  background: var(--bg-hover, rgba(128, 128, 128, 0.3));
+  border-radius: 2px;
+}
+.vol-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  inline-size: 13px;
+  block-size: 13px;
+  /* 竖直书写模式下 Chromium 把**手柄与轨道的左边缘对齐**而不是居中,
+     实测手柄中心比轨道中心偏右 4.39px(≈(13-4)/2,见 tools/render-probe.mjs 的
+     像素量测)。这里补回半个差值让它真正居中。 */
+  margin-left: -4.5px;
+  background: var(--color-primary, #4096ff);
+  border: none;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+.vol-slider:hover::-webkit-slider-thumb { transform: scale(1.1); }
+.vol-slider:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 4px;
+}
+
+/* ===== 悬停提示 =====
+   实现已改为"顶层图层 + JS 定位":v-tooltip 指令(见 src/directives/tooltip.js)
+   配合 src/components/TooltipLayer.vue。原因:纯 CSS 的 ::after 气泡是元素的子盒子,
+   会被祖先的 overflow:hidden 裁掉(侧栏、.app 都有),也被播放栏的 backdrop-filter
+   层叠上下文困住 —— 实测把 z-index 提到 999999 依然被挡,表现为"悬停后像被什么
+   挡住了一样看不见"。图层方案还能顺带做边缘翻转与视口夹紧。 */
+
+/* ===== 按钮/元素加载态(.is-loading) =====
+   此前异步操作靠把按钮文字改成"清理中…/译中…"来表达,风格不一且宽度会跳。
+   这里统一:文字隐去但**保留占位宽度**(不跳变),原位显示一个居中转圈。
+   颜色可被调用方覆盖:实心主按钮默认白,浅色按钮传 --btn-load-fg。 */
+.is-loading {
+  position: relative;
+  pointer-events: none;
+  color: transparent !important;
+}
+.is-loading > * { visibility: hidden; } /* 子元素(图标/文本 span)一并隐藏,但保留布局 */
+.is-loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--btn-load-track, rgba(255, 255, 255, 0.3));
+  border-top-color: var(--btn-load-fg, #fff);
+  animation: sf-loading-spin 0.7s linear infinite;
+}
+@keyframes sf-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .is-loading::after { animation-duration: 1.6s; } /* 降速而不是完全静止:静止的圆环没有"进行中"的语义 */
+}

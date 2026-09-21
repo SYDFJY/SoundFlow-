@@ -69,7 +69,8 @@ const THEME_BG = {
   light: '#edf4fa', green: '#edf7f2', orange: '#fcf3eb', pink: '#faf0f4',
   dark: '#1a2b24', blue: '#172330', red: '#2a171a', purple: '#272036',
   c_light: '#f5f7fa', c_dark: '#0d1117', c_blue: '#0a1628', c_green: '#f0f7f0',
-  c_purple: '#f5f0ff', c_pink: '#fff0f5', c_orange: '#fff8f0', c_red: '#fff5f5'
+  c_purple: '#f5f0ff', c_pink: '#fff0f5', c_orange: '#fff8f0', c_red: '#fff5f5',
+  glass: '#0b0f14'
 }
 function themeBgColor() {
   return THEME_BG[storageData.theme] || '#f5f7fa'
@@ -512,8 +513,58 @@ function parseFilename(filename) {
   return { title: name.trim(), artist: '未知艺术家' }
 }
 
+// ========== 元数据解析缓存 ==========
+// 每次扫描都重新解析所有文件是最大的浪费:一个 5000 首的库,重新添加同一目录
+// (或启动时补齐收藏引用)要解析 5000 次,而多数文件根本没变。键含 mtime+size,
+// 文件改动即失效;整体是一个 path|mtime|size 的扁平表。
+const mdCache = require('./lib/metadataCache')
+let mdCacheEntries = {} // 独立于 storageData:缓存不该进用户数据文件与备份
+let mdCacheLoaded = false
+let mdCacheSaveTimer = null
+let mdCacheStats = { hit: 0, miss: 0 }
+function mdCachePath() { return path.join(app.getPath('userData'), 'metadata-cache.json') }
+function loadMdCache() {
+  if (mdCacheLoaded) return
+  mdCacheLoaded = true
+  try {
+    const raw = JSON.parse(fs.readFileSync(mdCachePath(), 'utf8'))
+    if (raw && typeof raw.entries === 'object') mdCacheEntries = raw.entries
+  } catch (_) { /* 首次运行或文件损坏:从空开始 */ }
+}
+function saveMdCache() {
+  clearTimeout(mdCacheSaveTimer)
+  mdCacheSaveTimer = setTimeout(() => {
+    try {
+      const { entries, evicted } = mdCache.evict(mdCacheEntries, 50000)
+      mdCacheEntries = entries
+      if (evicted) log.info('[元数据缓存] LRU 淘汰', evicted, '条')
+      getSaveWorker().postMessage({ path: mdCachePath(), data: { version: 1, entries } })
+    } catch (e) { log.warn('[元数据缓存] 落盘失败:', e && e.message) }
+  }, 3000)
+}
+// 一次扫描结束后打一行命中率,便于判断缓存是否真的生效
+function logMdCacheStats(tag) {
+  const { hit, miss } = mdCacheStats
+  if (hit + miss > 0) {
+    log.info(`[元数据缓存] ${tag}: 命中 ${hit} / 解析 ${miss}(节省 ${hit} 次解析)`)
+  }
+  mdCacheStats = { hit: 0, miss: 0 }
+}
+
 // ========== 元数据解析 ==========
 async function parseMetadata(filePath) {
+  loadMdCache()
+  // 先 stat 一次拿键(mtime+size 变则视为不同文件);stat 本身远便宜于解析
+  let st = null
+  try { st = await stat(filePath) } catch (_) { /* 拿不到就照常解析 */ }
+  const key = st ? mdCache.cacheKey(filePath, st) : null
+  if (key && mdCacheEntries[key]) {
+    mdCacheStats.hit++
+    mdCacheEntries[key] = mdCache.touch(mdCacheEntries[key], Date.now())
+    return mdCacheEntries[key].v
+  }
+  mdCacheStats.miss++
+
   const ext = path.extname(filePath).toLowerCase()
   const fileName = path.basename(filePath)
   const parsed = parseFilename(fileName)
@@ -561,7 +612,16 @@ async function parseMetadata(filePath) {
     coverUrl = findCoverInDir(filePath)
   }
 
-  return { title, artist, album, year, genre, duration, bitrate, sampleRate, bitDepth, coverUrl, format: ext.replace('.', '').toUpperCase() }
+  const out = { title, artist, album, year, genre, duration, bitrate, sampleRate, bitDepth, coverUrl, format: ext.replace('.', '').toUpperCase() }
+  // 写缓存:只保留可缓存字段,并带上用时间戳(供 LRU);随后延迟落盘
+  if (key) {
+    const cacheable = mdCache.toCacheable(out)
+    if (cacheable) {
+      mdCacheEntries[key] = { v: cacheable, t: Date.now() }
+      saveMdCache()
+    }
+  }
+  return out
 }
 
 // ========== 入库时间(addedTime)==========
@@ -1352,7 +1412,15 @@ function setupIPC() {
         try { size += fs.statSync(path.join(dir, f)).size } catch {}
       }
     } catch (_) {}
-    return { coversSize: size, coversCount: count }
+    return { coversSize: size, coversCount: count, mdCacheCount: Object.keys(mdCacheEntries).length }
+  })
+
+  // 清理元数据解析缓存(下次扫描会重新解析,不影响曲库数据)
+  ipcMain.handle('clear-metadata-cache', async () => {
+    const n = Object.keys(mdCacheEntries).length
+    mdCacheEntries = {}
+    try { fs.unlinkSync(mdCachePath()) } catch (_) {}
+    return { removed: n }
   })
 
   // 清理封面缓存(封面会按需重新生成)
@@ -1379,6 +1447,14 @@ function setupIPC() {
     }
   })
 
+  // 扫描任务表:支持取消(jobId → {cancelled})。扫描大目录可能持续数十秒,
+  // 用户需要能中止,而不是只能等它跑完或强杀应用。
+  const scanJobs = new Map()
+  ipcMain.on('scan-cancel', (event, jobId) => {
+    const job = scanJobs.get(jobId)
+    if (job) job.cancelled = true
+  })
+
   // 有界并发执行:扫描/解析大曲库时避免串行等待,同时防止并发过多抢占 CPU/IO 卡死主进程
   async function runConcurrent(items, limit, worker) {
     const results = new Array(items.length)
@@ -1398,8 +1474,46 @@ function setupIPC() {
     return results.filter(Boolean)
   }
 
+  /**
+   * 带进度与取消的批量解析。
+   * 进度推送按时间节流(默认 120ms):一首歌解析几十毫秒,不节流会形成每秒上百条 IPC。
+   * 取消后已解析的部分照常返回(用户按下取消时不该丢掉已完成的工作)。
+   */
+  async function parseFilesWithProgress(sender, files, { tag = '扫描', jobId } = {}) {
+    const total = files.length
+    const job = { cancelled: false }
+    if (jobId) scanJobs.set(jobId, job)
+    let done = 0
+    let failed = 0
+    let lastPush = 0
+    const results = await runConcurrent(files, 4, async (filePath) => {
+      if (job.cancelled) return null
+      try {
+        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
+        return { path: filePath, ...meta, addedTime }
+      } catch (e) {
+        failed++
+        console.error(`[${tag}] 解析失败:`, filePath, e.message)
+        return null
+      } finally {
+        done++
+        const now = Date.now()
+        if (now - lastPush >= 120 || done === total) {
+          lastPush = now
+          try {
+            if (!sender.isDestroyed()) {
+              sender.send('scan-progress', { jobId, tag, done, total, failed, current: filePath })
+            }
+          } catch (_) {}
+        }
+      }
+    })
+    if (jobId) scanJobs.delete(jobId)
+    return { items: results, total, failed, cancelled: job.cancelled }
+  }
+
   // 拖放导入:文件/文件夹混合,复用扫描逻辑
-  ipcMain.handle('import-dropped', async (event, paths) => {
+  ipcMain.handle('import-dropped', async (event, paths, jobId) => {
     const audioPaths = []
     for (const p of (paths || [])) {
       try {
@@ -1408,15 +1522,9 @@ function setupIPC() {
         else if (st.isFile() && AUDIO_EXTS.has(path.extname(p).toLowerCase())) audioPaths.push(p)
       } catch {}
     }
-    return runConcurrent(audioPaths, 4, async (filePath) => {
-      try {
-        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
-        return { path: filePath, ...meta, addedTime }
-      } catch (e) {
-        console.error('[拖放导入] 解析失败:', filePath, e.message)
-        return null
-      }
-    })
+    const r = await parseFilesWithProgress(event.sender, audioPaths, { tag: '拖放导入', jobId })
+    if (r.failed) log.warn('[拖放导入] 解析失败文件数:', r.failed)
+    return r
   })
 
   // 存量曲库回填「入库时间」:老记录没有该字段,不回填的话「按添加时间」排序会把它们全堆在末尾。
@@ -1433,30 +1541,18 @@ function setupIPC() {
   })
 
   // 扫描文件夹(4 并发解析,大曲库提速数倍)
-  ipcMain.handle('scan-folder', async (event, folderPath) => {
+  ipcMain.handle('scan-folder', async (event, folderPath, jobId) => {
     const files = await scanFolderRecursive(folderPath)
-    return runConcurrent(files, 4, async (filePath) => {
-      try {
-        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
-        return { path: filePath, ...meta, addedTime }
-      } catch (e) {
-        console.error('[扫描] 解析失败:', filePath, e.message)
-        return null
-      }
-    })
+    const r = await parseFilesWithProgress(event.sender, files, { tag: '扫描目录', jobId })
+    logMdCacheStats('扫描目录')
+    if (r.failed) log.warn('[扫描] 解析失败文件数:', r.failed)
+    return r
   })
 
   // 扫描单个文件
-  ipcMain.handle('scan-files', async (event, filePaths) => {
-    const results = []
-    for (const filePath of filePaths) {
-      if (!AUDIO_EXTS.has(path.extname(filePath).toLowerCase())) continue
-      try {
-        const [meta, addedTime] = await Promise.all([parseMetadata(filePath), fileAddedTime(filePath)])
-        results.push({ path: filePath, ...meta, addedTime })
-      } catch {}
-    }
-    return results
+  ipcMain.handle('scan-files', async (event, filePaths, jobId) => {
+    const list = (filePaths || []).filter((f) => AUDIO_EXTS.has(path.extname(f).toLowerCase()))
+    return await parseFilesWithProgress(event.sender, list, { tag: '扫描文件', jobId })
   })
 
   // 解析元数据
@@ -3280,7 +3376,9 @@ app.whenReady().then(async () => {
   log.info('[exit] app ready,启动初始化开始')
   await ensureParseFile()
   resolveAudioTools()
-  log.info('[工具链] ffmpeg=' + ffmpegPath + ' ffprobe=' + ffprobePath)
+  loadMdCache()
+  log.info('[工具链] ffmpeg=' + ffmpegPath + ' ffprobe=' + ffprobePath +
+    ' 元数据缓存条数=' + Object.keys(mdCacheEntries).length)
   sweepTranscodeCache() // 启动清理:删残件 + 按 LRU 压到 2GB 以内(异步,不阻塞启动)
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
 

@@ -36,6 +36,7 @@
     </template>
     <ToastHost />
     <ConfirmDialog />
+    <TooltipLayer />
     <SongNotifyCard />
     <!-- 快捷键帮助面板 -->
     <teleport to="body">
@@ -88,6 +89,7 @@ import Sidebar from '@/components/Sidebar.vue'
 import PlayerBar from '@/components/PlayerBar.vue'
 import ToastHost from '@/components/ToastHost.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import TooltipLayer from '@/components/TooltipLayer.vue'
 import SongNotifyCard from '@/components/SongNotifyCard.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { toast, toastState } from '@/composables/useToast'

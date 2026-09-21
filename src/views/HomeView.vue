@@ -75,7 +75,18 @@
     <div v-if="musicStore.isScanning" class="scan-overlay">
       <div class="scan-card">
         <div class="scan-spinner"></div>
-        <div class="scan-text">正在扫描音乐文件...</div>
+        <!-- 有进度就显示进度条与计数,没有(刚起步还在遍历目录)才退回转圈 -->
+        <template v-if="musicStore.scanTotal > 1">
+          <div class="scan-text">
+            正在扫描 <b>{{ musicStore.scanDone }}</b> / {{ musicStore.scanTotal }} 首
+            <span v-if="musicStore.scanFailed" class="scan-failed">({{ musicStore.scanFailed }} 个失败)</span>
+          </div>
+          <div class="scan-bar"><i :style="{ width: musicStore.scanProgress + '%' }"></i></div>
+          <div v-if="musicStore.scanCurrent" class="scan-file text-ellipsis">{{ musicStore.scanCurrent.split(/[\/]/).pop() }}</div>
+        </template>
+        <div v-else class="scan-text">正在扫描音乐文件...</div>
+        <button class="scan-cancel" @click="musicStore.cancelScan()">取消扫描</button>
+        <div class="scan-hint">取消后已扫描到的歌曲仍会保留</div>
       </div>
     </div>
 
@@ -436,6 +447,28 @@ async function removeSelected() {
 .skeleton-row { display: flex; align-items: center; gap: 12px; height: var(--row-h); }
 .skeleton-cover { width: var(--thumb); height: var(--thumb); border-radius: 8px; flex-shrink: 0; }
 .skeleton-line { height: 14px; border-radius: 4px; }
+.scan-card .scan-bar {
+  width: 240px; height: 4px; margin: 2px 0 4px;
+  background: var(--bg-hover); border-radius: 2px; overflow: hidden;
+}
+.scan-card .scan-bar i {
+  display: block; height: 100%; width: 0;
+  background: var(--color-primary); border-radius: 2px;
+  transition: width 0.2s linear;
+}
+.scan-card .scan-failed { color: var(--color-warning); font-size: 11px; }
+.scan-card .scan-file {
+  max-width: 260px; font-size: 11px; color: var(--text-tertiary);
+}
+.scan-card .scan-cancel {
+  margin-top: 8px; padding: 5px 16px;
+  font-size: 12px; color: var(--text-primary);
+  background: var(--bg-hover); border: 1px solid var(--border-color);
+  border-radius: 999px; transition: all var(--transition-fast);
+}
+.scan-card .scan-cancel:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.scan-card .scan-hint { font-size: 11px; color: var(--text-tertiary); opacity: 0.8; }
+
 .scan-overlay {  position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.3);

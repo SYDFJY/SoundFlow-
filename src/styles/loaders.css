@@ -1,0 +1,46 @@
+/**
+ * 加载动效(取自 uiverse.io,颜色与尺寸改写为项目主题变量)。
+ *
+ * 来源与许可:uiverse.io 全部组件为 MIT 许可(可商用),这里保留原作者标注。
+ *   - .sf-dots  取自 uiverse.io by Fadhilmagass(5 点脉冲)
+ *     原实现是 5 个彩色点(Google 四色),这里统一成主色、并把尺寸参数化,
+ *     以便同一个组件在歌词区、按钮里用不同大小。
+ *   - 说明:原件用的是固定色与固定尺寸,直接粘贴会在 16 套主题下立刻穿帮,
+ *     所以只取"动作"(位移/缩放/延迟节奏),颜色一律走 token。
+ *
+ * 动效统一受 prefers-reduced-motion 门控:降级为静态点(仍能表达"进行中",
+ * 但没有动画)。
+ */
+
+/* ===== 5 点脉冲:用于"加载中"这类没有进度可言的等待 ===== */
+.sf-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--sf-dot-size, 6px) * 0.6);
+  vertical-align: middle;
+}
+.sf-dots i {
+  width: var(--sf-dot-size, 6px);
+  height: var(--sf-dot-size, 6px);
+  border-radius: 50%;
+  background: var(--color-primary, #4096ff);
+  animation: sf-dot-pulse 1.5s ease-in-out infinite;
+}
+.sf-dots i:nth-child(2) { animation-delay: 0.3s; }
+.sf-dots i:nth-child(3) { animation-delay: 0.6s; }
+.sf-dots i:nth-child(4) { animation-delay: 0.9s; }
+.sf-dots i:nth-child(5) { animation-delay: 1.2s; }
+
+@keyframes sf-dot-pulse {
+  0% { transform: scale(0.5); opacity: 0.5; }
+  50% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(0.5); opacity: 0.5; }
+}
+
+/* 小号变体:放进按钮里(播放键缓冲态) */
+.sf-dots--sm { --sf-dot-size: 4px; }
+.sf-dots--sm i { background: currentColor; } /* 按钮内跟随文字色(播放键是白字) */
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-dots i { animation: none; opacity: 0.85; }
+}

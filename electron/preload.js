@@ -13,6 +13,8 @@ const RECEIVE_CHANNELS = [
   'library-folder-changed', 'system-theme', 'backup-request',
   // 非原生格式转码进度(主进程 prepare-audio 期间推送)
   'transcode-progress',
+  // 扫描进度(扫描/导入期间推送,供进度条与取消按钮)
+  'scan-progress',
   // 迷你播放器拖拽进度/音量 → 主窗口回填(App.vue 订阅),此前缺失导致拖动无效
   'player:seek', 'player:set-volume',
 ]
@@ -22,6 +24,7 @@ const SEND_CHANNELS = [
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
   'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
   'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index',
+  'scan-cancel',
   'lyric:seek', 'lyric:save', 'notify-song',
 ]
 
@@ -38,15 +41,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 文件扫描
   selectFolder: () => ipcRenderer.invoke('select-folder'),
   selectFiles: () => ipcRenderer.invoke('select-files'),
-  scanFolder: (folderPath) => ipcRenderer.invoke('scan-folder', folderPath),
+  scanFolder: (folderPath, jobId) => ipcRenderer.invoke('scan-folder', folderPath, jobId),
+  // 取消进行中的扫描(已解析的部分照常返回)
+  cancelScan: (jobId) => ipcRenderer.send('scan-cancel', jobId),
   // 拖拽导入取真实路径:Electron 32 起 File.path 已被移除,必须用 webUtils.getPathForFile
   // (只能在此 preload 环境调用,渲染进程拿不到 webUtils)
   getPathForFile: (file) => {
     try { return webUtils.getPathForFile(file) || '' } catch { return '' }
   },
-  importDropped: (paths) => ipcRenderer.invoke('import-dropped', paths),
+  importDropped: (paths, jobId) => ipcRenderer.invoke('import-dropped', paths, jobId),
   getFileInfo: (p) => ipcRenderer.invoke('get-file-info', p),
-  scanFiles: (filePaths) => ipcRenderer.invoke('scan-files', filePaths),
+  scanFiles: (filePaths, jobId) => ipcRenderer.invoke('scan-files', filePaths, jobId),
   // 存量曲库回填「入库时间」(老记录缺 addedTime,排序需要)
   backfillAddedTime: (paths) => ipcRenderer.invoke('backfill-added-time', paths),
 
@@ -85,6 +90,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getFontsDir: () => ipcRenderer.invoke('get-fonts-dir'),
   getStorageInfo: () => ipcRenderer.invoke('get-storage-info'),
   clearCoverCache: () => ipcRenderer.invoke('clear-cover-cache'),
+  // 元数据解析缓存(只影响扫描速度,不动曲库数据)
+  clearMetadataCache: () => ipcRenderer.invoke('clear-metadata-cache'),
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   selectFontFolder: () => ipcRenderer.invoke('select-font-folder'),

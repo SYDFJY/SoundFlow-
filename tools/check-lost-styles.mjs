@@ -23,10 +23,11 @@ import path from 'node:path'
  *   - .mini-vol* → 迷你窗音量控件在改造中被移除
  *   - [draggable] → 列表拖拽改为坐标计算实现后不再使用 HTML5 拖放
  *   - .view-header / .folder-icon → 页头与目录图标改为全局底座 + <Icon> 尺寸
+ *   - .vol-slider → 三处重复实现收敛到 src/styles/controls.css 的单一实现
  */
 const ALLOW = {
-  'src/components/PlayerBar.vue': ['.mode-icon', '.eq-*'],
-  'src/views/PlayerView.vue': ['.empty-icon', '.gradient-list', '.gradient-item', '.gradient-item.active', '.eq-*', '.queue-*', '.save-queue-*'],
+  'src/components/PlayerBar.vue': ['.mode-icon', '.eq-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb'],
+  'src/views/PlayerView.vue': ['.empty-icon', '.gradient-list', '.gradient-item', '.gradient-item.active', '.eq-*', '.queue-*', '.save-queue-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.lyric-loading-tip::before'],
   'src/components/MusicList.vue': ['.list-row[draggable="true"]', '.list-row[draggable="true"]:active', '.empty-icon', '.empty-text'],
   'src/views/AlbumView.vue': ['.empty-icon', '.empty-text', '.empty-state'],
   'src/views/ArtistView.vue': ['.empty-icon', '.empty-text', '.empty-state'],

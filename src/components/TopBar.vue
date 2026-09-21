@@ -6,10 +6,10 @@
         <span class="logo-text">SoundFlow</span>
       </div>
       <div class="nav-buttons">
-        <button class="icon-btn" @click="goBack" :title="t('playerView.back')" :aria-label="t('playerView.back')">
+        <button class="icon-btn" @click="goBack" v-tooltip:bottom="t('playerView.back')":aria-label="t('playerView.back')">
           <Icon name="back" :size="16" />
         </button>
-        <button class="icon-btn" @click="goForward" title="Forward" aria-label="前进">
+        <button class="icon-btn" @click="goForward" v-tooltip:bottom="'Forward'" aria-label="前进">
           <Icon name="forward" :size="16" />
         </button>
       </div>
@@ -20,7 +20,7 @@
     <div class="topbar-right">
       <!-- 主题下拉 -->
       <div class="theme-dropdown-wrapper" @click.stop>
-        <button class="icon-btn" @click="showThemeDropdown = !showThemeDropdown" :title="t('topbar.theme')">
+        <button class="icon-btn" @click="showThemeDropdown = !showThemeDropdown" v-tooltip:bottom="t('topbar.theme')">
           <Icon v-if="appStore.theme === 'light'" name="darkMode" :size="16" />
           <Icon v-else name="lightMode" :size="16" />
         </button>
@@ -46,18 +46,18 @@
         </transition>
       </div>
 
-      <button class="icon-btn" @click="$router.push('/settings')" :title="t('topbar.settings')" :aria-label="t('topbar.settings')">
+      <button class="icon-btn" @click="$router.push('/settings')" v-tooltip:bottom="t('topbar.settings')":aria-label="t('topbar.settings')">
         <Icon name="settings" :size="16" />
       </button>
       <div class="window-controls" v-if="isElectron">
-        <button class="win-btn" @click="minimizeWindow" title="最小化" aria-label="最小化窗口">
+        <button class="win-btn" @click="minimizeWindow" v-tooltip:bottom="'最小化'" aria-label="最小化窗口">
           <Icon name="winMinimize" :size="14" />
         </button>
-        <button class="win-btn" @click="maximizeWindow" :title="isMaximized ? '还原' : '最大化'" :aria-label="isMaximized ? '还原窗口' : '最大化窗口'">
+        <button class="win-btn" @click="maximizeWindow" v-tooltip:bottom="isMaximized ? '还原' : '最大化'":aria-label="isMaximized ? '还原窗口' : '最大化窗口'">
           <Icon v-if="isMaximized" name="winRestore" :size="13" />
           <Icon v-else name="winMaximize" :size="12" />
         </button>
-        <button class="win-btn win-btn--close" @click="closeWindow" title="关闭" aria-label="关闭窗口">
+        <button class="win-btn win-btn--close" @click="closeWindow" v-tooltip:bottom="'关闭'" aria-label="关闭窗口">
           <Icon name="close" :size="12" />
         </button>
       </div>

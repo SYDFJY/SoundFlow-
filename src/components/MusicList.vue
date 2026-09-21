@@ -3,7 +3,7 @@
     <!-- 工具栏 -->
     <div class="list-toolbar" v-if="songs.length > 0">
       <div class="toolbar-left">
-        <button class="toolbar-btn" @click="$emit('play-all')" title="播放全部">
+        <button class="toolbar-btn" @click="$emit('play-all')" v-tooltip:top="'播放全部'">
           <Icon name="play" :size="14" fill="currentColor" />
           <span>播放全部</span>
         </button>
@@ -87,13 +87,13 @@
             <div class="col-duration">{{ formatDuration(song.duration) }}</div>
             <div v-if="showAddedCol" class="col-added" :title="addedTimeTitle(song)">{{ formatAddedTime(song.addedTime) }}</div>
             <div class="col-actions">
-              <button class="action-btn" @click.stop="toggleFav(song)" :class="{ active: isFav(song) }" title="收藏">
+              <button class="action-btn" @click.stop="toggleFav(song)" :class="{ active: isFav(song) }" v-tooltip:top="'收藏'">
                 <Icon name="favorite" :size="16" :fill="isFav(song) ? 'currentColor' : 'none'" />
               </button>
-              <button class="action-btn" @click.stop="rowAddToPlaylist(song)" title="加入歌单" v-if="playlists.length > 0">
+              <button class="action-btn" @click.stop="rowAddToPlaylist(song)" v-tooltip:top="'加入歌单'" v-if="playlists.length > 0">
                 <Icon name="add" :size="16" />
               </button>
-              <button class="action-btn" @click.stop="showContextMenu($event, song)" title="更多">
+              <button class="action-btn" @click.stop="showContextMenu($event, song)" v-tooltip:top="'更多'">
                 <Icon name="more" :size="16" />
               </button>
             </div>
@@ -135,7 +135,7 @@
               {{ s.l }}
             </button>
           </div>
-          <div v-if="autoTagModal.searching" class="autotag-searching">搜索中…(每首约 1 秒,请稍候)</div>
+          <div v-if="autoTagModal.searching" class="autotag-searching"><span class="sf-dots sf-dots--sm" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>搜索中…(每首约 1 秒,请稍候)</div>
           <div class="autotag-list">
             <div v-for="r in autoTagModal.results" :key="r.path" class="autotag-item">
               <div class="autotag-info">

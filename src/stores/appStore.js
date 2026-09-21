@@ -26,6 +26,22 @@ export const useAppStore = defineStore('app', () => {
     blue: buildTheme('深海蓝', '#172330', '#24394d', '#3c98ec', '#e6eff8', '#7498b8', '#1e3143', 'rgba(60,152,236,0.16)', '#172330', 'rgba(0,0,0,0.35)'),
     red: buildTheme('极夜红', '#2a171a', '#40252a', '#e05a5a', '#f6e6e8', '#b08a8e', '#351f23', 'rgba(224,90,90,0.16)', '#2a171a', 'rgba(0,0,0,0.35)'),
     purple: buildTheme('暗玫紫', '#272036', '#382e4e', '#b378f0', '#e9e4f4', '#a89bc2', '#312946', 'rgba(179,120,240,0.16)', '#272036', 'rgba(0,0,0,0.35)'),
+    // 液态玻璃:表面用半透明而不是实色 —— 底层的极光渐变透上来才是"玻璃"的关键,
+    // 再叠加 glass.css 里的高光边/内阴影/噪点(哑光层,不用 backdrop-filter)
+    glass: {
+      ...buildTheme('液态玻璃', '#0b0f14', 'rgba(255,255,255,0.055)', '#5aa9ff', '#eaf1f8', '#9fb3c8', 'rgba(255,255,255,0.075)', 'rgba(90,169,255,0.16)', '#0b0f14', 'rgba(0,0,0,0.45)'),
+      '--panel-bg': 'rgba(22,30,42,0.74)',
+      '--panel-border': 'rgba(255,255,255,0.13)',
+      '--panel-text': '#eaf1f8',
+      '--panel-text-secondary': '#9fb3c8',
+      '--panel-text-tertiary': '#7d8fa3',
+      '--panel-hover': 'rgba(255,255,255,0.08)',
+      '--panel-active': 'rgba(90,169,255,0.16)',
+      '--modal-bg': 'rgba(18,25,34,0.86)',
+      '--modal-border': 'rgba(255,255,255,0.12)',
+      '--input-bg': 'rgba(255,255,255,0.06)',
+      '--input-border': 'rgba(255,255,255,0.14)'
+    },
     // liquid 主题已移除(用户要求)
     c_light: {
       '--bg-primary': '#f5f7fa',
@@ -379,6 +395,9 @@ export const useAppStore = defineStore('app', () => {
       root.style.setProperty(k, v)
     })
     theme.value = key
+    // 玻璃主题需要给 body 打标记:表面处理写在 glass.css 里(遥测弹窗等 teleport 到
+    // body 的元素不在 .app 内,只靠根节点类名会漏掉它们)
+    try { document.body.classList.toggle('glass-theme', key === 'glass') } catch (_) {}
     localStorage.setItem('soundflow_theme', key)
     if (window.electronAPI) {
       window.electronAPI.storeSet('theme', key)

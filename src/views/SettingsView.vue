@@ -510,7 +510,7 @@
             <span class="label-text">检查更新</span>
             <span class="label-desc">Check for updates</span>
           </div>
-          <button class="sec-btn" :disabled="checkingUpdate" @click="checkUpdate">{{ checkingUpdate ? '检查中…' : updateMsg || '检查更新' }}</button>
+          <button class="sec-btn" :class="{ 'is-loading': checkingUpdate }" :disabled="checkingUpdate" @click="checkUpdate">{{ checkingUpdate ? '检查中…' : updateMsg || '检查更新' }}</button>
         </div>
         <div class="about-card">
           <div class="about-logo">
@@ -549,7 +549,14 @@
             <span class="label-text">存储占用</span>
             <span class="label-desc">封面缓存:{{ storageInfo.coversCount || 0 }} 张 · {{ storageInfo.coversSize ? (storageInfo.coversSize / 1048576).toFixed(1) : '0.0' }} MB（清理后播放歌曲时自动重新生成）</span>
           </div>
-          <button class="btn" @click="clearCache" :disabled="cacheBusy">{{ cacheBusy ? '清理中…' : '清理封面缓存' }}</button>
+          <button class="btn" :class="{ 'is-loading': cacheBusy }" @click="clearCache" :disabled="cacheBusy">{{ cacheBusy ? '清理中…' : '清理封面缓存' }}</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">元数据解析缓存</span>
+            <span class="label-desc">{{ storageInfo.mdCacheCount || 0 }} 首的解析结果（重新扫描同一目录时直接复用，命中率会写进日志；清理后下次扫描重新解析）</span>
+          </div>
+          <button class="btn" :class="{ 'is-loading': mdCacheBusy }" @click="clearMdCache" :disabled="mdCacheBusy">{{ mdCacheBusy ? '清理中…' : '清理解析缓存' }}</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -744,7 +751,8 @@ const playerStore = usePlayerStore()
 // ===== 数据备份 / 导入 =====
 const backupBusy = ref(false)
 // 存储占用与清理
-const storageInfo = ref({ coversCount: 0, coversSize: 0 })
+const storageInfo = ref({ coversCount: 0, coversSize: 0, mdCacheCount: 0 })
+const mdCacheBusy = ref(false)
 const cacheBusy = ref(false)
 async function loadStorageInfo() {
   try {
@@ -752,6 +760,20 @@ async function loadStorageInfo() {
   } catch {}
 }
 loadStorageInfo()
+// 清理元数据解析缓存:只影响扫描速度,不动曲库数据(下次扫描会重新解析并重建)
+async function clearMdCache() {
+  if (mdCacheBusy.value) return
+  mdCacheBusy.value = true
+  try {
+    const r = await window.electronAPI?.clearMetadataCache?.()
+    try { window.$toast?.(`已清理 ${r?.removed || 0} 首的解析缓存`, 'success') } catch {}
+  } catch {
+    try { window.$toast?.('清理失败', 'error') } catch {}
+  }
+  mdCacheBusy.value = false
+  loadStorageInfo()
+}
+
 async function clearCache() {
   if (cacheBusy.value) return
   cacheBusy.value = true

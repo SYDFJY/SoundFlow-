@@ -536,34 +536,89 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 扫描文件夹
+  // ===== 扫描进度 =====
+  // scanProgress 此前声明了却从不更新(界面只能显示"正在扫描…"的转圈)。
+  // 现在由主进程按 120ms 节流推送 { done, total, failed, current },这里换算成百分比。
+  const scanTotal = ref(0)
+  const scanDone = ref(0)
+  const scanFailed = ref(0)
+  const scanCurrent = ref('')
+  let _scanJobId = null
+  let _offScanProgress = null
+  function initScanProgress() {
+    if (_offScanProgress || !window.electronAPI?.on) return
+    _offScanProgress = window.electronAPI.on('scan-progress', (info) => {
+      if (!info) return
+      scanTotal.value = info.total || 0
+      scanDone.value = info.done || 0
+      scanFailed.value = info.failed || 0
+      scanCurrent.value = info.current || ''
+      scanProgress.value = info.total ? Math.min(100, Math.round((info.done / info.total) * 100)) : 0
+    })
+  }
+  /** 取消进行中的扫描:已解析的部分照常入库,不白费 */
+  function cancelScan() {
+    if (_scanJobId && window.electronAPI?.cancelScan) {
+      try { window.electronAPI.cancelScan(_scanJobId) } catch (_) {}
+    }
+  }
+
   async function scanFolder(folderPath) {
     if (!window.electronAPI) return
+    initScanProgress()
     isScanning.value = true
     scanProgress.value = 0
+    scanTotal.value = scanDone.value = scanFailed.value = 0
+    _scanJobId = 'scan-' + Date.now()
     try {
-      const results = await window.electronAPI.scanFolder(folderPath)
-      addSongs(results)
+      const res = await window.electronAPI.scanFolder(folderPath, _scanJobId)
+      // 主进程返回结构从「数组」变为「{items,total,failed,cancelled}」;
+      // 兼容旧结构(数组),避免忘记更新的调用点静默拿到 undefined
+      const items = Array.isArray(res) ? res : (res?.items || [])
+      addSongs(items)
       if (!scanFolders.value.includes(folderPath)) {
         scanFolders.value = [...scanFolders.value, folderPath]
         saveToStorage()
+      }
+      if (res && !Array.isArray(res)) {
+        if (res.cancelled) {
+          try { window.$toast?.(`已取消扫描,已导入 ${items.length} 首`, 'info') } catch {}
+        } else if (res.failed) {
+          try { window.$toast?.(`${items.length} 首已导入,${res.failed} 个文件解析失败(见日志)`, 'warning', 5000) } catch {}
+        }
       }
     } catch (e) {
       console.error('[扫描] 失败:', e)
       try { window.$toast?.('扫描文件夹失败:' + ((e && e.message) || ''), 'warning') } catch {}
     } finally {
       isScanning.value = false
+      _scanJobId = null
+      scanCurrent.value = ''
     }
   }
 
   // 扫描文件
   async function scanFiles(filePaths) {
     if (!window.electronAPI) return
+    initScanProgress()
+    isScanning.value = true
+    scanProgress.value = 0
+    scanTotal.value = scanDone.value = scanFailed.value = 0
+    _scanJobId = 'files-' + Date.now()
     try {
-      const results = await window.electronAPI.scanFiles(filePaths)
-      addSongs(results)
+      const res = await window.electronAPI.scanFiles(filePaths, _scanJobId)
+      const items = Array.isArray(res) ? res : (res?.items || [])
+      addSongs(items)
+      if (res && !Array.isArray(res) && res.failed) {
+        try { window.$toast?.(`${items.length} 首已加入,${res.failed} 个文件解析失败(见日志)`, 'warning', 5000) } catch {}
+      }
     } catch (e) {
       console.error('[扫描] 失败:', e)
       try { window.$toast?.('扫描文件失败:' + ((e && e.message) || ''), 'warning') } catch {}
+    } finally {
+      isScanning.value = false
+      _scanJobId = null
+      scanCurrent.value = ''
     }
   }
 
@@ -584,7 +639,24 @@ export const useMusicStore = defineStore('music', () => {
   // 拖放导入:文件/文件夹混合,去重后入库
   async function importDropped(paths) {
     if (!window.electronAPI || !paths || !paths.length) return 0
-    const results = await window.electronAPI.importDropped(paths)
+    initScanProgress()
+    isScanning.value = true
+    scanProgress.value = 0
+    scanTotal.value = scanDone.value = scanFailed.value = 0
+    _scanJobId = 'drop-' + Date.now()
+    let res
+    try {
+      res = await window.electronAPI.importDropped(paths, _scanJobId)
+    } finally {
+      isScanning.value = false
+      _scanJobId = null
+      scanCurrent.value = ''
+    }
+    // 主进程返回 { items, total, failed, cancelled };兼容数组(旧结构)
+    const results = Array.isArray(res) ? res : (res?.items || [])
+    if (res && !Array.isArray(res) && res.failed) {
+      try { window.$toast?.(`${results.length} 首已导入,${res.failed} 个文件解析失败(见日志)`, 'warning', 5000) } catch {}
+    }
     if (!results || !results.length) {
       try { window.$toast?.('拖入的内容中没有可导入的音乐文件', 'warning') } catch {}
       return 0
@@ -772,6 +844,7 @@ export const useMusicStore = defineStore('music', () => {
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
+    scanTotal, scanDone, scanFailed, scanCurrent, cancelScan,
     backfillAddedTime,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,

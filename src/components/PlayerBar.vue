@@ -1,7 +1,7 @@
 <template>
   <div class="player-bar" :class="{ 'player-bar--active': playerStore.currentSong, 'player-bar--drag': barDragOver, 'player-bar--mini': collapsed }" @wheel="onVolWheel">
     <!-- 收起/展开(迷你化切换) -->
-    <button class="pb-collapse" @click="toggleCollapse" :title="collapsed ? '展开播放栏' : '收起为迷你条'">
+    <button class="pb-collapse" @click="toggleCollapse" v-tooltip:top="collapsed ? '展开播放栏' : '收起为迷你条'">
       <Icon :name="collapsed ? 'expand' : 'collapse'" :size="14" />
     </button>
 
@@ -37,7 +37,7 @@
           <Icon name="prev" :size="18" fill="currentColor" />
         </button>
         <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
-          <Icon v-if="playerStore.isBuffering" class="player-spin" name="loadingCircle" :size="20" />
+          <span v-if="playerStore.isBuffering" class="sf-dots sf-dots--sm" aria-label="缓冲中"><i></i><i></i><i></i><i></i><i></i></span>
           <Icon :key="'play-on'" v-else-if="playerStore.isPlaying" class="pop-anim" name="pause" :size="20" fill="currentColor" />
           <Icon :key="'play-off'" v-else class="pop-anim" name="play" :size="20" fill="currentColor" />
         </button>
@@ -81,7 +81,7 @@
     <div class="player-right" v-show="!collapsed">
       <!-- 定时 -->
       <div class="tool-wrapper">
-        <button class="right-btn" :class="{ active: playerStore.sleepTimerMinutes !== 0 }" @click="showTimer = !showTimer" :title="t('settings.sleepTimer')">
+        <button class="right-btn" :class="{ active: playerStore.sleepTimerMinutes !== 0 }" @click="showTimer = !showTimer" v-tooltip:top="t('settings.sleepTimer')">
           <Icon name="timer" :size="18" />
           <span v-if="playerStore.sleepTimerMinutes !== 0" class="timer-badge">{{ playerStore.sleepTimerMinutes === -1 ? '本曲后' : playerStore.formatTimerDisplay(playerStore.sleepTimerRemaining) }}</span>
         </button>
@@ -108,19 +108,19 @@
       </div>
 
       <!-- 迷你播放器 -->
-      <button class="right-btn" :class="{ active: playerStore.miniOpen }" @click="toggleMini" title="迷你播放器(独立小窗)">
+      <button class="right-btn" :class="{ active: playerStore.miniOpen }" @click="toggleMini" v-tooltip:top="'迷你播放器(独立小窗)'">
         <Icon name="miniPlayer" :size="18" />
       </button>
 
       <!-- 桌面歌词 -->
-      <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" :title="t('player.lyrics')">
+      <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" v-tooltip:top="t('player.lyrics')">
         <Icon name="lyrics" :size="18" />
 
       </button>
 
       <!-- 音量:点击弹出竖直滑块(滚轮调音量由播放栏根统一处理) -->
       <div class="volume-control">
-        <button class="right-btn" :class="{ active: playerStore.volPanelOpen }" :title="t('player.volume') + ' ' + Math.round(playerStore.volume * 100) + '%'" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen">
+        <button class="right-btn" :class="{ active: playerStore.volPanelOpen }" v-tooltip:top="t('player.volume') + ' ' + Math.round(playerStore.volume * 100) + '%'"@click="playerStore.volPanelOpen = !playerStore.volPanelOpen">
           <Icon v-if="playerStore.isMuted || playerStore.volume === 0" name="mute" :size="18" />
           <Icon v-else-if="playerStore.volume < 0.5" name="volume" :size="18" />
           <Icon v-else name="volume" :size="18" />
@@ -142,10 +142,10 @@
       </div>
 
       <!-- 播放队列 -->
-      <button class="right-btn" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" :title="t('player.eq')">
+      <button class="right-btn" :class="{ active: showEqPanel || playerStore.eqSettings.enabled }" @click="showEqPanel = !showEqPanel" v-tooltip:top="t('player.eq')">
         <Icon name="equalizer" :size="18" />
       </button>
-      <button class="right-btn" data-queue-toggle :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" :title="t('player.queue')">
+      <button class="right-btn" data-queue-toggle :class="{ active: playerStore.showQueue }" @click="playerStore.toggleQueue()" v-tooltip:top="t('player.queue')">
         <Icon name="queue" :size="18" />
       </button>
     </div>
@@ -157,14 +157,14 @@
       <div class="pb-mini-title text-ellipsis">{{ playerStore.currentSong?.title || 'SoundFlow' }}</div>
       <div class="pb-mini-bar"><div class="pb-mini-bar-fill" :style="{ width: miniProgress + '%' }"></div></div>
       <div class="pb-mini-ctrl">
-        <button class="pb-mini-btn" @click.stop="playerStore.playPrev()" title="上一曲">
+        <button class="pb-mini-btn" @click.stop="playerStore.playPrev()" v-tooltip:top="'上一曲'">
           <Icon name="prev" :size="18" fill="currentColor" />
         </button>
-        <button class="pb-mini-btn" @click.stop="playerStore.togglePlay()" :title="playerStore.isPlaying ? '暂停' : '播放'">
+        <button class="pb-mini-btn" @click.stop="playerStore.togglePlay()" v-tooltip:top="playerStore.isPlaying ? '暂停' : '播放'">
           <Icon v-if="playerStore.isPlaying" name="pause" :size="18" fill="currentColor" />
           <Icon v-else name="play" :size="18" fill="currentColor" />
         </button>
-        <button class="pb-mini-btn" @click.stop="playerStore.playNext()" title="下一曲">
+        <button class="pb-mini-btn" @click.stop="playerStore.playNext()" v-tooltip:top="'下一曲'">
           <Icon name="next" :size="18" fill="currentColor" />
         </button>
       </div>
@@ -598,17 +598,7 @@ function setCustomTimer() {
 .vol-mute:hover { background: var(--bg-hover); color: var(--text-primary); }
 .vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
 .vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
-.vol-slider {
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 4px; height: 100px;
-  background: var(--bg-hover); border-radius: 2px; outline: none;
-}
-.vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 13px; height: 13px;
-  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
-  border: none;
-}
+/* .vol-slider 已收敛到 src/styles/controls.css(替换废弃的 slider-vertical) */
 
 
 .vol-pct { font-size: 13px; font-weight: 700; color: var(--color-primary); }
@@ -629,17 +619,7 @@ function setCustomTimer() {
 .vol-mute:hover { background: var(--bg-hover); color: var(--text-primary); }
 .vol-fade-enter-active, .vol-fade-leave-active { transition: opacity 0.18s; }
 .vol-fade-enter-from, .vol-fade-leave-to { opacity: 0; }
-.vol-slider {
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 4px; height: 100px;
-  background: var(--bg-hover); border-radius: 2px; outline: none;
-}
-.vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 13px; height: 13px;
-  background: var(--color-primary, #4096ff); border-radius: 50%; cursor: pointer;
-  border: none;
-}
+/* .vol-slider 已收敛到 src/styles/controls.css(替换废弃的 slider-vertical) */
 
 /* 弹出面板 */
 .tool-wrapper { position: relative; }

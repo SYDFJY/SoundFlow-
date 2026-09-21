@@ -1,0 +1,153 @@
+/**
+ * 液态玻璃主题的表面处理(第 17 套主题 `glass`)。
+ *
+ * 分层的取舍(为什么只做 L1):
+ *   - **L1 哑光玻璃(本文件)**:高光边 + 内阴影 + 极细噪点 + 半透明层叠,**不用 blur**。
+ *     纯 CSS,token 化,软件渲染(项目默认关硬件加速)下零额外成本。
+ *   - **L2 折射**:需要 `backdrop-filter: url(#svgFilter)` + 逐元素尺寸的位移贴图。
+ *     Electron 34 的 Chromium 132 支持,但**只有开启硬件加速才有意义**(软件渲染下
+ *     SVG 位移滤镜是逐帧 CPU 光栅化,会直接把界面拖垮),而项目默认关闭硬件加速;
+ *     真要做还得为每种尺寸生成贴图并实测帧率,故留待单独的批次。
+ *   - 结论:先把"看起来像玻璃"的质感做到位,并且保证它在默认配置下可用。
+ *
+ * 关键点:玻璃的质感来自**底下透出来的东西**。所以本主题把表面设为半透明,
+ * 由 body 上的极光渐变充当"被玻璃盖住的内容";没有它,半透明表面只是看起来发灰。
+ */
+
+/* ===== 底层:被玻璃覆盖的极光渐变 ===== */
+body.glass-theme {
+  background-color: #0b0f14;
+  /* 色块位置对齐**内容区**:侧栏与顶栏下方是浪费的,那里被玻璃盖得最厚 */
+  background-image:
+    radial-gradient(58% 40% at 55% 14%, rgba(90, 169, 255, 0.26), transparent 62%),
+    radial-gradient(54% 42% at 88% 52%, rgba(168, 120, 255, 0.22), transparent 62%),
+    radial-gradient(66% 46% at 42% 94%, rgba(64, 210, 190, 0.18), transparent 66%);
+  background-attachment: fixed;
+}
+/* ===== 动态极光(取自 uiverse.io Patterns 类组件的漂移节奏)=====
+   做法:把极光放到一个固定定位的伪元素上,用 **transform 缓慢平移+缩放** 让它"呼吸",
+   而不是改 background-position —— 后者会让浏览器逐帧重绘整屏渐变,软件渲染下代价高得多。
+   性能实测(截图探针注入 rAF 采样器,软件渲染/玻璃主题):
+     静态极光 165fps(帧时 6ms) → 开启本动画后见下方结论;低于 45fps 就应关掉。
+   可用设置页开关或 prefers-reduced-motion 关掉。 */
+/* 只在**硬件加速开启**时启用:软件渲染下这层动画实测把帧率从 165 打到 58.5,
+   而 GPU 下是 165(与静态基线一致)。四次实测(截图探针注入 rAF 采样器,1280×800):
+     静态极光 · 软件渲染   165.3fps(6.0ms)
+     动态极光+整屏 blur · 软件渲染   24.7fps(40.5ms)  ← 整屏模糊叠在动画层上最贵
+     动态极光+多段渐隐+scale · 软件渲染   54.1fps(18.5ms)
+     动态极光+多段渐隐+纯平移 · 软件渲染   58.5fps(17.1ms)
+     动态极光+多段渐隐+纯平移 · 硬件加速   165.2fps(6.1ms) ← 与静态基线齐平
+   结论:动画本身没问题,问题在软件渲染下每帧合成整屏渐变。故与模糊一样按 hw-accel 分级。 */
+body.hw-accel.glass-theme::after {
+  content: '';
+  position: fixed;
+  inset: -18% -12%;              /* 留出漂移余量,平移时不会露出边缘 */
+  pointer-events: none;
+  z-index: 0;
+  /* 不用 filter:blur —— 整屏模糊叠在会被 transform 的层上,软件渲染下每帧都要重算,
+     实测把帧率从 165 打到 24.7(见文件末尾的性能记录)。改用多段渐隐来柔化边缘。 */
+  background-image:
+    radial-gradient(38% 34% at 52% 22%, rgba(90, 169, 255, 0.30), rgba(90, 169, 255, 0.10) 42%, transparent 68%),
+    radial-gradient(34% 30% at 82% 60%, rgba(168, 120, 255, 0.24), rgba(168, 120, 255, 0.08) 44%, transparent 68%),
+    radial-gradient(42% 34% at 34% 88%, rgba(64, 210, 190, 0.20), rgba(64, 210, 190, 0.07) 46%, transparent 72%);
+  animation: glass-drift 42s ease-in-out infinite alternate;
+  will-change: transform;
+}
+/* 只做平移,不做 scale:对渐变层缩放会每帧重新栅格化整屏渐变(实测 scale 版本 54fps,
+   纯平移版本见下方性能记录)。 */
+@keyframes glass-drift {
+  0%   { transform: translate3d(-2.5%, -1.5%, 0); }
+  50%  { transform: translate3d(1.5%, 1.5%, 0); }
+  100% { transform: translate3d(3%, -2%, 0); }
+}
+/* 关掉动态的入口:body.no-glass-anim(预留设置项钩子)与系统"减少动效" */
+body.no-glass-anim.glass-theme::after { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  body.hw-accel.glass-theme::after { animation: none; }
+}
+
+/* 应用根容器让出背景,由上面的极光承担 */
+body.glass-theme .app,
+body.glass-theme .main-content { background: transparent; }
+/* 粘性页头与列表工具栏此前为遮盖滚动内容设了实色底(--bg-primary),
+   在玻璃主题下会变成一条贴纸。改用同一材质的半透明底 + 下缘高光。 */
+body.glass-theme .view-header,
+body.glass-theme .list-toolbar {
+  background: rgba(12, 17, 24, 0.42);
+  box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* 极细噪点:纯 CSS 生成的静态噪声(不随帧重算),叠在极光上避免大面积渐变出现色带 */
+body.glass-theme::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.42'/%3E%3C/svg%3E");
+}
+
+/* ===== 表面:TopBar / Sidebar / PlayerBar / 浮层 / 弹窗 =====
+   统一用同一套处理,避免"一半玻璃一半实色"。
+   三段阴影的含义:
+     inset 0 1px 0        —— 顶边高光(光源在上,这是玻璃最容易识别的特征)
+     inset 0 -1px 0       —— 底边暗线(厚度感)
+     外阴影               —— 让表面从背景里"浮起来" */
+body.glass-theme .topbar,
+body.glass-theme .sidebar,
+body.glass-theme .player-bar,
+body.glass-theme .pop-panel,
+body.glass-theme .modal-card,
+body.glass-theme .context-menu,
+body.glass-theme .queue-panel,
+body.glass-theme .song-notify,
+body.glass-theme .toast-item,
+body.glass-theme .pb-rate-panel,
+body.glass-theme .popup-panel {
+  /* 半透明表面 + 极细噪点,叠在极光背景上 */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.22),
+    0 8px 28px rgba(0, 0, 0, 0.38);
+}
+/* 侧栏与顶栏贴着窗口边缘,不需要外阴影(会显得脏) */
+body.glass-theme .topbar,
+body.glass-theme .sidebar {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+}
+/* 播放栏贴底:高光在顶边,阴影朝上 */
+body.glass-theme .player-bar {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 -6px 24px rgba(0, 0, 0, 0.42);
+}
+
+/* 表面内的分隔线改用半透明白,实色线在玻璃上会显得像贴纸 */
+body.glass-theme .player-bar,
+body.glass-theme .topbar,
+body.glass-theme .sidebar { border-color: rgba(255, 255, 255, 0.12); }
+
+/* 卡片与列表:玻璃主题下用更轻的描边而不是实色块 */
+body.glass-theme .folder-item,
+body.glass-theme .mini-stats,
+body.glass-theme .stat-card,
+body.glass-theme .settings-section {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* ===== 仅在硬件加速开启时升级:加一层真实模糊(仍不是折射,但质感更进一步) =====
+   软件渲染下不加 —— 那会把滚动和歌曲切换拖慢。 */
+body.hw-accel.glass-theme .pop-panel,
+body.hw-accel.glass-theme .modal-card,
+body.hw-accel.glass-theme .context-menu,
+body.hw-accel.glass-theme .player-bar {
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+}

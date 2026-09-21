@@ -41,7 +41,7 @@
       <div class="menu-section">
         <div class="menu-label">
           {{ t('nav.playlists') }}
-          <button class="add-playlist-btn" @click="openCreateModal" :title="t('pl.create')">
+          <button class="add-playlist-btn" @click="openCreateModal" v-tooltip:right="t('pl.create')">
             <Icon name="add" :size="14" />
           </button>
         </div>
@@ -63,8 +63,8 @@
           <Icon v-else name="music" :size="16" />
           <span class="text-ellipsis">{{ pl.name }}</span>
           <span class="menu-count">{{ pl.songs.length }}</span>
-          <button class="pl-order" @click.stop.prevent="movePlaylist(plIdx, -1)" title="上移" aria-label="歌单上移"><Icon name="expand" :size="12" /></button>
-          <button class="pl-order" @click.stop.prevent="movePlaylist(plIdx, 1)" title="下移" aria-label="歌单下移"><Icon name="collapse" :size="12" /></button>
+          <button class="pl-order" @click.stop.prevent="movePlaylist(plIdx, -1)" v-tooltip:right="'上移'" aria-label="歌单上移"><Icon name="expand" :size="12" /></button>
+          <button class="pl-order" @click.stop.prevent="movePlaylist(plIdx, 1)" v-tooltip:right="'下移'" aria-label="歌单下移"><Icon name="collapse" :size="12" /></button>
         </router-link>
         </div>
       </div>

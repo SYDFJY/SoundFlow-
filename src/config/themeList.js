@@ -18,6 +18,9 @@ export const THEME_LIST = [
   { value: 'blue', label: '深海蓝', color: '#172330' },
   { value: 'red', label: '极夜红', color: '#2a171a' },
   { value: 'purple', label: '暗玫紫', color: '#272036' },
+  // 液态玻璃:配色本身是深色系,质感来自 src/styles/glass.css 的表面处理(哑光层,
+  // 不依赖 backdrop-filter,软件渲染下同样可用)
+  { value: 'glass', label: '液态玻璃', color: '#0b0f14' },
   // 经典主题(c_* 前缀)
   { value: 'c_light', label: '经典浅色', color: '#f5f7fa' },
   { value: 'c_dark', label: '经典深色', color: '#0d1117' },
