@@ -155,6 +155,8 @@ export const useMusicStore = defineStore('music', () => {
     }
     // 5. 老曲库回填「入库时间」(不阻塞启动:回填完成后再落盘)
     backfillAddedTime()
+    // 6. 老曲库回填内容指纹(指纹功能上线前入库的记录没有它,改名重连对它们无效)
+    backfillFingerprint()
   }
 
   // 防抖合并:收藏/歌单/进度等频繁操作时,2s 内多次保存合并为一次全量写,避免反复全量序列化卡主线程
@@ -336,6 +338,7 @@ export const useMusicStore = defineStore('music', () => {
   // 存量曲库回填「入库时间」:「按添加时间」排序依赖 addedTime,老记录没有该字段时
   // 会全部堆到末尾。值由主进程按文件创建时间给出,只回填缺失项并写回,只做一次。
   let _backfillRunning = false
+  let _fpBackfillRunning = false
   async function backfillAddedTime() {
     if (_backfillRunning) return
     if (!window.electronAPI?.backfillAddedTime) return
@@ -361,6 +364,40 @@ export const useMusicStore = defineStore('music', () => {
       noteFailure('library.addedTime', '添加时间回填失败(这些歌在「按添加时间」排序时会排在末尾)', e)
     } finally {
       _backfillRunning = false
+    }
+  }
+
+  /**
+   * 内容指纹回填:给「指纹功能上线前就入库」的老记录补 fp/fpk。
+   * 没有这一步,老曲库的改名重连等于没生效(登记表要求曲库条目自带指纹)。
+   * 主进程只读解析缓存、不触发解析,所以很快;拿不到指纹的留给下次扫描补齐。
+   */
+  async function backfillFingerprint() {
+    if (_fpBackfillRunning) return
+    if (!window.electronAPI?.backfillFingerprint) return
+    const missing = songs.value.filter(s => s && !s.fp).map(s => s.path)
+    if (!missing.length) return
+    _fpBackfillRunning = true
+    try {
+      const map = await window.electronAPI.backfillFingerprint(missing)
+      if (!map || typeof map !== 'object') return
+      let n = 0
+      songs.value = songs.value.map(s => {
+        const rec = s && map[s.path]
+        if (rec && rec.fp && !s.fp) {
+          n++
+          return { ...s, fp: rec.fp, fpk: rec.fpk }
+        }
+        return s
+      })
+      if (n) {
+        saveToStorage(true) // 落盘时顺带把指纹写进登记表
+        console.info(`[稳定 ID] 已为 ${n} 首老记录回填内容指纹`)
+      }
+    } catch (e) {
+      noteFailure('library.fingerprint', '内容指纹回填失败(这些歌在文件改名后无法自动重连)', e)
+    } finally {
+      _fpBackfillRunning = false
     }
   }
 
@@ -1055,7 +1092,7 @@ export const useMusicStore = defineStore('music', () => {
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     scanTotal, scanDone, scanFailed, scanCurrent, cancelScan,
-    backfillAddedTime,
+    backfillAddedTime, backfillFingerprint,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, moveFavorite, getPlaylistSongs,

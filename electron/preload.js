@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scanFiles: (filePaths, jobId) => ipcRenderer.invoke('scan-files', filePaths, jobId),
   // 存量曲库回填「入库时间」(老记录缺 addedTime,排序需要)
   backfillAddedTime: (paths) => ipcRenderer.invoke('backfill-added-time', paths),
+  backfillFingerprint: (paths) => ipcRenderer.invoke('backfill-fingerprint', paths),
 
   // 元数据
   parseMetadata: (filePath) => ipcRenderer.invoke('parse-metadata', filePath),

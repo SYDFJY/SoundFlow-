@@ -1544,6 +1544,29 @@ function setupIPC() {
     return out
   })
 
+  // 内容指纹回填:给"指纹功能上线前就入库"的老记录补上 fp/fpk(否则改名重连对它们无效)。
+  // 只读解析缓存,**不触发解析** —— 全库重新解析一个 5000 首的库要几分钟,
+  // 而重扫过/新入库的歌本就带指纹,漏掉的那些会在下次扫描时自然补齐。
+  ipcMain.handle('backfill-fingerprint', async (event, paths) => {
+    loadMdCache()
+    const out = {}
+    const list = Array.isArray(paths) ? paths.slice(0, 50000) : []
+    await runConcurrent(list, 8, async (p) => {
+      if (typeof p !== 'string' || !p) return null
+      try {
+        const st = await stat(p)
+        const key = mdCache.cacheKey(p, st)
+        const entry = key && mdCacheEntries[key]
+        if (entry && entry.v) {
+          const { fp, fpk } = fingerprintLib.withFingerprint(entry.v, st)
+          out[p] = { fp, fpk }
+        }
+      } catch (_) { /* 文件不在或读不到:跳过,留给下次扫描 */ }
+      return null
+    })
+    return out
+  })
+
   // 扫描文件夹(4 并发解析,大曲库提速数倍)
   ipcMain.handle('scan-folder', async (event, folderPath, jobId) => {
     const files = await scanFolderRecursive(folderPath)

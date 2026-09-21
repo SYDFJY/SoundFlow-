@@ -73,6 +73,18 @@ app.whenReady().then(async () => {
   console.log(`指纹: ${withFp}/${listed.length} 个文件带 fp`)
   if (withFp !== listed.length) console.error('指纹缺失:解析路径没有把 fp/fpk 带上')
 
+  // 回填通道:给"指纹功能上线前入库"的老记录补指纹。它只读解析缓存、不重新解析,
+  // 上一步刚扫过一遍,所以这里应当全部命中(命中不了 = 回填等于没做)
+  const backfilled = await win.webContents.executeJavaScript(
+    `(async () => {
+       const map = await window.electronAPI.backfillFingerprint(${JSON.stringify(listed.map((i) => i.path))})
+       return Object.keys(map || {}).length
+     })()`,
+    true
+  )
+  console.log(`指纹回填: ${backfilled}/${listed.length} 首直接从缓存取到`)
+  if (backfilled !== listed.length) console.error('回填未命中:老曲库补指纹会失效')
+
   if (listed.length > 0) {
     const target = listed[0]
     const renamed = target.path.replace(/(\.[^.]*)?$/, '_renamed$1')
