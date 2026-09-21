@@ -291,10 +291,17 @@ onMounted(async () => {
         else if (action === 'mute') playerStore.toggleMute()
       } catch (_) {}
     })
-    // 启动注册用户自定义快捷键
+    // 启动注册用户自定义快捷键:被占用/不支持的要让用户知道,否则表现为"按了没反应"
     try {
       const sc = JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}')
-      if (Object.keys(sc).length) window.electronAPI.updateShortcuts(sc)
+      if (Object.keys(sc).length) {
+        window.electronAPI.updateShortcuts(sc).then((res) => {
+          const failed = (res && res.failed) || []
+          if (failed.length) {
+            window.$toast?.(`${failed.length} 个全局快捷键未能生效(可能被其他程序占用),可在 设置 → 快捷键 查看`, 'warning', 6000)
+          }
+        }).catch(() => {})
+      }
     } catch (_) {}
     window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
     window.electronAPI.on('player:set-volume', (v) => { if (typeof v === 'number') playerStore.setVolume(v) })

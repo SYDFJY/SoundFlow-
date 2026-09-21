@@ -519,6 +519,7 @@ function parseFilename(filename) {
 // 文件改动即失效;整体是一个 path|mtime|size 的扁平表。
 const mdCache = require('./lib/metadataCache')
 const fingerprintLib = require('./lib/fingerprint')
+const accelLib = require('./lib/accelerator')
 let mdCacheEntries = {} // 独立于 storageData:缓存不该进用户数据文件与备份
 let mdCacheLoaded = false
 let mdCacheSaveTimer = null
@@ -3425,20 +3426,30 @@ app.whenReady().then(async () => {
 
   // 用户自定义全局快捷键(非媒体键,避免抢占 SMTC):设置页保存后调用
   ipcMain.handle('update-shortcuts', (event, map) => {
+    const failed = []
     try { globalShortcut.unregisterAll() } catch (_) {}
     if (map && typeof map === 'object') {
-      for (const [action, accel] of Object.entries(map)) {
-        if (!accel || accel === '未设置') continue
+      for (const [action, combo] of Object.entries(map)) {
+        if (!combo || combo === '未设置') continue
+        // 渲染端存的是 e.code(Control+ArrowRight / Control+KeyM),而 globalShortcut 只认
+        // Electron 自己的写法(Right / M),必须先翻译。此前直接传 e.code ——
+        // 结果所有带方向键/字母的全局快捷键都注册失败,而且**没有任何提示**。
+        const accel = accelLib.toAccelerator(combo)
+        if (!accel) { failed.push({ action, combo, reason: 'unsupported' }); continue }
         try {
-          globalShortcut.register(accel, () => {
+          const ok = globalShortcut.register(accel, () => {
             try {
               const w = BrowserWindow.getAllWindows().find(x => x.isVisible() && !x.isDestroyed())
               if (w && !w.webContents.isDestroyed()) w.webContents.send('user-shortcut', action)
             } catch (_) {}
           })
-        } catch (e) { log.warn('[shortcut] 注册失败', accel, e.message) }
+          // register 返回 false = 被系统或其他程序占用(不抛异常),不检查就毫无痕迹
+          if (!ok) failed.push({ action, combo, reason: 'conflict' })
+        } catch (e) { failed.push({ action, combo, reason: e.message }) }
       }
     }
+    if (failed.length) log.warn('[shortcut] 未能注册:', JSON.stringify(failed))
+    return { ok: failed.length === 0, failed }
   })
   // 文件夹监控:默认开(用户关闭过则保持关闭),扫描目录存在时启动
   if (storageData.folderWatch !== false) setFolderWatchEnabled(true)

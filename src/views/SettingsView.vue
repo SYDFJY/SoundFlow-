@@ -1062,8 +1062,24 @@ function onRecordKey(e) {
   const combo = (e.ctrlKey ? 'Control+' : '') + e.code
   shortcuts.value[recordingKey.value] = combo
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(shortcuts.value))
-  try { window.electronAPI?.updateShortcuts(shortcuts.value) } catch (_) {}
+  applyShortcuts()
   recordingKey.value = ''
+}
+
+// 把快捷键交给主进程注册,并把失败原因说清楚 ——
+// 此前注册失败只有主进程日志里一行 warn,用户看到的是"设了但按了没反应"
+async function applyShortcuts() {
+  try {
+    const res = await window.electronAPI?.updateShortcuts(shortcuts.value)
+    const failed = (res && res.failed) || []
+    if (!failed.length) return
+    const names = { playPause: '播放/暂停', next: '下一首', prev: '上一首', volUp: '音量+', volDown: '音量-', mute: '静音' }
+    const desc = failed.map(f => `${names[f.action] || f.action}(${f.combo})`).join('、')
+    const occupied = failed.some(f => f.reason === 'conflict')
+    window.$toast?.(`${desc} 无法注册${occupied ? ',可能已被其他程序占用' : '(该按键组合不支持全局注册)'};应用内仍然可用`, 'warning', 6000)
+  } catch (e) {
+    window.$toast?.('快捷键注册失败:' + ((e && e.message) || ''), 'warning')
+  }
 }
 
 // 恢复默认快捷键
@@ -1071,6 +1087,8 @@ function resetShortcuts() {
   const defaults = { playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft', volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown', mute: 'Control+KeyM' }
   shortcuts.value = { ...defaults }
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(defaults))
+  // 此前重置只改了本地存储与界面,没有重新注册 —— 旧快捷键的占用会一直留在系统里
+  applyShortcuts()
 }
 
 // 字体设置:系统字体 + 自定义导入
