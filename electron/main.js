@@ -229,211 +229,30 @@ async function ensureParseFile() {
   }
 }
 
-// ========== 封面文件缓存 ==========
-// 封面与曲库分离:base64 封面不再进 JSON(曾导致 113MB 存储/每次保存卡死),
-// 改为按歌曲路径 hash 存成 256px JPEG 文件,曲库只存 file:// 引用
-const coverUrlCache = new Map()
-function coverDir() { return path.join(app.getPath('userData'), 'covers') }
-function coverPathFor(songPath) {
-  const hash = crypto.createHash('md5').update(songPath).digest('hex').slice(0, 16)
-  // 文件名带尺寸标记:封面从 512px 升级到 768px 后旧缓存自动失效
-  return path.join(coverDir(), hash + '-768.jpg')
-}
+// ========== 封面 ==========
+// 缓存与提取已拆到 lib/covers.js(缓存目录由这里注入)
+const { createCoverStore } = require('./lib/covers')
+const coverStore = createCoverStore({ dir: path.join(app.getPath('userData'), 'covers') })
+const coverUrlCache = coverStore.urlCache
+function coverDir() { return coverStore.dir }
+function saveCoverFile(songPath, buffer) { return coverStore.save(songPath, buffer) }
+function coverPathFor(songPath) { return coverStore.pathFor(songPath) }
+function findCoverInDir(filePath) { return coverStore.findInDir(filePath) }
 
-// 把封面字节写为文件,返回 file:// URL;失败返回 null
-function saveCoverFile(songPath, buffer) {
-  try {
-    if (!buffer || buffer.length === 0) return null
-    const fp = coverPathFor(songPath)
-    if (fs.existsSync(fp)) return `file:///${fp.replace(/\\/g, '/')}`
-    fs.mkdirSync(coverDir(), { recursive: true })
-    let img = nativeImage.createFromBuffer(buffer)
-    if (img.isEmpty()) return null
-    const size = img.getSize()
-    // 封面 768px:播放页大圆盘与背景封面更清晰(仅播放时加载 1 张,负担极小)
-    if (size.width > 768) img = img.resize({ width: 768 })
-    fs.writeFileSync(fp, img.toJPEG(88))
-    return `file:///${fp.replace(/\\/g, '/')}`
-  } catch (e) {
-    console.error('[封面] 保存封面文件失败:', e.message)
-    return null
-  }
-}
-
-// ========== 封面提取 ==========
-function findCoverInDir(filePath) {
-  const dir = path.dirname(filePath)
-  for (const name of COVER_NAMES) {
-    const fp = path.join(dir, name)
-    try { if (fs.existsSync(fp)) return `file:///${fp.replace(/\\/g, '/')}` } catch {}
-  }
-  try {
-    const files = fs.readdirSync(dir)
-    for (const f of files) {
-      const lower = f.toLowerCase()
-      if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) {
-        try {
-          const full = path.join(dir, f)
-          const picData = fs.readFileSync(full)
-          // 目录封面同样转为 256px JPEG 文件,避免 data URL 膨胀曲库
-          const url = saveCoverFile(filePath, picData)
-          if (url) return url
-        } catch {}
-      }
-    }
-  } catch {}
-  return null
-}
-
-// ========== 文件名解析 ==========
-const FILENAME_SEPARATORS = [' -- ', ' - ', ' – ', ' — ', ' ~ ', ' · ', '--', '-', '–', '—', '~', '·']
-function parseFilename(filename) {
-  const lastDot = filename.lastIndexOf('.')
-  const name = lastDot > 0 ? filename.substring(0, lastDot) : filename
-  for (const sep of FILENAME_SEPARATORS) {
-    const idx = name.indexOf(sep)
-    if (idx > 0) {
-      return {
-        title: name.substring(0, idx).trim() || name.trim(),
-        artist: name.substring(idx + sep.length).trim() || '未知艺术家'
-      }
-    }
-  }
-  return { title: name.trim(), artist: '未知艺术家' }
-}
-
-// ========== 元数据解析缓存 ==========
-// 每次扫描都重新解析所有文件是最大的浪费:一个 5000 首的库,重新添加同一目录
-// (或启动时补齐收藏引用)要解析 5000 次,而多数文件根本没变。键含 mtime+size,
-// 文件改动即失效;整体是一个 path|mtime|size 的扁平表。
-const mdCache = require('./lib/metadataCache')
-const fingerprintLib = require('./lib/fingerprint')
-const accelLib = require('./lib/accelerator')
-let mdCacheEntries = {} // 独立于 storageData:缓存不该进用户数据文件与备份
-let mdCacheLoaded = false
-let mdCacheSaveTimer = null
-let mdCacheStats = { hit: 0, miss: 0 }
+// ========== 元数据解析(含缓存)==========
+// 已拆到 lib/metadata.js:缓存文件路径与写盘函数由这里注入(它们取决于运行时环境与存储 worker)。
+// 下面保留同名薄包装使既有调用点不动;缓存条目数等通过 mdReader 访问。
+const { createMetadataReader } = require('./lib/metadata')
+const mdReader = createMetadataReader({
+  cachePath: path.join(app.getPath('userData'), 'metadata-cache.json'),
+  saveJson: (p, data) => getSaveWorker().postMessage({ path: p, data }),
+  covers: coverStore
+})
 function mdCachePath() { return path.join(app.getPath('userData'), 'metadata-cache.json') }
-function loadMdCache() {
-  if (mdCacheLoaded) return
-  mdCacheLoaded = true
-  try {
-    const raw = JSON.parse(fs.readFileSync(mdCachePath(), 'utf8'))
-    // v2 起缓存值里带内容指纹(fp/fpk)。v1 条目没有它,而**用生效值临时算的指纹**
-    // 对无标签文件会随改名而变化(与"指纹与路径无关"的前提冲突),所以整片作废重解析一次。
-    // 解析结果里其它字段本身没错,但混着两种来源的指纹会让重连时灵时不灵,不如一次干净重建。
-    if (raw && raw.version === 2 && typeof raw.entries === 'object') mdCacheEntries = raw.entries
-    else if (raw && raw.version && raw.version !== 2) log.info('[元数据缓存] 旧版本缓存已作废,下次扫描将重新解析一遍')
-  } catch (_) { /* 首次运行或文件损坏:从空开始 */ }
-}
-function saveMdCache() {
-  clearTimeout(mdCacheSaveTimer)
-  mdCacheSaveTimer = setTimeout(() => {
-    try {
-      const { entries, evicted } = mdCache.evict(mdCacheEntries, 50000)
-      mdCacheEntries = entries
-      if (evicted) log.info('[元数据缓存] LRU 淘汰', evicted, '条')
-      getSaveWorker().postMessage({ path: mdCachePath(), data: { version: 2, entries } })
-    } catch (e) { log.warn('[元数据缓存] 落盘失败:', e && e.message) }
-  }, 3000)
-}
-// 一次扫描结束后打一行命中率,便于判断缓存是否真的生效
-function logMdCacheStats(tag) {
-  const { hit, miss } = mdCacheStats
-  if (hit + miss > 0) {
-    log.info(`[元数据缓存] ${tag}: 命中 ${hit} / 解析 ${miss}(节省 ${hit} 次解析)`)
-  }
-  mdCacheStats = { hit: 0, miss: 0 }
-}
-
-// ========== 元数据解析 ==========
-async function parseMetadata(filePath) {
-  loadMdCache()
-  // 先 stat 一次拿键(mtime+size 变则视为不同文件);stat 本身远便宜于解析
-  let st = null
-  try { st = await stat(filePath) } catch (_) { /* 拿不到就照常解析 */ }
-  const key = st ? mdCache.cacheKey(filePath, st) : null
-  if (key && mdCacheEntries[key]) {
-    mdCacheStats.hit++
-    mdCacheEntries[key] = mdCache.touch(mdCacheEntries[key], Date.now())
-    const cached = mdCacheEntries[key].v
-    // 指纹随解析结果一起缓存(见 lib/metadataCache.js 的说明):命中与未命中必须给出
-    // 同一个指纹,否则同一首歌在两条路径下会有两个身份。
-    // 旧缓存条目没有它 —— 用生效值兜底(那些条目会在下次真实解析时补上)
-    if (cached && cached.fp) return cached
-    return fingerprintLib.withFingerprint(cached, st)
-  }
-  mdCacheStats.miss++
-
-  const ext = path.extname(filePath).toLowerCase()
-  const fileName = path.basename(filePath)
-  const parsed = parseFilename(fileName)
-  let title = parsed.title
-  let artist = parsed.artist
-  let album = '未知专辑'
-  let year = ''
-  let genre = ''
-  let duration = 0
-  let bitrate = 0
-  let sampleRate = 0
-  let bitDepth = 0 // 位深(FLAC/WAV 有,MP3/AAC 等有损格式没有)
-  let coverUrl = null
-  // 原始标签值(可能为空):指纹只能用它们算 —— 下面的 title/artist 会退化成文件名解析结果,
-  // 而那个会随改名变化
-  let tagTitle = ''
-  let tagArtist = ''
-  let tagAlbum = ''
-
-  // 尝试 music-metadata
-  if (parseFile) {
-    try {
-      const metadata = await parseFile(filePath, { duration: true, skipCovers: false })
-      const cm = metadata.common
-      const fmt = metadata.format
-      if (cm.title) { title = cm.title; tagTitle = cm.title }
-      if (cm.artist && cm.artist !== '未知艺术家') { artist = cm.artist; tagArtist = cm.artist }
-      if (cm.album) { album = cm.album; tagAlbum = cm.album }
-      if (cm.year) year = String(cm.year)
-      if (cm.genre && cm.genre.length > 0) genre = cm.genre[0]
-      if (fmt.duration && fmt.duration > 0) duration = Math.round(fmt.duration)
-      if (fmt.bitrate) bitrate = Math.round(fmt.bitrate / 1000)
-      if (fmt.sampleRate) sampleRate = fmt.sampleRate
-      if (fmt.bitsPerSample) bitDepth = fmt.bitsPerSample
-      if (cm.picture && cm.picture.length > 0) {
-        const pic = cm.picture[0]
-        // 封面存为 256px JPEG 文件,避免超大 base64 进入曲库数据
-        coverUrl = saveCoverFile(filePath, Buffer.from(pic.data))
-      }
-    } catch {}
-  }
-
-  // FFprobe 回退
-  if (duration === 0) {
-    duration = await getFFprobeDuration(filePath)
-  }
-
-  // 目录封面回退
-  if (!coverUrl) {
-    coverUrl = findCoverInDir(filePath)
-  }
-
-  const { fp, fpk } = fingerprintLib.fingerprint({
-    size: st && st.size, duration, title: tagTitle, artist: tagArtist, album: tagAlbum
-  })
-  const out = { title, artist, album, year, genre, duration, bitrate, sampleRate, bitDepth, coverUrl, format: ext.replace('.', '').toUpperCase(), fp, fpk }
-  // 写缓存:只保留可缓存字段,并带上用时间戳(供 LRU);随后延迟落盘
-  if (key) {
-    const cacheable = mdCache.toCacheable(out)
-    if (cacheable) {
-      mdCacheEntries[key] = { v: cacheable, t: Date.now() }
-      saveMdCache()
-    }
-  }
-  // 内容指纹已在 out 里(用原始标签值算的),直接返回 —— 不能再调 withFingerprint 重算:
-  // 它的输入是 out.title/artist(无标签文件里是文件名兜底来的生效值),会把刚算好的指纹
-  // 覆盖成"改名即失效"的那种,于是同一首歌在"首次解析"与"缓存命中"两条路径下身份不同。
-  return out
-}
+function loadMdCache() { mdReader.load() }
+function parseMetadata(filePath) { return mdReader.parseMetadata(filePath) }
+function logMdCacheStats(tag) { mdReader.logStats(tag) }
+function ensureParseFile() { return mdReader.ensureParseFile() }
 
 // ========== 入库时间(addedTime)==========
 // 「按添加时间」排序需要一个每首歌都有、且重扫不会变的字段。取文件创建时间的理由:
@@ -451,30 +270,10 @@ async function fileAddedTime(filePath) {
 }
 
 // ========== 文件扫描 ==========
-// diagnostics.complete 会被置为 false,当任一子目录 readdir 失败
-// (移动硬盘拔出/网络盘休眠/权限错误时 readdir 抛错,旧实现静默返回空数组,
-//  与「目录真的是空的」无法区分,导致监控据此把整个盘的歌都判为已删除)
-async function scanFolderRecursive(folderPath, diagnostics) {
-  const results = []
-  let complete = true
-  async function walk(dir) {
-    let entries
-    try { entries = await readdir(dir, { withFileTypes: true }) } catch { complete = false; return }
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name)
-      if (entry.isDirectory()) {
-        await walk(fullPath)
-      } else if (entry.isFile()) {
-        const ext = path.extname(entry.name).toLowerCase()
-        if (AUDIO_EXTS.has(ext)) {
-          results.push(fullPath)
-        }
-      }
-    }
-  }
-  await walk(folderPath)
-  if (diagnostics) diagnostics.complete = complete
-  return results
+// 递归收集与受限并发已拆到 lib/scan.js(纯逻辑,音频扩展名由这里注入)
+const { scanFolderRecursive: scanRecursive, runConcurrent } = require('./lib/scan')
+function scanFolderRecursive(folderPath, diagnostics) {
+  return scanRecursive(folderPath, { audioExts: AUDIO_EXTS, diagnostics })
 }
 
 // ========== 文件夹监控(曲库自动刷新,事件驱动无轮询) ==========
@@ -1223,13 +1022,13 @@ function setupIPC() {
         try { size += fs.statSync(path.join(dir, f)).size } catch {}
       }
     } catch (_) {}
-    return { coversSize: size, coversCount: count, mdCacheCount: Object.keys(mdCacheEntries).length }
+    return { coversSize: size, coversCount: count, mdCacheCount: mdReader.count() }
   })
 
   // 清理元数据解析缓存(下次扫描会重新解析,不影响曲库数据)
   ipcMain.handle('clear-metadata-cache', async () => {
-    const n = Object.keys(mdCacheEntries).length
-    mdCacheEntries = {}
+    const n = mdReader.count()
+    mdReader.clear()
     try { fs.unlinkSync(mdCachePath()) } catch (_) {}
     return { removed: n }
   })
@@ -1267,24 +1066,6 @@ function setupIPC() {
   })
 
   // 有界并发执行:扫描/解析大曲库时避免串行等待,同时防止并发过多抢占 CPU/IO 卡死主进程
-  async function runConcurrent(items, limit, worker) {
-    const results = new Array(items.length)
-    let idx = 0
-    const runners = []
-    const n = Math.min(limit, items.length)
-    for (let i = 0; i < n; i++) {
-      runners.push((async () => {
-        while (true) {
-          const cur = idx++
-          if (cur >= items.length) break
-          try { results[cur] = await worker(items[cur]) } catch { results[cur] = null }
-        }
-      })())
-    }
-    await Promise.all(runners)
-    return results.filter(Boolean)
-  }
-
   /**
    * 带进度与取消的批量解析。
    * 进度推送按时间节流(默认 120ms):一首歌解析几十毫秒,不节流会形成每秒上百条 IPC。
@@ -1354,28 +1135,7 @@ function setupIPC() {
   // 内容指纹回填:给"指纹功能上线前就入库"的老记录补上 fp/fpk(否则改名重连对它们无效)。
   // 只读解析缓存,**不触发解析** —— 全库重新解析一个 5000 首的库要几分钟,
   // 而重扫过/新入库的歌本就带指纹,漏掉的那些会在下次扫描时自然补齐。
-  ipcMain.handle('backfill-fingerprint', async (event, paths) => {
-    loadMdCache()
-    const out = {}
-    const list = Array.isArray(paths) ? paths.slice(0, 50000) : []
-    await runConcurrent(list, 8, async (p) => {
-      if (typeof p !== 'string' || !p) return null
-      try {
-        const st = await stat(p)
-        const key = mdCache.cacheKey(p, st)
-        const entry = key && mdCacheEntries[key]
-        if (entry && entry.v) {
-          if (entry.v.fp) out[p] = { fp: entry.v.fp, fpk: entry.v.fpk }
-          else {
-            const { fp, fpk } = fingerprintLib.withFingerprint(entry.v, st)
-            out[p] = { fp, fpk }
-          }
-        }
-      } catch (_) { /* 文件不在或读不到:跳过,留给下次扫描 */ }
-      return null
-    })
-    return out
-  })
+  ipcMain.handle('backfill-fingerprint', (event, paths) => mdReader.cachedFingerprints(paths))
 
   // 扫描文件夹(4 并发解析,大曲库提速数倍)
   ipcMain.handle('scan-folder', async (event, folderPath, jobId) => {
@@ -3215,7 +2975,7 @@ app.whenReady().then(async () => {
   const tools = resolveAudioTools()
   loadMdCache()
   log.info('[工具链] ffmpeg=' + tools.ffmpeg + ' ffprobe=' + tools.ffprobe +
-    ' 元数据缓存条数=' + Object.keys(mdCacheEntries).length)
+    ' 元数据缓存条数=' + mdReader.count())
   sweepTranscodeCache() // 启动清理:删残件 + 按 LRU 压到 2GB 以内(异步,不阻塞启动)
   await migrateCovers() // 迁移历史封面到文件(一次性,可能数秒),必须在渲染进程读取前完成
 
