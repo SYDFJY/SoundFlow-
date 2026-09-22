@@ -1,5 +1,6 @@
 <template>
-  <div class="recommend-view">
+  <div class="page recommend-view">
+    <!-- 页头与 .page-body 互为兄弟(理由同 StatsView:根一旦自己滚动,sticky 页头就会钉住) -->
     <div class="view-header">
       <h1 class="header-title">智能推荐</h1>
       <button class="refresh-btn" @click="refresh">
@@ -7,6 +8,8 @@
         <span>换一批</span>
       </button>
     </div>
+
+    <div class="page-body">
 
     <!-- 猜你喜欢 -->
     <div class="rec-section">
@@ -63,6 +66,7 @@
         </div>
         <div v-if="!staleSongs.length" class="rec-empty">暂无符合条件的歌曲</div>
       </div>
+    </div>
     </div>
   </div>
 </template>
@@ -171,8 +175,11 @@ function playSongs(list, idx) {
 </script>
 
 <style scoped>
-.recommend-view { padding: 20px 24px; overflow-y: auto; height: 100%; }
-.view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+/* 骨架交给全局 .page / .page-body(理由同 StatsView:根自己滚动会让 sticky 页头钉住)。
+   横向留白由 .page-body 提供,页头保留上留白、横向清零以便与内容左对齐。 */
+.recommend-view { display: flex; flex-direction: column; }
+/* 留白与 .page-body 一致,页头才与正文左对齐(本页正文没有 --content-max 上限,页头也不设) */
+.view-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; padding: var(--page-pad-y) var(--page-pad-x) 12px; }
 .header-title { font-size: 22px; font-weight: 700; }
 .refresh-btn { display: flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 8px; font-size: 13px;
   background: var(--bg-card, rgba(255,255,255,0.08)); color: inherit; cursor: pointer; transition: background 0.2s; }

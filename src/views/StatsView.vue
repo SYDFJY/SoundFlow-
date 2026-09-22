@@ -1,5 +1,8 @@
 <template>
-  <div class="stats-view">
+  <div class="page stats-view">
+    <!-- 页头与 .page-body 互为兄弟:视图根一旦自己成为滚动容器,全局 .view-header 的
+         position: sticky 就会真的生效,页头被钉在顶部、内容从它下面穿过
+         (其它视图的滚动容器都是页头的兄弟节点,所以不会) -->
     <div class="view-header">
       <h1 class="header-title">听歌统计</h1>
       <div class="header-tools">
@@ -12,6 +15,8 @@
       </div>
     </div>
 
+    <div class="page-body">
+    <div class="page-inner">
     <!-- 总览卡 -->
     <div class="stat-cards">
       <div class="stat-card">
@@ -155,6 +160,9 @@
           <div class="div-track"><div class="div-fill" :style="{ width: diversityScore + '%' }"></div></div>
         </div>
       </div>
+    </div>
+
+    </div>
     </div>
 
   </div>
@@ -626,10 +634,23 @@ function playTop(idx) {
 .rs-count { font-size: 11px; color: var(--text-tertiary); flex-shrink: 0; }
 .rs-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--text-secondary); }
 .report-actions { display: flex; justify-content: flex-end; margin-top: 4px; }
-.stats-view { padding: var(--page-pad-y) var(--page-pad-x); overflow-y: auto; height: 100%; }
-/* 超宽屏:内容不再无限拉伸 */
-.stats-view > * { max-width: var(--content-max); margin-left: auto; margin-right: auto; }
-.view-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px; }
+/* 骨架交给全局 .page / .page-body:根只负责布局,滚动由 .page-body 承担。
+   此前根自己写了 overflow-y:auto,于是它成了滚动容器、页头(sticky)被钉在顶部
+   (修一次就够,别再往根上加 overflow)。横向留白由 .page-body 给。
+   居中与最大宽度改由 .page-inner 承担(原来是 .stats-view > * 那条补丁)。 */
+.stats-view { display: flex; flex-direction: column; }
+/* 页头与正文左边缘必须对齐:正文在 .page-body 的 24px 留白内、又被 .page-inner 限到
+   --content-max;页头不在 .page-body 里,所以自己补同样的留白与同样的宽度上限
+   (加回 2×留白,使得内容区的起止与正文完全一致 —— 否则宽屏下标题会比卡片偏左 24px) */
+.view-header {
+  display: flex; align-items: baseline; gap: 12px; margin-bottom: 16px;
+  padding: var(--page-pad-y) var(--page-pad-x) 12px;
+  max-width: calc(var(--content-max) + var(--page-pad-x) * 2);
+  /* width:100% 不能省:flex 列里一旦给 margin:auto,项目就不再拉伸而缩成内容宽,
+     页头会被"居中缩窄"(标题比卡片偏右几十像素) */
+  width: 100%;
+  margin-left: auto; margin-right: auto;
+}
 .header-title { font-size: var(--font-size-page-title); font-weight: 700; }
 .header-count { font-size: var(--font-size-xs); color: var(--text-tertiary); }
 
