@@ -300,6 +300,27 @@ export const useMusicStore = defineStore('music', () => {
   const totalCount = computed(() => songs.value.length)
   /** 今日播放次数(按天聚合表;历史记录上限不影响它) */
   const todayPlays = computed(() => (playStats.value[dayKey(Date.now())] || {}).plays || 0)
+
+  /**
+   * 某个时间范围内的播放汇总(次数/秒数/小时直方图/星期直方图)。
+   * 全部从按天聚合表算 —— 播放日志有 500 条上限,用它会"播得越多越不准"。
+   * @param {number} days 天数;0 或负数表示全部
+   */
+  function playStatsInRange(days = 0) {
+    const from = days > 0 ? dayKey(Date.now(), -(days - 1)) : '0000-00-00'
+    const out = { plays: 0, seconds: 0, hours: new Array(24).fill(0), weekdays: new Array(7).fill(0), days: 0 }
+    for (const [key, v] of Object.entries(playStats.value)) {
+      if (key < from) continue
+      out.plays += v.plays || 0
+      out.seconds += v.seconds || 0
+      out.days++
+      const hs = Array.isArray(v.hours) ? v.hours : null
+      if (hs) for (let i = 0; i < 24; i++) out.hours[i] += hs[i] || 0
+      const wd = new Date(key).getDay()
+      if (wd >= 0 && wd < 7) out.weekdays[wd] += v.plays || 0
+    }
+    return out
+  }
   const favoriteCount = computed(() => favorites.size)
 
   const favoriteSongs = computed(() => {
@@ -464,9 +485,13 @@ export const useMusicStore = defineStore('music', () => {
     // 否则"累计播放"与"今日播放"会对不上。只有播放日志才需要曲库信息(标题/艺术家)
     const key = dayKey(now)
     const prev = playStats.value[key] || { plays: 0, seconds: 0 }
+    // hours:24 格的小时直方图 —— "24 小时分布/星期偏好"要精确就得有小时内粒度,
+    // 靠播放日志算会被 500 条上限截断
+    const hours = Array.isArray(prev.hours) && prev.hours.length === 24 ? prev.hours.slice() : new Array(24).fill(0)
+    hours[new Date(now).getHours()] += 1
     playStats.value = {
       ...playStats.value,
-      [key]: { plays: prev.plays + 1, seconds: prev.seconds + (song ? (song.duration || 0) : 0) }
+      [key]: { plays: prev.plays + 1, seconds: prev.seconds + (song ? (song.duration || 0) : 0), hours }
     }
     if (song) {
       history.value = [{ path, title: song.title, artist: song.artist, time: now }, ...history.value.slice(0, 499)]
@@ -487,8 +512,10 @@ export const useMusicStore = defineStore('music', () => {
     for (const h of history.value) {
       if (!h || !h.time) continue
       const key = dayKey(h.time)
-      const prev = acc[key] || { plays: 0, seconds: 0 }
-      acc[key] = { plays: prev.plays + 1, seconds: prev.seconds + (dur.get(h.path) || 0) }
+      const prev = acc[key] || { plays: 0, seconds: 0, hours: new Array(24).fill(0) }
+      const hours = prev.hours.slice()
+      hours[new Date(h.time).getHours()] += 1
+      acc[key] = { plays: prev.plays + 1, seconds: prev.seconds + (dur.get(h.path) || 0), hours }
     }
     if (Object.keys(acc).length === 0) return
     playStats.value = acc
@@ -1158,7 +1185,7 @@ export const useMusicStore = defineStore('music', () => {
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     scanTotal, scanDone, scanFailed, scanCurrent, cancelScan,
-    backfillAddedTime, backfillFingerprint, backfillPlayStats,
+    backfillAddedTime, backfillFingerprint, backfillPlayStats, playStatsInRange,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, moveFavorite, getPlaylistSongs,

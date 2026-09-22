@@ -354,8 +354,11 @@ describe('musicStore 按天播放统计', () => {
     store.backfillPlayStats()
     const keys = Object.keys(store.playStats).sort()
     expect(keys.length).toBe(2) // 两个不同的日期
-    expect(store.playStats[keys.at(-1)]).toEqual({ plays: 1, seconds: 60 })
-    expect(store.playStats[keys[0]]).toEqual({ plays: 2, seconds: 120 })
+    expect(store.playStats[keys.at(-1)]).toMatchObject({ plays: 1, seconds: 60 })
+    expect(store.playStats[keys[0]]).toMatchObject({ plays: 2, seconds: 120 })
+    // 回填也要带上小时直方图(24 格),否则"一天中的时段"在升级后一直为空
+    expect(store.playStats[keys[0]].hours).toHaveLength(24)
+    expect(store.playStats[keys[0]].hours.reduce((a, b) => a + b, 0)).toBe(2)
   })
 
   it('已经有聚合数据时不覆盖回填(避免每次启动重算)', () => {
@@ -366,3 +369,54 @@ describe('musicStore 按天播放统计', () => {
     expect(store.playStats).toEqual({ '2020-01-01': { plays: 99, seconds: 99 } })
   })
 })
+
+describe('musicStore playStatsInRange(区间汇总)', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('全部范围:次数/秒数/小时与星期直方图都汇总', () => {
+    const store = useMusicStore()
+    const today = new Date()
+    const yesterday = new Date(Date.now() - 86400000)
+    const h = today.getHours()
+    store.playStats = {
+      [dayKeyLocal(today)]: { plays: 3, seconds: 300, hours: hoursAt(h, 3) },
+      [dayKeyLocal(yesterday)]: { plays: 1, seconds: 60, hours: hoursAt(h, 1) }
+    }
+    const all = store.playStatsInRange(0)
+    expect(all.plays).toBe(4)
+    expect(all.seconds).toBe(360)
+    expect(all.days).toBe(2)
+    expect(all.hours[h]).toBe(4)
+    // 星期直方图按日期汇总(两天可能落在同一星期,比较总和即可)
+    expect(all.weekdays.reduce((a, b) => a + b, 0)).toBe(4)
+  })
+
+  it('限定天数时只统计范围内的日期(近 30 天)', () => {
+    const store = useMusicStore()
+    store.playStats = {
+      [dayKeyLocal(new Date())]: { plays: 2, seconds: 20, hours: hoursAt(10, 2) },
+      [dayKeyLocal(new Date(Date.now() - 40 * 86400000))]: { plays: 9, seconds: 90, hours: hoursAt(10, 9) }
+    }
+    const recent = store.playStatsInRange(30)
+    expect(recent.plays).toBe(2)
+    expect(recent.days).toBe(1)
+  })
+
+  it('缺少 hours 的旧条目不影响其余汇总(不抛错,只是时段为空)', () => {
+    const store = useMusicStore()
+    store.playStats = { [dayKeyLocal(new Date())]: { plays: 5, seconds: 50 } }
+    const agg = store.playStatsInRange(0)
+    expect(agg.plays).toBe(5)
+    expect(agg.hours.reduce((a, b) => a + b, 0)).toBe(0)
+  })
+})
+
+function dayKeyLocal (d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+function hoursAt (h, n) {
+  const a = new Array(24).fill(0)
+  a[h] = n
+  return a
+}

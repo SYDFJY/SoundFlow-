@@ -268,9 +268,14 @@ const rangeSongs = computed(() => {
   return playedSongs.value.filter(s => inRange.has(s.path))
 })
 
-// 总览
-const totalPlays = computed(() => rangeSongs.value.reduce((a, s) => a + s._playCount, 0))
-const totalHours = computed(() => Math.round(rangeSongs.value.reduce((a, s) => a + (s.duration || 0) * s._playCount, 0) / 3600))
+// 总览:次数与时长读按天聚合表。
+// 此前是"曲库中还在的歌 × playCounts 求和",有两个漏洞 ——
+//   (1) 文件被移出曲库后,它的播放次数在总览里就消失了(而 playCounts 还留着);
+//   (2) playCounts 超过 500 条会按"最近播放"裁剪(见 musicStore.trimPlayCounts),
+//       长曲库上"累计"反而会变小。
+// 榜单仍按 playCounts(那本就该是"最近常听"的口径,需要歌曲信息)。
+const totalPlays = computed(() => scopeAgg.value.plays)
+const totalHours = computed(() => Math.round(scopeAgg.value.seconds / 3600))
 const artistCount = computed(() => new Set(rangeSongs.value.map(s => s.artist).filter(Boolean)).size)
 const favCount = computed(() => musicStore.favoriteSongs.length)
 
@@ -355,22 +360,17 @@ const rangeHistory = computed(() => {
   const cutoff = Date.now() - 30 * 24 * 3600 * 1000
   return musicStore.history.filter(h => h.time >= cutoff)
 })
-// 24 小时听歌分布
-const hourDist = computed(() => {
-  const arr = Array.from({ length: 24 }, (_, h) => ({ h, count: 0 }))
-  for (const h of rangeHistory.value) {
-    const hh = new Date(h.time).getHours()
-    arr[hh].count++
-  }
-  return arr
-})
+// 当前时间范围对应的天数(0 = 全部):聚合与"时段/星期"都用它,口径只有一处
+const scopeDays = computed(() => (timeRange.value === '30d' ? 30 : 0))
+/** 当前范围的播放汇总(次数/秒数/小时直方图/星期直方图),来自按天聚合表 */
+const scopeAgg = computed(() => musicStore.playStatsInRange(scopeDays.value))
+
+// 24 小时听歌分布:读聚合表存的小时直方图 ——
+// 此前按播放日志算,日志上限 500 条,播得越多这个分布越失真
+const hourDist = computed(() => scopeAgg.value.hours.map((count, h) => ({ h, count })))
 const hourMax = computed(() => Math.max(1, ...hourDist.value.map(d => d.count)))
-// 星期偏好
-const weekPref = computed(() => {
-  const arr = Array.from({ length: 7 }, (_, i) => ({ d: i, count: 0 }))
-  for (const h of rangeHistory.value) arr[new Date(h.time).getDay()].count++
-  return arr
-})
+// 星期偏好:同样读聚合表(按日期汇总,不受记录数上限影响)
+const weekPref = computed(() => scopeAgg.value.weekdays.map((count, d) => ({ d, count })))
 const weekPrefMax = computed(() => Math.max(1, ...weekPref.value.map(d => d.count)))
 // 趣味数据
 const funFacts = computed(() => {
