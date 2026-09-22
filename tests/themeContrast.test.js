@@ -12,6 +12,9 @@ import path from 'node:path'
  */
 const read = (rel) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8')
 
+/** 剥掉注释:守卫靠字符串匹配时,注释里的同名文字会把判定带偏(已经被骗过两次) */
+const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '')
+
 /** 取出所有"强制深色面板"的规则体(以背景是写死的深色为准) */
 function forcedDarkBlocks(css) {
   const blocks = []
@@ -59,12 +62,23 @@ describe('强制深色面板必须重映射输入框 token', () => {
     }
   })
 
-  it('输入框基座不吞共用控件类 .vol-input(优先级事故的根因)', () => {
-    const css = read('src/styles/global.css')
-    // 基座规则必须排除 .vol-input,否则它(0-1-1)会压过 .vol-input(0-1-0)
-    for (const t of ['text', 'search', 'number']) {
-      const re = new RegExp(`input\\[type="${t}"\\][^{]*:not\\(\\.vol-input\\)[^{]*\\{`, 'g')
-      expect(css.match(re), `input[type="${t}"] 基座规则没有排除 .vol-input`).toBeTruthy()
-    }
+  it('基座规则不得用 :not 抬高自身优先级(会反压各组件单类 scoped 覆盖)', () => {
+    const css = stripComments(read('src/styles/global.css'))
+    // 事故:为让 .vol-input 生效写成 input[type=...]:not(.vol-input),优先级从 0-1-1 抬到 0-2-1,
+    // 于是压掉了 SearchBar 的 .search-input[data-v](0-2-0) —— 搜索框给放大镜留的 36px 内边距
+    // 被基座的 8px 12px 顶掉,图标与文字重叠。
+    const rules = [...css.matchAll(/^input\[type="(?:text|search|number)"\][^{]*\{/gm)].map(m => m[0])
+    expect(rules.length, '没找到文本输入基座规则').toBeGreaterThan(0)
+    for (const r of rules) expect(r, `基座规则里出现 :not():${r}`).not.toMatch(/:not\(/)
+  })
+
+  it('共用控件 .vol-input 用元素限定符 + 排在基座之后(靠顺序取胜,不靠优先级技巧)', () => {
+    const css = stripComments(read('src/styles/global.css'))
+    // 用行首锚定匹配**规则**而不是裸字符串:注释里也会提到这些名字(守卫已被注释骗过两次)
+    const base = /^input\[type="text"\][^{]*\{/m.exec(css)
+    const vol = /^input\.vol-input\s*\{/m.exec(css)
+    expect(base, '没找到基座规则').toBeTruthy()
+    expect(vol, '.vol-input 必须带元素限定符,否则压不过基座(它就是靠元素限定符 + 顺序取胜)').toBeTruthy()
+    expect(vol.index, '.vol-input 规则必须排在基座规则之后').toBeGreaterThan(base.index)
   })
 })

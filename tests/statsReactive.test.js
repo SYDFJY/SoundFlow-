@@ -27,6 +27,20 @@ describe('StatsView 总览数字必须跟随数据更新', () => {
     }
   })
 
+  it('watch 注册点必须排在依赖的声明之后(否则立刻求值时撞暂时性死区,整页空白)', () => {
+    // watch 注册时会立刻求值一次源;totalPlays → rangeSongs → timeRange,
+    // 而 timeRange 声明在文件靠后 —— 曾把 watch 写在动画块旁边,结果统计页一片空白
+    const watchAt = s.indexOf('registerStatsWatchers()')
+    const callAt = s.indexOf('registerStatsWatchers()', watchAt + 1)
+    expect(watchAt, '没找到 registerStatsWatchers 的调用').toBeGreaterThan(0)
+    expect(callAt, 'registerStatsWatchers 至少要定义+调用各一次').toBeGreaterThan(watchAt)
+    for (const decl of ['const timeRange', 'const reportHistory']) {
+      const at = s.indexOf(decl)
+      expect(at, `没找到 ${decl}`).toBeGreaterThan(0)
+      expect(callAt, `watch 注册点排在 ${decl} 之前 —— 会在求值旧值时撞暂时性死区`).toBeGreaterThan(at)
+    }
+  })
+
   it('生命周期用 onActivated/onDeactivated(KeepAlive 下 onUnmounted 不触发)', () => {
     expect(s).toMatch(/onDeactivated\(/)
     expect(s).toMatch(/onActivated\(/)

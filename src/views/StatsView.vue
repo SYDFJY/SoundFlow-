@@ -291,10 +291,16 @@ function syncStatsNumbers() {
   animateNumber(artistCount.value, artistCountAnim)
   animateNumber(favCount.value, favCountAnim)
 }
-watch(totalPlays, v => animateNumber(v, totalPlaysAnim))
-watch(totalHours, v => animateNumber(v, totalHoursAnim))
-watch(artistCount, v => animateNumber(v, artistCountAnim))
-watch(favCount, v => animateNumber(v, favCountAnim))
+function registerStatsWatchers() {
+  // 这四个 watch 必须**在所有被依赖的声明之后**注册:watch 注册时会立刻求值一次源
+  // (用于记录旧值),而 totalPlays → rangeSongs → timeRange,timeRange 声明在本文件靠后 ——
+  // 写在动画块旁边会撞上暂时性死区(setup 抛 ReferenceError,整个统计页空白)。
+  // 它们是回调,注册点晚不影响正确性。
+  watch(totalPlays, v => animateNumber(v, totalPlaysAnim))
+  watch(totalHours, v => animateNumber(v, totalHoursAnim))
+  watch(artistCount, v => animateNumber(v, artistCountAnim))
+  watch(favCount, v => animateNumber(v, favCountAnim))
+}
 onMounted(() => syncStatsNumbers())
 // KeepAlive 下 onUnmounted 不会触发,要用 onDeactivated/onActivated:
 // 离开时停掉动画链,回来时重新对齐一次(在缓存里期间数据可能已经变了)
@@ -553,6 +559,9 @@ const reportPeak = computed(() => {
   for (const [d, c] of m) if (c > best[1]) best = [d, c]
   return best[1] ? `${best[1]}次(${best[0].slice(4)})` : ''
 })
+
+// 到这里所有 ref/computed 都已声明,可以安全注册总览数字的监听
+registerStatsWatchers()
 
 function playTop(idx) {
   const queue = rangeSongs.value.map(s => ({ ...s }))
