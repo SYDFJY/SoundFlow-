@@ -62,26 +62,49 @@ function getFfprobePath() { resolveAudioTools(); return ffprobePath }
  * 并以非 0 退出 —— 这是「只做分析」的常规用法,不是失败。输出结构对齐 ffprobe -of json,
  * 调用方无需分支。这样只打包一个 ffmpeg 也能判定 ALAC/APE 并拿到兜底时长。
  */
+/**
+ * 声道数解析。
+ *
+ * 注意环绕声写法:`5.1` / `5.1(side)` / `7.1` —— 小数位表示额外的低频声道,
+ * 所以 5.1 是 **6** 声道。此前直接 `parseInt('5.1(side)')` 会得到 **5**(错),
+ * 一旦有人用这个值做下混/提示就是错的。
+ */
+function parseChannelCount(word) {
+  const w = String(word == null ? '' : word).trim().toLowerCase()
+  if (!w) return 0
+  if (w === 'mono') return 1
+  if (w === 'stereo') return 2
+  const m = /^(\d+)(?:\.(\d+))?/.exec(w)
+  if (m) return Number(m[1]) + (m[2] ? Number(m[2]) : 0)
+  return parseInt(w, 10) || 0
+}
+
+/**
+ * 解析 `ffmpeg -i <file>` 的 stderr(纯函数,便于单测:喂文本即可,不需要 ffmpeg 二进制)。
+ * 输出结构对齐 ffprobe -of json,调用方无需分支;识别不出内容时返回 null。
+ */
+function parseFfmpegStderr(text) {
+  const t = String(text || '')
+  if (!t) return null
+  const dm = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(t)
+  const duration = dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + parseFloat(dm[3]) : 0
+  const line = t.split('\n').find((l) => /Stream #\d+:\d+.*Audio:/.test(l)) || ''
+  if (!line && !duration) return null
+  const codec = (/Audio:\s*([A-Za-z0-9_]+)/.exec(line) || [])[1] || ''
+  const sr = (/,\s*(\d+)\s*Hz/.exec(line) || [])[1]
+  const chWord = (/Hz,\s*([^,]+)/.exec(line) || [])[1] || ''
+  const channels = parseChannelCount(chWord)
+  const br = (/,\s*(\d+)\s*kb\/s/.exec(line) || [])[1]
+  return {
+    format: { duration, bit_rate: br ? String(Number(br) * 1000) : undefined },
+    streams: [{ codec_type: 'audio', codec_name: codec, sample_rate: sr ? Number(sr) : undefined, channels: channels || undefined }]
+  }
+}
+
 function probeWithFfmpeg(filePath) {
   return new Promise((resolve) => {
     execFile(getFfmpegPath(), ['-hide_banner', '-i', filePath], { timeout: 15000, windowsHide: true, encoding: 'utf8' },
-      (err, _stdout, stderr) => {
-        const text = String(stderr || '')
-        if (!text) return resolve(null)
-        const dm = /Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(text)
-        const duration = dm ? (+dm[1]) * 3600 + (+dm[2]) * 60 + parseFloat(dm[3]) : 0
-        const line = text.split('\n').find((l) => /Stream #\d+:\d+.*Audio:/.test(l)) || ''
-        if (!line && !duration) return resolve(null)
-        const codec = (/Audio:\s*([A-Za-z0-9_]+)/.exec(line) || [])[1] || ''
-        const sr = (/,\s*(\d+)\s*Hz/.exec(line) || [])[1]
-        const chWord = (/Hz,\s*([^,]+)/.exec(line) || [])[1] || ''
-        const chNum = chWord === 'mono' ? 1 : chWord === 'stereo' ? 2 : (parseInt(chWord, 10) || 0)
-        const br = (/,\s*(\d+)\s*kb\/s/.exec(line) || [])[1]
-        resolve({
-          format: { duration, bit_rate: br ? String(Number(br) * 1000) : undefined },
-          streams: [{ codec_type: 'audio', codec_name: codec, sample_rate: sr ? Number(sr) : undefined, channels: chNum || undefined }]
-        })
-      })
+      (err, _stdout, stderr) => resolve(parseFfmpegStderr(stderr)))
   })
 }
 
@@ -114,6 +137,8 @@ async function getFFprobeDuration(filePath) {
 function getFFprobeMetadata(filePath) { return probeMedia(filePath) }
 
 module.exports = {
+  parseFfmpegStderr,
+  parseChannelCount,
   audioToolDirs,
   findAudioTool,
   resolveAudioTools,

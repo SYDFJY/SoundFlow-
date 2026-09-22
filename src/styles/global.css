@@ -209,7 +209,7 @@ button:disabled {
 .btn--danger {
   color: var(--color-danger, #ff4d4f);
 }
-.btn--danger:hover { background: rgba(255, 77, 79, 0.12); color: var(--color-danger, #ff4d4f); border-color: var(--color-danger, #ff4d4f); }
+.btn--danger:hover { background: var(--color-danger-alpha); color: var(--color-danger); border-color: var(--color-danger); }
 
 /* 图标按钮(32px 方形/圆形,纯图标) */
 .icon-btn {
@@ -533,7 +533,7 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 .rename-old { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-tertiary); text-decoration: line-through; opacity: 0.7; }
 .rename-arrow { color: var(--color-primary); flex-shrink: 0; }
 .rename-new { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
-.rename-bad { flex-shrink: 0; font-size: 11px; color: #ff6b6b; }
+.rename-bad { flex-shrink: 0; font-size: 11px; color: var(--color-danger); }
 
 /* ===== 参数面板设计系统(倍速/变调/EQ/频谱/音量/队列共用)===== */
 /* 注意:本类跟随主题(--panel-* 会按主题翻转),所以输入框 token 不需要在这里重映射。

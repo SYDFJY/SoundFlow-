@@ -431,7 +431,7 @@ function setCustomTimer() {
 .player-title { font-size: var(--font-size-base); font-weight: 500; color: var(--text-primary); }
 .player-artist { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
 .player-fav { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--text-tertiary); transition: all var(--transition-fast); }
-.player-fav:hover { color: var(--color-danger); background: rgba(255, 77, 79, 0.1); }
+.player-fav:hover { color: var(--color-danger); background: var(--color-danger-alpha); }
 .player-fav.active { color: var(--color-danger); }
 .player-fav svg { width: 18px; height: 18px; }
 
@@ -629,7 +629,7 @@ function setCustomTimer() {
 .popup-item:hover { background: var(--bg-hover); }
 .popup-item.active { background: var(--color-primary-alpha); color: var(--color-primary); font-weight: 500; }
 .popup-item.danger { color: var(--color-danger); }
-.popup-item.danger:hover { background: rgba(255,77,79,0.1); }
+.popup-item.danger:hover { background: var(--color-danger-alpha); }
 
 .custom-timer { padding: 8px 12px; }
 .custom-label { font-size: 11px; color: var(--text-tertiary); display: block; margin-bottom: 6px; }
@@ -669,7 +669,7 @@ function setCustomTimer() {
 .queue-item:hover .queue-remove { opacity: 1; }
 .queue-remove--current { opacity: 0.6; color: var(--color-danger); }
 .queue-item:hover .queue-remove--current { opacity: 1; }
-.queue-remove:hover { background: rgba(255,77,79,0.1); color: var(--color-danger); }
+.queue-remove:hover { background: var(--color-danger-alpha); color: var(--color-danger); }
 .queue-remove svg { width: 14px; height: 14px; }
 
 .queue-slide-enter-active, .queue-slide-leave-active { transition: all 0.25s ease; }

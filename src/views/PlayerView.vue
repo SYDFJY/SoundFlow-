@@ -1591,6 +1591,19 @@ async function searchLyric() {
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+  /* 自带深色底就自带一整套面板 token(与其它浮层一致):今天这里没有输入框,
+     但漏掉这组 token 的代价是"将来一加输入框就白字压白底",而守卫无法判断有没有输入框 */
+  color: #eaf2ff;
+  --text-primary: #eaf2ff;
+  --text-secondary: #aab6cc;
+  --text-tertiary: #7c879c;
+  --bg-hover: rgba(255,255,255,0.08);
+  --bg-active: rgba(255,255,255,0.12);
+  --border-color: rgba(255,255,255,0.12);
+  --input-bg: rgba(255,255,255,0.08);
+  --input-border: rgba(255,255,255,0.14);
+  --input-focus-ring: rgba(120,170,255,0.22);
+  --bg-secondary: rgba(255,255,255,0.12);
 }
 .fp-title {
   font-size: 11px; color: rgba(255,255,255,0.7); text-align: center;

@@ -1487,7 +1487,7 @@ select {
 }
 .folder-path { flex: 1; font-size: var(--font-size-sm); color: var(--text-secondary); font-family: 'Cascadia Code', 'Consolas', monospace; }
 .remove-btn { font-size: var(--font-size-xs); color: var(--color-danger); padding: 4px 8px; border-radius: var(--radius-sm); }
-.remove-btn:hover { background: rgba(255,77,79,0.1); }
+.remove-btn:hover { background: var(--color-danger-alpha); }
 
 .about-card {
   display: flex; align-items: center; gap: 16px;

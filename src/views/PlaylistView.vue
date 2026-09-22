@@ -266,7 +266,7 @@ async function importPlaylist() {
 .add-songs-btn, .play-all-btn { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: var(--radius-md); font-size: var(--font-size-sm); font-weight: 500; transition: all var(--transition-fast); }
 .add-songs-btn { background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-primary); }
 .pl-del { color: var(--color-danger) !important; }
-.pl-del:hover { background: rgba(255, 77, 79, 0.1) !important; }
+.pl-del:hover { background: var(--color-danger-alpha) !important; }
 .add-songs-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .add-songs-btn svg { width: 16px; height: 16px; }
 .play-all-btn { background: var(--color-primary); color: white; }

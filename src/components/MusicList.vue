@@ -1355,7 +1355,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
   margin-left: auto; padding-left: 12px;
   font-size: 11px; color: var(--text-tertiary);
 }
-.context-menu button.danger:hover { background: var(--color-danger-alpha, rgba(255, 77, 79, 0.1)); }
+.context-menu button.danger:hover { background: var(--color-danger-alpha); }
 .ctx-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
 .ctx-sort-label { font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.4)); padding: 4px 12px 2px; }
 .ctx-sort-btn { width: 100%; padding: 5px 12px; font-size: 12px; color: var(--text-secondary, rgba(255,255,255,0.65)); text-align: left; background: none; border: none; cursor: pointer; }

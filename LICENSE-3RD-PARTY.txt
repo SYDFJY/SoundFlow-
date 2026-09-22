@@ -1,0 +1,64 @@
+SoundFlow 声流音乐 — 第三方资源与许可
+========================================
+
+本文件登记项目中直接引用或改写自第三方开源项目的资源。
+（Electron 及其 Chromium 组件的许可见 LICENSE.electron.txt 与 LICENSES.chromium.html）
+
+------------------------------------------------------------------------
+1) uiverse.io — UI 组件库
+   来源:   https://uiverse.io/
+   归档:   https://github.com/uiverse-io/galaxy（组件源码镜像，便于离线检索与许可核查）
+   许可:   MIT License（可商用）
+   用法:   仅取"动作/形态"（位移、缩放、延迟节奏、脉冲点），颜色与尺寸一律改写为
+           本项目主题 token —— 原组件的固定色在 16 套主题下会立刻穿帮。
+
+   已采用:
+   - 5 点脉冲加载动效（.sf-dots）
+       作者: Fadhilmagass（uiverse.io，文件名 fadhilmagass_bad-firefox-25）
+       改写: 原为 Google 四色固定 10px，现统一主色、尺寸由 --sf-dot-size 控制
+       用于: 歌词加载中、播放键缓冲态（src/styles/loaders.css）
+
+   参考但未直接采用（仅借鉴交互思路）:
+   - 图标按钮的按压下沉 / 悬停抬升（src/styles/controls.css）
+   - 复选框的描边动画（src/styles/controls.css .sf-check）
+     —— 这两处按项目既有习惯重写，未复制原组件代码。
+
+------------------------------------------------------------------------
+2) uiverse.io — 本批新增采用
+   许可:   MIT License
+   说明:   以下为"借鉴形态与动效、按项目主题 token 重写"的实现,未整段复制原组件代码。
+
+   - 主题化悬停提示(data-tooltip):气泡 + 箭头 + 延迟淡入的做法
+       参考: Tooltips 分类(如 Dyls00 / G4b413l 的组件形态)
+       实现: src/styles/controls.css(四方向 data-tooltip-pos,颜色走 --tooltip-*)
+   - 按钮加载态(.is-loading):原位转圈、标签隐去但保留宽度
+       参考: Buttons 分类中"带 loading 的按钮"
+       实现: src/styles/controls.css
+   - 输入框聚焦反馈:边框变主色 + 外扩柔和光环 + 未聚焦内阴影
+       参考: Inputs 分类
+       实现: src/styles/global.css 的 input 基座
+   - 玻璃主题的动态极光漂移(仅硬件加速时启用)
+       参考: Patterns 分类的漂移节奏
+       实现: src/styles/glass.css(body.hw-accel.glass-theme::after)
+
+   组件归档本地路径(便于核查):git sparse-checkout 拉取自
+   https://github.com/uiverse-io/galaxy 的 loaders / Tooltips 分类
+
+------------------------------------------------------------------------
+3) FFmpeg / ffprobe — 音频工具链二进制(随安装包分发)
+   来源:   https://ffmpeg.org/  (本项目打包的是 Windows 静态构建,取自 ffmpeg.org 的
+           "Windows builds" 页面所链接的发布方)
+   许可:   FFmpeg 本体为 LGPL v2.1+;若构建启用了 --enable-gpl(常见静态构建即是),
+           则整体按 GPL v2+ 分发。本项目的构建取自含 GPL 组件的静态包,按 GPL v2+ 处理。
+           许可全文: https://ffmpeg.org/legal.html
+   用法:   仅作子进程调用(转码为 FLAC、探测时长/编码),不链接、不修改其源码。
+   ⚠️ 合规要点:随包分发 FFmpeg 二进制时,必须同时提供
+       (a) 许可全文与来源说明(本文件);
+       (b) 获取对应源码的方式(见 https://ffmpeg.org/download.html );
+       (c) 本项目对 FFmpeg 未做修改,故无需提供补丁。
+   ffprobe: 同样是 FFmpeg 项目的一部分,但**当前不随包分发**(安装目录会多约 97MB,
+           而缺它时代码用 `ffmpeg -i` 的 stderr 兜底探测,功能不受影响)。若将来随包发布,
+           请在此处一并登记,见 tools/fetch-ffmpeg.mjs 顶部说明。
+
+   SDK/二进制入库位置: build/ffmpeg/ffmpeg.exe(*.exe 已被 .gitignore 忽略,不进仓库)
+   打包声明: package.json 的 build.extraResources → resources/ffmpeg/ffmpeg.exe

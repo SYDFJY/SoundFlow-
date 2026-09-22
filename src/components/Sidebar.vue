@@ -373,7 +373,7 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .context-menu button { display: block; width: 100%; padding: 8px 16px; text-align: left; font-size: var(--font-size-sm); color: var(--text-primary); transition: background var(--transition-fast); }
 .context-menu button:hover { background: var(--bg-hover); }
 .context-menu button.danger { color: var(--color-danger); }
-.context-menu button.danger:hover { background: rgba(255, 77, 79, 0.1); }
+.context-menu button.danger:hover { background: var(--color-danger-alpha); }
 
 .modal-overlay { position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.4)); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 300; }
 .modal-card { background: var(--bg-secondary); border-radius: var(--radius-xl); padding: 24px; width: 360px; box-shadow: var(--shadow-lg); }

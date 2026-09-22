@@ -142,6 +142,19 @@ onUnmounted(() => { if (queueSortable) { try { queueSortable.destroy() } catch (
   box-shadow: 0 16px 44px rgba(0,0,0,0.55);
   overflow: hidden;
   z-index: 30;
+  /* 自带深色底就必须自带一整套面板 token:此前它靠播放页那条聚合规则兜着,
+     一旦单独使用(或那条规则的适用范围变了),里面的文字/输入框就会沿用浅色主题的值 */
+  color: #eaf2ff;
+  --text-primary: #eaf2ff;
+  --text-secondary: #aab6cc;
+  --text-tertiary: #7c879c;
+  --bg-hover: rgba(255,255,255,0.08);
+  --bg-active: rgba(255,255,255,0.12);
+  --border-color: rgba(255,255,255,0.12);
+  --input-bg: rgba(255,255,255,0.08);
+  --input-border: rgba(255,255,255,0.14);
+  --input-focus-ring: rgba(120,170,255,0.22);
+  --bg-secondary: rgba(255,255,255,0.12);
 }
 .queue-header {
   display: flex; align-items: center; gap: 8px;

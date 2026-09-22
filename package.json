@@ -7,7 +7,7 @@
     "dev": "vite",
     "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "vite build",
-    "build:electron": "vite build && electron-builder",
+    "build:electron": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder",
     "preview": "vite preview",
     "test": "vitest run"
   },
@@ -49,12 +49,8 @@
     ],
     "extraResources": [
       {
-        "from": "C:/ffmpeg/bin/ffmpeg.exe",
+        "from": "build/ffmpeg/ffmpeg.exe",
         "to": "ffmpeg/ffmpeg.exe"
-      },
-      {
-        "from": "C:/ffmpeg/bin/ffprobe.exe",
-        "to": "ffmpeg/ffprobe.exe"
       },
       {
         "from": "build/icon.ico",

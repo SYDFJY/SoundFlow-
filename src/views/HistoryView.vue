@@ -207,7 +207,7 @@ async function clearHistory() {
 .tab-btn.active { background: var(--bg-secondary); color: var(--text-primary); font-weight: 500; box-shadow: var(--shadow-sm); }
 
 .clear-btn { padding: 6px 14px; background: var(--bg-hover); color: var(--text-secondary); border-radius: var(--radius-md); font-size: var(--font-size-sm); }
-.clear-btn:hover { background: rgba(255,77,79,0.1); color: var(--color-danger); }
+.clear-btn:hover { background: var(--color-danger-alpha); color: var(--color-danger); }
 
 .view-content { flex: 1; min-height: 0; overflow-y: auto; padding: 0 var(--page-pad-x) var(--page-pad-x); }
 
@@ -231,7 +231,7 @@ async function clearHistory() {
   z-index: 1;
 }
 .action-btn--del { color: var(--text-tertiary); }
-.action-btn--del:hover { color: var(--color-danger); background: rgba(255, 77, 79, 0.12); }
+.action-btn--del:hover { color: var(--color-danger); background: var(--color-danger-alpha); }
 .history-row:hover .play-icon { display: flex; }
 .history-row:hover .history-actions { opacity: 1; }
 
