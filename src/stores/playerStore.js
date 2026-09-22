@@ -210,7 +210,12 @@ export const usePlayerStore = defineStore('player', () => {
       // 切歌耗时:准备(解析/转码) + 缓冲 = 总耗时。这就是 gapless 要压缩的间隙
       if (_switchT0) {
         const total = Math.round(performance.now() - _switchT0)
-        console.info(`[切歌] ${_switchLabel}:准备 ${_switchPrepMs}ms + 缓冲 ${total - _switchPrepMs}ms = ${total}ms(淡入 ${_switchFadeMs}ms)`)
+        const buffer = total - _switchPrepMs
+        console.info(`[切歌] ${_switchLabel}:准备 ${_switchPrepMs}ms + 缓冲 ${buffer}ms = ${total}ms(淡入 ${_switchFadeMs}ms)`)
+        recentSwitches.value = [
+          { at: Date.now(), kind: _switchLabel, prep: _switchPrepMs, buffer, total, fade: _switchFadeMs },
+          ...recentSwitches.value
+        ].slice(0, SWITCH_LOG_MAX)
         _switchT0 = 0
       }
     })
@@ -597,6 +602,7 @@ export const usePlayerStore = defineStore('player', () => {
       // 谁新增了节点却忘了更新声明,下一次重建就会留下一条带原因的失败记录。
       const declared = describeChain(s, pitch.value !== 0)
       const cmp = compareChain(declared, trace)
+      chainCheck.value = { ok: cmp.ok, expected: declared, actual: trace, at: Date.now() }
       if (!cmp.ok) {
         noteFailure(
           'audio.graph',
@@ -878,6 +884,11 @@ export const usePlayerStore = defineStore('player', () => {
   // 切歌耗时诊断:从"开始切歌"到"真正出声"拆分两段 ——
   //   准备(解析/转码,resolveSrc)与 出声前的缓冲等待。
   // 做 gapless 之前必须先有这个数字:否则不知道差在哪一段,也无法证明改进有效。
+  // 诊断用:最近一次音频链级序比对结果(ok=false 时另有 noteFailure 记录)
+  const chainCheck = ref(null)
+  // 最近若干次切歌的耗时(诊断面板展示):只保留最近 20 次,不参与业务逻辑
+  const recentSwitches = ref([])
+  const SWITCH_LOG_MAX = 20
   let _switchT0 = 0
   let _switchPrepMs = -1
   let _switchLabel = ''
@@ -2063,6 +2074,7 @@ export const usePlayerStore = defineStore('player', () => {
     skipForward, skipBackward, formatTime, formatTimerDisplay,
     releaseAudio, restoreAudio,
     loadSettings, saveSettings, playSingle, toggleQueue, renameSongInQueue,
+    recentSwitches, chainCheck,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,

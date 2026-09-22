@@ -47,16 +47,23 @@ describe('StatsView 总览数字必须跟随数据更新', () => {
     expect(s, 'onUnmounted 在 KeepAlive 下不会触发,别用它停动画链').not.toMatch(/onUnmounted\(/)
   })
 
-  it('听歌时长按曲库里的时长算,不用历史记录里不存在的字段(否则恒为 0)', () => {
-    const block = /const reportHours = computed\(\(\) => \{([\s\S]*?)\}\)/.exec(s)
-    expect(block, '没找到 reportHours').toBeTruthy()
-    expect(block[1], 'reportHours 又去累加 h.duration 了 —— 历史记录里没有这个字段').not.toMatch(/h\.duration/)
-    expect(block[1], 'reportHours 应当按 path 关联曲库取时长').toMatch(/musicStore\.songs/)
+  it('报告的次数与时长读按天聚合表,不读播放日志(否则受 500 条上限影响)', () => {
+    // 历史是"播放日志"(上限 500 条),统计口径必须走按天聚合的 playStats
+    const agg = /const rangeAgg = computed\(\(\) => \{[\s\S]*?\n\}\)/.exec(s)
+    expect(agg, '没找到 rangeAgg(区间聚合)').toBeTruthy()
+    expect(agg[0], 'rangeAgg 应当读 musicStore.playStats').toMatch(/musicStore\.playStats/)
+    const hours = /const reportHours = computed\(\(\) => ([^\n]+)/.exec(s)
+    expect(hours, '没找到 reportHours').toBeTruthy()
+    expect(hours[1], 'reportHours 不应再去累加历史条目').not.toMatch(/reportHistory/)
+    expect(hours[1], 'reportHours 应读区间聚合的秒数').toMatch(/rangeAgg/)
   })
 
-  it('报告里的"播放记录数"与总览的"累计播放次数"口径不同,标签必须能区分', () => {
-    // 历史最多 500 条,报告那格是记录数;总览那格是 playCounts 求和
-    expect(s).toMatch(/播放记录/)
-    expect(s).toMatch(/HISTORY_CAP/)
+  it('报告头部数字不再自称"播放记录(上限 500)"——口径统一后就是播放次数', () => {
+    // 曾经的妥协:历史 500 条上限导致报告只能自称"记录数";现在读按天聚合,
+    // 次数与时长都精确,标签恢复成"播放次数",并且标签里不该再出现上限提示。
+    // 注意断言模板里的确切片段:直接搜"上限 500"会被注释里的同名字样误伤(踩过)。
+    expect(s, '报告那格应当直接显示"播放次数"').toMatch(/\{\{ reportTotal \}\}<\/div><div class="rs-label">播放次数<\/div>/)
+    expect(s, '不该再出现 HISTORY_CAP 这种上限提示').not.toMatch(/HISTORY_CAP/)
+    expect(s, '标签里不该再写"播放记录(上限 N)"').not.toMatch(/rs-label">播放记录/)
   })
 })

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import { noteFailure } from '@/utils/failures'
 import { matchRelink, dirOf, isUnder, normSep } from '@/utils/relink'
+import { dayKey } from '@/utils/format'
 import { SCHEMA_VERSION, applyMigrations, parseVersion } from '@/config/storageSchema'
 
 /** localStorage 里记录存储模式版本的键(不入 DEFAULTS:它是元数据不是用户设置) */
@@ -12,6 +13,10 @@ export const useMusicStore = defineStore('music', () => {
   const playlists = ref([])
   const playCounts = ref({})
   const history = ref([])
+  // 按天聚合的播放统计:{ 'YYYY-MM-DD': { plays, seconds } }。
+  // history 是"播放日志"(上限 500 条),统计读它会随记录数上限失真;
+  // 这里按天累计,数据量与曲库规模无关,趋势/今日/报告时长都以它为准。
+  const playStats = ref({})
   // 启动时自动检测出的失效歌曲(文件被移动/删除),用于首页横幅提示
   const startupMissing = ref([])
   const searchQuery = ref('')
@@ -61,6 +66,7 @@ export const useMusicStore = defineStore('music', () => {
       favorites: readKey('soundflow_favorites', []),
       playlists: readKey('soundflow_playlists', []),
       playCounts: readKey('soundflow_play_counts', {}),
+      playStats: readKey('soundflow_play_stats', {}),
       history: readKey('soundflow_history', []),
       scanFolders: readKey('soundflow_scan_folders', []),
       lyricFolders: readKey('soundflow_lyric_folders', [])
@@ -74,6 +80,7 @@ export const useMusicStore = defineStore('music', () => {
     _syncFavorites(data.favorites)
     playlists.value = data.playlists
     playCounts.value = data.playCounts
+    playStats.value = data.playStats || {}
     history.value = data.history
     scanFolders.value = data.scanFolders
     lyricFolders.value = data.lyricFolders
@@ -157,6 +164,8 @@ export const useMusicStore = defineStore('music', () => {
     backfillAddedTime()
     // 6. 老曲库回填内容指纹(指纹功能上线前入库的记录没有它,改名重连对它们无效)
     backfillFingerprint()
+    // 7. 老数据按天聚合回填(统计功能上线前只有播放日志)
+    backfillPlayStats()
   }
 
   // 防抖合并:收藏/歌单/进度等频繁操作时,2s 内多次保存合并为一次全量写,避免反复全量序列化卡主线程
@@ -191,6 +200,7 @@ export const useMusicStore = defineStore('music', () => {
       safeSet('soundflow_favorites', favorites.toArray())
       safeSet('soundflow_playlists', playlists.value)
       safeSet('soundflow_play_counts', playCounts.value)
+      safeSet('soundflow_play_stats', playStats.value)
       safeSet('soundflow_history', history.value)
       safeSet('soundflow_scan_folders', scanFolders.value)
       safeSet('soundflow_lyric_folders', lyricFolders.value)
@@ -218,6 +228,7 @@ export const useMusicStore = defineStore('music', () => {
             favorites: toPlain(favorites.toArray()),
             playlists: toPlain(playlists.value),
             playCounts: toPlain(playCounts.value),
+            playStats: toPlain(playStats.value),
             history: toPlain(history.value),
             scanFolders: toPlain(scanFolders.value),
             lyricFolders: toPlain(lyricFolders.value)
@@ -287,6 +298,8 @@ export const useMusicStore = defineStore('music', () => {
   })
 
   const totalCount = computed(() => songs.value.length)
+  /** 今日播放次数(按天聚合表;历史记录上限不影响它) */
+  const todayPlays = computed(() => (playStats.value[dayKey(Date.now())] || {}).plays || 0)
   const favoriteCount = computed(() => favorites.size)
 
   const favoriteSongs = computed(() => {
@@ -445,12 +458,42 @@ export const useMusicStore = defineStore('music', () => {
     playCounts.value = { ...playCounts.value, [path]: current + 1 }
     // 容量保护:数据膨胀时裁剪(保留最近播放的)
     if (Object.keys(playCounts.value).length > 600) trimPlayCounts()
-    // 添加到历史
     const song = songs.value.find(s => s.path === path)
+    const now = Date.now()
+    // 按天累计(统计口径)与曲库无关:playCounts 已经加了这一次,天表也必须加,
+    // 否则"累计播放"与"今日播放"会对不上。只有播放日志才需要曲库信息(标题/艺术家)
+    const key = dayKey(now)
+    const prev = playStats.value[key] || { plays: 0, seconds: 0 }
+    playStats.value = {
+      ...playStats.value,
+      [key]: { plays: prev.plays + 1, seconds: prev.seconds + (song ? (song.duration || 0) : 0) }
+    }
     if (song) {
-      history.value = [{ path, title: song.title, artist: song.artist, time: Date.now() }, ...history.value.slice(0, 499)]
+      history.value = [{ path, title: song.title, artist: song.artist, time: now }, ...history.value.slice(0, 499)]
     }
     saveToStorage()
+  }
+
+  /**
+   * 按天聚合的回填:统计功能上线前只有 history(播放日志),这里按天聚一次。
+   * 只在聚合表为空、而 history 有记录时执行(一次性);时长按曲库里的时长补,
+   * 拿不到文件时长的条目按 0 计(计数仍准确)。
+   */
+  function backfillPlayStats() {
+    if (Object.keys(playStats.value).length > 0) return
+    if (history.value.length === 0) return
+    const dur = new Map(songs.value.map(s => [s.path, s.duration || 0]))
+    const acc = {}
+    for (const h of history.value) {
+      if (!h || !h.time) continue
+      const key = dayKey(h.time)
+      const prev = acc[key] || { plays: 0, seconds: 0 }
+      acc[key] = { plays: prev.plays + 1, seconds: prev.seconds + (dur.get(h.path) || 0) }
+    }
+    if (Object.keys(acc).length === 0) return
+    playStats.value = acc
+    saveToStorage(true)
+    console.info(`[统计] 已按天聚合历史播放记录:${Object.keys(acc).length} 天`)
   }
 
   // 歌单管理
@@ -1109,13 +1152,13 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   return {
-    songs, favorites, playlists, playCounts, history, searchQuery, startupMissing,
+    songs, favorites, playlists, playCounts, history, playStats, todayPlays, searchQuery, startupMissing,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
     sortSongs,
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     scanTotal, scanDone, scanFailed, scanCurrent, cancelScan,
-    backfillAddedTime, backfillFingerprint,
+    backfillAddedTime, backfillFingerprint, backfillPlayStats,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, moveFavorite, getPlaylistSongs,

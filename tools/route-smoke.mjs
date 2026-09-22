@@ -28,6 +28,9 @@ const ROUTES = [
 ]
 const only = process.argv.slice(2).filter((a) => !a.startsWith('--'))
 const shotArg = (process.argv.find((a) => a.startsWith('--shot=')) || '').split('=')[1] || ''
+// --expect=文案A,文案B:断言渲染出的文本里包含这些(用于确认"某个区块真的画出来了",
+// 而不是只看了文本长度就以为没问题)
+const expectArg = (process.argv.find((a) => a.startsWith('--expect=')) || '').split('=').slice(1).join('=')
 const targets = only.length ? ROUTES.filter(([n]) => only.includes(n)) : ROUTES
 
 require(path.join(repoRoot, 'electron', 'main.js'))
@@ -67,7 +70,7 @@ app.whenReady().then(async () => {
         `(() => {
            const el = document.querySelector('.app') || document.body
            const text = (el.innerText || '').replace(/\\s+/g, ' ').trim()
-           return { textLen: text.length, hasView: !!document.querySelector('.page, .view-header, .stats-view, .player-view, .mini-player, .settings-view, .search-bar'), head: text.slice(0, 60) }
+           return { textLen: text.length, text, hasView: !!document.querySelector('.page, .view-header, .stats-view, .player-view, .mini-player, .settings-view, .search-bar'), head: text.slice(0, 60) }
          })()`, true)
     } catch (e) {
       rendered = { error: String(e && e.message) }
@@ -123,7 +126,12 @@ app.whenReady().then(async () => {
         fs.writeFileSync(path.join(shotArg, `route-${name}.png`), img.toPNG())
       } catch (e) { console.error('截图失败:', name, e && e.message) }
     }
+    // --expect 的文案断言:确认某个区块真的画出来了,而不是只看文本长度就当作没问题
     const newErrors = errors.slice(before)
+    const missing = expectArg
+      ? expectArg.split(',').map((x) => x.trim()).filter(Boolean).filter((x) => !(rendered?.text || '').includes(x))
+      : []
+    if (missing.length) newErrors.push(`页面缺少预期文案:${missing.join(' / ')}`)
     const pinned = layout && layout.verdict === 'pinned'
     const misaligned = !!(layout && layout.align && layout.align.ok === false)
     const ok = newErrors.length === 0 && rendered && rendered.hasView && rendered.textLen > 5 && !pinned && !misaligned

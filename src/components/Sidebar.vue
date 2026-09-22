@@ -165,11 +165,10 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', onDocDragUp)
   document.removeEventListener('mousemove', onDocDragMove)
 })
-// 迷你统计:今日播放次数(基于播放历史时间戳)+ 累计播放
-const todayPlays = computed(() => {
-  const today = new Date().toDateString()
-  return musicStore.history.filter(h => new Date(h.time).toDateString() === today).length
-})
+// 迷你统计:今日播放次数直接读按天聚合表(musicStore.todayPlays)——
+// 此前按 history 里今天的记录条数算,而 history 上限 500 条,播多了这个数字会失真。
+// 累计播放仍按 playCounts 求和(无上限)。
+const todayPlays = computed(() => musicStore.todayPlays)
 const totalPlayCount = computed(() => Object.values(musicStore.playCounts).reduce((a, b) => a + (b || 0), 0))
 const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
 const modal = ref({ show: false, title: '', value: '', placeholder: '', mode: '', playlistId: null })

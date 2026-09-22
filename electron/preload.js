@@ -90,6 +90,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFolder: (folderPath) => ipcRenderer.invoke('open-folder', folderPath),
   getFontsDir: () => ipcRenderer.invoke('get-fonts-dir'),
   getStorageInfo: () => ipcRenderer.invoke('get-storage-info'),
+  clearTranscodeCache: () => ipcRenderer.invoke('clear-transcode-cache'),
   clearCoverCache: () => ipcRenderer.invoke('clear-cover-cache'),
   // 元数据解析缓存(只影响扫描速度,不动曲库数据)
   clearMetadataCache: () => ipcRenderer.invoke('clear-metadata-cache'),

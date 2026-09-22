@@ -1000,17 +1000,56 @@ function setupIPC() {
   ipcMain.handle('get-fonts-dir', () => path.join(app.getPath('userData'), 'fonts'))
 
   // 存储占用统计(封面缓存)
+  // 存储与运行时状态(诊断面板读这个):三类缓存的占用 + 解析缓存累计命中率 + 工具链状态。
+  // 以前只报封面与解析条数,于是"转码缓存最多能占 2GB"这件事完全不可见(它只在超限时才在
+  // 日志里出现一行),而它恰恰是最容易悄悄膨胀的那个。
   ipcMain.handle('get-storage-info', async () => {
-    const dir = coverDir()
-    let size = 0, count = 0
+    const dirSize = (d) => {
+      let size = 0, count = 0
+      try {
+        for (const f of fs.readdirSync(d)) {
+          try { size += fs.statSync(path.join(d, f)).size; count++ } catch {}
+        }
+      } catch (_) {}
+      return { size, count }
+    }
+    const covers = dirSize(coverDir())
+    const transcode = dirSize(transcodeDir())
+    const tools = resolveAudioTools()
+    return {
+      coversSize: covers.size,
+      coversCount: covers.count,
+      mdCacheCount: mdReader.count(),
+      mdCacheStats: mdReader.cacheStats(),
+      transcodeSize: transcode.size,
+      transcodeCount: transcode.count,
+      transcodeLimit: 2 * 1024 * 1024 * 1024,
+      tools: {
+        ffmpeg: tools.ffmpeg,
+        ffprobe: tools.ffprobe,
+        ffmpegOk: isRealTool(tools.ffmpeg),
+        ffprobeOk: isRealTool(tools.ffprobe)
+      }
+    }
+  })
+
+  // 清空转码缓存(用户显式操作:直接删干净,产物按需重新生成)。
+  // 注意别用 sweepTranscodeCache():它只在"超过 2GB 上限"时才删,缓存没超限时点了看不出变化
+  ipcMain.handle('clear-transcode-cache', async () => {
+    const dir = transcodeDir()
+    let removed = 0
+    let size = 0
     try {
-      const files = fs.readdirSync(dir)
-      count = files.length
-      for (const f of files) {
-        try { size += fs.statSync(path.join(dir, f)).size } catch {}
+      for (const f of fs.readdirSync(dir)) {
+        const fp = path.join(dir, f)
+        try {
+          size += fs.statSync(fp).size
+          fs.unlinkSync(fp)
+          removed++
+        } catch (_) {}
       }
     } catch (_) {}
-    return { coversSize: size, coversCount: count, mdCacheCount: mdReader.count() }
+    return { removed, size }
   })
 
   // 清理元数据解析缓存(下次扫描会重新解析,不影响曲库数据)

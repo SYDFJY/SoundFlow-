@@ -566,6 +566,14 @@
           <button class="btn" @click="openLyricManager">打开管理</button>
         </div>
       </div>
+
+      <!-- 诊断:把只存在于日志里的运行时状态摆出来(工具链/缓存/切歌耗时/音频链/失败清单)
+           —— 用户报"卡/慢/怪"时能自查,定位时也不用再靠猜 -->
+      <section class="settings-section">
+        <h2 class="section-title">诊断</h2>
+        <p class="section-desc">运行时状态一览。这些数字平时只在日志里,放在这里便于自查与反馈问题。</p>
+        <DiagnosticsPanel />
+      </section>
     </div>
   </div>
 
@@ -601,6 +609,7 @@ import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { THEME_LIST as themeOptions } from '@/config/themeList'
 import Icon from '@/components/icons/Icon.vue'
+import DiagnosticsPanel from '@/components/DiagnosticsPanel.vue'
 import { confirmDialog } from '@/composables/useConfirm'
 
 const appStore = useAppStore()
@@ -1295,6 +1304,7 @@ async function batchDownloadLyrics() {
   border-bottom: 1px solid var(--border-color); display: flex; align-items: center; gap: 7px;
 }
 /* 分区标题主色竖条(分组视觉统一) */
+.section-desc { font-size: var(--font-size-xs); color: var(--text-tertiary); margin: -6px 0 10px; }
 .section-title::before {
   content: '';
   width: 3px; height: 14px; border-radius: 2px;

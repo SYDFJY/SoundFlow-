@@ -188,7 +188,7 @@
         </div>
       </div>
       <div class="report-stats">
-        <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放记录{{ reportCapped ? '(上限 500)' : '' }}</div></div>
+        <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放次数</div></div>
         <div class="rs-item"><div class="rs-num">{{ reportHours }}</div><div class="rs-label">听歌时长(时)</div></div>
         <div class="rs-item"><div class="rs-num">{{ reportCoverPct }}%</div><div class="rs-label">曲库覆盖</div></div>
       </div>
@@ -234,6 +234,7 @@ import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { formatTimestamp as formatTime } from '@/utils/time'
+import { dayKey } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
 import { confirmDialog } from '@/composables/useConfirm'
 
@@ -316,18 +317,14 @@ onDeactivated(() => { _statsAnimArmed = false })
 onActivated(() => { _statsAnimArmed = true; syncStatsNumbers() })
 
 // 近 7 天趋势(按 history 时间戳聚合)
+// 近 7 天趋势:读按天聚合表(playStats),不用 history ——
+// history 是播放日志、上限 500 条,用它统计时"播得越多越不准"
 const weekTrend = computed(() => {
   const days = []
-  const now = new Date()
   for (let i = 6; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)
-    days.push({ label: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()], count: 0, key: d.toDateString() })
-  }
-  for (const h of musicStore.history) {
-    const d = new Date(h.time)
-    const key = d.toDateString()
-    const target = days.find(x => x.key === key)
-    if (target) target.count++
+    const key = dayKey(Date.now(), -i)
+    const d = new Date(key)
+    days.push({ label: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()], count: (musicStore.playStats[key] || {}).plays || 0, key })
   }
   return days
 })
@@ -495,10 +492,12 @@ const reportHistory = computed(() => {
 // 年度月份热力(1-12 月)
 const yearMonths = computed(() => {
   if (reportRange.value !== 'year') return null
+  const prefix = `${currentYear.value}-`
   const arr = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, count: 0 }))
-  for (const h of yearHistory.value) {
-    const m = new Date(h.time).getMonth()
-    if (m >= 0 && m < 12) arr[m].count++
+  for (const [key, v] of Object.entries(musicStore.playStats)) {
+    if (!key.startsWith(prefix)) continue
+    const m = Number(key.slice(5, 7)) - 1
+    if (m >= 0 && m < 12) arr[m].count += v.plays || 0
   }
   return arr
 })
@@ -540,18 +539,31 @@ const reportTopAlbums = computed(() => {
   }
   return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }))
 })
-// 播放记录条数:历史最多保留 500 条,所以这是"记录数"而不是累计播放次数 ——
-// 后者见总览卡片(按 playCounts 求和)。两者口径不同,标签也就不能都叫"播放次数"。
-const HISTORY_CAP = 500
-const reportTotal = computed(() => reportHistory.value.length)
-const reportCapped = computed(() => musicStore.history.length >= HISTORY_CAP)
+// 报告区间的起止日期键(YYYY-MM-DD 字典序即时间序,区间过滤就是字符串比较)
+function rangeStartKey() {
+  if (reportRange.value === 'year') return `${currentYear.value}-01-01`
+  if (reportRange.value === '7d') return dayKey(Date.now(), -6)
+  if (reportRange.value === '30d') return dayKey(Date.now(), -29)
+  return '0000-00-00'
+}
+/** 区间内的按天聚合汇总(次数与秒数):这是统计口径,不再受播放日志 500 条上限影响 */
+const rangeAgg = computed(() => {
+  const from = rangeStartKey()
+  let plays = 0
+  let seconds = 0
+  for (const [key, v] of Object.entries(musicStore.playStats)) {
+    if (key < from) continue
+    plays += v.plays || 0
+    seconds += v.seconds || 0
+  }
+  return { plays, seconds }
+})
+const reportTotal = computed(() => rangeAgg.value.plays)
 // 听歌时长:历史记录里没有时长字段,按 path 关联曲库取 —— 与总览卡片同一口径,
 // 对已有历史记录同样准确(此前累加 h.duration 恒为 0,这一格永远是 0)
-const reportHours = computed(() => {
-  const dur = new Map(musicStore.songs.map(s => [s.path, s.duration || 0]))
-  const secs = reportHistory.value.reduce((a, h) => a + (dur.get(h.path) || 0), 0)
-  return Math.round(secs / 3600)
-})
+// 听歌时长:直接读按天聚合里累计的秒数(播放时按歌曲时长累加),
+// 比"用历史记录条数 × 时长"准确,也不再受记录数上限影响
+const reportHours = computed(() => Math.round(rangeAgg.value.seconds / 3600))
 const reportCoverPct = computed(() => {
   const played = new Set(reportHistory.value.map(h => h.path))
   return musicStore.songs.length ? Math.round(played.size / musicStore.songs.length * 100) : 0

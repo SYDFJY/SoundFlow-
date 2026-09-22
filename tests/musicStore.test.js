@@ -313,3 +313,56 @@ describe('musicStore 移除歌曲', () => {
     expect(store.favorites.has('a.mp3')).toBe(false)
   })
 })
+
+/**
+ * 按天聚合的播放统计(playStats):统计页的趋势/今日/报告时长都以它为准。
+ * 为什么不用 history 算:history 是播放日志、上限 500 条,播得越多统计越不准
+ * (表现为"统计页的数字比实际少"),而 playStats 的数据量只与天数有关。
+ */
+describe('musicStore 按天播放统计', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('播放时按天累计次数与时长', () => {
+    const store = useMusicStore()
+    store.songs = [{ path: 'a.mp3', title: 'A', artist: 'x', album: 'y', duration: 200 }]
+    store.incrementPlayCount('a.mp3')
+    store.incrementPlayCount('a.mp3')
+    const today = Object.keys(store.playStats).at(-1)
+    expect(store.playStats[today].plays).toBe(2)
+    expect(store.playStats[today].seconds).toBe(400) // 200s × 2
+    expect(store.todayPlays).toBe(2)
+  })
+
+  it('时长拿不到(曲库无此歌)时只计次数,不写 NaN', () => {
+    const store = useMusicStore()
+    store.incrementPlayCount('ghost.mp3')
+    const today = Object.keys(store.playStats).at(-1)
+    expect(store.playStats[today].plays).toBe(1)
+    expect(store.playStats[today].seconds).toBe(0)
+  })
+
+  it('回填:聚合表为空、而播放日志有记录时按天聚一次(老数据升级)', () => {
+    const store = useMusicStore()
+    store.songs = [{ path: 'a.mp3', title: 'A', duration: 60 }]
+    const t1 = Date.now() - 86400000
+    const t2 = Date.now()
+    store.history = [
+      { path: 'a.mp3', title: 'A', time: t2 },
+      { path: 'a.mp3', title: 'A', time: t1 },
+      { path: 'a.mp3', title: 'A', time: t1 }
+    ]
+    store.backfillPlayStats()
+    const keys = Object.keys(store.playStats).sort()
+    expect(keys.length).toBe(2) // 两个不同的日期
+    expect(store.playStats[keys.at(-1)]).toEqual({ plays: 1, seconds: 60 })
+    expect(store.playStats[keys[0]]).toEqual({ plays: 2, seconds: 120 })
+  })
+
+  it('已经有聚合数据时不覆盖回填(避免每次启动重算)', () => {
+    const store = useMusicStore()
+    store.playStats = { '2020-01-01': { plays: 99, seconds: 99 } }
+    store.history = [{ path: 'a.mp3', time: Date.now() }]
+    store.backfillPlayStats()
+    expect(store.playStats).toEqual({ '2020-01-01': { plays: 99, seconds: 99 } })
+  })
+})

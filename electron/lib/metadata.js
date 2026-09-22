@@ -42,7 +42,8 @@ function createMetadataReader({ cachePath, saveJson, covers }) {
   let entries = {}
   let loaded = false
   let saveTimer = null
-  let stats = { hit: 0, miss: 0 }
+  let stats = { hit: 0, miss: 0 }   // 本次扫描(打完日志即清零)
+  const total = { hit: 0, miss: 0 }  // 累计(诊断面板读这个)
   let parseFile = null
 
   async function ensureParseFile() {
@@ -86,7 +87,14 @@ function createMetadataReader({ cachePath, saveJson, covers }) {
   function logStats(tag) {
     const { hit, miss } = stats
     if (hit + miss > 0) log.info(`[元数据缓存] ${tag}: 命中 ${hit} / 解析 ${miss}(节省 ${hit} 次解析)`)
+    total.hit += hit
+    total.miss += miss
     stats = { hit: 0, miss: 0 }
+  }
+
+  /** 累计命中情况(诊断面板用):logStats 只在日志里报"本次扫描",这里给累计值 */
+  function cacheStats() {
+    return { hit: total.hit, miss: total.miss, entries: count() }
   }
 
   function count() { return Object.keys(entries).length }
@@ -209,7 +217,7 @@ function createMetadataReader({ cachePath, saveJson, covers }) {
     } catch { return null }
   }
 
-  return { parseMetadata, parseFilename, readPicture, logStats, count, clear, load, cachedFingerprints, ensureParseFile }
+  return { parseMetadata, parseFilename, readPicture, logStats, cacheStats, count, clear, load, cachedFingerprints, ensureParseFile }
 }
 
 module.exports = { createMetadataReader, parseFilename, FILENAME_SEPARATORS }

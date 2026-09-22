@@ -29,6 +29,10 @@ export const DATASETS = {
   playlists: { localKey: 'soundflow_playlists', storeKey: 'playlists', owner: 'main', conflict: 'non-empty-wins' },
   playCounts: { localKey: 'soundflow_play_counts', storeKey: 'playCounts', owner: 'main', conflict: 'non-empty-wins' },
   history: { localKey: 'soundflow_history', storeKey: 'history', owner: 'main', conflict: 'non-empty-wins' },
+  // 按天聚合的播放统计(日期 → {plays, seconds}):统计页的趋势/今日/报告时长都读它。
+  // 为什么不能只靠 history:history 是"播放日志",上限 500 条,超过后统计口径就断了;
+  // 而"累计播放"用的是无上限的 playCounts —— 两者会在长曲库上分叉。
+  playStats: { localKey: 'soundflow_play_stats', storeKey: 'playStats', owner: 'main', conflict: 'non-empty-wins' },
   scanFolders: { localKey: 'soundflow_scan_folders', storeKey: 'scanFolders', owner: 'main', conflict: 'non-empty-wins' },
   lyricFolders: { localKey: 'soundflow_lyric_folders', storeKey: 'lyricFolders', owner: 'main', conflict: 'non-empty-wins' },
   // 播放侧:两侧都写,恢复时同样非空优先
