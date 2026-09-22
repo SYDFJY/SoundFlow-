@@ -17,7 +17,7 @@
       <div class="diag-label">
         <span class="diag-title">缓存占用</span>
         <span class="diag-desc">
-          封面 {{ covers.count }} 张 · {{ fmtBytes(covers.size) }} ·
+          封面 {{ covers.count }} 张 · {{ fmtBytes(covers.size) }}<template v-if="custom.count">（自选 {{ custom.count }} 张,清缓存不删）</template> ·
           解析 {{ md.count }} 条<template v-if="md.rate !== null">（命中率 {{ md.rate }}%）</template> ·
           转码 {{ transcode.count }} 个 · {{ fmtBytes(transcode.size) }}<template v-if="transcode.limit">（上限 {{ fmtBytes(transcode.limit) }}）</template>
         </span>
@@ -87,6 +87,49 @@
       </div>
     </div>
 
+    <!-- 响度分析:慢速后台任务(每首 1.5 秒),不显示进度用户会以为"没生效" -->
+    <div class="diag-row">
+      <div class="diag-label">
+        <span class="diag-title">响度分析(响度均衡)</span>
+        <span class="diag-desc">
+          <template v-if="!loudness.enabled">未开启(设置页开启后才会分析)</template>
+          <template v-else>
+            已分析 {{ loudness.analyzed }}<template v-if="library.total"> / {{ library.total }}</template> 首<template v-if="loudness.rate !== null">（{{ loudness.rate }}%）</template>
+            <template v-if="loudness.queued"> · 队列还剩 {{ loudness.queued }} 首</template>
+            <template v-else-if="!loudness.running"> · 队列已空</template>
+            · 每首约 1.5 秒(后台慢跑,不抢 CPU)
+          </template>
+        </span>
+      </div>
+    </div>
+
+    <!-- BPM 分析:按需分析,覆盖率与响度一样是"看不见的进度" -->
+    <div class="diag-row">
+      <div class="diag-label">
+        <span class="diag-title">BPM 分析</span>
+        <span class="diag-desc">
+          已缓存 {{ bpm.count }} 首<template v-if="library.total"> / {{ library.total }} 首（{{ bpm.rate }}%）</template>
+          （打开播放页时按需分析,不批量跑）
+        </span>
+      </div>
+    </div>
+
+    <!-- 文件夹监控:开关与"上次真的检测到变化"的时间,用来判断监控是否在工作 -->
+    <div class="diag-row">
+      <div class="diag-label">
+        <span class="diag-title">文件夹监控</span>
+        <span class="diag-desc">
+          <template v-if="!watch.enabled">已关闭(曲库目录变动需手动重新扫描)</template>
+          <template v-else>
+            监控 {{ watch.dirs }} 个曲库目录 ·
+            <template v-if="watch.lastEventAt">上次检测到变动 {{ fmtTime(watch.lastEventAt) }}</template>
+            <template v-else>本次运行还没有检测到变动</template>
+          </template>
+        </span>
+      </div>
+      <span class="diag-badge" :class="watch.enabled ? 'ok' : ''">{{ watch.enabled ? '监控中' : '已关闭' }}</span>
+    </div>
+
     <!-- 上次扫描:失败数此前只弹一次 toast,过眼就没了 -->
     <div class="diag-row">
       <div class="diag-label">
@@ -118,6 +161,30 @@ const failures = ref([])
 const tools = computed(() => info.value.tools || {})
 const covers = computed(() => ({ count: info.value.coversCount || 0, size: info.value.coversSize || 0 }))
 const transcode = computed(() => ({ count: info.value.transcodeCount || 0, size: info.value.transcodeSize || 0, limit: info.value.transcodeLimit || 0 }))
+const custom = computed(() => ({ count: info.value.customCoverCount || 0, size: info.value.customCoverSize || 0 }))
+const loudness = computed(() => {
+  const l = info.value.loudness || {}
+  const total = musicStore.songs.length
+  return {
+    enabled: !!playerStore.replayGainEnabled,
+    analyzed: l.analyzed || 0,
+    queued: l.queued || 0,
+    running: !!l.running,
+    rate: formatPercent(l.analyzed || 0, Math.max(0, total - (l.analyzed || 0))) // 已分析/(曲库总数)
+  }
+})
+const library = computed(() => ({ total: musicStore.songs.length }))
+const bpm = computed(() => {
+  // BPM 缓存是播放页按需写的(键在 storageSchema 的 cache 分类里):这里读它算覆盖率
+  let count = 0
+  try {
+    const raw = JSON.parse(localStorage.getItem('soundflow_bpm_cache') || '{}')
+    count = raw && typeof raw === 'object' ? Object.keys(raw).length : 0
+  } catch (_) {}
+  const total = musicStore.songs.length
+  return { count, rate: total ? Math.round((count / total) * 100) : 0 }
+})
+const watch = computed(() => info.value.folderWatch || { enabled: false, dirs: 0, lastEventAt: 0 })
 const md = computed(() => {
   const s = info.value.mdCacheStats || {}
   return { count: info.value.mdCacheCount || 0, rate: formatPercent(s.hit, s.miss) }
