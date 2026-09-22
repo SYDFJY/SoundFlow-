@@ -1,4 +1,17 @@
 <template>
+  <!-- 玻璃主题的边缘折射滤镜(L2,仅硬件加速时被引用)。
+       两个方向各一张"法线贴图":通道设计成**只有一个通道变化、另一通道恒 128(=不位移)**,
+       所以横向贴图只沿 X 弯、纵向贴图只沿 Y 弯 —— 一次只做一轴,合起来才是正确的二维折射。
+       贴图中心是中性值(128):中间不弯、只有靠近边缘才弯,这才是玻璃的边缘折射,
+       而不是整片扭曲。width/height=0 是必须的(隐藏但仍在渲染树里,否则 backdrop-filter 引用不到) -->
+  <svg class="refract-defs" width="0" height="0" aria-hidden="true" focusable="false">
+    <filter id="sf-glass-refract" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feImage result="hmap" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cdefs%3E%3ClinearGradient id='h' x1='0' y1='0' x2='1' y2='0'%3E%3Cstop offset='0' stop-color='%23ff8080'/%3E%3Cstop offset='0.45' stop-color='%23808080'/%3E%3Cstop offset='0.55' stop-color='%23808080'/%3E%3Cstop offset='1' stop-color='%23008080'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='240' height='240' fill='url(%23h)'/%3E%3C/svg%3E" />
+      <feDisplacementMap in="SourceGraphic" in2="hmap" scale="16" xChannelSelector="R" yChannelSelector="G" result="dx" />
+      <feImage result="vmap" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cdefs%3E%3ClinearGradient id='v' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2380ff80'/%3E%3Cstop offset='0.45' stop-color='%23808080'/%3E%3Cstop offset='0.55' stop-color='%23808080'/%3E%3Cstop offset='1' stop-color='%23800080'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='240' height='240' fill='url(%23v)'/%3E%3C/svg%3E" />
+      <feDisplacementMap in="dx" in2="vmap" scale="16" xChannelSelector="R" yChannelSelector="G" />
+    </filter>
+  </svg>
   <div class="app" :class="[`theme-${appStore.theme}`]">
     <!-- 拖放导入遮罩 -->
     <div v-if="dragOver" class="drop-overlay">
@@ -428,6 +441,12 @@ onUnmounted(() => {
   musicStore.saveToStorage(true)
 })
 </script>
+
+<style>
+/* 玻璃折射滤镜的容器:必须留在渲染树里(width/height=0 + overflow hidden),
+   display:none 的 svg 里的滤镜无法被 backdrop-filter 引用 */
+.refract-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+</style>
 
 <style scoped>
 /* 页面切换:直接显示(用户反馈过渡造成"慢半拍",移除动画) */

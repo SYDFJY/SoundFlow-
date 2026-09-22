@@ -151,3 +151,43 @@ body.hw-accel.glass-theme .player-bar {
   backdrop-filter: blur(18px) saturate(1.4);
   -webkit-backdrop-filter: blur(18px) saturate(1.4);
 }
+
+/* ===== L2:边缘折射(仅硬件加速)=====
+   为什么只有硬件加速才开(实测,900×620 窗口、玻璃后方的条纹持续移动 2 秒平均帧率):
+     软件渲染:纯模糊 85fps → 加折射 42fps(腰斩;CPU 逐像素重采样)
+     硬件加速:纯模糊 129fps → 加折射 129fps(无差异)
+   注:必须让玻璃后方**有东西在动**才测得出代价 —— 静态背景下 rAF 只是空转,
+   两种情况都会跑满(第一次测量就是这么得出"没有代价"的错误结论的)。
+   滤镜定义在 App.vue 的隐藏 <svg> 里(#sf-glass-refract):两轴分离的位移,中心中性,
+   所以是"边缘弯、中间透"的真玻璃味道,而不是整片扭曲。
+
+   只给**少数几处**用(顶栏/播放栏/浮层面板/弹窗),不是全元素一刀切:
+   折射每开一处都要多一次全表面重采样,面积越大代价越高。 */
+body.hw-accel.glass-theme .topbar,
+body.hw-accel.glass-theme .player-bar,
+body.hw-accel.glass-theme .pop-panel,
+body.hw-accel.glass-theme .modal-card,
+body.hw-accel.glass-theme .context-menu {
+  backdrop-filter: blur(12px) saturate(1.35) url(#sf-glass-refract);
+  -webkit-backdrop-filter: blur(12px) saturate(1.35) url(#sf-glass-refract);
+}
+/* 关掉折射的入口:设置项钩子(与 no-glass-anim 同一套约定) */
+body.no-glass-refract.glass-theme .topbar,
+body.no-glass-refract.glass-theme .player-bar,
+body.no-glass-refract.glass-theme .pop-panel,
+body.no-glass-refract.glass-theme .modal-card,
+body.no-glass-refract.glass-theme .context-menu {
+  backdrop-filter: blur(12px) saturate(1.35);
+  -webkit-backdrop-filter: blur(12px) saturate(1.35);
+}
+/* 系统"减少动效"时同样退回纯模糊(折射本身不闪,但与其它降级保持一致) */
+@media (prefers-reduced-motion: reduce) {
+  body.hw-accel.glass-theme .topbar,
+  body.hw-accel.glass-theme .player-bar,
+  body.hw-accel.glass-theme .pop-panel,
+  body.hw-accel.glass-theme .modal-card,
+  body.hw-accel.glass-theme .context-menu {
+    backdrop-filter: blur(12px) saturate(1.35);
+    -webkit-backdrop-filter: blur(12px) saturate(1.35);
+  }
+}
