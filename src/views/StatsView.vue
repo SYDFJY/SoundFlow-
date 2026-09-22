@@ -180,7 +180,7 @@
         </div>
       </div>
       <div class="report-stats">
-        <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放次数</div></div>
+        <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放记录{{ reportCapped ? '(上限 500)' : '' }}</div></div>
         <div class="rs-item"><div class="rs-num">{{ reportHours }}</div><div class="rs-label">听歌时长(时)</div></div>
         <div class="rs-item"><div class="rs-num">{{ reportCoverPct }}%</div><div class="rs-label">曲库覆盖</div></div>
       </div>
@@ -221,7 +221,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
@@ -282,13 +282,24 @@ function animateNumber(to, animRef) {
   }
   requestAnimationFrame(step)
 }
-onMounted(() => {
+// 四个总览数字必须**跟着数据走**:它们绑的是动画 ref,而路由视图被 KeepAlive 缓存,
+// onMounted 一个会话只跑一次 —— 只在 onMounted 里写一次的话,数字会冻结在首次进入统计页
+// 时的值(表现为"切歌不更新、要重启才更新";侧栏那份是 computed 直绑所以实时)。
+function syncStatsNumbers() {
   animateNumber(totalPlays.value, totalPlaysAnim)
   animateNumber(totalHours.value, totalHoursAnim)
   animateNumber(artistCount.value, artistCountAnim)
   animateNumber(favCount.value, favCountAnim)
-})
-onUnmounted(() => { _statsAnimArmed = false })
+}
+watch(totalPlays, v => animateNumber(v, totalPlaysAnim))
+watch(totalHours, v => animateNumber(v, totalHoursAnim))
+watch(artistCount, v => animateNumber(v, artistCountAnim))
+watch(favCount, v => animateNumber(v, favCountAnim))
+onMounted(() => syncStatsNumbers())
+// KeepAlive 下 onUnmounted 不会触发,要用 onDeactivated/onActivated:
+// 离开时停掉动画链,回来时重新对齐一次(在缓存里期间数据可能已经变了)
+onDeactivated(() => { _statsAnimArmed = false })
+onActivated(() => { _statsAnimArmed = true; syncStatsNumbers() })
 
 // 近 7 天趋势(按 history 时间戳聚合)
 const weekTrend = computed(() => {
@@ -515,9 +526,16 @@ const reportTopAlbums = computed(() => {
   }
   return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }))
 })
+// 播放记录条数:历史最多保留 500 条,所以这是"记录数"而不是累计播放次数 ——
+// 后者见总览卡片(按 playCounts 求和)。两者口径不同,标签也就不能都叫"播放次数"。
+const HISTORY_CAP = 500
 const reportTotal = computed(() => reportHistory.value.length)
+const reportCapped = computed(() => musicStore.history.length >= HISTORY_CAP)
+// 听歌时长:历史记录里没有时长字段,按 path 关联曲库取 —— 与总览卡片同一口径,
+// 对已有历史记录同样准确(此前累加 h.duration 恒为 0,这一格永远是 0)
 const reportHours = computed(() => {
-  const secs = reportHistory.value.reduce((a, h) => a + (h.duration || 0), 0)
+  const dur = new Map(musicStore.songs.map(s => [s.path, s.duration || 0]))
+  const secs = reportHistory.value.reduce((a, h) => a + (dur.get(h.path) || 0), 0)
   return Math.round(secs / 3600)
 })
 const reportCoverPct = computed(() => {

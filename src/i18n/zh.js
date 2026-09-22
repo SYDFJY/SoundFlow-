@@ -71,6 +71,8 @@ export default {
 
   // 播放页
   'playerView.cover': '封面',
+  'playerView.coverChange': '更换封面',
+  'playerView.coverRestore': '恢复原封面',
   'playerView.lyrics': '歌词',
   'playerView.back': '返回',
   'playerView.queue': '播放列表',

@@ -80,7 +80,10 @@
           <div v-if="currentSongInfo.length" class="song-info" :title="infoTitle" tabindex="0">
             <span v-for="(p, i) in currentSongInfo" :key="i" class="si-part" :class="p.tone">{{ p.text }}</span>
           </div>
-          <button v-if="playerStore.currentSong && hasCoverAPI" class="cover-swap" @click="swapCover"><Icon name="cover" :size="14" />更换封面</button>
+          <div v-if="playerStore.currentSong && hasCoverAPI" class="cover-actions">
+            <button class="cover-swap" @click="swapCover"><Icon name="cover" :size="14" />{{ t('playerView.coverChange') }}</button>
+            <button v-if="hasCustomCover" class="cover-swap" @click="restoreCover"><Icon name="refresh" :size="14" />{{ t('playerView.coverRestore') }}</button>
+          </div>
         </div>
         </div>
         <!-- 大屏分栏:右侧歌词(整行高亮,点击跳转) -->
@@ -482,6 +485,7 @@ import NextTrackHint from '@/components/NextTrackHint.vue'
 import QueuePanel from '@/components/QueuePanel.vue'
 import { useVolumeControl } from '@/composables/useVolumeControl'
 import { buildWordSegments } from '@/utils/lyricTiming'
+import { isCustomCoverUrl } from '@/utils/cover'
 import { useSpectrum } from '@/composables/useSpectrum'
 import { usePlayerBackground } from '@/composables/usePlayerBackground'
 
@@ -627,6 +631,27 @@ const abTitle = computed(() => {
 const bpmCache = ref((() => { try { return JSON.parse(localStorage.getItem('soundflow_bpm_cache') || '{}') } catch { return {} } })())
 function _saveBpmCache() { try { localStorage.setItem('soundflow_bpm_cache', JSON.stringify(bpmCache.value)) } catch {} }
 let _bpmPendingSet = new Set() // 并发分析中歌曲路径集合,避免互相清空 pending 导致重复分析
+// 当前是否用的是"自定义封面":select-cover 把用户选的图复制成 covers/pl_<时间戳>.<ext>,
+// 曲库只记 URL,所以按这个命名判断即可 —— 对"功能上线前就换过封面"的老数据同样成立,
+// 不需要在曲库里新增字段(两套来源就看不出差别了)。
+const hasCustomCover = computed(() => isCustomCoverUrl(playerStore.currentSong?.coverUrl))
+
+// 恢复原封面:原封面文件是 <hash>-768.jpg,与自定义封面互不覆盖,因此它一直在磁盘上
+async function restoreCover() {
+  const s = playerStore.currentSong
+  if (!s || !s.path || !window.electronAPI?.restoreCover) return
+  const r = await window.electronAPI.restoreCover(s.path).catch(() => null)
+  if (!r || !r.ok || !r.url) {
+    window.$toast?.('没能找回原封面(可能已被"清封面缓存"清掉,重新扫描该目录会再次生成)', 'warning', 5000)
+    return
+  }
+  s.coverUrl = r.url
+  // 一次性重试图标复位:否则下次封面加载失败时不再自动重试
+  delete s._coverRetried
+  musicStore.updateSong(s.path, { coverUrl: r.url })
+  window.$toast?.(r.reextracted ? '已按音频标签里的原封面恢复' : '已恢复原封面', 'success')
+}
+
 // 更换当前歌曲封面(信息区 hover 操作)
 async function swapCover() {
   const s = playerStore.currentSong
@@ -1316,7 +1341,9 @@ async function searchLyric() {
   transform: translateY(4px);
   transition: opacity 0.25s, transform 0.25s, background 0.2s;
 }
-.song-meta:hover .cover-swap { opacity: 1; transform: translateY(0); }
+.cover-actions { display: flex; gap: 8px; margin-top: 12px; }
+.cover-actions .cover-swap { margin-top: 0; }
+.song-meta:hover .cover-actions .cover-swap { opacity: 1; transform: translateY(0); }
 .cover-swap:hover { background: rgba(255,255,255,0.18); }
 /* 音质信息行:结构化片段 + 语义着色(转码=警示色,响度与音效生效=成功色) */
 .song-info { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; font-size: 11px; color: rgba(255,255,255,0.3); margin-top: 6px; letter-spacing: 0.3px; }
@@ -1884,6 +1911,13 @@ async function searchLyric() {
   --bg-hover: rgba(255, 255, 255, 0.08);
   --bg-active: rgba(255, 255, 255, 0.12);
   --border-color: rgba(255, 255, 255, 0.12);
+  /* 输入框 token 必须一起重映射:这些面板不管什么主题都强制深色、文字是近白,
+     而浅色主题下 --input-bg 是近白 —— 漏掉这一组会让音量/倍速/音调的数值输入框
+     白字压白底(实测对比度约 1.03:1,完全看不见)。--bg-secondary 是输入框聚焦态用的。 */
+  --input-bg: rgba(255, 255, 255, 0.08);
+  --input-border: rgba(255, 255, 255, 0.14);
+  --input-focus-ring: rgba(120, 170, 255, 0.22);
+  --bg-secondary: rgba(255, 255, 255, 0.12);
 }
 body.hw-accel .queue-panel,
 body.hw-accel .eq-panel,

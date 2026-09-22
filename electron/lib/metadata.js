@@ -194,7 +194,22 @@ function createMetadataReader({ cachePath, saveJson, covers }) {
     return out
   }
 
-  return { parseMetadata, parseFilename, logStats, count, clear, load, cachedFingerprints, ensureParseFile }
+  /**
+   * 读音频标签里的内嵌封面字节。
+   * 供三处共用:extract-cover、get-cover 的兜底、以及"恢复原封面"在缓存被清后重新提取。
+   * 注意不要在这里落盘 —— 是否缓存、缓存到哪由调用方决定。
+   */
+  async function readPicture(filePath) {
+    await ensureParseFile()
+    if (!parseFile) return null
+    try {
+      const metadata = await parseFile(filePath, { skipCovers: false })
+      const pic = metadata.common?.picture?.[0]
+      return pic ? { data: Buffer.from(pic.data), format: pic.format || 'image/jpeg' } : null
+    } catch { return null }
+  }
+
+  return { parseMetadata, parseFilename, readPicture, logStats, count, clear, load, cachedFingerprints, ensureParseFile }
 }
 
 module.exports = { createMetadataReader, parseFilename, FILENAME_SEPARATORS }

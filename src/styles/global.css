@@ -389,7 +389,11 @@ input, select, textarea {
 /* 文本输入基座(设置页行式输入、搜索框、数字输入共用)。
    聚焦反馈取自 uiverse.io 的 Inputs 做法:边框变主色 + 外扩一圈柔和光环,
    并给未聚焦态一点内阴影表示"可输入"。只改基座,各页面结构不动。 */
-input[type="text"], input[type="search"], input[type="number"] {
+/* 注意这里的 :not(.vol-input):音量/倍速/音调的数值输入框用的是共用类 .vol-input,
+   而本基座规则(元素+属性选择器,优先级 0-1-1)会压过它(0-1-0),把它自己的背景/内边距
+   全部接管 —— 曾因此把浅色主题的 --input-bg(近白)盖到播放页"强制深色 + 近白文字"的
+   参数面板上,数值直接看不见。把共用控件排除掉,让它那份样式稳定生效。 */
+input[type="text"]:not(.vol-input), input[type="search"]:not(.vol-input), input[type="number"]:not(.vol-input) {
   background: var(--input-bg, var(--bg-hover));
   border: 1px solid var(--input-border, var(--border-color));
   border-radius: var(--radius-md);
@@ -397,10 +401,10 @@ input[type="text"], input[type="search"], input[type="number"] {
   box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.06);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
-input[type="text"]:hover, input[type="search"]:hover, input[type="number"]:hover {
+input[type="text"]:not(.vol-input):hover, input[type="search"]:not(.vol-input):hover, input[type="number"]:not(.vol-input):hover {
   border-color: var(--color-primary-alpha, var(--border-color));
 }
-input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus {
+input[type="text"]:not(.vol-input):focus, input[type="search"]:not(.vol-input):focus, input[type="number"]:not(.vol-input):focus {
   background: var(--bg-secondary);
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--input-focus-ring, var(--color-primary-alpha));
@@ -529,6 +533,8 @@ input[type="number"].no-spinner::-webkit-outer-spin-button { -webkit-appearance:
 .rename-bad { flex-shrink: 0; font-size: 11px; color: #ff6b6b; }
 
 /* ===== 参数面板设计系统(倍速/变调/EQ/频谱/音量/队列共用)===== */
+/* 注意:本类跟随主题(--panel-* 会按主题翻转),所以输入框 token 不需要在这里重映射。
+   需要重映射的是"不管什么主题都强制深色"的那种面板,见 PlayerView 末尾的浮层规则。 */
 .pop-panel {
   background: var(--panel-bg);
   border: 1px solid var(--panel-border);

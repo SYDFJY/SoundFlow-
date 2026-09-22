@@ -217,18 +217,6 @@ function needsTranscode(filePath) { return transcoder().needsTranscode(filePath)
 function transcodeAudioQueued(filePath, onProgress) { return transcoder().queue(filePath, onProgress) }
 function sweepTranscodeCache(force = false) { return transcoder().sweep(force) }
 
-// ========== music-metadata ==========
-let parseFile = null
-async function ensureParseFile() {
-  if (parseFile) return
-  try {
-    const mm = await import('music-metadata')
-    parseFile = mm.parseFile
-  } catch (e) {
-    console.error('[元数据] music-metadata 加载失败:', e.message)
-  }
-}
-
 // ========== 封面 ==========
 // 缓存与提取已拆到 lib/covers.js(缓存目录由这里注入)
 const { createCoverStore } = require('./lib/covers')
@@ -1157,17 +1145,10 @@ function setupIPC() {
     return await parseMetadata(filePath)
   })
 
-  // 提取封面
+  // 提取封面(内嵌封面优先,退化为同目录图片)
   ipcMain.handle('extract-cover', async (event, filePath) => {
-    if (parseFile) {
-      try {
-        const metadata = await parseFile(filePath, { skipCovers: false })
-        if (metadata.common.picture && metadata.common.picture.length > 0) {
-          const pic = metadata.common.picture[0]
-          return `data:${pic.format || 'image/jpeg'};base64,${Buffer.from(pic.data).toString('base64')}`
-        }
-      } catch {}
-    }
+    const pic = await mdReader.readPicture(filePath)
+    if (pic) return `data:${pic.format};base64,${pic.data.toString('base64')}`
     return findCoverInDir(filePath)
   })
 
@@ -1199,13 +1180,10 @@ function setupIPC() {
         url = await withCoverSlot(async () => {
           // 排队期间可能已被其他请求解析完成
           if (coverUrlCache.has(songPath)) return coverUrlCache.get(songPath)
-          if (!parseFile) await ensureParseFile()
-          if (parseFile) {
-            try {
-              const metadata = await parseFile(songPath, { skipCovers: false })
-              const pic = metadata.common.picture?.[0]
-              if (pic) return saveCoverFile(songPath, Buffer.from(pic.data))
-            } catch {}
+          const pic = await mdReader.readPicture(songPath)
+          if (pic) {
+            const url = saveCoverFile(songPath, pic.data)
+            if (url) return url
           }
           return findCoverInDir(songPath)
         })
@@ -1215,6 +1193,34 @@ function setupIPC() {
     } catch (e) {
       console.error('[封面] 获取失败:', e.message)
       return null
+    }
+  })
+
+  /**
+   * 恢复原封面:换过封面之后(曲库指向 covers/pl_*),把曲库重新指回这首歌**原本的封面**。
+   *
+   * 为什么几乎免费:原封面是 <hash>-768.jpg(按歌曲路径 hash),自定义封面是 pl_<时间戳>*,
+   * 两套文件名互不覆盖;且封面写入有"已存在就不写"的短路,所以原封面文件一直都在。
+   * 这里只负责把它找回来:缓存被"清封面缓存"清过则从音频标签重新提取。
+   */
+  ipcMain.handle('restore-cover', async (event, songPath) => {
+    try {
+      if (typeof songPath !== 'string' || !songPath) return { ok: false, reason: 'bad-path' }
+      // 必须清掉这张缓存映射,否则下一次 get-cover 会继续吐旧 URL
+      coverUrlCache.delete(songPath)
+      const fp = coverPathFor(songPath)
+      if (fs.existsSync(fp)) return { ok: true, url: `file:///${fp.replace(/\\/g, '/')}` }
+      const pic = await mdReader.readPicture(songPath)
+      if (pic) {
+        const url = saveCoverFile(songPath, pic.data)
+        if (url) return { ok: true, url, reextracted: true }
+      }
+      const dirUrl = findCoverInDir(songPath)
+      if (dirUrl) return { ok: true, url: dirUrl, reextracted: true }
+      return { ok: false, reason: 'no-cover' }
+    } catch (e) {
+      log.warn('[封面] 恢复原封面失败:', e && e.message)
+      return { ok: false, reason: 'error' }
     }
   })
 

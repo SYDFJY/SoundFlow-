@@ -157,6 +157,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveThemeFile: (content) => ipcRenderer.invoke('save-theme-file', content),
   openThemeFile: () => ipcRenderer.invoke('open-theme-file'),
   selectCover: () => ipcRenderer.invoke('select-cover'),
+  restoreCover: (songPath) => ipcRenderer.invoke('restore-cover', songPath),
   setLoginItem: (enabled) => ipcRenderer.invoke('set-login-item', enabled),
   getLoginItem: () => ipcRenderer.invoke('get-login-item'),
 

@@ -71,6 +71,8 @@ export default {
 
   // Player page
   'playerView.cover': 'Cover',
+  'playerView.coverChange': 'Change cover',
+  'playerView.coverRestore': 'Restore original',
   'playerView.lyrics': 'Lyrics',
   'playerView.back': 'Back',
   'playerView.queue': 'Queue',

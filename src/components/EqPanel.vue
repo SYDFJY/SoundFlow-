@@ -205,6 +205,12 @@ onMounted(() => { if (props.show) nextTick(drawEqCurve) })
   --border-color: rgba(255,255,255,0.12);
   /* 深色面板内让开关 OFF 态轨道边框可见(全局 --panel-border 在浅色主题下偏暗) */
   --panel-border: rgba(255,255,255,0.3);
+  /* 输入框 token 一并重映射:这个面板不依赖主题,而浅色主题下 --input-bg 是近白,
+     文字却是近白 —— 漏掉这组会让面板里的文本输入框白字压白底(播放页参数面板踩过同一个坑) */
+  --input-bg: rgba(255,255,255,0.08);
+  --input-border: rgba(255,255,255,0.14);
+  --input-focus-ring: rgba(120, 170, 255, 0.22);
+  --bg-secondary: rgba(255,255,255,0.12);
 }
 .queue-header {
   display: flex; align-items: center; gap: 8px;
