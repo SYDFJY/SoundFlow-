@@ -35,8 +35,11 @@ describe('isCustomCoverUrl', () => {
   it('两边是同一套命名约定:select-cover 生成的名字必须被判为自定义封面', () => {
     // 直接读主进程源码取那段命名逻辑,避免"改了生成规则、判定没跟着改"这类漂移
     const main = fs.readFileSync(path.join(process.cwd(), 'electron', 'main.js'), 'utf8')
-    const m = /'pl_' \+ Date\.now\(\) \+ path\.extname\(src\)/.exec(main)
-    expect(m, 'main.js 里 select-cover 的命名规则变了,请同步更新本判定').toBeTruthy()
+    // 自选封面的命名已集中到 saveCustomCover(select-cover 与 download-cover 共用),
+    // 目录也从 covers/ 换到 covers-custom/ —— 这里断言的是"命名规则本身"没变
+    const m = /'pl_' \+ Date\.now\(\) \+ ext/.exec(main)
+    expect(m, 'saveCustomCover 的命名规则变了,请同步更新本判定').toBeTruthy()
+    expect(main, '自选封面应当写在 covers-custom 目录(与可重建的缓存分开)').toMatch(/covers-custom/)
     expect(isCustomCoverUrl('file:///C:/covers/pl_1758000000000.jpg')).toBe(true)
   })
 })

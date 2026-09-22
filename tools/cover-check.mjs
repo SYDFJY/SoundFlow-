@@ -4,7 +4,7 @@
  * 为什么不能只靠单测:这条链跨了三层 —— 音频标签里的内嵌图 → 封面缓存文件 →
  * 曲库记录的 coverUrl。任何一层断了,用户看到的就是"点了恢复没反应"或"恢复成了别的图"。
  *
- * 覆盖四种情形:
+ * 覆盖五种情形:
  *   1. 有内嵌封面的歌:换过自定义封面后,restore-cover 能把封面接回那张原图;
  *   2. 原封面缓存文件被"清封面缓存"清掉:restore-cover 从音频标签重新提取并落盘;
  *   3. 没有任何封面的歌:明确返回 {ok:false, reason:'no-cover'};
@@ -137,13 +137,27 @@ app.whenReady().then(async () => {
     check('明确返回 no-cover(而不是假装成功)', !!(r3 && r3.ok === false && r3.reason === 'no-cover'), JSON.stringify(r3))
   }
 
-  console.log('情形 4:非法路径不炸')
+  console.log('情形 4:清封面缓存不得删用户自选封面')
+  {
+    fs.mkdirSync(coversDir, { recursive: true })
+    // 造一个"缓存文件"与一个"用户自选封面"(历史遗留的 pl_* 就在缓存目录里)
+    const cacheFile = path.join(coversDir, 'deadbeefdeadbeef-768.jpg')
+    const userFile = path.join(coversDir, 'pl_' + Date.now() + '.jpg')
+    fs.writeFileSync(cacheFile, Buffer.from([0xff, 0xd8, 0xff, 0xd9]))
+    fs.writeFileSync(userFile, Buffer.from([0xff, 0xd8, 0xff, 0xd9]))
+    const r = await run('(async () => await window.electronAPI.clearCoverCache())()')
+    check('缓存文件被清掉', !fs.existsSync(cacheFile), `removed=${r && r.removed}`)
+    check('用户自选封面被保留', fs.existsSync(userFile), `kept=${r && r.kept}`)
+    try { fs.unlinkSync(userFile) } catch (_) {}
+  }
+
+  console.log('情形 5:非法路径不炸')
   const r4 = await run(`(async () => await window.electronAPI.restoreCover(''))()`)
   check('空路径返回 bad-path', !!(r4 && r4.ok === false && r4.reason === 'bad-path'), JSON.stringify(r4))
 
   clearTimeout(watchdog)
   const failed = results.filter((r) => !r.ok)
-  console.log(failed.length ? `\nFAIL:${failed.length} 项未通过` : '\nPASS:恢复原封面的四种情形全部通过')
+  console.log(failed.length ? `\nFAIL:${failed.length} 项未通过` : '\nPASS:封面链路(恢复原封面 / 清缓存保护用户封面)全部通过')
   await sleep(500)
   app.exit(failed.length ? 1 : 0)
 })

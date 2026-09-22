@@ -221,6 +221,25 @@ function sweepTranscodeCache(force = false) { return transcoder().sweep(force) }
 // 缓存与提取已拆到 lib/covers.js(缓存目录由这里注入)
 const { createCoverStore } = require('./lib/covers')
 const coverStore = createCoverStore({ dir: path.join(app.getPath('userData'), 'covers') })
+// 用户自选/下载的封面单独放一个目录:它们与"可随时重建的缓存"性质不同 ——
+// 清封面缓存不该把用户的选择一起删掉(此前同目录,清缓存会把 pl_* 一并删光,
+// 曲库里的 coverUrl 随即指向死文件)。历史遗留散在 covers/ 里的 pl_* 仍然可用,
+// 清缓存时也会跳过(见 clear-cover-cache)。
+function customCoverDir() { return path.join(app.getPath('userData'), 'covers-custom') }
+/** 把一张图存为"自选封面",返回 file:// URL(文件名唯一,避免同名覆盖与浏览器缓存) */
+function saveCustomCover(buffer, ext = '.jpg') {
+  try {
+    if (!buffer || !buffer.length) return null
+    const dir = customCoverDir()
+    fs.mkdirSync(dir, { recursive: true })
+    const fp = path.join(dir, 'pl_' + Date.now() + ext)
+    fs.writeFileSync(fp, buffer)
+    return `file:///${fp.replace(/\\/g, '/')}`
+  } catch (e) {
+    log.warn('[封面] 保存自选封面失败:', e && e.message)
+    return null
+  }
+}
 const coverUrlCache = coverStore.urlCache
 function coverDir() { return coverStore.dir }
 function saveCoverFile(songPath, buffer) { return coverStore.save(songPath, buffer) }
@@ -1064,14 +1083,17 @@ function setupIPC() {
   ipcMain.handle('clear-cover-cache', async () => {
     const dir = coverDir()
     let removed = 0
+    let kept = 0
     try {
-      const files = fs.readdirSync(dir)
-      for (const f of files) {
+      for (const f of fs.readdirSync(dir)) {
+        // 跳过历史遗留的自选封面:它们是用户的选择,不是可重建的缓存
+        if (f.startsWith('pl_')) { kept++; continue }
         try { fs.unlinkSync(path.join(dir, f)); removed++ } catch {}
       }
     } catch (_) {}
     try { coverUrlCache.clear() } catch (_) {}
-    return { removed }
+    if (kept) log.info(`[封面] 清缓存保留了 ${kept} 张用户自选封面`)
+    return { removed, kept }
   })
 
   // 文件属性:大小/修改时间(属性弹窗用)
@@ -1906,11 +1928,8 @@ async function searchLyricAuto(info) {
       })
       if (r.canceled || !r.filePaths || !r.filePaths[0]) return null
       const src = r.filePaths[0]
-      const coverDir = path.join(app.getPath('userData'), 'covers')
-      fs.mkdirSync(coverDir, { recursive: true })
-      const dest = path.join(coverDir, 'pl_' + Date.now() + path.extname(src))
-      fs.copyFileSync(src, dest)
-      return dest
+      // 自选封面进 covers-custom(不进缓存目录):清封面缓存不会误删用户的选择
+      return saveCustomCover(fs.readFileSync(src), path.extname(src))
     } catch { return null }
   })
 
@@ -2580,7 +2599,12 @@ async function searchLyricAuto(info) {
         req.end()
       })
       if (!buf.length) return { ok: false, error: '空响应' }
-      const localPath = saveCoverFile(songPath, buf)
+      // 下载来的封面属于"用户选择",放 covers-custom 并**必定生效** ——
+      // 此前用 saveCoverFile 写 hash 缓存,而它"已存在就不写",于是对已有封面的歌
+      // 这一步是空操作(选了新封面却没变),同时会把"原封面"覆盖掉
+      void songPath
+      const localPath = saveCustomCover(buf)
+      if (!localPath) return { ok: false, error: '保存封面失败' }
       return { ok: true, path: localPath }
     } catch (e) { return { ok: false, error: e.message } }
   })
