@@ -22,13 +22,22 @@ const src = () => fs.readFileSync(path.join(process.cwd(), 'src/components/Music
 describe('MusicList 虚拟滚动:视口必须在每个"元素可能出现"的时机重新测量', () => {
   const s = src()
 
-  it('测量抽成幂等函数,且挂载 / 曲库变化 / KeepAlive 激活三处都调用', () => {
+  it('测量抽成幂等函数,且挂载 / 曲库变化 / 激活三处都调用', () => {
     expect(s, '没找到 measureListViewport()').toMatch(/function measureListViewport\s*\(/)
     const calls = [...s.matchAll(/measureListViewport\(\)/g)].length
     expect(calls, `measureListViewport 只被调用 ${calls} 次,应当 ≥3(挂载 / props.songs 变化 / onActivated)`)
       .toBeGreaterThanOrEqual(3)
     expect(s, 'onActivated 里没补测:KeepAlive 停用期间子树脱离文档,clientHeight 会读到 0')
-      .toMatch(/onActivated\(\(\) => \{[^}]*measureListViewport/)
+      .toMatch(/onActivated\(async \(\) => \{[\s\S]{0,600}?measureListViewport\(\)/)
+  })
+
+  it('KeepAlive 激活时把 scrollTop 与元素对齐(不对齐 → 渲染的行在视口之外,整片空白)', () => {
+    // 失效模式:子树摘出文档时元素自己的 scrollTop 归 0,而 ref 留着旧值 → 虚拟窗口按旧位置
+    // 渲染行(摆在几千像素之外),视口却在顶部 → 用户看到空白,滚一下才被 onListScroll 纠正。
+    const a = /onActivated\(async \(\) => \{([\s\S]*?)\n\}\)/.exec(s)
+    expect(a, 'onActivated 不是 async 函数:需要 await nextTick 等元素回到文档后再对齐').toBeTruthy()
+    expect(a[1], '激活时没有把元素的 scrollTop 写回 ref —— 切走再切回来会整片空白')
+      .toMatch(/scrollTop\.value = el\.scrollTop/)
   })
 
   it('曲库变化后必须重测 —— 元素正是在"数据从空到有"的那一刻出现的', () => {

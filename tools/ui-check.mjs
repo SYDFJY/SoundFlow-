@@ -129,6 +129,28 @@ app.whenReady().then(async () => {
   check('定位当前播放:目标行落在可视区内(行距算错会滚到错的地方)', locate && locate.inView === true,
     JSON.stringify({ inView: locate && locate.inView, hasActive: locate && locate.hasActive }))
 
+  // 5) KeepAlive 往返:全部音乐(滚到中间)→ 我的收藏 → 回全部音乐,视口里必须还有行。
+  //    子树被摘出文档再挂回时,元素自己的 scrollTop 会丢(归 0),而组件里的 ref 还留着旧值 ——
+  //    虚拟窗口按"旧位置"渲染行(摆在几千像素之外),视口却在顶部 → **整片空白**,
+  //    滚一下触发 onListScroll 才恢复。用户报过"切到我的收藏再切回全部音乐,列表空白"。
+  //    这条与时序无关,任何机器都能判。
+  await run(`(() => { const b = document.querySelector('.list-body'); if (b) b.scrollTop = 1200; return true })()`)
+  await sleep(600)
+  await run(`(() => { location.hash = '#/favorites'; return true })()`)
+  await sleep(1300)
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1300)
+  const back = await run(`(() => {
+    const body = document.querySelector('.list-body')
+    if (!body) return { err: '回到全部音乐后没有列表' }
+    const b = body.getBoundingClientRect()
+    const rows = [...document.querySelectorAll('.list-row')]
+    const inView = rows.filter((r) => { const x = r.getBoundingClientRect(); return x.bottom > b.top + 1 && x.top < b.bottom - 1 })
+    return { rows: rows.length, inView: inView.length, scrollTop: Math.round(body.scrollTop) }
+  })()`)
+  check('切到收藏再切回全部音乐:视口里必须有行(整片空白就是这个断言红)', back && back.inView > 0, JSON.stringify(back))
+  check('切回来还停在原来的位置(不是被弹回顶部)', back && back.scrollTop > 800, JSON.stringify({ scrollTop: back && back.scrollTop }))
+
   // 3) 批量全选:Ctrl+A 应选中全部
   const selectAll = await run(`(async () => {
     const batch = [...document.querySelectorAll('.toolbar-btn')].find(b => (b.textContent || '').includes('批量'))

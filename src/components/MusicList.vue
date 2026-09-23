@@ -1157,8 +1157,28 @@ onMounted(() => {
   // 初始化视口高度 + 监听容器尺寸变化(窗口缩放/侧边栏拖拽)
   measureListViewport()
 })
-// KeepAlive 激活时补测:停用期间子树脱离文档,clientHeight 会读到 0
-onActivated(() => { nextTick(measureListViewport) })
+/**
+ * KeepAlive 重新激活时:先让"ref 里的滚动位置"与元素对齐,再补测视口。
+ *
+ * 两件事都会坏,而且坏法不同:
+ *   1. 子树在停用期间被摘出文档,元素自己的 `scrollTop` 会丢(归 0),而 ref 还留着上次的值 ——
+ *      两边不一致时虚拟窗口按"旧位置"渲染行(比如 ref=8000 → 渲染第 129~156 行,摆在
+ *      translateY 7482px),而视口在顶部 → **整片空白**,滚一下触发 onListScroll 才被纠正。
+ *      这就是"切到我的收藏再切回全部音乐,列表空白、往下滑一下又出现"。
+ *   2. `clientHeight` 在脱离文档时读到 0,所以视口高度也必须重测。
+ * 对齐以**元素**为准(赋 scrollTop 可能被 clamp,比如曲库变小了),顺便保住浏览位置 ——
+ * 位置本来就存在 localStorage 里(滚动停止 300ms 后写入),恢复它才符合既有设计意图。
+ */
+onActivated(async () => {
+  await nextTick()
+  const el = listBodyEl.value
+  if (el) {
+    const want = scrollTop.value > 0 ? scrollTop.value : (parseInt(localStorage.getItem(scrollKey()) || '0') || 0)
+    if (want > 0 && el.scrollTop !== want) el.scrollTop = want
+    scrollTop.value = el.scrollTop
+  }
+  measureListViewport()
+})
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
   document.removeEventListener('soundflow:esc', onGlobalEsc)
