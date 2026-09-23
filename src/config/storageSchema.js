@@ -66,6 +66,8 @@ export const LOCAL_ONLY = {
     'soundflow_translate_service', 'soundflow_translation_cache',
     'soundflow_player_bg_color', 'soundflow_player_bg_gradient',
     'soundflow_player_bg_image', 'soundflow_player_bg_mode',
+    // 输出设备(设备 id;'default' = 系统默认)与"切歌时自动定位当前播放"开关
+    'soundflow_output_device', 'soundflow_autolocate',
     'soundflow_search_history', 'soundflow_shortcuts',
     // 列表「添加时间」列的显隐(默认隐藏,按添加时间排序时自动打开)
     'soundflow_col_added',

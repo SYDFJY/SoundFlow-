@@ -270,6 +270,21 @@ const {
   })
 
   // 手动搜索下载(用户点击):同样 LRCLIB → 网易云
+  /**
+   * 在线歌词获取(渲染端 loadLyrics 的主入口)。
+   * 注意:这条通道在 2026-09-23 的歌词源拆分中**被我漏掉过** —— 拆块时边界取到了
+   * searchLyricAuto 的结尾,紧跟其后的这个 handler 落在了替换区间之外,既没搬走也没保留,
+   * 表现为"在线歌词静默失效"(渲染端调用时报 No handler registered)。
+   * 原实现末尾还有三行引用 r1/r2/r3 的判断,那是不可达的死代码(前面已经 return),
+   * 这里只恢复有效行为。
+   */
+  ipcMain.handle('fetch-online-lyric', async (event, info) => {
+    const src = info?.source || 'lrclib'
+    if (src === 'local') return null
+    if (src === 'auto') return await searchLyricAuto(info)
+    return await searchLyricBySource(info, src)
+  })
+
   ipcMain.handle('search-lyric-online', async (event, info) => {
     const src = info?.source || 'auto'
     if (src === 'local') return null

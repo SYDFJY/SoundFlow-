@@ -51,6 +51,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
+import { filterSongs } from '@/utils/searchQuery'
 import Icon from '@/components/icons/Icon.vue'
 
 const musicStore = useMusicStore()
@@ -91,12 +92,12 @@ function pushHistory(word) {
 }
 function clearHistory() { history.value = []; saveHistory() }
 
+// 下拉建议与列表结果用**同一套匹配**(utils/searchQuery):否则"打字时看到的"和
+// "回车后的结果"会对不上 —— 支持前缀语法后这种不一致会特别明显
 const suggestions = computed(() => {
-  const q = query.value.trim().toLowerCase()
-  if (!q || q.length < 1) return []
-  return musicStore.songs
-    .filter(s => s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q) || s.album.toLowerCase().includes(q))
-    .slice(0, 8)
+  const q = query.value.trim()
+  if (!q) return []
+  return filterSongs(musicStore.songs, q).slice(0, 8)
 })
 
 // 下拉统一列表:有输入→歌曲建议;空输入→最近搜索

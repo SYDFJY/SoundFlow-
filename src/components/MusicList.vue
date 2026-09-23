@@ -11,6 +11,10 @@
           <Icon name="multiSelect" :size="14" />
           <span>批量</span>
         </button>
+        <button class="toolbar-btn" @click="locateCurrent(false)" v-tooltip:top="'定位到正在播放的那一行'">
+          <Icon name="locate" :size="14" />
+          <span>定位</span>
+        </button>
       </div>
       <div class="toolbar-right">
         <div class="sort-group">
@@ -88,6 +92,8 @@
               <div class="song-info">
                 <span class="song-name text-ellipsis" v-html="highlight(song.title)"></span>
                 <span class="song-format">{{ song.format }}</span>
+                <!-- 搜索时标出"命中在哪些字段" —— 否则用户看到一首不认识的歌出现,只能猜它为什么命中 -->
+                <span v-if="hitLabels(song).length" class="song-hit" :title="'匹配字段:' + hitLabels(song).join(' / ')">{{ hitLabels(song).join('/') }}</span>
               </div>
             </div>
             <div class="col-artist text-ellipsis" v-html="highlight(song.artist)"></div>
@@ -304,6 +310,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { formatDuration as fmtDuration, formatAddedTime, formatTimestamp } from '@/utils/time'
 import Icon from '@/components/icons/Icon.vue'
+import { parseQuery } from '@/utils/searchQuery'
 import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { setDragSong, clearDragSong } from '@/composables/useDragSong'
@@ -898,6 +905,12 @@ function escapeHtml(str) {
 // 搜索高亮 memo:同一文本+查询只算一次(搜索时避免对全部行重复正则)
 let _hlCache = new Map()
 let _hlQuery = ''
+/** 命中字段的中文短标签(搜索时显示在行内) */
+function hitLabels(song) {
+  const fields = musicStore.searchHits(song)
+  return fields.map((f) => musicStore.FIELD_LABELS[f] || f)
+}
+
 function highlight(text) {
   if (!text) return ''
   const q = musicStore.searchQuery || ''
@@ -906,14 +919,45 @@ function highlight(text) {
   const safe = escapeHtml(text)
   let html = safe
   if (q) {
-    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const regex = new RegExp(`(${escaped})`, 'gi')
-    html = safe.replace(regex, '<mark>$1</mark>')
+    // 只高亮**关键词**部分:前缀语法(格式:/年代:)不是正文,拿它去高亮会一个字都匹配不到,
+    // 于是"搜索了却没高亮"看上去像没搜到
+    const { keywords } = parseQuery(q)
+    for (const kw of keywords) {
+      const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      if (!escaped) continue
+      html = html.replace(new RegExp(`(${escaped})`, 'gi'), '<mark>$1</mark>')
+    }
   }
   if (_hlCache.size > 3000) _hlCache.clear()
   _hlCache.set(text, html)
   return html
 }
+
+/**
+ * 定位到正在播放的那一行。
+ * 列表是虚拟化的(只渲染视口内的行),所以不能 scrollIntoView —— 得按 ROW_H 算出滚动位置,
+ * 并且要**居中**而不是贴边:贴边时前后几行都看不见,用户还得自己滚。
+ * @param {boolean} silent 自动定位时不弹提示(用户没主动点)
+ */
+function locateCurrent(silent = false) {
+  const cur = playerStore.currentSong
+  if (!cur || !cur.path) return
+  const idx = props.songs.findIndex((s) => s.path === cur.path)
+  if (idx < 0) {
+    if (!silent) window.$toast?.('当前播放的歌曲不在这个列表里', 'info')
+    return
+  }
+  const el = listBodyEl.value
+  if (!el) return
+  const target = idx * ROW_H - Math.floor(el.clientHeight / 2 - ROW_H / 2)
+  el.scrollTop = Math.max(0, Math.min(target, el.scrollHeight - el.clientHeight))
+}
+
+// 切歌时自动定位:大曲库里不加这项会出现"听得到歌却找不到它在哪"。
+// 设置从 localStorage 现读,改动后下一次切歌即生效(无需重启)
+watch(() => playerStore.currentSong && playerStore.currentSong.path, () => {
+  try { if (localStorage.getItem('soundflow_autolocate') !== '0') locateCurrent(true) } catch (_) {}
+})
 
 function showContextMenu(e, song) {
   // 菜单限制在视口内:右/下溢出时自动左移/上移,避免被截断遮挡
@@ -1041,6 +1085,14 @@ function onGlobalEsc() {
 // 键盘选歌:↑/↓ 移动选中,Enter 播放(焦点在列表容器时)
 const keyboardIdx = ref(-1)
 function onListKeydown(e) {
+  // Ctrl/Cmd+A:批量模式下全选。只在列表容器上监听 —— 焦点在输入框时不会走到这里,
+  // 所以不影响输入框自己的"全选"
+  if ((e.ctrlKey || e.metaKey) && (e.code === 'KeyA' || e.key === 'a')) {
+    if (!batchOn.value) return
+    e.preventDefault()
+    selectedSet.value = new Set(props.songs.map((s) => s.path))
+    return
+  }
   if (e.code === 'ArrowDown' || e.code === 'ArrowUp') {
     e.preventDefault()
     const n = props.songs.length
@@ -1278,6 +1330,7 @@ watch(() => playerStore.currentSong?.path, (p) => {
 .song-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .song-name { font-size: var(--font-size-base); color: var(--text-primary); }
 .song-format { font-size: 10px; color: var(--text-tertiary); background: var(--bg-hover); padding: 1px 4px; border-radius: 3px; align-self: flex-start; }
+.song-hit { font-size: 10px; color: var(--color-primary); background: var(--color-primary-alpha); padding: 1px 4px; border-radius: 3px; align-self: flex-start; margin-left: 4px; }
 .list-row.active .song-name { color: var(--color-primary); font-weight: 500; }
 
 .col-artist { width: 160px; flex-shrink: 0; font-size: var(--font-size-sm); color: var(--text-secondary); padding: 0 8px; }

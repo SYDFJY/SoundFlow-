@@ -262,4 +262,3 @@ input[type='range']:active::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .btn--ghost::before, .chip::before { transition: none; }
 }
-}

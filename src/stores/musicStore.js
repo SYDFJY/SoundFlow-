@@ -3,6 +3,7 @@ import { ref, computed, reactive } from 'vue'
 import { noteFailure } from '@/utils/failures'
 import { matchRelink, dirOf, isUnder, normSep } from '@/utils/relink'
 import { dayKey } from '@/utils/format'
+import { filterSongs, matchSong, parseQuery, FIELD_LABELS } from '@/utils/searchQuery'
 import { SCHEMA_VERSION, applyMigrations, parseVersion } from '@/config/storageSchema'
 
 /** localStorage 里记录存储模式版本的键(不入 DEFAULTS:它是元数据不是用户设置) */
@@ -283,12 +284,9 @@ export const useMusicStore = defineStore('music', () => {
   const filteredSongs = computed(() => {
     let list = [...songs.value]
     if (searchQuery.value) {
-      const q = searchQuery.value.toLowerCase()
-      list = list.filter(s =>
-        (s.title || '').toLowerCase().includes(q) ||
-        (s.artist || '').toLowerCase().includes(q) ||
-        (s.album || '').toLowerCase().includes(q)
-      )
+      // 匹配逻辑集中在 utils/searchQuery.js:支持 格式:/年代:/歌手:/专辑:/标题:/流派: 前缀,
+      // 关键词跨 标题/歌手/专辑/流派/格式/年代 多字段(多词之间为"与")
+      list = filterSongs(list, searchQuery.value)
     }
     // null = 不排序(自定义顺序,拖拽后生效);有值时按列头排序
     if (sortField.value) {
@@ -298,6 +296,13 @@ export const useMusicStore = defineStore('music', () => {
   })
 
   const totalCount = computed(() => songs.value.length)
+  /** 当前查询的命中字段(界面用它标注"这首歌为什么出现在结果里"),无查询时返回空数组 */
+  function searchHits(song) {
+    if (!searchQuery.value) return []
+    const { hit, fields } = matchSong(song, parseQuery(searchQuery.value))
+    return hit ? fields : []
+  }
+
   /** 今日播放次数(按天聚合表;历史记录上限不影响它) */
   const todayPlays = computed(() => (playStats.value[dayKey(Date.now())] || {}).plays || 0)
 
@@ -1180,6 +1185,7 @@ export const useMusicStore = defineStore('music', () => {
 
   return {
     songs, favorites, playlists, playCounts, history, playStats, todayPlays, searchQuery, startupMissing,
+    searchHits, FIELD_LABELS,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
     sortSongs,

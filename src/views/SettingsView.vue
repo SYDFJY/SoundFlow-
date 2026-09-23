@@ -88,6 +88,30 @@
       <!-- 播放设置 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.playback') }}</h3>
+        <!-- 输出设备:走 AudioContext.setSinkId(Chromium 原生能力),不是 WASAPI 独占 -->
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">输出设备</span>
+            <span class="label-desc">
+              <template v-if="playerStore.outputDeviceError">{{ playerStore.outputDeviceError }}</template>
+              <template v-else-if="!playerStore.outputDevices.length">未检测到可选设备(使用系统默认输出)</template>
+              <template v-else>切换音频输出设备;插拔耳机后列表会自动刷新</template>
+            </span>
+          </div>
+          <select v-if="playerStore.outputDevices.length" :value="playerStore.outputDeviceId" @change="changeOutputDevice($event.target.value)" aria-label="输出设备">
+            <option value="default">系统默认</option>
+            <option v-for="d in playerStore.outputDevices" :key="d.deviceId" :value="d.deviceId">{{ d.label || '未命名设备' }}</option>
+          </select>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">切歌时自动定位当前播放</span>
+            <span class="label-desc">长列表里自动滚动到正在播放的那一行(默认开)</span>
+          </div>
+          <button class="switch" role="switch" :aria-checked="autoLocate" aria-label="切歌时自动定位当前播放" :class="{ on: autoLocate }" @click="toggleAutoLocate">
+            <span class="switch-track"></span>
+          </button>
+        </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">响度均衡</span>
@@ -813,6 +837,7 @@ function onMiniBgSynced(e) {
   if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
 }
 onMounted(() => document.addEventListener('soundflow:esc', onSettingsEsc))
+onMounted(() => playerStore.initOutputDevices()) // 设备列表 + devicechange 监听
 onUnmounted(() => {
   document.removeEventListener('soundflow:esc', onSettingsEsc)
   document.removeEventListener('mini-bg-synced', onMiniBgSynced)
@@ -835,6 +860,20 @@ async function scanLyricStatusAll() {
   } catch {}
   lyricMgrBusy.value = false
 }
+// 输出设备:切换失败时 playerStore 会把原因写进 outputDeviceError,界面直接显示(不静默)
+async function changeOutputDevice (id) {
+  const ok = await playerStore.setOutputDevice(id)
+  if (ok) window.$toast?.('已切换输出设备', 'success')
+  else window.$toast?.(playerStore.outputDeviceError || '切换输出设备失败', 'warning')
+}
+
+// 切歌自动定位(列表侧每次切歌现读这个键,所以改完即刻生效)
+const autoLocate = ref(localStorage.getItem('soundflow_autolocate') !== '0')
+function toggleAutoLocate () {
+  autoLocate.value = !autoLocate.value
+  try { localStorage.setItem('soundflow_autolocate', autoLocate.value ? '1' : '0') } catch (_) {}
+}
+
 async function openLyricManager() {
   lyricMgrOpen.value = true
   if (!musicStore.lyricFolders || !musicStore.lyricFolders.length) {

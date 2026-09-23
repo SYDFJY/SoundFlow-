@@ -145,6 +145,8 @@ export const usePlayerStore = defineStore('player', () => {
     ensureAudioGraph()
     // 转码进度订阅(非原生格式的「准备阶段」反馈,如 APE/WMA)
     initTranscodeProgress()
+    // 已保存的输出设备:音频图建好后立刻应用(失败会记录原因并在设置页显示)
+    if (outputDeviceId.value !== 'default') applyOutputDevice(outputDeviceId.value)
 
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
@@ -884,6 +886,62 @@ export const usePlayerStore = defineStore('player', () => {
   // 切歌耗时诊断:从"开始切歌"到"真正出声"拆分两段 ——
   //   准备(解析/转码,resolveSrc)与 出声前的缓冲等待。
   // 做 gapless 之前必须先有这个数字:否则不知道差在哪一段,也无法证明改进有效。
+  // ===== 输出设备 =====
+  // 走 AudioContext.setSinkId(Chromium 110+;本项目 Electron 34 = Chromium 132 原生支持)。
+  // 这是"把整条音频图的输出指向另一个设备",不涉及 WASAPI 独占 —— 后者受架构限制无法达成。
+  // 失败必须有结论:不能静默继续用默认设备,否则用户会以为"选了但没生效"。
+  const outputDevices = ref([])
+  const outputDeviceId = ref((() => { try { return localStorage.getItem('soundflow_output_device') || 'default' } catch (_) { return 'default' } })())
+  const outputDeviceError = ref('')
+
+  async function loadOutputDevices() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return
+      const list = await navigator.mediaDevices.enumerateDevices()
+      outputDevices.value = list.filter((d) => d.kind === 'audiooutput')
+    } catch (e) {
+      noteFailure('audio.output', '枚举输出设备失败(设备列表可能为空)', e)
+    }
+  }
+
+  /** 把音频图切到指定设备;失败时把原因写进 outputDeviceError 并回退默认 */
+  async function applyOutputDevice(id) {
+    const want = id || 'default'
+    if (!_audioCtx) return false   // 音频图还没建立:等 initAudio 之后再应用
+    if (typeof _audioCtx.setSinkId !== 'function') {
+      outputDeviceError.value = '当前运行环境不支持切换输出设备(仍使用系统默认)'
+      return false
+    }
+    try {
+      await _audioCtx.setSinkId(want === 'default' ? '' : want)
+      outputDeviceError.value = ''
+      return true
+    } catch (e) {
+      outputDeviceError.value = `该设备无法切换:${(e && e.message) || '未知原因'}(已回退系统默认)`
+      try { await _audioCtx.setSinkId('') } catch (_) {}
+      return false
+    }
+  }
+
+  /** 用户选择:记住选择并立即生效;失败时**保留选择**以便下次启动重试(设备可能只是暂时不在) */
+  async function setOutputDevice(id) {
+    outputDeviceId.value = id || 'default'
+    try { localStorage.setItem('soundflow_output_device', outputDeviceId.value) } catch (_) {}
+    return await applyOutputDevice(outputDeviceId.value)
+  }
+
+  let _deviceChangeAttached = false
+  function initOutputDevices() {
+    loadOutputDevices()
+    if (_deviceChangeAttached) return
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+        _deviceChangeAttached = true
+        navigator.mediaDevices.addEventListener('devicechange', loadOutputDevices)
+      }
+    } catch (_) {}
+  }
+
   // 诊断用:最近一次音频链级序比对结果(ok=false 时另有 noteFailure 记录)
   const chainCheck = ref(null)
   // 最近若干次切歌的耗时(诊断面板展示):只保留最近 20 次,不参与业务逻辑
@@ -2075,6 +2133,7 @@ export const usePlayerStore = defineStore('player', () => {
     releaseAudio, restoreAudio,
     loadSettings, saveSettings, playSingle, toggleQueue, renameSongInQueue,
     recentSwitches, chainCheck,
+    outputDevices, outputDeviceId, outputDeviceError, loadOutputDevices, setOutputDevice, initOutputDevices,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
     eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,

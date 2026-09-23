@@ -11,6 +11,7 @@
 import {
   // 目录 / 文件
   Folder, FolderOpen, FolderPlus, FolderTree, FolderSearch, FileText, FileMusic,
+  LocateFixed, Crosshair,
   // 导航 / 界面
   Home, Heart, Users, Disc3, ListMusic, BarChart3, Sparkles, Settings, Search,
   // 操作
@@ -52,6 +53,9 @@ export const ICONS = {
   recommend: Sparkles,
   settings: Settings,
   search: Search,
+  // 定位当前播放(列表虚拟化下靠算滚动位置,不是 scrollIntoView)
+  locate: LocateFixed,
+  locateCross: Crosshair,
   more: EllipsisVertical,
   duplicate: Copy,
 
