@@ -956,19 +956,7 @@ function doSetThumbar(state, title) {
 function setupIPC() {
   // 窗口控制
   ipcMain.on('minimize-window', () => mainWindow?.minimize())
-  ipcMain.handle('hardware-accel-get', () => {
-    try {
-      const f = path.join(app.getPath('userData'), 'hardware-accel.txt')
-      return fs.readFileSync(f, 'utf8').trim() === '1'
-    } catch (_) { return false }
-  })
-  ipcMain.handle('hardware-accel-set', async (event, on) => {
-    try {
-      const f = path.join(app.getPath('userData'), 'hardware-accel.txt')
-      await writeFile(f, on ? '1' : '0')
-      return true
-    } catch (_) { return false }
-  })
+  // hardware-accel-get/set 已拆到 electron/ipc/system.js
   ipcMain.on('maximize-window', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize()
     else mainWindow?.maximize()
@@ -997,97 +985,7 @@ function setupIPC() {
   })
 
   // 存储占用统计(封面缓存)
-  // 存储与运行时状态(诊断面板读这个):三类缓存的占用 + 解析缓存累计命中率 + 工具链状态。
-  // 以前只报封面与解析条数,于是"转码缓存最多能占 2GB"这件事完全不可见(它只在超限时才在
-  // 日志里出现一行),而它恰恰是最容易悄悄膨胀的那个。
-  ipcMain.handle('get-storage-info', async () => {
-    const dirSize = (d) => {
-      let size = 0, count = 0
-      try {
-        for (const f of fs.readdirSync(d)) {
-          try { size += fs.statSync(path.join(d, f)).size; count++ } catch {}
-        }
-      } catch (_) {}
-      return { size, count }
-    }
-    const covers = dirSize(coverDir())
-    const custom = dirSize(customCoverDir())
-    const transcode = dirSize(transcodeDir())
-    const tools = resolveAudioTools()
-    return {
-      coversSize: covers.size,
-      coversCount: covers.count,
-      mdCacheCount: mdReader.count(),
-      mdCacheStats: mdReader.cacheStats(),
-      transcodeSize: transcode.size,
-      transcodeCount: transcode.count,
-      transcodeLimit: 2 * 1024 * 1024 * 1024,
-      customCoverCount: custom.count,
-      customCoverSize: custom.size,
-      tools: {
-        ffmpeg: tools.ffmpeg,
-        ffprobe: tools.ffprobe,
-        ffmpegOk: isRealTool(tools.ffmpeg),
-        ffprobeOk: isRealTool(tools.ffprobe)
-      },
-      // 响度分析是"每首 1.5 秒"的慢速后台任务,5000 首要两个多小时 ——
-      // 不把进度摆出来,用户只会觉得"响度均衡对大部分歌没生效"
-      loudness: {
-        analyzed: Object.keys(storageData.replayGain || {}).length,
-        queued: loudnessQueued(),
-        running: loudnessRunning()
-      },
-      folderWatch: {
-        enabled: folderWatchEnabled !== false,
-        dirs: (storageData.scanFolders || []).length,
-        lastEventAt: lastFolderWatchAt
-      }
-    }
-  })
-
-  // 清空转码缓存(用户显式操作:直接删干净,产物按需重新生成)。
-  // 注意别用 sweepTranscodeCache():它只在"超过 2GB 上限"时才删,缓存没超限时点了看不出变化
-  ipcMain.handle('clear-transcode-cache', async () => {
-    const dir = transcodeDir()
-    let removed = 0
-    let size = 0
-    try {
-      for (const f of fs.readdirSync(dir)) {
-        const fp = path.join(dir, f)
-        try {
-          size += fs.statSync(fp).size
-          fs.unlinkSync(fp)
-          removed++
-        } catch (_) {}
-      }
-    } catch (_) {}
-    return { removed, size }
-  })
-
-  // 清理元数据解析缓存(下次扫描会重新解析,不影响曲库数据)
-  ipcMain.handle('clear-metadata-cache', async () => {
-    const n = mdReader.count()
-    mdReader.clear()
-    try { fs.unlinkSync(mdCachePath()) } catch (_) {}
-    return { removed: n }
-  })
-
-  // 清理封面缓存(封面会按需重新生成)
-  ipcMain.handle('clear-cover-cache', async () => {
-    const dir = coverDir()
-    let removed = 0
-    let kept = 0
-    try {
-      for (const f of fs.readdirSync(dir)) {
-        // 跳过历史遗留的自选封面:它们是用户的选择,不是可重建的缓存
-        if (f.startsWith('pl_')) { kept++; continue }
-        try { fs.unlinkSync(path.join(dir, f)); removed++ } catch {}
-      }
-    } catch (_) {}
-    try { coverUrlCache.clear() } catch (_) {}
-    if (kept) log.info(`[封面] 清缓存保留了 ${kept} 张用户自选封面`)
-    return { removed, kept }
-  })
+  // get-storage-info / clear-*-cache 已拆到 electron/ipc/system.js
 
   // 扫描/解析/封面/失效检测已拆到 electron/ipc/library.js(get-file-info / scan-* /
   // import-dropped / backfill-* / parse-metadata / *-cover / check-files-exist)。
@@ -1124,42 +1022,7 @@ function setupIPC() {
     mainWindow: () => mainWindow
   })
 
-  // 打开文件位置
-  ipcMain.handle('open-file-location', (event, filePath) => {
-    shell.showItemInFolder(filePath)
-  })
-
-  // 打开文件夹(用于歌词下载完成后跳转)
-  ipcMain.handle('open-folder', (event, folderPath) => {
-    try {
-      shell.openPath(folderPath)
-      return true
-    } catch { return false }
-  })
-
-  // 主题导出/导入文件
-  ipcMain.handle('save-theme-file', async (event, content) => {
-    try {
-      const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
-      const { canceled, filePath } = await dialog.showSaveDialog(win, {
-        title: '导出主题', defaultPath: 'soundflow-theme.json',
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      })
-      if (canceled || !filePath) return false
-      fs.writeFileSync(filePath, content, 'utf-8')
-      return true
-    } catch { return false }
-  })
-  // 开机自启
-  ipcMain.handle('set-login-item', (event, enabled) => {
-    try {
-      app.setLoginItemSettings({ openAtLogin: !!enabled })
-      return true
-    } catch { return false }
-  })
-  ipcMain.handle('get-login-item', () => {
-    try { return app.getLoginItemSettings().openAtLogin } catch { return false }
-  })
+  // open-file-location / open-folder / save-theme-file / set-get-login-item 已拆到 electron/ipc/system.js
 
   // select-cover / open-theme-file / select-font-* / select-bg-image 已拆到 electron/ipc/dialogs.js
 
@@ -1180,11 +1043,21 @@ function setupIPC() {
       coverPathFor
     })
 
-  // 获取应用路径
-  ipcMain.handle('get-app-path', () => app.getPath('userData'))
-
-  // 文件夹监控开关(自动刷新曲库)
-  ipcMain.on('set-folder-watch', (event, enabled) => setFolderWatchEnabled(!!enabled))
+  // 系统与诊断(hardware-accel / 存储信息 / 清缓存 / 打开位置 / 主题导出 / 开机自启 /
+  // app-path / 文件夹监控开关)已拆到 electron/ipc/system.js。诊断读数要用的响度队列
+  // 句柄来自上面 audio 的 register —— 所以这段必须排在它之后,否则立刻求值会撞暂时性死区。
+  require('./ipc/system').register({
+    ipcMain,
+    storage: () => storageData,
+    mainWindow: () => mainWindow,
+    mdReader,
+    coverUrlCache,
+    dirs: { covers: coverDir, customCovers: customCoverDir, transcode: transcodeDir, mdCachePath },
+    loudnessQueued,
+    loudnessRunning,
+    folderWatch: { enabled: () => folderWatchEnabled, lastEventAt: () => lastFolderWatchAt },
+    setFolderWatchEnabled
+  })
   // 切歌系统通知(模式 system 时由渲染进程触发;需 AUMID 关联快捷方式才能弹出)
   // 替换式通知:关闭旧实例再发新——快速连切只保留最新一条,避免 Windows 通知排队堆积
   let _lastNotify = null
@@ -1208,7 +1081,7 @@ function setupIPC() {
       n.show()
     } catch {}
   })
-  ipcMain.handle('get-folder-watch', () => !!storageData.folderWatch)
+  // get-folder-watch 已拆到 electron/ipc/system.js
 
   // 迷你播放器
   ipcMain.on('mini:toggle', () => {
