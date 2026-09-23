@@ -141,6 +141,10 @@ describe('musicStore 配额失败可见化', () => {
     expect(toasts.length).toBe(1)
 
     delete globalThis.window.$toast
+    // 必须还原:否则 setItem 一直是"抛配额错误"的实现,后面任何写 localStorage 的用例
+    // 都会莫名失败(而不是像本用例那样断言配额行为)—— 曾让"playStats 兜底"那条用例
+    // 报 QuotaExceededError,查了半天才发现是这里漏了清理
+    vi.restoreAllMocks()
   })
 })
 
@@ -408,6 +412,84 @@ describe('musicStore playStatsInRange(区间汇总)', () => {
     const agg = store.playStatsInRange(0)
     expect(agg.plays).toBe(5)
     expect(agg.hours.reduce((a, b) => a + b, 0)).toBe(0)
+  })
+})
+
+/**
+ * "累计播放"必须读完整来源。
+ *
+ * 事故:统计页那个数字读按天聚合表,而按天表是 2026-09-23 上线时从 history(播放日志,
+ * **上限 500 条**)一次性回填的 —— 于是真实 1559 次在页面上显示成 500,而且它披着聚合表
+ * 的外衣看不出残缺;同一个"累计播放"标签在侧栏又是另一个数(侧栏读 playCounts)。
+ * 这些用例把口径钉住:全部时间读 playCounts 整表,只有时间范围才读按天表。
+ */
+describe('musicStore 累计播放(完整来源)', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('allTimePlays 对 playCounts 整表求和,不受播放日志上限影响', () => {
+    const store = useMusicStore()
+    store.songs = [{ path: 'a.mp3', title: 'A', duration: 100 }]
+    // 真实分布:计数器有 105 次,而日志只留下最近 1 条、按天表也只有回填出来的那 1 次
+    store.playCounts = { 'a.mp3': 49, 'b.mp3': 48, 'c.mp3': 8 }
+    store.history = [{ path: 'a.mp3', title: 'A', time: Date.now() }]
+    store.playStats = { [dayKeyLocal(new Date())]: { plays: 1, seconds: 100, hours: hoursAt(12, 1) } }
+    expect(store.allTimePlays, '累计读的不能是回填出来的按天表').toBe(105)
+    expect(store.playStatsInRange(0).plays, '按天表的口径不受影响').toBe(1)
+  })
+
+  it('曲目已移出曲库的歌仍计入累计次数(旧实现按曲库反查会漏)', () => {
+    const store = useMusicStore()
+    store.songs = [] // 两首都已不在曲库
+    store.playCounts = { 'gone-a.mp3': 30, 'gone-b.mp3': 20 }
+    expect(store.allTimePlays).toBe(50)
+    // 拿不到时长的按 0 计:不写 NaN,也不把次数一起丢掉
+    expect(store.allTimeSeconds).toBe(0)
+  })
+
+  it('allTimeSeconds = 次数 × 曲目时长', () => {
+    const store = useMusicStore()
+    store.songs = [
+      { path: 'a.mp3', title: 'A', duration: 200 },
+      { path: 'b.mp3', title: 'B', duration: 0 }
+    ]
+    store.playCounts = { 'a.mp3': 3, 'b.mp3': 5, 'gone.mp3': 7 }
+    expect(store.allTimeSeconds).toBe(600) // 3×200,其余时长未知按 0
+  })
+
+  it('容量保护不删仍在曲库里的歌(旧实现"裁到 500"会让累计凭空变小)', () => {
+    const store = useMusicStore()
+    store.songs = [
+      { path: 'keep1.mp3', title: 'K1', duration: 60 },
+      { path: 'keep2.mp3', title: 'K2', duration: 60 }
+    ]
+    const big = { 'keep1.mp3': 3, 'keep2.mp3': 5 }
+    for (let i = 0; i < 20001; i++) big[`E:/old/${i}.mp3`] = 1 // 换过目录留下的残留
+    store.playCounts = big
+    store.incrementPlayCount('keep1.mp3') // 越界 → 触发容量保护
+    expect(store.playCounts['keep1.mp3'], '曲库里的歌被裁掉了').toBe(4)
+    expect(store.playCounts['keep2.mp3'], '曲库里的歌被裁掉了').toBe(5)
+    expect(Object.keys(store.playCounts).length).toBeLessThanOrEqual(20000)
+  })
+
+  it('localStorage 缺 playStats 时从主进程兜底,而不是退回"从 500 条日志重建"', async () => {
+    const store = useMusicStore()
+    const full = { [dayKeyLocal(new Date())]: { plays: 1559, seconds: 0, hours: hoursAt(9, 1559) } }
+    const prev = globalThis.window.electronAPI
+    globalThis.window.electronAPI = new Proxy(
+      { storeGet: async (k) => (k === 'playStats' ? full : null) },
+      { get: (t, p) => (p in t ? t[p] : async () => null) }
+    )
+    try {
+      globalThis.localStorage.clear()
+      // 日志里有记录,所以"没兜底"时 backfillPlayStats() 会真的跑起来并算出 1 次 ——
+      // 这正是要排除的退化路径(真实场景里那份日志是 500 条,回填出来就是 500)
+      globalThis.localStorage.setItem('soundflow_history',
+        JSON.stringify([{ path: 'a.mp3', title: 'A', time: Date.now() }]))
+      await store.restoreLibrary()
+      expect(store.playStatsInRange(0).plays, '兜底没生效,退回成了日志回填').toBe(1559)
+    } finally {
+      globalThis.window.electronAPI = prev
+    }
   })
 })
 

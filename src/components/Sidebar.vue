@@ -167,9 +167,10 @@ onUnmounted(() => {
 })
 // 迷你统计:今日播放次数直接读按天聚合表(musicStore.todayPlays)——
 // 此前按 history 里今天的记录条数算,而 history 上限 500 条,播多了这个数字会失真。
-// 累计播放仍按 playCounts 求和(无上限)。
+// 累计播放读 store 的统一口径 allTimePlays(playCounts 整表求和):统计页那个
+// "累计播放"一度读按天表,而按天表是从 500 条日志回填的 —— 同一个标签两个数。
 const todayPlays = computed(() => musicStore.todayPlays)
-const totalPlayCount = computed(() => Object.values(musicStore.playCounts).reduce((a, b) => a + (b || 0), 0))
+const totalPlayCount = computed(() => musicStore.allTimePlays)
 const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
 const modal = ref({ show: false, title: '', value: '', placeholder: '', mode: '', playlistId: null })
 const modalInput = ref(null)

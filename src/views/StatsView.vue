@@ -21,11 +21,11 @@
     <div class="stat-cards">
       <div class="stat-card">
         <div class="stat-num">{{ totalPlaysAnim }}</div>
-        <div class="stat-label">累计播放</div>
+        <div class="stat-label">{{ isAllTime ? '累计播放' : '期间播放' }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-num">{{ totalHoursAnim }}<span class="stat-unit"> 小时</span></div>
-        <div class="stat-label">累计时长</div>
+        <div class="stat-label">{{ isAllTime ? '累计时长' : '期间时长' }}</div>
       </div>
       <div class="stat-card">
         <div class="stat-num">{{ artistCountAnim }}</div>
@@ -268,14 +268,21 @@ const rangeSongs = computed(() => {
   return playedSongs.value.filter(s => inRange.has(s.path))
 })
 
-// 总览:次数与时长读按天聚合表。
-// 此前是"曲库中还在的歌 × playCounts 求和",有两个漏洞 ——
-//   (1) 文件被移出曲库后,它的播放次数在总览里就消失了(而 playCounts 还留着);
-//   (2) playCounts 超过 500 条会按"最近播放"裁剪(见 musicStore.trimPlayCounts),
-//       长曲库上"累计"反而会变小。
+// 总览:"全部"读 playCounts 整表(唯一完整来源),"近30天"读按天聚合表。
+//
+// 这段被改过两次,两次的教训都留下:
+//   (1) 最早是"曲库中还在的歌 × playCounts 求和" —— 文件移出曲库后,它的播放次数
+//       在总览里凭空消失;
+//   (2) 后来整段改读按天聚合表,想解决这个问题,但那张表 2026-09-23 才上线,上线时
+//       只能从 history(播放日志,**上限 500 条**)一次性回填 —— 于是"累计播放"从
+//       第一天起就少了被日志截掉的那部分(实测真实 1559 次,页面显示 500),而且它
+//       披着聚合表的外衣,看不出残缺。
+// 所以按口径分开:全部时间 = playCounts(次数完整,时长按曲目时长算);
+// 时间范围 = 按天表(playCounts 没有时间信息,按天数据只能来自它)。
 // 榜单仍按 playCounts(那本就该是"最近常听"的口径,需要歌曲信息)。
-const totalPlays = computed(() => scopeAgg.value.plays)
-const totalHours = computed(() => Math.round(scopeAgg.value.seconds / 3600))
+const isAllTime = computed(() => timeRange.value === 'all')
+const totalPlays = computed(() => (isAllTime.value ? musicStore.allTimePlays : scopeAgg.value.plays))
+const totalHours = computed(() => Math.round((isAllTime.value ? musicStore.allTimeSeconds : scopeAgg.value.seconds) / 3600))
 const artistCount = computed(() => new Set(rangeSongs.value.map(s => s.artist).filter(Boolean)).size)
 const favCount = computed(() => musicStore.favoriteSongs.length)
 

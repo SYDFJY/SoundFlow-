@@ -66,4 +66,16 @@ describe('StatsView 总览数字必须跟随数据更新', () => {
     expect(s, '不该再出现 HISTORY_CAP 这种上限提示').not.toMatch(/HISTORY_CAP/)
     expect(s, '标签里不该再写"播放记录(上限 N)"').not.toMatch(/rs-label">播放记录/)
   })
+
+  it('"全部"范围的累计读 playCounts 整表,不读按天表(按天表是从 500 条日志回填的)', () => {
+    // 事故:总览卡改读按天聚合表后,"累计播放"显示的是 500(那张表 2026-09-23 上线时
+    // 从上限 500 条的播放日志回填),而侧栏同一个标签读 playCounts 显示 1559。
+    // 现在按口径分开:全部时间读 playCounts,时间范围才读按天表。
+    expect(s, '没找到 isAllTime(全部/范围分支),口径可能又被合并了').toMatch(/isAllTime/)
+    expect(s, '累计播放没走 allTimePlays').toMatch(/musicStore\.allTimePlays/)
+    expect(s, '累计时长没走 allTimeSeconds').toMatch(/musicStore\.allTimeSeconds/)
+    // 标签随范围变:否则选"近30天"时那张卡会自称"累计播放",而数字只是这 30 天的
+    expect(s, '"全部"才叫累计播放').toMatch(/isAllTime \? '累计播放' : '期间播放'/)
+    expect(s, '范围口径不该再自称"累计时长"').toMatch(/isAllTime \? '累计时长' : '期间时长'/)
+  })
 })

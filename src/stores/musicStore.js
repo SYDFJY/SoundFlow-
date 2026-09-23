@@ -137,6 +137,11 @@ export const useMusicStore = defineStore('music', () => {
     await fill(() => playlists.value.length > 0, 'playlists', v => { playlists.value = v })
     await fill(() => history.value.length > 0, 'history', v => { history.value = v })
     await fill(() => Object.keys(playCounts.value).length > 0, 'playCounts', v => { playCounts.value = v })
+    // playStats 也必须兜底:此前它只从 localStorage 读,一旦那个键缺失(配额写失败/换配置目录),
+    // 就会走到下面的 backfillPlayStats() 被"从 500 条日志重建",用户看到的就是累计播放
+    // 从一千多掉回五百。这一行必须排在 backfillPlayStats() 之前 —— 有主进程那份完整数据时,
+    // 回填根本不该发生。
+    await fill(() => Object.keys(playStats.value).length > 0, 'playStats', v => { playStats.value = v })
     await fill(() => scanFolders.value.length > 0, 'scanFolders', v => { scanFolders.value = v })
     await fill(() => lyricFolders.value.length > 0, 'lyricFolders', v => { lyricFolders.value = v })
 
@@ -239,6 +244,7 @@ export const useMusicStore = defineStore('music', () => {
           window.electronAPI.storeSet('favorites', toPlain(favorites.toArray()))
           window.electronAPI.storeSet('playlists', toPlain(playlists.value))
           window.electronAPI.storeSet('playCounts', toPlain(playCounts.value))
+          window.electronAPI.storeSet('playStats', toPlain(playStats.value))
           window.electronAPI.storeSet('history', toPlain(history.value))
           window.electronAPI.storeSet('scanFolders', toPlain(scanFolders.value))
           window.electronAPI.storeSet('lyricFolders', toPlain(lyricFolders.value))
@@ -326,6 +332,37 @@ export const useMusicStore = defineStore('music', () => {
     }
     return out
   }
+
+  /**
+   * 全部时间的播放次数:直接对 playCounts **整表**求和。
+   *
+   * 为什么不读按天聚合表(playStats):那张表 2026-09-23 才上线,上线时只能从 history
+   * (播放日志,**上限 500 条**)一次性回填 —— 于是"累计播放"从第一天起就少了被日志
+   * 截掉的那部分,而且它披着聚合表的外衣,看不出是残缺的(实测:真实 1559 次,表里 500)。
+   * playCounts 是每首歌自己的计数器,不经过日志;对整表求和也顺带避免了旧实现
+   * "只统计曲库中还在的歌"导致的漏计(文件移出曲库后它的次数会凭空消失)。
+   *
+   * 注意:按天趋势/时段分布仍然只能读 playStats —— playCounts 没有时间信息,
+   * 那部分数据在功能上线前不可恢复。
+   */
+  const allTimePlays = computed(() => {
+    let n = 0
+    for (const v of Object.values(playCounts.value)) n += v || 0
+    return n
+  })
+
+  /**
+   * 全部时间的播放时长:每首次数 × 曲目时长。
+   * 已移出曲库的歌拿不到时长,按 0 计 —— 于是这个值可能略小于真实值,
+   * 但比"只统计日志里那 500 条"完整得多(且与 allTimePlays 同一口径)。
+   */
+  const allTimeSeconds = computed(() => {
+    const dur = new Map(songs.value.map(s => [s.path, s.duration || 0]))
+    let sec = 0
+    for (const [p, c] of Object.entries(playCounts.value)) sec += (c || 0) * (dur.get(p) || 0)
+    return sec
+  })
+
   const favoriteCount = computed(() => favorites.size)
 
   const favoriteSongs = computed(() => {
@@ -463,18 +500,30 @@ export const useMusicStore = defineStore('music', () => {
     saveToStorage()
   }
 
-  // 播放计数上限:超过 600 首时按"最近播放优先、其次次数"裁到 500,防数据无限膨胀
+  // 播放计数的容量保护。
+  // 硬约束:**绝不删仍在曲库里的歌**。playCounts 是"累计播放"唯一完整的来源,
+  // 删一条就是把这个数字变小 —— 旧实现"超过 600 首按最近播放裁到 500"正是这么丢数据的:
+  // 一次裁剪会让长曲库的累计次数直接掉下来,而用户看到的只是"数字变小了"。
+  // 现在只在条目数极端膨胀时清理**已不在曲库**的残留路径(换过的音乐目录、删掉的专辑),
+  // 阈值远超实体曲库规模,正常使用永远碰不到。
+  const PLAY_COUNTS_SOFT_CAP = 20000
   function trimPlayCounts() {
     const entries = Object.entries(playCounts.value)
-    if (entries.length <= 500) return
-    const recent = new Set(history.value.slice(0, 500).map(h => h.path))
-    entries.sort((a, b) => {
+    if (entries.length <= PLAY_COUNTS_SOFT_CAP) return
+    const inLib = new Set(songs.value.map(s => s.path))
+    const kept = []
+    const cruft = []
+    for (const e of entries) (inLib.has(e[0]) ? kept : cruft).push(e)
+    const room = Math.max(0, PLAY_COUNTS_SOFT_CAP - kept.length)
+    if (cruft.length <= room) return
+    const recent = new Set(history.value.map(h => h.path))
+    cruft.sort((a, b) => {
       const ra = recent.has(a[0]) ? 1 : 0
       const rb = recent.has(b[0]) ? 1 : 0
       if (ra !== rb) return rb - ra
       return b[1] - a[1]
     })
-    playCounts.value = Object.fromEntries(entries.slice(0, 500))
+    playCounts.value = Object.fromEntries([...kept, ...cruft.slice(0, room)])
   }
 
   // 播放计数
@@ -482,8 +531,8 @@ export const useMusicStore = defineStore('music', () => {
     // 用展开运算符确保新增 key 也是响应式的
     const current = playCounts.value[path] || 0
     playCounts.value = { ...playCounts.value, [path]: current + 1 }
-    // 容量保护:数据膨胀时裁剪(保留最近播放的)
-    if (Object.keys(playCounts.value).length > 600) trimPlayCounts()
+    // 容量保护:只在极端膨胀时清理已不在曲库的残留(曲库内的歌一律保留,见函数注释)
+    if (Object.keys(playCounts.value).length > PLAY_COUNTS_SOFT_CAP) trimPlayCounts()
     const song = songs.value.find(s => s.path === path)
     const now = Date.now()
     // 按天累计(统计口径)与曲库无关:playCounts 已经加了这一次,天表也必须加,
@@ -1184,7 +1233,7 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   return {
-    songs, favorites, playlists, playCounts, history, playStats, todayPlays, searchQuery, startupMissing,
+    songs, favorites, playlists, playCounts, history, playStats, todayPlays, allTimePlays, allTimeSeconds, searchQuery, startupMissing,
     searchHits, FIELD_LABELS,
     sortField, sortOrder, scanFolders, lyricFolders, isScanning, scanProgress,
     filteredSongs, totalCount, favoriteCount, favoriteSongs,
