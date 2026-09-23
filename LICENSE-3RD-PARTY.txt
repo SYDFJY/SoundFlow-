@@ -62,3 +62,24 @@ SoundFlow 声流音乐 — 第三方资源与许可
 
    SDK/二进制入库位置: build/ffmpeg/ffmpeg.exe(*.exe 已被 .gitignore 忽略,不进仓库)
    打包声明: package.json 的 build.extraResources → resources/ffmpeg/ffmpeg.exe
+
+------------------------------------------------------------------------
+4) uiverse.io — 第三批采用(2026-09-23)
+   许可:   MIT License
+   归档:   同一 galaxy 仓库,本批稀疏拉取 Cards / Notifications / Toggle-switches / Patterns
+   原则不变:取"动作与形态",颜色尺寸一律改写为项目主题 token。
+
+   已采用:
+   - 进度条流动微光(.sf-shimmer)
+       作者: CheneyLin(文件名 CheneyLin_lazy-goat-96,Tags: animation, progress bar, loader)
+       改写: 原组件用一张 base64 PNG 箭头贴图 + background-position 位移;这里换成**纯 CSS
+             渐变位移**(不引外部贴图),颜色走 token,并用 prefers-reduced-motion 降级为静态高光。
+       用于: 扫描进度条(src/views/HomeView.vue),"百分比长时间不动"时表达"还在动"
+       实现: src/styles/loaders.css
+
+   本次查看但**未采用**:
+   - Toggle-switches:现有 .switch 已是圆钮 + 按压缩放的 iOS 风格,换成方块滑块属等价替换,
+     只会带来回归风险,故不改(global.css 的 .switch 保持原样)。
+   - Notifications:该分类下的组件多为装饰性入场动画(翅膀/彩带等),与播放器提示语的调性不合;
+     本项目 Toast 的"自动消失倒计时条"是自研实现(按 duration 参数驱动 scaleX 收缩),
+     未复制其中任何组件。

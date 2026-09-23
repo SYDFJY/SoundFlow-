@@ -4,6 +4,8 @@
   <div class="toast-host" role="status" aria-live="polite" aria-atomic="false">
     <transition-group name="toast-pop">
       <div v-for="t in toastState.list" :key="t.id" class="toast-item" :class="'toast-' + t.type" role="button" tabindex="0" :aria-label="t.message + '(点击关闭)'" @click="dismiss(t.id)" @keydown.enter.prevent="dismiss(t.id)" @keydown.space.prevent="dismiss(t.id)">
+        <!-- 自动消失倒计时:宽度按停留时长线性收缩(时长来自 useToast,带动作的会拉长到 ≥6s) -->
+        <span class="toast-timer" :style="{ animationDuration: (t.ms || 2600) + 'ms' }" aria-hidden="true"></span>
         <span class="toast-icon" aria-hidden="true"><Icon :name="iconName[t.type] || 'check'" :size="13" /></span>
         <span class="toast-msg">{{ t.message }}</span>
         <!-- 动作按钮:撤销/重试/打开位置等。点按钮不应连带关闭整条提示的语义
@@ -70,6 +72,30 @@ body.hw-accel .toast-item {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
+/* 自动消失倒计时条:贴底一条细线,按停留时长线性收缩(取自 uiverse 通知类组件的思路:
+   把"还剩多久"画出来;原组件是固定的入场动画,这里是**按时长参数驱动**的倒计时,
+   颜色/粗细改走本项目 token)。
+   动画用 scaleX 而不是 width:后者每帧触发布局,前者只走合成(软件渲染下差别明显)。 */
+.toast-timer {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: currentColor;
+  opacity: 0.35;
+  transform-origin: left center;
+  animation-name: toast-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes toast-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 系统要求减少动效时不做收缩,直接隐藏(信息由提示本身承担) */
+  .toast-timer { display: none; }
+}
+
 /* 类型配色:左侧 4px 色条(深浅主题均清晰,文字保持白字深底) */
 .toast-item::before {
   content: '';

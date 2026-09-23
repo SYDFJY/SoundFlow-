@@ -81,7 +81,7 @@
             正在扫描 <b>{{ musicStore.scanDone }}</b> / {{ musicStore.scanTotal }} 首
             <span v-if="musicStore.scanFailed" class="scan-failed">({{ musicStore.scanFailed }} 个失败)</span>
           </div>
-          <div class="scan-bar"><i :style="{ width: musicStore.scanProgress + '%' }"></i></div>
+          <div class="scan-bar sf-shimmer"><i :style="{ width: musicStore.scanProgress + '%' }"></i></div>
           <div v-if="musicStore.scanCurrent" class="scan-file text-ellipsis">{{ musicStore.scanCurrent.split(/[\/]/).pop() }}</div>
         </template>
         <div v-else class="scan-text">正在扫描音乐文件...</div>
@@ -458,6 +458,7 @@ async function removeSelected() {
   display: block; height: 100%; width: 0;
   background: var(--color-primary); border-radius: 2px;
   transition: width 0.2s linear;
+  position: relative;
 }
 .scan-card .scan-failed { color: var(--color-warning); font-size: 11px; }
 .scan-card .scan-file {

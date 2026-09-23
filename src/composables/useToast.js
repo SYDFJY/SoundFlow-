@@ -14,10 +14,12 @@ let seq = 0
  */
 export function toast(message, type = 'info', duration = 2600, actions = null) {
   const id = ++seq
-  const item = { id, message, type, actions: Array.isArray(actions) && actions.length ? actions : null }
+  // 停留时长也带进条目:渲染层用它驱动"自动消失倒计时条"——
+  // 让"还剩多久"变成看得见的信息,而不是凭感觉猜(带动作的会拉长到 ≥6s)
+  const acts = Array.isArray(actions) && actions.length ? actions : null
+  const ms = acts ? Math.max(duration, 6000) : duration
+  const item = { id, message, type, actions: acts, ms }
   toastState.list.push(item)
-  // 带动作的提示要留出阅读与点击时间
-  const ms = item.actions ? Math.max(duration, 6000) : duration
   setTimeout(() => dismissToast(id), ms)
   return id
 }
