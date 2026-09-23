@@ -83,3 +83,22 @@ SoundFlow 声流音乐 — 第三方资源与许可
    - Notifications:该分类下的组件多为装饰性入场动画(翅膀/彩带等),与播放器提示语的调性不合;
      本项目 Toast 的"自动消失倒计时条"是自研实现(按 duration 参数驱动 scaleX 收缩),
      未复制其中任何组件。
+
+------------------------------------------------------------------------
+5) uiverse.io — Checkboxes 分类采用(2026-09-23)
+   许可:   MIT License
+   归档:   同一 galaxy 仓库,分类目录 Checkboxes
+
+   已采用(动作:框→对勾的形变 —— "把对勾写出来"):
+   - sans-script_modern-stingray-0(Tags: checkbox, square)
+   - G4b413l_smooth-duck-62(Tags: checkbox)
+       改写: 两者都需要一个额外的 span 做形变载体(框的边框旋转收窄后长成对勾)。
+             本项目不引入额外 DOM,改为在 input 的 ::after 上用**裁剪擦除**(clip-path
+             从左上角展开)实现同一动作;颜色走 --sf-check-mark/token,尺寸沿用 16px 体系,
+             并对 prefers-reduced-motion 关闭动效与回弹。
+       用于: 列表/歌单/去重面板的多选框(src/components/MusicList.vue、HomeView、PlaylistView)
+       实现: src/styles/controls.css 的 .sf-check
+
+   顺带修掉一个**功能性缺口**(非本项目既有能力):全选框此前只绑 checked,
+   部分勾选时与"一个都没选"看起来完全一样 —— 现在接上既有的 :indeterminate 样式
+   (一横杠),三个状态可区分。

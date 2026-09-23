@@ -41,7 +41,13 @@
   background: var(--color-primary);
   border-color: var(--color-primary);
 }
-/* 勾:用两条边框拼出的对勾,勾选瞬间描边展开(纯 CSS,无需图标文件) */
+/* 勾:两条边框拼出的对勾,勾选瞬间**从左上方写出来**。
+   动作取自 uiverse 的 Checkboxes 分类(box→tick 的形变):sans-script_modern-stingray-0 与
+   G4b413l_smooth-duck-62 都是"框的边框旋转收窄、长成对勾"的路子。那两个组件需要一个额外的
+   span 做形变载体,这里直接用 input 的 ::after 实现同一动作(不引额外 DOM),
+   颜色与尺寸改走 token。
+   用 clip-path 擦除而不是 width/height 动画:后者每帧触发布局,前者只走绘制。
+   而且 16px 的元素上绘制代价可忽略(这层动效只在点击那一刻发生一次)。 */
 .sf-check::after {
   content: '';
   position: absolute;
@@ -49,14 +55,28 @@
   top: 1.5px;
   width: 4px;
   height: 8px;
-  border: solid #fff;
+  border: solid var(--sf-check-mark, #fff);
   border-width: 0 2px 2px 0;
-  transform: rotate(45deg) scale(0);
+  transform: rotate(45deg);
   transform-origin: center;
-  transition: transform 0.14s cubic-bezier(0.4, 0, 0.2, 1);
+  /* 初始:整根笔画被裁掉(从左上角开始露出来 = 像写出来的对勾) */
+  clip-path: inset(0 100% 100% 0);
+  transition: clip-path 0.16s cubic-bezier(0.4, 0, 0.2, 1);
 }
-.sf-check:checked::after { transform: rotate(45deg) scale(1); }
-/* 半选(全选按钮在"部分勾选"时):一横杠 */
+.sf-check:checked::after { clip-path: inset(0 0 0 0); }
+/* 勾选瞬间整框轻微回弹:点击有"落点"的反馈(只有 transform,不触发重排) */
+.sf-check:checked { animation: sf-check-pop 0.18s ease-out; }
+@keyframes sf-check-pop {
+  0% { transform: scale(0.86); }
+  60% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sf-check:checked { animation: none; }
+  .sf-check::after { transition: none; }
+}
+/* 半选(全选按钮在"部分勾选"时):一横杠 —— 必须显式复位 clip-path 与 transform,
+   否则会继承上面那根被裁过的对勾形状 */
 .sf-check:indeterminate::after {
   left: 3px;
   top: 6.5px;
@@ -64,6 +84,7 @@
   height: 0;
   border-width: 0 0 2px 0;
   transform: none;
+  clip-path: none;
 }
 .sf-check:disabled { opacity: 0.45; cursor: not-allowed; }
 

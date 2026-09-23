@@ -33,7 +33,15 @@
     <!-- 表头 -->
     <div class="list-header" v-if="songs.length > 0">
       <div v-if="batchOn" class="col-check">
-        <input type="checkbox" class="sf-check" :checked="allChecked" @change="toggleAll" aria-label="全选" />
+        <!-- 半选态:部分勾选时必须看得出来(此前只绑 checked,勾了一部分仍显示为空框) -->
+        <input
+          type="checkbox"
+          class="sf-check"
+          :checked="allChecked"
+          :indeterminate="!allChecked && selectedSet.size > 0"
+          @change="toggleAll"
+          aria-label="全选"
+        />
       </div>
       <div class="col-index">#</div>
       <div class="col-title sortable" role="button" tabindex="0" :aria-label="`按标题排序${sortField === 'title' ? (musicStore.sortOrder === 'asc' ? '（当前升序）' : '（当前降序）') : ''}`" @click="$emit('sort', 'title')" @keydown.enter.prevent="$emit('sort', 'title')" @keydown.space.prevent="$emit('sort', 'title')">标题<span class="sort-arrow" aria-hidden="true"><Icon v-if="sortField === 'title'" :name="musicStore.sortOrder === 'asc' ? 'sortAsc' : 'sortDesc'" :size="12" /></span></div>
