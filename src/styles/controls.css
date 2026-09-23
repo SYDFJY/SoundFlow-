@@ -262,37 +262,4 @@ input[type='range']:active::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .btn--ghost::before, .chip::before { transition: none; }
 }
-
-/* ===== 卡片:悬停自下而上渗出一层浅底 ====
-   动作取自 uiverse 的 Cards 分类(Ali-Tahmazi99_curly-insect-62):::before 的 height 0 → 100%。
-   原组件用实色盖满整卡(文字会跟着变色),这里改成 --bg-hover 的浅渐变,只做"底下渗上来"的动感,
-   文字颜色不动 —— 卡片上还有封面、统计数字等元素,底色一变就得整套跟着调。
-   这些卡片各自在自己的 scoped 样式里定义,全局规则只加 ::before,不与之争同一属性。 */
-.stat-card,
-.album-card,
-.folder-item,
-.rec-card {
-  position: relative;
-}
-.stat-card::before,
-.album-card::before,
-.folder-item::before,
-.rec-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 0;
-  border-radius: inherit;
-  background: linear-gradient(0deg, var(--bg-hover), transparent);
-  transition: height 0.28s ease;
-  pointer-events: none;
-}
-.stat-card:hover::before,
-.album-card:hover::before,
-.folder-item:hover::before,
-.rec-card:hover::before { height: 100%; }
-@media (prefers-reduced-motion: reduce) {
-  .stat-card::before, .album-card::before, .folder-item::before, .rec-card::before { transition: none; }
 }

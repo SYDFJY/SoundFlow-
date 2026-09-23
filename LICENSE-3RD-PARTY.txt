@@ -126,12 +126,12 @@ SoundFlow 声流音乐 — 第三方资源与许可
        改写: 原组件是 ::after 实色反转(scaleX 0→1、transform-origin: left),会盖住文字;
              这里改成极淡的主色 alpha 层,压在背景之上、文字之下。
        用于: .btn--ghost 与 .chip(src/styles/controls.css)
-   c) 卡片悬停自下而上渗出一层浅底
+   c) 卡片悬停自下而上渗出一层浅底 —— **已按用户要求移除(2026-09-23)**
        作者: Ali-Tahmazi99(Ali-Tahmazi99_curly-insect-62,Tags: card)
-       改写: 原组件 ::before 的 height 0→100% 实色铺满整卡(文字随之变色);
-             这里改成 --bg-hover 的浅渐变,只做动感、不动文字颜色
-             (卡片上有封面/统计数字,底色一变就得整套跟着调)。
-       用于: .stat-card / .album-card / .folder-item / .rec-card
+       曾实现: 原组件 ::before 的 height 0→100% 实色铺满整卡,当时改成 --bg-hover 浅渐变。
+       移除原因: 用户看过后要求去掉(卡片本身已有悬停抬升 + 阴影,再叠一层渗出显得多余)。
+       备注: 这条已不在代码里,不要再加回来;若将来要恢复,记得连 ::before 的
+             position:relative 容器一起加。
    d) 输入框聚焦时占位符变淡
        作者: JaydipPrajapati1910(JaydipPrajapati1910_black-impala-70,Tags: input effect)
        改写: 只取 :focus::placeholder 的颜色过渡这一条(原组件的立体/透视效果未采用)。
