@@ -66,6 +66,115 @@ if (unusedHandle.length) {
   console.log(`  · 主进程注册但 preload 未用到(仅供参考,可能是内部通道):${unusedHandle.length} 个`)
 }
 
+// ===== C. 模块内自由标识符 =====
+// A 只证明"通道注册了",B 只覆盖清单里那几个;两者都看不见函数体里调用了
+// **本文件既没定义、也没从 require 解构出来**的名字 —— `node --check` 也只看语法。
+// 拆 electron/ipc/tags.js 时漏写 `const { getFfmpegPath } = require('../lib/audioTools')`,
+// 于是 write-tags 每次都抛 "getFfmpegPath is not defined",构建、单测、静态通道
+// 三关全绿(最后靠 scan-bench 的标签往返才暴露)。这里补一道宽松扫描:只报名字在
+// 整个文件里完全找不到绑定的调用,宁可漏报也不误报。
+const GLOBALS = new Set([
+  'require', 'module', 'exports', 'process', 'console', 'Buffer', 'global', 'globalThis',
+  'JSON', 'Math', 'Number', 'String', 'Boolean', 'Array', 'Object', 'Date', 'RegExp', 'Error',
+  'TypeError', 'RangeError', 'SyntaxError', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Promise',
+  'Symbol', 'Proxy', 'Reflect', 'Intl', 'BigInt', 'URL', 'URLSearchParams', 'TextEncoder',
+  'TextDecoder', 'ArrayBuffer', 'DataView', 'Uint8Array', 'Int8Array', 'Uint32Array',
+  'Int32Array', 'Float32Array', 'Float64Array', 'performance', 'crypto', 'structuredClone',
+  'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate', 'queueMicrotask',
+  'requestAnimationFrame', 'cancelAnimationFrame', 'fetch', 'AbortController', 'atob', 'btoa',
+  'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent',
+  'encodeURI', 'decodeURI', 'sanitize', 'async', 'get', 'set', 'of',
+  // 关键字:避免 `if (`、`function (`、`typeof (` 被误当成调用
+  'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function', 'class', 'do',
+  'else', 'new', 'delete', 'void', 'in', 'of', 'instanceof', 'await', 'yield', 'case'
+])
+function addParamNames (names, raw) {
+  for (const part of String(raw).split(',')) {
+    const t = part.trim().replace(/^\.\.\./, '').split('=')[0].trim()
+    if (/^[A-Za-z_$][\w$]*$/.test(t)) names.add(t)
+    for (const p of t.replace(/^[{[]/, '').replace(/[}\]]$/, '').split(',')) {
+      const q = p.trim().replace(/^\.\.\./, '').split(':').pop().trim().split('=')[0].trim()
+      if (/^[A-Za-z_$][\w$]*$/.test(q)) names.add(q)
+    }
+  }
+}
+function boundNames (src) {
+  const names = new Set()
+  for (const m of src.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+  for (const m of src.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+  for (const m of src.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) names.add(m[1])
+  for (const m of src.matchAll(/\b(?:const|let|var)\s*\{([^}]*)\}/g)) addParamNames(names, m[1])
+  for (const m of src.matchAll(/\b(?:const|let|var)\s*\[([^\]]*)\]/g)) addParamNames(names, m[1])
+  for (const m of src.matchAll(/function\s*(?:[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)/g)) addParamNames(names, m[1])
+  for (const m of src.matchAll(/\(([^()]*)\)\s*=>/g)) addParamNames(names, m[1])
+  for (const m of src.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) names.add(m[1])
+  return names
+}
+// 把注释/字符串/模板换成占位符,只留代码。**不能用正则做这件事** —— 注释里一个
+// 落单的引号或反引号会让正则一路吞掉后面的真实代码,把定义过的函数报成"未定义",
+// 而误报会把真问题淹没(第一版就是这么误报了 main.js 里 11 个函数)。
+// 逐字符扫描:块注释/行注释按终结符跳过;单双引号字符串在 JS 里不跨行,遇到换行
+// 就算未闭合到此为止;模板允许跨行。
+function stripNonCode (src) {
+  let out = ''
+  let i = 0
+  const n = src.length
+  while (i < n) {
+    const c = src[i]
+    const d = src[i + 1]
+    if (c === '/' && d === '*') {
+      const e = src.indexOf('*/', i + 2)
+      i = e < 0 ? n : e + 2
+      out += ' '
+      continue
+    }
+    if (c === '/' && d === '/') {
+      const e = src.indexOf('\n', i)
+      i = e < 0 ? n : e
+      out += ' '
+      continue
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      const q = c
+      i++
+      while (i < n) {
+        if (src[i] === '\\') { i += 2; continue }
+        if (src[i] === '\n' && q !== '`') break
+        if (src[i] === q) { i++; break }
+        i++
+      }
+      out += q === '`' ? '``' : (q === "'" ? "''" : '""')
+      continue
+    }
+    out += c
+    i++
+  }
+  return out
+}
+function freeCalls (rel) {
+  const src = stripNonCode(fs.readFileSync(path.join(repo, rel), 'utf8'))
+  const bound = boundNames(src)
+  const out = new Set()
+  for (const m of src.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const name = m[2]
+    if (GLOBALS.has(name) || bound.has(name)) continue
+    out.add(name)
+  }
+  return [...out]
+}
+const freeBad = []
+for (const rel of reg.files) {
+  if (!rel.startsWith('electron/')) continue
+  const calls = freeCalls(rel)
+  if (calls.length) freeBad.push({ rel, calls })
+}
+if (freeBad.length) {
+  staticBad += freeBad.length
+  for (const { rel, calls } of freeBad) {
+    console.error(`  ✗ ${rel} 调用了本文件未定义的标识符:${calls.join(', ')}(忘了 require 或用错解构?)`)
+  }
+} else console.log(`  ✓ ${reg.files.length} 个主进程文件里没有"调用了未定义标识符"`)
+
 // ===== B. 运行时冒烟 =====
 require(path.join(repo, 'electron', 'main.js'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))

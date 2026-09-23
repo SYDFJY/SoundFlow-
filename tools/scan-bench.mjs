@@ -129,6 +129,43 @@ app.whenReady().then(async () => {
   // 等一会再退:解析缓存的落盘有 3 秒防抖、electron-log 也需要时间刷新,
   // 立刻退出会导致"缓存文件没生成、命中率日志也看不到"(验证时踩过一次)
   await new Promise((r) => setTimeout(r, 4500))
+  // 标签写入是**破坏性**操作(会改写音频文件),所以用一次性副本做完整往返:
+  //   复制 → 写入标签 → 确认备份出现 → 还原 → 校验标题回到原值 → 清理副本
+  // 这一步是"拆模块没拆坏"的唯一硬证据:它跨了 write-tags / 备份索引 / restore 三条链。
+  if (listed.length > 0) {
+    const fs2 = require('node:fs')
+    const { execFileSync } = require('node:child_process')
+    const tmpDir = path.join(require('node:os').tmpdir(), 'sf-tag-roundtrip')
+    fs2.rmSync(tmpDir, { recursive: true, force: true })
+    fs2.mkdirSync(tmpDir, { recursive: true })
+    const sample = listed[0].path
+    const copy = path.join(tmpDir, path.basename(sample))
+    fs2.copyFileSync(sample, copy)
+    const originalTitle = await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.electronAPI.parseMetadata(${JSON.stringify(copy)}); return r && r.title })()`, true)
+    const wrote = await win.webContents.executeJavaScript(
+      `(async () => await window.electronAPI.writeTags(${JSON.stringify(copy)}, { title: '往返测试标题' }))()`, true)
+    const afterWrite = await win.webContents.executeJavaScript(
+      `(async () => { const r = await window.electronAPI.parseMetadata(${JSON.stringify(copy)}); return r && r.title })()`, true)
+    const backups = await win.webContents.executeJavaScript(`(async () => await window.electronAPI.listTagBackups())()`, true)
+    // 字段名以 list-tag-backups 的实际返回为准(filePath/name);写成 b.path/b.file 时
+    // 过滤条件恒为空,会把"备份正常"误判成"没备份"(2026-09-23 踩过)
+    const mine = Array.isArray(backups)
+      ? backups.filter((b) => String(b.filePath || b.name || b.path || b.file || '').includes(path.basename(copy)))
+      : []
+    let restored = null
+    if (mine.length) {
+      const id = mine[0].id
+      await win.webContents.executeJavaScript(`(async () => await window.electronAPI.restoreTagBackup(${JSON.stringify(id)}))()`, true)
+      restored = await win.webContents.executeJavaScript(
+        `(async () => { const r = await window.electronAPI.parseMetadata(${JSON.stringify(copy)}); return r && r.title })()`, true)
+    }
+    console.log('标签往返:写入结果', JSON.stringify(wrote), '· 写后标题', afterWrite, '· 备份', mine.length, '份 · 还原后标题', restored)
+    const ok = !!(wrote && wrote.ok) && afterWrite === '往返测试标题' && mine.length > 0 && restored === originalTitle
+    if (!ok) console.error('标签往返异常:写入/备份/还原三者有一处没对上')
+    fs2.rmSync(tmpDir, { recursive: true, force: true })
+  }
+
   console.log('收尾完成(缓存应已落盘)')
   app.exit(0)
 })
