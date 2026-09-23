@@ -202,7 +202,12 @@ const READ_ONLY = [
   // dialogs 组(select-*/export-*)全都要弹系统对话框,清单覆盖不到;但"模块到底有没有
   // 被加载、register 有没有跑"这件事,有这一个不弹窗的通道就能证伪(路径写错或 register
   // 抛异常时,该模块里的**每个**通道都会是 No handler registered)
-  ['get-fonts-dir', `window.electronAPI.getFontsDir()`]
+  ['get-fonts-dir', `window.electronAPI.getFontsDir()`],
+  // audio 组:get-loudness 只读;prepare-audio 对**原生支持**的格式(如 .mp3)在
+  // needsTranscode 处就返回原路径,不会触发转码 —— 两者都能安全调用,用来证伪
+  // "模块没加载好"(路径写错/register 抛异常时全是 No handler registered)
+  ['get-loudness', `window.electronAPI.getLoudness('E:/__nope__.mp3')`],
+  ['prepare-audio', `window.electronAPI.prepareAudio('E:/__nope__.mp3')`]
 ]
 
 app.whenReady().then(async () => {
