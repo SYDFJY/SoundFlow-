@@ -198,7 +198,11 @@ const READ_ONLY = [
   ['search-netease', `window.electronAPI.searchNetease({ title: '' })`],
   ['search-kugou', `window.electronAPI.searchKugou({ title: '' })`],
   ['search-musicbrainz', `window.electronAPI.searchMusicbrainz({ title: '' })`],
-  ['download-cover', `window.electronAPI.downloadCover('', 'E:/__nope__.mp3')`]
+  ['download-cover', `window.electronAPI.downloadCover('', 'E:/__nope__.mp3')`],
+  // dialogs 组(select-*/export-*)全都要弹系统对话框,清单覆盖不到;但"模块到底有没有
+  // 被加载、register 有没有跑"这件事,有这一个不弹窗的通道就能证伪(路径写错或 register
+  // 抛异常时,该模块里的**每个**通道都会是 No handler registered)
+  ['get-fonts-dir', `window.electronAPI.getFontsDir()`]
 ]
 
 app.whenReady().then(async () => {
