@@ -1310,84 +1310,15 @@ function setupIPC() {
     mainWindow: () => mainWindow
   })
 
-  // 存储
-  ipcMain.handle('store-get', (event, key) => storageData[key] ?? null)
-  ipcMain.handle('store-set', (event, key, value) => {
-    storageData[key] = value
-    saveStorage()
-  })
-  // 批量写入(一次 IPC 写入多组数据,避免多次全量深拷贝 + 多次 saveStorage)
-  ipcMain.handle('store-set-bulk', (event, payload) => {
-    if (!payload || typeof payload !== 'object') return
-    let changed = false
-    for (const k of Object.keys(payload)) {
-      storageData[k] = payload[k]
-      changed = true
-    }
-    if (changed) saveStorage()
-  })
-
-  // ========== 数据安全:导出 / 导入 / 自动备份 ==========
-  // 导出全部数据(渲染端 localStorage + 主进程 store)保存为用户选择的文件
-  ipcMain.handle('export-data-file', async (event, localStorageData) => {
-    try {
-      const { dialog } = require('electron')
-      const defaultName = `soundflow-备份-${new Date().toISOString().slice(0, 10)}.json`
-      const r = await dialog.showSaveDialog(mainWindow, {
-        title: '导出 SoundFlow 数据备份',
-        defaultPath: path.join(app.getPath('documents'), defaultName),
-        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
-      })
-      if (r.canceled || !r.filePath) return { ok: false, canceled: true }
-      const payload = {
-        app: 'soundflow', version: 1, exportedAt: new Date().toISOString(),
-        localStorage: localStorageData || {}, store: storageData
-      }
-      fs.writeFileSync(r.filePath, JSON.stringify(payload, null, 2), 'utf8')
-      return { ok: true, path: r.filePath }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-  // 读取备份文件并返回内容(渲染端负责写入 localStorage + store)
-  ipcMain.handle('import-data-file', async () => {
-    try {
-      const { dialog } = require('electron')
-      const r = await dialog.showOpenDialog(mainWindow, {
-        title: '导入 SoundFlow 数据备份',
-        properties: ['openFile'],
-        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
-      })
-      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true }
-      const raw = fs.readFileSync(r.filePaths[0], 'utf8')
-      const payload = JSON.parse(raw)
-      if (!payload || payload.app !== 'soundflow') return { ok: false, error: '不是有效的 SoundFlow 备份文件' }
-      return { ok: true, localStorage: payload.localStorage || {}, store: payload.store || {} }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-  // 自动备份:启动后请求渲染端 localStorage 快照,合并 store 写入 backups/,保留最近 10 份
-  ipcMain.on('backup-data', (event, localStorageData) => {
-    try {
-      const backupDir = path.join(app.getPath('userData'), 'backups')
-      fs.mkdirSync(backupDir, { recursive: true })
-      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-      const dest = path.join(backupDir, `soundflow-${ts}.json`)
-      const payload = {
-        app: 'soundflow', version: 1, type: 'auto-backup', exportedAt: new Date().toISOString(),
-        localStorage: localStorageData || {}, store: storageData
-      }
-      fs.writeFileSync(dest, JSON.stringify(payload), 'utf8')
-      // 保留最近 10 份
-      const files = fs.readdirSync(backupDir).filter(f => f.startsWith('soundflow-') && f.endsWith('.json')).sort()
-      while (files.length > 10) {
-        try { fs.unlinkSync(path.join(backupDir, files.shift())) } catch (e) { log.warn('[备份] 清理旧备份失败:', e.message) }
-      }
-    } catch (e) {
-      // 此前静默吞掉:界面写着「自动备份(10 份轮换)」,备份实际失败用户却毫不知情
-      log.error('[备份] 自动备份失败:', e && e.message ? e.message : e)
-    }
-  })
-  ipcMain.handle('store-delete', (event, key) => {
-    delete storageData[key]
-    saveStorage()
+  // 存储与数据备份 IPC(store-* / 导出导入 / 自动备份 / 重启)已拆到 electron/ipc/storage.js。
+  // storageData 与 saveStorage 的**持有权留在本文件**(全局真相源,别的域也在写),
+  // getter/setter 传入:它们在运行期会被重新赋值(import-backup 整体替换),传快照会过期。
+  require('./ipc/storage').register({
+    ipcMain,
+    storage: () => storageData,
+    setStorage: (v) => { storageData = v },
+    persist: (immediate) => saveStorage(immediate),
+    mainWindow: () => mainWindow
   })
 
   // 打开文件位置
@@ -1542,64 +1473,6 @@ function setupIPC() {
     })
   })
 
-  // 数据备份:导出 userData JSON 到用户选择的位置
-  ipcMain.handle('export-backup', async (event) => {
-    try {
-      const defaultName = `SoundFlow备份-${new Date().toISOString().slice(0, 10)}.json`
-      const result = await dialog.showSaveDialog(mainWindow, {
-        title: '导出备份',
-        defaultPath: path.join(app.getPath('documents'), defaultName),
-        filters: [{ name: 'JSON', extensions: ['json'] }]
-      })
-      if (result.canceled || !result.filePath) return null
-      // 先落盘当前数据(防抖中的写入可能未执行)
-      saveStorage(true)
-      await new Promise(r => setTimeout(r, 300))
-      const backup = {
-        app: 'SoundFlow',
-        version: '1.0.0',
-        exportedAt: new Date().toISOString(),
-        data: storageData
-      }
-      await writeFile(result.filePath, JSON.stringify(backup, null, 2), 'utf8')
-      log.info('[备份] 已导出:', result.filePath)
-      return result.filePath
-    } catch (e) {
-      log.error('[备份] 导出失败:', e.message)
-      return null
-    }
-  })
-
-  // 数据导入:读取备份 JSON,写回 userData(覆盖),随后重启
-  ipcMain.handle('import-backup', async (event) => {
-    try {
-      const result = await dialog.showOpenDialog(mainWindow, {
-        title: '导入备份',
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-        properties: ['openFile']
-      })
-      if (result.canceled || !result.filePaths || !result.filePaths[0]) return { cancel: true }
-      const raw = await readFile(result.filePaths[0], 'utf8')
-      const parsed = JSON.parse(raw)
-      const data = parsed && parsed.app === 'SoundFlow' && parsed.data ? parsed.data : parsed
-      if (!data || typeof data !== 'object') return { ok: false }
-      // 校验核心字段
-      if (!Array.isArray(data.library)) return { ok: false }
-      storageData = data
-      saveStorage(true)
-      log.info('[备份] 已导入:', result.filePaths[0])
-      return { ok: true }
-    } catch (e) {
-      log.error('[备份] 导入失败:', e.message)
-      return { ok: false }
-    }
-  })
-
-  // 重启应用(导入备份后生效)
-  ipcMain.on('restart-app', () => {
-    try { app.relaunch() } catch (_) {}
-    app.exit(0)
-  })
 
   // 准备可播放的音频源:原生支持直接返回原路径,不支持的格式转码为 FLAC 临时文件
   ipcMain.handle('prepare-audio', async (event, filePath) => {
