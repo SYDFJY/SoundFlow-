@@ -13,6 +13,10 @@ const https = require('https')
 const { dialog } = require('electron')
 const log = require('electron-log')
 const { readdir, stat, readFile, writeFile, mkdir, access, unlink } = require('fs/promises')
+// 本地歌词是 GBK/GB18030 时用 iconv 解码。这一行曾被拆 lyrics.js 时漏掉:
+// readLrc 里 iconv.decode 抛 ReferenceError,被外层 catch 吞掉 → **本地歌词永远读成空**,
+// 而界面只是"没有歌词",看不出是代码坏了。
+const iconv = require('iconv-lite')
 
 /**
  * @param {{ipcMain:object, storage:()=>object, mainWindow:()=>object}} ctx

@@ -14,7 +14,7 @@
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
-const { app } = require('electron')
+const { app, nativeImage } = require('electron')
 
 /** 网络请求超时:搜索与封面下载共用(原先定义在 main.js) */
 const NET_TIMEOUT_MS = 10000

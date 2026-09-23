@@ -269,6 +269,15 @@ function scanFolderRecursive(folderPath, diagnostics) {
   return scanRecursive(folderPath, { audioExts: AUDIO_EXTS, diagnostics })
 }
 
+// ========== 快捷键文本翻译 ==========
+// 渲染端存的是 e.code(Control+ArrowRight / Control+KeyM),而 globalShortcut 只认 Electron
+// 的写法(Right / M),注册前必须先翻译。
+// 注意这一行必须留着:9/22 拆 lib/covers|metadata|scan 的那次重构把它一起删了
+// (代码里 accelLib.toAccelerator 的调用还在),于是 update-shortcuts 每次都抛
+// ReferenceError → **全局快捷键一个都没注册上**,而且日志里连"注册失败"的警告都没有
+// (压根没走到注册那一步),看日志还以为一切正常。
+const accelLib = require('./lib/accelerator')
+
 // ========== 文件夹监控(曲库自动刷新,事件驱动无轮询) ==========
 // fs.watch 递归监听已保存目录;变更去抖后做增量快照对比,推送新增/删除文件路径
 let folderWatchers = []            // fs.FSWatcher 句柄

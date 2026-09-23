@@ -432,6 +432,18 @@
             </div>
           </div>
         </div>
+        <div class="setting-item" v-if="customFonts.length">
+          <div class="setting-label"><span class="label-text">字体文件占用</span></div>
+          <div class="font-tidy-row">
+            <button class="btn" :disabled="fontTidy.busy" @click="tidyFonts">
+              {{ fontTidy.busy ? '整理中…' : '整理字体文件' }}
+            </button>
+            <span class="setting-hint">
+              指认字体原件所在的文件夹:把复制进数据目录的同名副本删掉、改为直接引用原件。
+              字体不会丢;若之后移动/改名那个文件夹,字体才会失效。
+            </span>
+          </div>
+        </div>
       </div>
 
       <!-- 快捷键 -->
@@ -1221,10 +1233,45 @@ async function importFontFolder() {
 }
 
 function removeCustomFont(i) {
-  const name = customFonts.value[i].name
+  const f = customFonts.value[i]
+  const name = f.name
   customFonts.value.splice(i, 1)
   localStorage.setItem('soundflow_custom_fonts', JSON.stringify(customFonts.value))
   if (currentFont.value.includes(name)) selectFont(systemFonts[0].value)
+  // 以前只从列表里删条目,复制进来的字体文件永远留着 —— 只增不减,实测攒到 4 GB。
+  // 交给主进程删,它只允许删字体目录内的文件(不信任渲染端传来的路径)
+  try { window.electronAPI?.deleteFontFile?.(f.url) } catch {}
+}
+
+/**
+ * 整理字体文件:用户指认"原件所在文件夹",把数据目录里与它同名的副本删掉,
+ * 列表条目改指向原件 —— 一个字体都不丢,只是不再留冗余副本(实测释放 3.9 GB)。
+ */
+const fontTidy = ref({ busy: false })
+async function tidyFonts() {
+  if (!window.electronAPI?.tidyFonts) return
+  if (!(await confirmDialog({
+    message: '整理字体文件?',
+    detail: '接下来选择一个"字体原件所在的文件夹":程序会把之前复制进数据目录的同名字体副本删除,并把字体列表改指向原件。字体本身不会丢,但如果之后把那个文件夹移走或改名,对应字体会失效。',
+    confirmText: '选择文件夹'
+  }))) return
+  fontTidy.value.busy = true
+  try {
+    const res = await window.electronAPI.tidyFonts()
+    if (!res) return // 用户在选择框里取消
+    const n = Object.keys(res.remap || {}).length
+    if (!n) { window.$toast?.('所选文件夹里没有同名文件,没有可整理的副本', 'info', 4000); return }
+    customFonts.value = customFonts.value.map((f) => {
+      const base = decodeURIComponent(String(f.url || '').split('/').pop() || '')
+      return res.remap[base] ? { ...f, url: res.remap[base] } : f
+    })
+    localStorage.setItem('soundflow_custom_fonts', JSON.stringify(customFonts.value))
+    window.$toast?.(`已整理 ${n} 个字体文件,释放 ${(res.freed / 1048576).toFixed(0)} MB`, 'success', 6000)
+  } catch (e) {
+    window.$toast?.('整理失败:' + (e && e.message), 'error', 5000)
+  } finally {
+    fontTidy.value.busy = false
+  }
 }
 
 // 批量下载歌词到歌词文件夹(并发 + 实时进度 + 完成弹窗)
@@ -1471,6 +1518,9 @@ select {
 .custom-font-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
 .font-name { font-size: var(--font-size-sm); color: var(--text-primary); }
 .font-remove { padding: 3px 10px; font-size: var(--font-size-xs); }
+/* 整理字体文件:按钮 + 说明(说明走 token 色,浅色主题下也要能读) */
+.font-tidy-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.font-tidy-row .setting-hint { flex: 1; min-width: 220px; font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.5; }
 /* 字体文件夹字体选择网格 */
 .font-pick-grid { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px 2px; }
 .font-pick-card {

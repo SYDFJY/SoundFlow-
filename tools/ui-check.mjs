@@ -89,7 +89,19 @@ app.whenReady().then(async () => {
   await sleep(4000)
   console.log(`播种:${items.length} 首(队列 ${items.length} 首,当前第 1 首)`)
 
-  // 2) 列表:定位当前播放 —— 把当前索引挪到队列尾部,再点"定位",滚动位置必须变
+  // 2) 本地歌词:同目录的 .lrc 必须读得出来 —— 且要能读 **GBK** 编码(中文歌词常见)。
+  // 为什么单独测:readLrc 依赖 iconv-lite,拆 lyrics.js 时漏了那一行 require,
+  // iconv.decode 抛 ReferenceError 被外层 catch 吞掉 → "本地歌词永远读不出",
+  // 界面上只表现为没有歌词,代码里看不出坏。这条测的是真实解码通路,不是有没有那个 require。
+  const lrcPath = items[0].path.replace(/\.[^.]+$/, '') + '.lrc'
+  const gbkLrc = '[00:01.00]测试歌词第一行\n[00:05.00]第二行\n'
+  fs.writeFileSync(lrcPath, require('iconv-lite').encode(gbkLrc, 'gb18030'))
+  const lyricText = await run(`(async () => await window.electronAPI.readLyricFile(${JSON.stringify(items[0].path)}, []))()`)
+  check('本地歌词:GBK 编码的 .lrc 能读出来(iconv 解码通路)',
+    typeof lyricText === 'string' && lyricText.includes('测试歌词第一行'),
+    JSON.stringify(lyricText).slice(0, 80))
+
+  // 3) 列表:定位当前播放 —— 把当前索引挪到队列尾部,再点"定位",滚动位置必须变
   await run(`(() => { localStorage.setItem('soundflow_queue', JSON.stringify({ queue: ${JSON.stringify(items.map((i) => i.path))}, index: ${items.length - 1} })); return true })()`)
   await win.webContents.reload()
   await sleep(4000)
@@ -138,6 +150,34 @@ app.whenReady().then(async () => {
   })()`)
   check('输出设备:可枚举', devices && typeof devices.count === 'number', JSON.stringify(devices))
   check('输出设备:setSinkId 可用(不可用也应给出明确结论)', devices && (devices.setSink === 'ok' || devices.setSink === 'unsupported' || String(devices.setSink).startsWith('ERR')), String(devices && devices.setSink))
+
+  // 5) 设置页字体区:有"已导入字体"时,那个"整理字体文件"入口必须画出来。
+  // 为什么必须**带着字体**测:那段模板带 v-if,列表为空时根本不渲染 —— 路由冒烟用的空沙箱
+  // 永远看不到它,模板写错就只对"真有字体的用户"生效(这个项目栽过好几次同类:用户有数据、
+  // 沙箱没有,于是检查全绿而用户白屏)。
+  await run(`(() => {
+    localStorage.setItem('soundflow_custom_fonts', JSON.stringify([
+      { name: '字体甲', url: 'file:///E:/__nope__/a.ttf' },
+      { name: '字体乙', url: 'file:///E:/__nope__/b.ttf' }
+    ]))
+    return true
+  })()`)
+  await win.webContents.reload()
+  await sleep(3500)
+  await run(`(() => { location.hash = '#/settings'; return true })()`)
+  await sleep(1500)
+  const fontPanel = await run(`(() => {
+    const text = document.body.innerText || ''
+    const btn = [...document.querySelectorAll('button')].find((b) => (b.textContent || '').includes('整理字体文件'))
+    return {
+      textLen: text.length,
+      hasImportedLabel: /已导入字体\\(2\\)/.test(text),
+      hasTidyBtn: !!btn
+    }
+  })()`)
+  check('设置页(有已导入字体时)没有白屏', fontPanel && fontPanel.textLen > 200, JSON.stringify({ textLen: fontPanel && fontPanel.textLen }))
+  check('设置页:已导入字体计数画对了', fontPanel && fontPanel.hasImportedLabel, JSON.stringify(fontPanel))
+  check('设置页:字体"整理字体文件"入口存在', fontPanel && fontPanel.hasTidyBtn, JSON.stringify(fontPanel))
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

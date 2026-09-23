@@ -97,6 +97,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectBgImage: () => ipcRenderer.invoke('select-bg-image'),
   selectFontFile: () => ipcRenderer.invoke('select-font-file'),
   selectFontFolder: () => ipcRenderer.invoke('select-font-folder'),
+  // 整理字体文件:指认原件所在文件夹,把 userData/fonts 里的同名副本删掉并改指向原件
+  tidyFonts: () => ipcRenderer.invoke('tidy-fonts'),
+  // 删除一个已导入的字体文件(主进程只允许删字体目录内的)
+  deleteFontFile: (url) => ipcRenderer.invoke('delete-font-file', url),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),

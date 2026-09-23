@@ -37,6 +37,7 @@ function channelsRegisteredInMain () {
   for (const rel of files) {
     const full = path.join(repo, rel)
     if (!fs.existsSync(full)) continue
+    if (/\.tmp\./.test(rel)) continue // 编辑器遗留的临时副本,不是源码
     const src = fs.readFileSync(full, 'utf8')
     for (const m of src.matchAll(/ipcMain\.handle\(\s*'([^']+)'/g)) handle.add(m[1])
     for (const m of src.matchAll(/ipcMain\.on\(\s*'([^']+)'/g)) on.add(m[1])
@@ -84,6 +85,13 @@ const GLOBALS = new Set([
   'requestAnimationFrame', 'cancelAnimationFrame', 'fetch', 'AbortController', 'atob', 'btoa',
   'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent',
   'encodeURI', 'decodeURI', 'sanitize', 'async', 'get', 'set', 'of',
+  // 属性访问的根标识符也会被检查,所以浏览器/ES 的内建全局要列全,否则误报
+  'this', 'super', 'arguments', 'window', 'document', 'navigator', 'location',
+  'sessionStorage', 'localStorage', 'screen', 'history', 'Image', 'Audio', 'Event',
+  'CustomEvent', 'MutationObserver', 'IntersectionObserver', 'ResizeObserver', 'DOMParser',
+  'XMLHttpRequest', 'WebSocket', 'Worker', 'Blob', 'File', 'FileReader', 'FormData',
+  'Headers', 'Request', 'Response', 'AbortSignal', 'Notification', 'FontFace', 'Document',
+  'Element', 'HTMLElement', 'Node', 'NodeList', 'CSS', 'Math', 'JSON', 'Infinity', 'NaN',
   // 关键字:避免 `if (`、`function (`、`typeof (` 被误当成调用
   'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'function', 'class', 'do',
   'else', 'new', 'delete', 'void', 'in', 'of', 'instanceof', 'await', 'yield', 'case'
@@ -108,6 +116,10 @@ function boundNames (src) {
   for (const m of src.matchAll(/function\s*(?:[A-Za-z_$][\w$]*)?\s*\(([^)]*)\)/g)) addParamNames(names, m[1])
   for (const m of src.matchAll(/\(([^()]*)\)\s*=>/g)) addParamNames(names, m[1])
   for (const m of src.matchAll(/([A-Za-z_$][\w$]*)\s*=>/g)) names.add(m[1])
+  // catch 参数:`catch (e) { e.message }` 里的 e 也是绑定,漏了会把每个 e.xxx 都当成未定义
+  for (const m of src.matchAll(/catch\s*\(\s*([A-Za-z_$][\w$]*)\s*\)/g)) names.add(m[1])
+  // 对象字面量里的方法简写:`{ foo (a, b) { ... } }`
+  for (const m of src.matchAll(/(?:^|[,{]\s*)([A-Za-z_$][\w$]*)\s*\(([^()]*)\)\s*\{/g)) addParamNames(names, m[2])
   return names
 }
 // 把注释/字符串/模板换成占位符,只留代码。**不能用正则做这件事** —— 注释里一个
@@ -119,19 +131,34 @@ function stripNonCode (src) {
   let out = ''
   let i = 0
   const n = src.length
+  // 上一个有意义的字符 / 它所在的词:判断 `/` 是正则字面量还是除号要用
+  let prev = ''
+  let prevWord = ''
+  const REGEX_AFTER_KEYWORD = new Set(['return', 'typeof', 'case', 'in', 'of', 'new', 'delete', 'void', 'instanceof', 'do', 'else', 'yield', 'await'])
   while (i < n) {
     const c = src[i]
     const d = src[i + 1]
-    if (c === '/' && d === '*') {
-      const e = src.indexOf('*/', i + 2)
-      i = e < 0 ? n : e + 2
-      out += ' '
-      continue
-    }
-    if (c === '/' && d === '/') {
-      const e = src.indexOf('\n', i)
-      i = e < 0 ? n : e
-      out += ' '
+    if (c === '/' && d === '*') { const e = src.indexOf('*/', i + 2); i = e < 0 ? n : e + 2; out += ' '; prev = ' '; continue }
+    if (c === '/' && d === '/') { const e = src.indexOf('\n', i); i = e < 0 ? n : e; out += ' '; prev = ' '; continue }
+    // 正则字面量必须剥掉:否则结尾的 flags(尤其 i)会被当成属性访问的根标识符,
+    // `/^custom\.[a-z0-9]+$/i.test(f)` 就报出"未定义标识符 i"(误报)。
+    // 判断依据:前一个有意义字符是运算符/开括号,或前一个词是 return/typeof 这类关键字。
+    if (c === '/' && (/[([{=,:;!&|?+\-*%~^<>]/.test(prev) || REGEX_AFTER_KEYWORD.has(prevWord))) {
+      i++
+      let inClass = false
+      while (i < n) {
+        const ch = src[i]
+        if (ch === '\\') { i += 2; continue }
+        if (ch === '\n') break // 未闭合:别继续吞,宁可当普通字符
+        if (ch === '[') inClass = true
+        else if (ch === ']') inClass = false
+        else if (ch === '/' && !inClass) { i++; break }
+        i++
+      }
+      while (i < n && /[a-z]/i.test(src[i])) i++ // flags
+      out += ' /RE/ '
+      prev = '/'
+      prevWord = ''
       continue
     }
     if (c === "'" || c === '"' || c === '`') {
@@ -144,9 +171,16 @@ function stripNonCode (src) {
         i++
       }
       out += q === '`' ? '``' : (q === "'" ? "''" : '""')
+      prev = '"'
+      prevWord = ''
       continue
     }
     out += c
+    if (!/\s/.test(c)) {
+      prev = c
+      if (/[\w$]/.test(c)) prevWord += c
+      else prevWord = ''
+    }
     i++
   }
   return out
@@ -155,11 +189,17 @@ function freeCalls (rel) {
   const src = stripNonCode(fs.readFileSync(path.join(repo, rel), 'utf8'))
   const bound = boundNames(src)
   const out = new Set()
-  for (const m of src.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
-    const name = m[2]
-    if (GLOBALS.has(name) || bound.has(name)) continue
+  const flag = (name) => {
+    if (GLOBALS.has(name) || bound.has(name)) return
     out.add(name)
   }
+  for (const m of src.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) flag(m[2])
+  // 属性访问的**根标识符**也要查:`accelLib.toAccelerator(combo)` 这种漏 require,
+  // 整个表达式当场抛 ReferenceError,而只查 `名字(` 的写法看不到它。真实事故:
+  // 拆 lib/ 的重构把 accelLib 的 require 一起删了 → update-shortcuts 每次都抛 →
+  // **全局快捷键一个都没注册上**,而日志里连"注册失败"的警告都没有(压根没走到注册那步),
+  // 于是看日志还以为一切正常。
+  for (const m of src.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\./g)) flag(m[2])
   return [...out]
 }
 const freeBad = []
@@ -207,7 +247,10 @@ const READ_ONLY = [
   // needsTranscode 处就返回原路径,不会触发转码 —— 两者都能安全调用,用来证伪
   // "模块没加载好"(路径写错/register 抛异常时全是 No handler registered)
   ['get-loudness', `window.electronAPI.getLoudness('E:/__nope__.mp3')`],
-  ['prepare-audio', `window.electronAPI.prepareAudio('E:/__nope__.mp3')`]
+  ['prepare-audio', `window.electronAPI.prepareAudio('E:/__nope__.mp3')`],
+  // 字体删除通道:给一个字体目录**之外**的路径,主进程应当拒绝 —— 既确认通道注册上了,
+  // 也顺带守住"不能拿它当任意删除入口"这条(它接受渲染端传来的 URL)
+  ['delete-font-file', `window.electronAPI.deleteFontFile('file:///E:/__nope__.ttf')`]
 ]
 
 app.whenReady().then(async () => {
