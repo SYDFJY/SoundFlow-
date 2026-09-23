@@ -82,7 +82,14 @@ const READ_ONLY = [
   ['fetch-online-lyric', `window.electronAPI.fetchOnlineLyric({ source: 'local' })`],
   ['get-cover', `window.electronAPI.getCover('E:/__nope__.mp3')`],
   ['check-files-exist', `window.electronAPI.checkFilesExist(['E:/__nope__.mp3'])`],
-  ['get-hd-cover', `window.electronAPI.getHdCover('')`]
+  ['get-hd-cover', `window.electronAPI.getHdCover('')`],
+  // 搜索源:空标题会提前返回(不发网络请求),所以可以放心调用 —— 用来确认这几个通道
+  // 在 main.js 拆分后仍然注册着(它们曾经被搬进过独立模块)
+  ['search-qqmusic', `window.electronAPI.searchQqmusic({ title: '' })`],
+  ['search-netease', `window.electronAPI.searchNetease({ title: '' })`],
+  ['search-kugou', `window.electronAPI.searchKugou({ title: '' })`],
+  ['search-musicbrainz', `window.electronAPI.searchMusicbrainz({ title: '' })`],
+  ['download-cover', `window.electronAPI.downloadCover('', 'E:/__nope__.mp3')`]
 ]
 
 app.whenReady().then(async () => {
@@ -103,7 +110,9 @@ app.whenReady().then(async () => {
     } catch (e) {
       out = 'ERR:' + (e && e.message)
     }
-    const missing = /No handler registered/i.test(out)
+    // "No handler registered" = 通道没注册;"is not a function" = 本检查里的包装名写错了
+    // (preload 的键名大小写),后者同样要失败 —— 否则检查脚本自己的笔误会被读成通过
+    const missing = /No handler registered/i.test(out) || /is not a function/i.test(out)
     results.push({ name, missing })
     console.log(`  ${missing ? '✗' : '✓'} ${name.padEnd(20)} ${out.slice(0, 80)}`)
   }
