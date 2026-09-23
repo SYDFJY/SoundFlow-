@@ -56,7 +56,7 @@
       <div class="col-actions"></div>
     </div>
 
-    <!-- 列表(虚拟滚动:固定行高 56px,只渲染可视区 ±缓冲 的行,大列表 DOM 恒定) -->
+    <!-- 列表(虚拟滚动:固定行距 ROW_H,只渲染可视区 ±缓冲 的行,大列表 DOM 恒定) -->
     <div ref="listBodyEl" class="list-body" v-if="songs.length > 0" role="listbox" aria-label="歌曲列表（上下键选择，回车播放）" @scroll="onListScroll" tabindex="0" @keydown="onListKeydown" @click="clearKeyboardIdx">
       <div class="list-spacer" :style="{ height: songs.length * ROW_H + 'px' }">
         <!-- 拖拽插入指示线(内容坐标,随列表滚动) -->
@@ -307,7 +307,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onActivated, onUnmounted } from 'vue'
 import { formatDuration as fmtDuration, formatAddedTime, formatTimestamp } from '@/utils/time'
 import Icon from '@/components/icons/Icon.vue'
 import { parseQuery } from '@/utils/searchQuery'
@@ -409,8 +409,8 @@ function rowStyle(absIdx) {
   const src = jsDragSourceIdx.value
   const tgt = jsDragTargetIdx.value
   if (src >= 0 && tgt >= 0 && absIdx !== src) {
-    if (tgt > src && absIdx > src && absIdx <= tgt) return { transform: 'translateY(-56px)' }
-    if (tgt < src && absIdx >= tgt && absIdx < src) return { transform: 'translateY(56px)' }
+    if (tgt > src && absIdx > src && absIdx <= tgt) return { transform: `translateY(-${ROW_H}px)` }
+    if (tgt < src && absIdx >= tgt && absIdx < src) return { transform: `translateY(${ROW_H}px)` }
   }
   return null
 }
@@ -458,13 +458,22 @@ import { confirmDialog } from '@/composables/useConfirm'
 const _scrollRoute = useRoute()
 function scrollKey() { return 'soundflow_list_scroll_' + (_scrollRoute.path || 'home').replace(/[^\w-]/g, '_') }
 
-// ===== 虚拟滚动(固定行高 56px,只渲染可视区 ±8 行) =====
-const ROW_H = 56
+// ===== 虚拟滚动(固定行距 ROW_H,只渲染可视区 ±8 行) =====
+// ROW_H 必须等于**真实行距**:.list-row 是 height:56px + margin:2px 8px,相邻兄弟的垂直
+// 外边距会合并(容器 .list-virtual 是普通块级,不是 flex),所以每行实际占 58px。
+// 按 56 算会让 spacer、translateY、拖拽命中、滚动定位全部按 ~3% 的比例偏 —— 361 首累积
+// 偏差约 700px(十几行),尾部会明显对不上。
+const ROW_H = 58
 const VIRTUAL_BUFFER = 8
 const scrollTop = ref(0)
 const viewportH = ref(0)
 const virtualStart = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_H) - VIRTUAL_BUFFER))
-const virtualEnd = computed(() => Math.min(props.songs.length, Math.ceil((scrollTop.value + viewportH.value) / ROW_H) + VIRTUAL_BUFFER))
+const virtualEnd = computed(() => {
+  // 视口高度还没测出来时(元素刚出现的那一帧)不能只渲染缓冲行:否则任何"测量没跟上"的
+  // 时序都会退化成"只显示 8 行"。用一个保守的一屏半估算兜底,测量一到就恢复精确值。
+  const vh = viewportH.value > 0 ? viewportH.value : ROW_H * VIRTUAL_BUFFER * 3
+  return Math.min(props.songs.length, Math.ceil((scrollTop.value + vh) / ROW_H) + VIRTUAL_BUFFER)
+})
 const virtualSongs = computed(() => props.songs.slice(virtualStart.value, virtualEnd.value))
 
 let _scrollRaf = null
@@ -487,6 +496,31 @@ function onListScroll() {
   })
 }
 let _listResizeObserver = null
+let _observedListEl = null
+
+/**
+ * 测量列表可视区高度,并把 ResizeObserver 挂到当前那个 DOM 元素上(幂等)。
+ *
+ * 为什么必须可重复调用:`.list-body` 是 `v-if="songs.length > 0"`,而**冷启动时曲库还空着**
+ * (数据要等 getPreloadedData + restoreLibrary 才到),挂载那一刻元素根本不存在 ——
+ * 只在 onMounted 里 `if (el)` 测一次的话,测量和 RO 会被整体跳过,`viewportH` 停在 0,
+ * 于是 `virtualEnd = ceil((0+0)/ROW_H) + 8 = 8`:列表**只渲染 8 行**,直到用户滚动
+ * 触发 onListScroll 才修正。所以 mount、曲库变化、KeepAlive 激活三处都要补测。
+ */
+function measureListViewport() {
+  const el = listBodyEl.value
+  if (!el) return
+  viewportH.value = el.clientHeight
+  if (typeof ResizeObserver === 'undefined') return
+  if (_listResizeObserver && _observedListEl === el) return // 元素没换,RO 会持续跟进
+  if (_listResizeObserver) { try { _listResizeObserver.disconnect() } catch {} }
+  _observedListEl = el
+  _listResizeObserver = new ResizeObserver(() => {
+    if (listBodyEl.value) viewportH.value = listBodyEl.value.clientHeight
+  })
+  _listResizeObserver.observe(el)
+}
+
 function restoreListScroll() {
   requestAnimationFrame(() => {
     try {
@@ -638,8 +672,9 @@ function scheduleCoverLoad() {
   _coverScrollTimer = setTimeout(() => { _coverScrollTimer = null; loadVisibleCovers() }, 80)
 }
 
-// 歌曲列表变化(切视图/搜索/导入)后重新加载可视区封面
-watch(() => props.songs, () => { nextTick(loadVisibleCovers) }, { deep: false })
+// 歌曲列表变化(切视图/搜索/导入)后重新加载可视区封面,并**补测视口** ——
+// 数据是后到的(冷启动时列表先挂着空曲库),元素出现的这一刻正是唯一可靠的测量时机
+watch(() => props.songs, () => { nextTick(() => { measureListViewport(); loadVisibleCovers() }) }, { deep: false })
 
 // 封面容灾:封面文件丢失/加载失败时,从主进程重新生成封面文件
 function onCoverError(song) {
@@ -1120,21 +1155,18 @@ onMounted(() => {
   document.addEventListener('click', closeCtx)
   document.addEventListener('soundflow:esc', onGlobalEsc)
   // 初始化视口高度 + 监听容器尺寸变化(窗口缩放/侧边栏拖拽)
-  const el = listBodyEl.value
-  if (el) {
-    viewportH.value = el.clientHeight
-    if (typeof ResizeObserver !== 'undefined') {
-      _listResizeObserver = new ResizeObserver(() => { if (listBodyEl.value) viewportH.value = listBodyEl.value.clientHeight })
-      _listResizeObserver.observe(el)
-    }
-  }
+  measureListViewport()
 })
+// KeepAlive 激活时补测:停用期间子树脱离文档,clientHeight 会读到 0
+onActivated(() => { nextTick(measureListViewport) })
 onUnmounted(() => {
   document.removeEventListener('click', closeCtx)
   document.removeEventListener('soundflow:esc', onGlobalEsc)
   // 拖动途中被卸载(如路由切换):清掉 document 上的拖动监听与自动滚动定时器
   teardownDocDrag()
   if (_listResizeObserver) { try { _listResizeObserver.disconnect() } catch {} }
+  _listResizeObserver = null
+  _observedListEl = null
   // 清理滚动/封面懒加载等定时器与 rAF,避免卸载后残留回调
   if (_scrollRaf) { cancelAnimationFrame(_scrollRaf); _scrollRaf = null }
   if (_scrollSaveTimer) { clearTimeout(_scrollSaveTimer); _scrollSaveTimer = null }

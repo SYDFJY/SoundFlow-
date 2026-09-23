@@ -115,9 +115,19 @@ app.whenReady().then(async () => {
     if (!btn) return { err: '工具栏里没有定位按钮' }
     btn.click()
     await new Promise(r => setTimeout(r, 400))
-    return { before, after: body.scrollTop, max: body.scrollHeight - body.clientHeight }
+    // 只断言"滚动位置变了"是不够的:虚拟滚动的行距算错时它照样会变、但会滚到错的地方。
+    // 所以再断言目标行**真的落在可视区内**。
+    const active = document.querySelector('.list-row.active')
+    let inView = null
+    if (active) {
+      const b = body.getBoundingClientRect(), r = active.getBoundingClientRect()
+      inView = r.top >= b.top - 2 && r.bottom <= b.bottom + 2
+    }
+    return { before, after: body.scrollTop, max: body.scrollHeight - body.clientHeight, inView, hasActive: !!active }
   })()`)
   check('定位当前播放:滚动位置真的变了', locate && locate.after > locate.before, JSON.stringify(locate))
+  check('定位当前播放:目标行落在可视区内(行距算错会滚到错的地方)', locate && locate.inView === true,
+    JSON.stringify({ inView: locate && locate.inView, hasActive: locate && locate.hasActive }))
 
   // 3) 批量全选:Ctrl+A 应选中全部
   const selectAll = await run(`(async () => {

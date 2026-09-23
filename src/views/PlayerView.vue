@@ -65,13 +65,13 @@
           <!-- 圆形环绕频谱:移入 disc-area 内,圆心=唱片圆心 -->
           <canvas v-show="specMode !== 'bar'" ref="spectrumRingCanvas" class="spectrum-ring"></canvas>
           <div class="disc-ring" :class="{ spinning: playerStore.isPlaying }">
-            <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'">
+            <div class="disc-cover" :key="playerStore.currentSong?.path || 'none'" :class="{ 'switch-anim': switchAnim }">
               <img v-if="coverUrl" :src="coverUrl" :class="{ 'img-loading': !coverLoaded }" @load="coverLoaded = true" @error="onCoverError" alt="" />
               <div v-else class="cover-placeholder"><Icon name="music" :size="36" /></div>
             </div>
           </div>
         </div>
-        <div class="song-meta" :key="'meta-' + (playerStore.currentSong?.path || 'none')">
+        <div class="song-meta" :key="'meta-' + (playerStore.currentSong?.path || 'none')" :class="{ 'switch-anim': switchAnim }" @animationend="onSwitchAnimEnd">
           <h2 class="song-title">{{ playerStore.currentSong?.title || t('player.notPlaying') }}</h2>
           <div class="song-artist">{{ playerStore.currentSong?.artist || '' }}</div>
           <div class="song-album">{{ playerStore.currentSong?.album || '' }}</div>
@@ -550,6 +550,36 @@ const coverUrl = computed(() => playerStore.currentSong?.coverUrl || null)
 // 动画仍在空跑(img 自身的背景渐变已完全被图片覆盖,看不见但一直在耗)。
 const coverLoaded = ref(false)
 watch(coverUrl, () => { coverLoaded.value = false }, { immediate: true })
+
+// 首次进入播放页的封面时序(常驻一行日志):渲染端的 console 会进主进程日志,
+// 所以用户那台下次出现"封面要等一会"时,直接读数字就能定位,不用再靠猜。
+let _enterAt = null
+onMounted(() => { _enterAt = performance.now() })
+watch(coverLoaded, (v) => {
+  if (!v || _enterAt === null) return
+  const loadMs = Math.round(performance.now() - _enterAt)
+  requestAnimationFrame(() => {
+    const el = document.querySelector('.album-art img, .disc-cover img')
+    const shown = el ? Math.round(el.getBoundingClientRect().width) : 0
+    console.info(`[封面时序] 进播放页→封面 load ${loadMs}ms,首帧 ${Math.round(performance.now() - _enterAt)}ms · 显示 ${shown}px · 窗口 ${window.innerWidth}×${window.innerHeight}`)
+    _enterAt = null
+  })
+})
+
+/**
+ * 封面/歌名的入场动画**只在切歌时播**,首次进入播放页不播。
+ * 三个容器都带 `:key="...currentSong.path"`,切歌时是重新创建,所以动画本来每首歌都会重播 ——
+ * 但首次挂载也吃到了它:元素从 opacity:0 开始、0.5s 才到 1,看起来就是"封面还没渲染完"。
+ * 这个动画的意图(commit d420f79)本来就是切歌过渡,不是进场。
+ */
+const switchAnim = ref(false)
+let _songSeenOnce = false
+watch(() => playerStore.currentSong?.path, (p) => {
+  if (!p) return
+  if (!_songSeenOnce) { _songSeenOnce = true; return }
+  switchAnim.value = true
+})
+function onSwitchAnimEnd() { switchAnim.value = false }
 // 封面预加载:切歌时保持旧封面,新图 new Image() 就绪后才切换 --cover-bg(消除切歌白帧)
 const bgCover = ref(null)
 
@@ -999,7 +1029,11 @@ onMounted(() => {
   document.addEventListener('soundflow:esc', onPvEsc)
   window.addEventListener('resize', onSplitResize)
   document.addEventListener('keydown', onPvKeydown)
-  ensureBpm() // 进入播放页分析当前歌 BPM(有缓存秒出)
+  // 进入播放页分析当前歌 BPM(有缓存秒出)。**推迟到空闲**:首次进播放页时这一步要起
+  // ffmpeg 子进程解码 60s PCM,并在主进程里跑几百万次循环采样 —— 与封面上屏同刻抢 CPU,
+  // 而 BPM 数字晚几百毫秒出现没有任何代价。
+  if (window.requestIdleCallback) window.requestIdleCallback(() => ensureBpm(), { timeout: 3000 })
+  else setTimeout(ensureBpm, 800)
   // 进入播放页时若歌词尚未加载(未播放过/切源后),补一次读取;本地歌词删除/外部修改后也能立即反映
   if (playerStore.currentSong && playerStore.lyrics.length === 0) {
     playerStore.loadLyrics(playerStore.currentSong)
@@ -1300,7 +1334,9 @@ async function searchLyric() {
   from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
 }
-.song-meta { animation: meta-in 0.4s ease; }
+.song-meta { text-align: center; }
+/* 入场动画只在切歌时播(见 switchAnim):首次进入播放页不该淡入 */
+.song-meta.switch-anim { animation: meta-in 0.4s ease; }
 @keyframes meta-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1312,8 +1348,9 @@ async function searchLyric() {
 .disc-cover {
   width: calc(var(--disc, 300px) - 30px); height: calc(var(--disc, 300px) - 30px); border-radius: 50%; overflow: hidden;
   box-shadow: 0 12px 40px rgba(0,0,0,0.4);
-  animation: disc-in 0.5s ease;
 }
+/* 同上:入场淡入只在切歌时播 */
+.disc-cover.switch-anim { animation: disc-in 0.5s ease; }
 .disc-cover img { width: 100%; height: 100%; object-fit: cover; }
 .cover-placeholder {
   width: 100%; height: 100%; background: rgba(255,255,255,0.08);
