@@ -292,7 +292,19 @@ button:disabled {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   transition: transform var(--transition-fast), width var(--transition-fast), background var(--transition-fast);
 }
-.switch:hover .switch-track { border-color: var(--color-primary); }
+/* 悬停时轨道里渗出一层主色渐变(取自 uiverse 的 Toggle-switches:omriluz_tough-crab-66,
+   它靠 bg-[length:100%_500%] 让"悬停时渐变尺寸变化" —— 我们改成从下往上渗出的 token 渐变,
+   而不是整体换色,这样 ON 态的实色仍由主题决定)。
+   用 background-size 而不是 height/opacity:前者只重绘该元素,不触发布局。 */
+.switch:hover .switch-track { border-color: var(--color-primary); background-size: 100% 100%; }
+.switch .switch-track {
+  background-image: linear-gradient(0deg, var(--color-primary-alpha), transparent 70%);
+  background-repeat: no-repeat;
+  background-position: center bottom;
+  background-size: 100% 0;
+  transition: background var(--transition-fast), background-size var(--transition-fast),
+              border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
 /* 按下时旋钮轻微拉伸(iOS 手法),与位移叠加 */
 .switch:active .switch-track::after { width: 21px; }
 .switch.on { color: var(--text-primary); }
@@ -409,6 +421,12 @@ input[type="text"]:focus, input[type="search"]:focus, input[type="number"]:focus
   border-color: var(--color-primary);
   box-shadow: 0 0 0 3px var(--input-focus-ring, var(--color-primary-alpha));
 }
+
+/* 聚焦时占位符变淡:输入态"进来了"这件事更明确(取自 uiverse 的 Inputs:
+   JaydipPrajapati1910_black-impala-70 的 :focus::placeholder 颜色过渡)。
+   单独一条规则,不动基座规则的优先级(基座里加 :not 之类会反压组件覆盖,踩过)。 */
+input::placeholder { transition: color var(--transition-fast), opacity var(--transition-fast); }
+input:focus::placeholder { color: var(--text-tertiary); opacity: 0.5; }
 
 /* 提示(data-tooltip)的实现已迁到 src/styles/controls.css:
    旧实现只能朝上、无箭头、无延迟,且全项目无人使用。 */

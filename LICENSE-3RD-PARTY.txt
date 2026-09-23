@@ -107,3 +107,35 @@ SoundFlow 声流音乐 — 第三方资源与许可
    硬套等于凭空造需求;Forms:读到的是注册/上传类表单(固定色 + 暗卡片),本项目的
    "表单"只有标签编辑弹窗,其输入框基座与聚焦环早在第 2 节就已从 Inputs 分类采用。
    下次要探索这两个分类前,先看这条。
+
+------------------------------------------------------------------------
+6) uiverse.io — Switches / Cards / Inputs / Buttons 四分类采用(2026-09-23)
+   许可:   MIT License
+   归档:   同一 galaxy 仓库,分类目录 Toggle-switches / Cards / Inputs / Buttons
+   原则不变:取"动作与形态",颜色与尺寸改写为项目主题 token。
+
+   已采用:
+   a) 开关轨道悬停渗出主色
+       作者: omriluz(omriluz_tough-crab-66,Tags: switch)
+       改写: 原组件靠 Tailwind 的 bg-[length:100%_500%] 让渐变尺寸在悬停时变化;
+             这里改为从下往上渗出的 token 渐变(background-size 0→100%),
+             不动 ON 态的实色,避免"悬停盖掉状态色"。
+       用于: 设置页所有开关(src/styles/global.css 的 .switch)
+   b) 幽灵按钮 / 筛选 chip 悬停自左向右扫入
+       作者: Cornerstone-04(Cornerstone-04_chatty-eel-89,Tags: button)
+       改写: 原组件是 ::after 实色反转(scaleX 0→1、transform-origin: left),会盖住文字;
+             这里改成极淡的主色 alpha 层,压在背景之上、文字之下。
+       用于: .btn--ghost 与 .chip(src/styles/controls.css)
+   c) 卡片悬停自下而上渗出一层浅底
+       作者: Ali-Tahmazi99(Ali-Tahmazi99_curly-insect-62,Tags: card)
+       改写: 原组件 ::before 的 height 0→100% 实色铺满整卡(文字随之变色);
+             这里改成 --bg-hover 的浅渐变,只做动感、不动文字颜色
+             (卡片上有封面/统计数字,底色一变就得整套跟着调)。
+       用于: .stat-card / .album-card / .folder-item / .rec-card
+   d) 输入框聚焦时占位符变淡
+       作者: JaydipPrajapati1910(JaydipPrajapati1910_black-impala-70,Tags: input effect)
+       改写: 只取 :focus::placeholder 的颜色过渡这一条(原组件的立体/透视效果未采用)。
+       用于: 全部文本输入框(src/styles/global.css)
+
+   说明:开关那条原本被判定为"现有 .switch 已够好、不必替换"(见第 4 节),本批是用户点名
+   要看这个分类后重新挑选的 —— 换掉的是**新增的悬停反馈**,不是整体替换控件。

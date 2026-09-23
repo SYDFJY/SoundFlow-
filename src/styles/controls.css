@@ -230,3 +230,69 @@ input[type='range']:active::-webkit-slider-thumb {
 @media (prefers-reduced-motion: reduce) {
   .is-loading::after { animation-duration: 1.6s; } /* 降速而不是完全静止:静止的圆环没有"进行中"的语义 */
 }
+
+/* ===== 幽灵按钮与筛选 chip:悬停自左向右扫入一层主色 ====
+   动作取自 uiverse 的 Buttons 分类(Cornerstone-04_chatty-eel-89):
+   ::after 用 transform: scaleX(0) → scale(1),transform-origin 在左侧 —— 控件被"填满"的方向感,
+   而不是整体变色。原组件是实色反转(会盖住文字),这里改成极淡的主色 alpha 层,压在背景之上、
+   文字之下,保证 16 套主题下文字始终可读。
+   只用 transform:软件渲染下同样廉价(不重排、不重绘整块)。 */
+.btn--ghost,
+.chip {
+  position: relative;
+  isolation: isolate; /* 让 ::before 的 z-index:-1 只在本控件内部生效 */
+}
+.btn--ghost::before,
+.chip::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--color-primary-alpha, rgba(43, 134, 216, 0.13));
+  transform-origin: left center;
+  transform: scaleX(0);
+  transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+  z-index: -1;
+}
+.btn--ghost:hover::before,
+.btn--ghost:focus-visible::before,
+.chip:hover::before,
+.chip:focus-visible::before { transform: scaleX(1); }
+@media (prefers-reduced-motion: reduce) {
+  .btn--ghost::before, .chip::before { transition: none; }
+}
+
+/* ===== 卡片:悬停自下而上渗出一层浅底 ====
+   动作取自 uiverse 的 Cards 分类(Ali-Tahmazi99_curly-insect-62):::before 的 height 0 → 100%。
+   原组件用实色盖满整卡(文字会跟着变色),这里改成 --bg-hover 的浅渐变,只做"底下渗上来"的动感,
+   文字颜色不动 —— 卡片上还有封面、统计数字等元素,底色一变就得整套跟着调。
+   这些卡片各自在自己的 scoped 样式里定义,全局规则只加 ::before,不与之争同一属性。 */
+.stat-card,
+.album-card,
+.folder-item,
+.rec-card {
+  position: relative;
+}
+.stat-card::before,
+.album-card::before,
+.folder-item::before,
+.rec-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 0;
+  border-radius: inherit;
+  background: linear-gradient(0deg, var(--bg-hover), transparent);
+  transition: height 0.28s ease;
+  pointer-events: none;
+}
+.stat-card:hover::before,
+.album-card:hover::before,
+.folder-item:hover::before,
+.rec-card:hover::before { height: 100%; }
+@media (prefers-reduced-motion: reduce) {
+  .stat-card::before, .album-card::before, .folder-item::before, .rec-card::before { transition: none; }
+}

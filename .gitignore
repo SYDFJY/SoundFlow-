@@ -27,6 +27,7 @@ swiftshader/
 
 # ===== 编辑器/工具残留 =====
 *.tmp.*
+*.tmp
 .serena/
 .zcode/
 .zcodeignore
