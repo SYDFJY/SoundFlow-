@@ -334,7 +334,7 @@
             <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()">
               <Icon name="prev" :size="20" fill="currentColor" />
             </button>
-            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" v-tooltip:top="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
+            <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" v-tooltip:top="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + shortcutHint('playPause'))">
               <span v-if="playerStore.isBuffering" class="sf-dots sf-dots--sm" aria-label="缓冲中"><i></i><i></i><i></i><i></i><i></i></span>
               <Icon v-else-if="playerStore.isPlaying" name="pause" :size="22" fill="currentColor" />
               <Icon v-else name="play" :size="22" fill="currentColor" />
@@ -486,6 +486,7 @@ import QueuePanel from '@/components/QueuePanel.vue'
 import { useVolumeControl } from '@/composables/useVolumeControl'
 import { buildWordSegments } from '@/utils/lyricTiming'
 import { isCustomCoverUrl } from '@/utils/cover'
+import { shortcutHint } from '@/utils/shortcut'
 import { useSpectrum } from '@/composables/useSpectrum'
 import { usePlayerBackground } from '@/composables/usePlayerBackground'
 

@@ -33,16 +33,16 @@
           <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
           <Icon v-else name="modeShuffle" :size="18" />
         </button>
-        <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + ' (Ctrl+←)'">
+        <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + shortcutHint('prev')">
           <Icon name="prev" :size="18" fill="currentColor" />
         </button>
-        <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + ' (空格)')">
+        <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + shortcutHint('playPause'))">
           <span v-if="playerStore.isBuffering" class="sf-dots sf-dots--sm" aria-label="缓冲中"><i></i><i></i><i></i><i></i><i></i></span>
           <Icon :key="'play-on'" v-else-if="playerStore.isPlaying" class="pop-anim" name="pause" :size="20" fill="currentColor" />
           <Icon :key="'play-off'" v-else class="pop-anim" name="play" :size="20" fill="currentColor" />
         </button>
         <div class="next-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
-          <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + ' (Ctrl+→)'" aria-label="下一曲">
+          <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + shortcutHint('next')" aria-label="下一曲">
             <Icon name="next" :size="18" fill="currentColor" />
           </button>
           <NextTrackHint :show="showNextHint" />
@@ -219,6 +219,7 @@ import { dragSongPath, clearDragSong } from '@/composables/useDragSong'
 import { useVolumeControl } from '@/composables/useVolumeControl'
 import { useCoverPreload } from '@/composables/useCoverPreload'
 import { scrollToActiveQueue as scrollQueueToActive } from '@/utils/queueScroll'
+import { shortcutHint } from '@/utils/shortcut'
 
 const router = useRouter()
 const playerStore = usePlayerStore()

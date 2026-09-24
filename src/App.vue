@@ -104,6 +104,7 @@ import ToastHost from '@/components/ToastHost.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import TooltipLayer from '@/components/TooltipLayer.vue'
 import SongNotifyCard from '@/components/SongNotifyCard.vue'
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, comboFromEvent, prettyCombo, loadShortcuts } from '@/utils/shortcut'
 import Icon from '@/components/icons/Icon.vue'
 import { toast, toastState } from '@/composables/useToast'
 import { confirmDialog } from '@/composables/useConfirm'
@@ -129,20 +130,10 @@ function goTranslateConfig() {
 const dragOver = ref(false)
 const showShortcutHelp = ref(false)
 const shortcutHelpItems = computed(() => {
-  const s = safeParse(localStorage.getItem('soundflow_shortcuts'))
-  const def = {
-    playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft',
-    volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown', mute: 'Control+KeyM'
-  }
-  const fmt = (k) => (s[k] || def[k]).replace('Control+', 'Ctrl+').replace('Arrow', '').replace('KeyM', 'M')
-  return [
-    { k: fmt('playPause'), d: '播放 / 暂停' },
-    { k: fmt('next'), d: '下一曲' },
-    { k: fmt('prev'), d: '上一曲' },
-    { k: fmt('volUp'), d: '音量 +' },
-    { k: fmt('volDown'), d: '音量 -' },
-    { k: fmt('mute'), d: '静音' }
-  ]
+  const s = loadShortcuts()
+  // 显示走 prettyCombo:此前这里自己写了一遍字符串替换(只认 Control+ / Arrow / KeyM),
+  // 用户录了 Alt/Shift 的组合这里就显示得莫名其妙
+  return SHORTCUT_ACTIONS.map((a) => ({ k: prettyCombo(s[a.key]), d: a.label }))
 })
 let _dragDepth = 0
 function onDragOver(e) {
@@ -178,23 +169,13 @@ const isFullscreen = computed(() => {
 
 let _autoSaveTimer = null
 
-// 全局快捷键:默认配置,可在设置页自定义(格式: 修饰键+按键 e.code,如 Space / Control+ArrowRight)
-const defaultShortcuts = {
-  playPause: 'Space',
-  next: 'Control+ArrowRight',
-  prev: 'Control+ArrowLeft',
-  volUp: 'Control+ArrowUp',
-  volDown: 'Control+ArrowDown',
-  mute: 'Control+KeyM'
-}
-const shortcuts = ref({ ...defaultShortcuts, ...safeParse(localStorage.getItem('soundflow_shortcuts')) })
-
-function safeParse(s) {
-  try { return s ? JSON.parse(s) : {} } catch { return {} }
-}
+// 快捷键:默认值、存储、匹配都走 @/utils/shortcut(单一事实源)
+const shortcuts = ref(loadShortcuts())
 
 function matchShortcut(e, name) {
-  return shortcuts.value[name] === ((e.ctrlKey ? 'Control+' : '') + e.code)
+  // 必须与录制器用同一个 comboFromEvent:此前这里只拼 ctrlKey,录进去的 Alt/Shift 组合
+  // 永远匹配不上(表现为"录了但按了没反应")
+  return shortcuts.value[name] === comboFromEvent(e)
 }
 
 // 全局快捷键:空格=播放/暂停,Ctrl+←/→=上一曲/下一曲,Ctrl+↑/↓=音量,Ctrl+M=静音

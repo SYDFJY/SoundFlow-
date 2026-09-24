@@ -1435,6 +1435,10 @@ app.whenReady().then(async () => {
         // 结果所有带方向键/字母的全局快捷键都注册失败,而且**没有任何提示**。
         const accel = accelLib.toAccelerator(combo)
         if (!accel) { failed.push({ action, combo, reason: 'unsupported' }); continue }
+        // 裸键(没有修饰键)一律不做系统级注册:注册一个裸键会把那个按键从**所有**程序手里
+        // 抢走 —— 用户在浏览器/编辑器里打不出空格或某个字母,却完全不知道是谁干的。
+        // 这类组合保留在应用内生效(渲染端自己匹配),这里回报原因让设置页说清楚。
+        if (!accel.includes('+')) { failed.push({ action, combo, reason: 'needs-modifier' }); continue }
         try {
           const ok = globalShortcut.register(accel, () => {
             try {

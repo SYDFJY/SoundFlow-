@@ -451,16 +451,23 @@
         <h3 class="section-title">{{ t('settings.shortcuts') }}</h3>
         <div class="shortcut-overview">
           <div v-for="d in shortcutDefs" :key="d.key" class="sc-item">
-            <kbd>{{ shortcuts[d.key] || '未设置' }}</kbd>
+            <kbd>{{ pretty(shortcuts[d.key]) }}</kbd>
             <span class="sc-label">{{ d.label }}</span>
           </div>
+        </div>
+        <!-- 作用范围必须写清楚:默认快捷键只在应用聚焦时生效,录制的组合才会注册到系统级 ——
+             不说明的话,用户在其它程序里按 Ctrl+→ 没反应,只会觉得"快捷键坏了" -->
+        <div class="shortcut-scope-hint">
+          这些快捷键<strong>在应用内始终可用</strong>;带 Ctrl / Alt / Shift 的组合还会注册为
+          <strong>系统级</strong>快捷键(应用在后台也能切歌)。单个按键(如空格)不做系统级注册 ——
+          否则会把那个按键从其它程序手里抢走。
         </div>
         <div class="setting-item" v-for="d in shortcutDefs" :key="d.key">
           <div class="setting-label">
             <span class="label-text">{{ d.label }}</span>
           </div>
           <button class="btn" :class="{ recording: recordingKey === d.key }" @click="startRecord(d.key)" @keydown="onRecordKey">
-            {{ recordingKey === d.key ? '按新快捷键…' : (shortcuts[d.key] || '未设置') }}
+            {{ recordingKey === d.key ? '按新快捷键…' : pretty(shortcuts[d.key]) }}
           </button>
         </div>
         <div class="setting-item">
@@ -647,6 +654,7 @@ import { THEME_LIST as themeOptions } from '@/config/themeList'
 import Icon from '@/components/icons/Icon.vue'
 import DiagnosticsPanel from '@/components/DiagnosticsPanel.vue'
 import { confirmDialog } from '@/composables/useConfirm'
+import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, comboFromEvent, prettyCombo, loadShortcuts } from '@/utils/shortcut'
 
 const appStore = useAppStore()
 function toggleReplayGain() {
@@ -1099,17 +1107,12 @@ function saveDeepseekKey() {
   localStorage.setItem('soundflow_deepseek_key', deepseekKey.value.trim())
 }
 
-// 快捷键自定义
-const shortcutDefs = [
-  { key: 'playPause', label: '播放 / 暂停' },
-  { key: 'next', label: '下一曲' },
-  { key: 'prev', label: '上一曲' },
-  { key: 'volUp', label: '音量 +' },
-  { key: 'volDown', label: '音量 -' },
-  { key: 'mute', label: '静音' }
-]
-const shortcuts = ref(JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}'))
+// 快捷键自定义(动作清单与默认值都来自 @/utils/shortcut,避免界面与匹配逻辑各写一份)
+const shortcutDefs = SHORTCUT_ACTIONS
+const shortcuts = ref(loadShortcuts())
 const recordingKey = ref('')
+/** 组合串给人看:Control+ArrowRight → Ctrl+→ */
+const pretty = (v) => (v ? prettyCombo(v) : '未设置')
 
 function startRecord(k) {
   recordingKey.value = k
@@ -1119,7 +1122,15 @@ function onRecordKey(e) {
   e.preventDefault()
   e.stopPropagation()
   if (e.code === 'Escape') { recordingKey.value = ''; return }
-  const combo = (e.ctrlKey ? 'Control+' : '') + e.code
+  // 与匹配端共用 comboFromEvent:此前这里只拼 ctrlKey,录 "Alt+X" 会存成 "X" ——
+  // 于是按单键就触发,而且这个裸键还会被注册成系统级热键,把 X 从所有其它程序手里抢走
+  const combo = comboFromEvent(e)
+  // 同一个组合被两个动作占用:直接拒绝并说明,而不是让后录的悄悄覆盖前者
+  const clash = SHORTCUT_ACTIONS.find((a) => a.key !== recordingKey.value && shortcuts.value[a.key] === combo)
+  if (clash) {
+    window.$toast?.(`${prettyCombo(combo)} 已经用在「${clash.label}」上了`, 'warning', 5000)
+    return
+  }
   shortcuts.value[recordingKey.value] = combo
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(shortcuts.value))
   applyShortcuts()
@@ -1133,9 +1144,14 @@ async function applyShortcuts() {
     const res = await window.electronAPI?.updateShortcuts(shortcuts.value)
     const failed = (res && res.failed) || []
     if (!failed.length) return
-    const names = { playPause: '播放/暂停', next: '下一首', prev: '上一首', volUp: '音量+', volDown: '音量-', mute: '静音' }
-    const desc = failed.map(f => `${names[f.action] || f.action}(${f.combo})`).join('、')
+    const names = Object.fromEntries(SHORTCUT_ACTIONS.map((a) => [a.key, a.label]))
+    const desc = failed.map(f => `${names[f.action] || f.action}(${prettyCombo(f.combo)})`).join('、')
     const occupied = failed.some(f => f.reason === 'conflict')
+    const bareOnly = failed.every(f => f.reason === 'needs-modifier')
+    if (bareOnly) {
+      window.$toast?.(`${desc} 只在应用内生效:单个按键不做系统级注册,否则会抢走其它程序的按键。想后台也能用请加 Alt/Ctrl 等修饰键`, 'warning', 7000)
+      return
+    }
     window.$toast?.(`${desc} 无法注册${occupied ? ',可能已被其他程序占用' : '(该按键组合不支持全局注册)'};应用内仍然可用`, 'warning', 6000)
   } catch (e) {
     window.$toast?.('快捷键注册失败:' + ((e && e.message) || ''), 'warning')
@@ -1144,9 +1160,8 @@ async function applyShortcuts() {
 
 // 恢复默认快捷键
 function resetShortcuts() {
-  const defaults = { playPause: 'Space', next: 'Control+ArrowRight', prev: 'Control+ArrowLeft', volUp: 'Control+ArrowUp', volDown: 'Control+ArrowDown', mute: 'Control+KeyM' }
-  shortcuts.value = { ...defaults }
-  localStorage.setItem('soundflow_shortcuts', JSON.stringify(defaults))
+  shortcuts.value = { ...DEFAULT_SHORTCUTS }
+  localStorage.setItem('soundflow_shortcuts', JSON.stringify(DEFAULT_SHORTCUTS))
   // 此前重置只改了本地存储与界面,没有重新注册 —— 旧快捷键的占用会一直留在系统里
   applyShortcuts()
 }
@@ -1429,6 +1444,13 @@ async function batchDownloadLyrics() {
 .setting-label { flex: 1; }
 .label-text { font-size: var(--font-size-base); color: var(--text-primary); font-weight: 500; }
 .label-desc { font-size: var(--font-size-xs); color: var(--text-tertiary); margin-left: 8px; }
+/* 快捷键作用范围说明:默认只在应用内生效,录制的组合才注册到系统级 —— 必须让用户看见 */
+.shortcut-scope-hint {
+  font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.7;
+  margin: 8px 0 12px; padding: 8px 10px; border-radius: 6px;
+  background: var(--bg-hover, rgba(127,127,127,0.08));
+}
+.shortcut-scope-hint strong { color: var(--text-primary); font-weight: 600; }
 
 .setting-control { display: flex; align-items: center; gap: 12px; }
 .setting-control input[type="range"] { width: 120px; accent-color: var(--color-primary); }
