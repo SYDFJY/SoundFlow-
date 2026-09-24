@@ -29,7 +29,9 @@ const ALLOW = {
   'src/components/PlayerBar.vue': ['.mode-icon', '.eq-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb'],
   // .song-meta:hover .cover-swap → 改成 .song-meta:hover .cover-actions .cover-swap
   //   (封面操作从一个按钮变成「更换封面 + 恢复原封面」一组,hover 显隐挂到容器上)
-  'src/views/PlayerView.vue': ['.song-meta:hover .cover-swap', '.empty-icon', '.gradient-list', '.gradient-item', '.gradient-item.active', '.eq-*', '.queue-*', '.save-queue-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.lyric-loading-tip::before'],
+  'src/views/PlayerView.vue': ['.song-meta:hover .cover-swap', '.empty-icon', '.gradient-list', '.gradient-item', '.gradient-item.active', '.eq-*', '.queue-*', '.save-queue-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.lyric-loading-tip::before',
+    // .lyric-time* → 按用户要求去掉歌词行前的行时间戳(时间只保留在悬停提示里)
+    '.lyric-time', '.lyric-line:hover .lyric-time', '.lyric-line.active .lyric-time'],
   'src/components/MusicList.vue': ['.list-row[draggable="true"]', '.list-row[draggable="true"]:active', '.empty-icon', '.empty-text'],
   'src/views/AlbumView.vue': ['.empty-icon', '.empty-text', '.empty-state'],
   'src/views/ArtistView.vue': ['.empty-icon', '.empty-text', '.empty-state'],

@@ -7,7 +7,7 @@
  * **状态会翻转、界面毫无变化**(用户报的"功能只作用在歌词界面的歌词上"就是这个)。
  * 行渲染收敛到一处之后,再加行内功能不会再漏面。
  *
- * 面的差异只留两个开关:showTime(分栏窄,不显示时间戳列)、wordMode(逐字)。
+ * 面的差异只留一个开关:wordMode(逐字)。行时间戳不再显示(2026-09-24 按用户要求去掉)。
  */
 import { computed } from 'vue'
 
@@ -24,8 +24,7 @@ const props = defineProps({
   /** 已算好的行颜色/阴影(由父组件按设置与行序算出) */
   color: { type: String, default: '' },
   shadow: { type: String, default: '' },
-  /** 行时间戳(仅歌词页显示) */
-  showTime: { type: Boolean, default: false },
+  /** 行时间只用于悬停提示(用户要求歌词行前不再显示时间戳,所以不再渲染出来) */
   timeText: { type: String, default: '' },
   /** 逐字模式:仅当前行需要词片 */
   wordMode: { type: Boolean, default: false },
@@ -60,7 +59,6 @@ const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText
     :title="title"
     @click="$emit('seek', line)"
   >
-    <span v-if="showTime" class="lyric-time">{{ timeText }}</span>
     <template v-if="showWords">
       <span
         v-for="(w, wi) in words" :key="wi"

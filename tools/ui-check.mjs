@@ -275,6 +275,19 @@ app.whenReady().then(async () => {
     return { playTitle: pb ? (pb.getAttribute('title') || '') : null, activeIdx: lines.findIndex((el) => el.classList.contains('active')) }
   })()`)
   console.log('播放/当前行:', JSON.stringify(playState))
+
+  // 用户要求:歌词行前面不要再显示时间戳(时间只留在悬停提示里)
+  const timeStamps = await run(`(() => {
+    const right = document.querySelector('.lyric-right')
+    const split = document.querySelector('.split-lyrics')
+    return {
+      lyricPage: right ? right.querySelectorAll('.lyric-time').length : -1,
+      splitPage: split ? split.querySelectorAll('.lyric-time').length : -1,
+      firstLineText: right ? ((right.querySelector('.lyric-line') || {}).textContent || '').slice(0, 12) : null
+    }
+  })()`)
+  // 注意:此刻在歌词页,分栏那份不在 DOM 里(取不到返回 -1)—— 断言要接受"不存在"
+  check('歌词行前不再显示时间戳', timeStamps && timeStamps.lyricPage === 0 && timeStamps.splitPage <= 0, JSON.stringify(timeStamps))
   await sleep(1600)
   // 切回封面页(分栏):当前行应当被滚进视口 —— 此前只有歌词页做了这件事
   await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)

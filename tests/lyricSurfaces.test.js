@@ -39,6 +39,11 @@ describe('歌词行渲染必须两面共用', () => {
     expect(s, '又出现内联的 .lyric-trans 渲染(应该只在 LyricLine.vue 里)').not.toMatch(/class="lyric-trans"/)
   })
 
+  it('歌词行前不显示行时间戳(2026-09-24 按用户要求去掉)', () => {
+    expect(read('src/components/LyricLine.vue'), 'LyricLine 里又渲染出 .lyric-time 了').not.toMatch(/class="lyric-time"/)
+    expect(pv(), 'PlayerView 又给歌词页传 show-time 了').not.toMatch(/show-time/)
+  })
+
   it('分栏当前行不得再用 !important 锁色(否则"歌词颜色"在封面页失效)', () => {
     const s = pv()
     expect(s, '分栏又用 !important 把当前行锁成固定颜色了').not.toMatch(/\.split-lyrics \.lyric-line\.active\s*\{[^}]*!important/)

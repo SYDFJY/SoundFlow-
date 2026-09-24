@@ -155,7 +155,7 @@
                 :line="line" :idx="idx" :current-idx="playerStore.currentLyricIndex"
                 :effect="lyricEffect" :align="lyricAlign" :font-size="lyricFontSize" :gap="lyricLineGap"
                 :color="lyricLineColor(idx)" :shadow="lyricLineShadow(idx)"
-                show-time :time-text="playerStore.formatTime(line.time)"
+                :time-text="playerStore.formatTime(line.time)"
                 :word-mode="lyricMode === 'word'"
                 :words="idx === playerStore.currentLyricIndex ? lyricWordSegments(line) : []"
                 :word-idx="currentWordIdx" :word-color="lyricColor"
@@ -1480,23 +1480,6 @@ async function searchLyric() {
   position: relative;
 }
 /* 行时间戳:默认隐藏,hover 显示;当前行常显(QQ 音乐风) */
-.lyric-time {
-  display: none;
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: var(--color-primary);
-  opacity: 0.9;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-  background: rgba(0,0,0,0.35);
-  padding: 2px 6px;
-  border-radius: 6px;
-}
-.lyric-line:hover .lyric-time { display: block; }
-.lyric-line.active .lyric-time { display: block; color: #fff; background: var(--color-primary); }
 .lyric-line.left { text-align: left; }
 /* 远离当前句:明度层次(不透明,避免 opacity/blur 合成层糊字) */
 .lyric-line.near { opacity: 1; filter: none; }
