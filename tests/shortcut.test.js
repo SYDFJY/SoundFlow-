@@ -106,6 +106,23 @@ describe('快捷键:三处必须共用同一个函数(防再次漂移)', () => {
     expect(s, 'App.vue 里又出现了"只拼 ctrlKey"的老写法(会丢掉 Alt/Shift)').not.toMatch(/e\.ctrlKey \? 'Control\+'/)
   })
 
+  it('交给主进程的快捷键表必须是纯对象(响应式代理无法被结构化克隆)', () => {
+    // 事故:updateShortcuts(shortcuts.value) 直接传 Vue 响应式代理 → Electron 结构化克隆
+    // 抛 "An object could not be cloned" → 界面弹"快捷键注册失败",主进程根本没收到,
+    // 于是录完的新快捷键要等下次启动才生效。
+    const s = src('src/views/SettingsView.vue')
+    expect(s, '又把响应式对象直接交给 IPC 了').not.toMatch(/updateShortcuts\(shortcuts\.value\)/)
+    expect(s, '没找到 applyShortcuts 里克隆成纯对象的写法').toMatch(/JSON\.parse\(JSON\.stringify\(shortcuts\.value\)\)/)
+  })
+
+  it('裸键不算"注册失败"(提示语不能写成失败/警告)', () => {
+    const s = src('src/views/SettingsView.vue')
+    expect(s, 'needs-modifier 没有被单独处理').toMatch(/f\.reason !== 'needs-modifier'/)
+    // 裸键那支的提示要用 info,并说清"只在应用内生效"
+    expect(s, '裸键的提示没有说明"只在应用内生效"').toMatch(/只在应用内生效/)
+    expect(src('electron/main.js'), '主进程仍把裸键当失败记 warn').toMatch(/仅应用内生效\(裸键不做系统级注册\)/)
+  })
+
   it('设置页录制用 comboFromEvent,而不是自己拼 Control+', () => {
     const s = src('src/views/SettingsView.vue')
     expect(s, '设置页录制没走 comboFromEvent').toMatch(/const combo = comboFromEvent\(e\)/)

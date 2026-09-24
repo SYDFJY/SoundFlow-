@@ -1133,25 +1133,33 @@ function onRecordKey(e) {
   }
   shortcuts.value[recordingKey.value] = combo
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(shortcuts.value))
-  applyShortcuts()
+  applyShortcuts(true) // 刚录完:裸键要顺带说明"只在应用内生效"
   recordingKey.value = ''
 }
 
 // 把快捷键交给主进程注册,并把失败原因说清楚 ——
 // 此前注册失败只有主进程日志里一行 warn,用户看到的是"设了但按了没反应"
-async function applyShortcuts() {
+async function applyShortcuts(showScopeNote = false) {
   try {
-    const res = await window.electronAPI?.updateShortcuts(shortcuts.value)
+    // 必须传**纯对象**:shortcuts.value 是 Vue 的响应式代理,Electron 的结构化克隆复制不了
+    // Proxy,会直接抛 "An object could not be cloned" —— 表现为"录完快捷键弹注册失败",
+    // 而主进程根本没收到,新快捷键要等下次启动才注册生效。
+    const map = JSON.parse(JSON.stringify(shortcuts.value))
+    const res = await window.electronAPI?.updateShortcuts(map)
     const failed = (res && res.failed) || []
     if (!failed.length) return
     const names = Object.fromEntries(SHORTCUT_ACTIONS.map((a) => [a.key, a.label]))
-    const desc = failed.map(f => `${names[f.action] || f.action}(${prettyCombo(f.combo)})`).join('、')
-    const occupied = failed.some(f => f.reason === 'conflict')
-    const bareOnly = failed.every(f => f.reason === 'needs-modifier')
-    if (bareOnly) {
-      window.$toast?.(`${desc} 只在应用内生效:单个按键不做系统级注册,否则会抢走其它程序的按键。想后台也能用请加 Alt/Ctrl 等修饰键`, 'warning', 7000)
-      return
+    // 裸键是**设计如此**(不做系统级注册,否则会把那个按键从所有程序手里抢走),不算失败:
+    // 只在用户刚录完时说一句,启动/恢复默认时不打扰(默认里的空格就是裸键)
+    const bare = failed.filter(f => f.reason === 'needs-modifier')
+    const hard = failed.filter(f => f.reason !== 'needs-modifier')
+    if (bare.length && showScopeNote) {
+      const desc = bare.map(f => `${names[f.action] || f.action}(${prettyCombo(f.combo)})`).join('、')
+      window.$toast?.(`${desc} 已保存,只在应用内生效;想让它在后台也能用,请加上 Alt/Ctrl 等修饰键`, 'info', 6000)
     }
+    if (!hard.length) return
+    const desc = hard.map(f => `${names[f.action] || f.action}(${prettyCombo(f.combo)})`).join('、')
+    const occupied = hard.some(f => f.reason === 'conflict')
     window.$toast?.(`${desc} 无法注册${occupied ? ',可能已被其他程序占用' : '(该按键组合不支持全局注册)'};应用内仍然可用`, 'warning', 6000)
   } catch (e) {
     window.$toast?.('快捷键注册失败:' + ((e && e.message) || ''), 'warning')

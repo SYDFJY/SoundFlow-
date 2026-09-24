@@ -1451,7 +1451,12 @@ app.whenReady().then(async () => {
         } catch (e) { failed.push({ action, combo, reason: e.message }) }
       }
     }
-    if (failed.length) log.warn('[shortcut] 未能注册:', JSON.stringify(failed))
+    // 裸键(needs-modifier)是设计如此,不是失败:它在应用内照常生效,只是不做系统级注册。
+    // 混在 warn 里会让人以为快捷键坏了(日志里一行"未能注册"很容易被这么读)。
+    const hard = failed.filter(f => f.reason !== 'needs-modifier')
+    const bare = failed.filter(f => f.reason === 'needs-modifier')
+    if (bare.length) log.info('[shortcut] 仅应用内生效(裸键不做系统级注册):', bare.map(f => f.combo).join(', '))
+    if (hard.length) log.warn('[shortcut] 未能注册:', JSON.stringify(hard))
     return { ok: failed.length === 0, failed }
   })
   // 文件夹监控:默认开(用户关闭过则保持关闭),扫描目录存在时启动

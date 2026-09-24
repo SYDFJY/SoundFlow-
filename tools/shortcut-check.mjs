@@ -175,6 +175,70 @@ app.whenReady().then(async () => {
   check(globalShortcut.isRegistered('Alt+N'), '带修饰键的组合照常注册到系统级', globalShortcut.isRegistered('Alt+N') ? 'Alt+N 已注册' : '没注册上')
   try { globalShortcut.unregisterAll() } catch {} // 别把测试用的热键留在系统里
 
+  // ── 在设置页里真的录一次:看弹出来的提示文案对不对(用户报"切换快捷键显示注册失败")
+  await run(`(() => {
+    window.__toasts = []
+    const orig = window.$toast
+    window.$toast = (msg, type) => { window.__toasts.push({ msg: String(msg), type }); try { return orig && orig(msg, type) } catch (e) {} }
+    return true
+  })()`)
+  const record = async (code, modifiers = []) => {
+    await run(`(() => { location.hash = '#/settings'; return true })()`)
+    await sleep(1200)
+    const ok = await run(`(() => {
+      const row = [...document.querySelectorAll('.setting-item')].find((it) => (it.querySelector('.label-text') || {}).textContent === '播放/暂停')
+      const btn = row && row.querySelector('button')
+      if (!btn) return 'no-row'
+      btn.click()
+      return 'recording'
+    })()`)
+    await sleep(400)
+    await run(`(() => {
+      const row = [...document.querySelectorAll('.setting-item')].find((it) => (it.querySelector('.label-text') || {}).textContent === '播放/暂停')
+      const btn = row && row.querySelector('button')
+      if (!btn) return false
+      btn.dispatchEvent(new KeyboardEvent('keydown', { code: ${JSON.stringify(code)}, key: ${JSON.stringify(code.replace('Key', ''))}, bubbles: true, cancelable: true }))
+      return true
+    })()`)
+    await sleep(900)
+    const toasts = await run(`(() => { const t = window.__toasts; window.__toasts = []; return t })()`)
+    const saved = await run(`(() => JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}').playPause)()`)
+    console.log(`录制 ${code}${modifiers.length ? '+' + modifiers.join('+') : ''} →`, JSON.stringify({ ok, saved, toasts }))
+    return { ok, saved, toasts }
+  }
+
+  const bareKey = await record('KeyX')
+  check(bareKey.ok === 'recording', '设置页能进入录制态', bareKey.ok)
+  check(bareKey.saved === 'KeyX', '裸键仍然被保存下来(应用内可用)', JSON.stringify(bareKey.saved))
+  const bareText = (bareKey.toasts || []).map((t) => t.msg).join(' | ')
+  check(!/注册失败|无法注册/.test(bareText), '裸键不报"注册失败/无法注册"(它只是不做系统级注册)',
+    bareText || '(没有提示)')
+  check(bareKey.toasts.length === 0 || (bareKey.toasts[0] || {}).type !== 'warning',
+    '裸键的提示不是警告级(避免看起来像出错)', JSON.stringify(bareKey.toasts))
+
+  const comboKey = await record('KeyY') // 无修饰键,用于对比
+  await run(`(() => { const row = [...document.querySelectorAll('.setting-item')].find((it) => (it.querySelector('.label-text') || {}).textContent === '播放/暂停'); const btn = row && row.querySelector('button'); if (btn) { btn.click(); } return true })()`)
+  await sleep(300)
+  await run(`(() => {
+    const row = [...document.querySelectorAll('.setting-item')].find((it) => (it.querySelector('.label-text') || {}).textContent === '播放/暂停')
+    const btn = row && row.querySelector('button')
+    if (btn) btn.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyY', ctrlKey: true, altKey: true, bubbles: true, cancelable: true }))
+    return true
+  })()`)
+  await sleep(1000)
+  const comboToasts = await run(`(() => { const t = window.__toasts; window.__toasts = []; return t })()`)
+  const comboSaved = await run(`(() => JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}').playPause)()`)
+  console.log('录制 Ctrl+Alt+Y →', JSON.stringify({ saved: comboSaved, toasts: comboToasts }))
+  check(comboSaved === 'Control+Alt+KeyY', '带修饰键的组合被正确保存', String(comboSaved))
+  check((comboToasts || []).length === 0, '带修饰键的组合能正常注册(没有失败提示)', JSON.stringify(comboToasts))
+  // 关键:设置页录的组合必须**真的**到主进程并注册上 —— 此前把 Vue 响应式代理直接传给 IPC,
+  // 结构化克隆失败抛 "An object could not be cloned",主进程根本没收到(录完要等重启才生效)
+  let uiRegistered = false
+  try { uiRegistered = globalShortcut.isRegistered('Control+Alt+Y') } catch {}
+  check(uiRegistered, '设置页录制的组合真的注册到系统(而不是只存进 localStorage)', uiRegistered ? 'Control+Alt+Y 已注册' : '没注册上')
+  void comboKey
+  try { globalShortcut.unregisterAll() } catch {}
+
   console.log(failed ? `\nFAIL:${failed} 项没通过` : '\nPASS:快捷键链路正常')
   await sleep(300)
   app.exit(failed ? 1 : 0)

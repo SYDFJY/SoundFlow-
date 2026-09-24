@@ -290,7 +290,8 @@ onMounted(async () => {
       const sc = JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}')
       if (Object.keys(sc).length) {
         window.electronAPI.updateShortcuts(sc).then((res) => {
-          const failed = (res && res.failed) || []
+          // 裸键(如默认的空格)不做系统级注册是设计如此,不该在启动时提示"未能生效"
+          const failed = ((res && res.failed) || []).filter(f => f.reason !== 'needs-modifier')
           if (failed.length) {
             window.$toast?.(`${failed.length} 个全局快捷键未能生效(可能被其他程序占用),可在 设置 → 快捷键 查看`, 'warning', 6000)
           }
