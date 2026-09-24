@@ -107,7 +107,8 @@ function escapeHtml(s){
 function lineInner(l,i){
   let html
   if(i===activeIdx&&appStyle.wordMode&&words.length){
-    html=words.map((w,wi)=>`<span class="lyric-word${wi===wordIdx?' cur':''}"${wi!==wordIdx?` style="color:${appStyle.color}77"`:''}>${escapeHtml(w.c)}</span>`).join('')
+    // 三档与播放页 LyricLine 一致:已唱 80% / 当前全色 / 未唱 40%
+    html=words.map((w,wi)=>`<span class="lyric-word${wi===wordIdx?' cur':''}"${wi!==wordIdx?` style="color:${appStyle.color}${wi<wordIdx?'cc':'66'}"`:''}>${escapeHtml(w.c)}</span>`).join('')
   }else{
     html=escapeHtml(l.text||l)
   }
@@ -144,7 +145,8 @@ function startWordTimer(){
     const spans=lyric.querySelectorAll('.line.active .lyric-word')
     spans.forEach((el,i)=>{
       el.classList.toggle('cur',i===wordIdx)
-      el.style.color=i===wordIdx?'':(appStyle.color+'77')
+      // 同样三档(与 LyricLine 那份保持一致)
+      el.style.color=i===wordIdx?'':(appStyle.color+(i<wordIdx?'cc':'66'))
     })
   },120)
 }

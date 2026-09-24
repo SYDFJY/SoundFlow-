@@ -42,6 +42,18 @@ const far = computed(() => props.effect && Math.abs(props.idx - props.currentIdx
 // 当前行略大:与改造前两个面的算法一致(当前行 +4,相邻 +1.5)
 const fontPx = computed(() => (active.value ? props.fontSize + 4 : (near.value ? props.fontSize + 1.5 : props.fontSize)) + 'px')
 const showWords = computed(() => props.wordMode && active.value && props.words.length > 0)
+
+/**
+ * 逐字三档:已唱 → 较亮(80%)、当前字 → 全色(推进的前沿)、未唱 → 明显偏暗(40%)。
+ * 原先只有两档:当前字原色、其余(含已唱过的)一律 47% —— 看不出唱到哪儿了,
+ * 屏幕上只有一个孤立的亮字,所以"不明显"。桌面歌词窗(public/lyric.html)里
+ * 那份定时器更新逻辑必须与此一致,两处不能各写一套。
+ */
+function wordStyle (wi) {
+  if (wi === props.wordIdx) return {}
+  if (!props.wordColor) return {}
+  return { color: props.wordColor + (wi < props.wordIdx ? 'cc' : '66') }
+}
 const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText}` : '点击跳转'))
 </script>
 
@@ -64,7 +76,7 @@ const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText
         v-for="(w, wi) in words" :key="wi"
         class="lyric-word"
         :class="{ cur: wi === wordIdx }"
-        :style="wi !== wordIdx ? { color: wordColor + '77' } : {}"
+        :style="wordStyle(wi)"
       >{{ w.c }}</span>
     </template>
     <template v-else>{{ line.text }}</template>

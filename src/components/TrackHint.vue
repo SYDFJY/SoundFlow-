@@ -1,8 +1,9 @@
 <template>
   <!--
-    「下一首」悬停预览卡。抽成组件是因为它现在有两处使用者:
-    主界面播放栏与播放页任务栏 —— 两处各写一份必然漂移(上一轮就只加到了播放栏)。
-    由父组件通过 :show 控制显隐(悬停状态属于各自按钮),卡片内容与标签在这里统一。
+    曲目悬停预览卡:「下一首」与「上一首」共用。抽成组件是因为它有四处使用者
+    (主界面播放栏 ×2 + 播放页控制栏 ×2)—— 各写一份必然漂移(上一轮就只加到了播放栏,
+    上一首更是两边都没有)。由父组件通过 :show 控制显隐(悬停状态属于各自按钮),
+    方向与文案在这里统一。
   -->
   <transition name="vol-fade">
     <div v-if="song" class="next-hint" role="status">
@@ -27,20 +28,26 @@ import Icon from '@/components/icons/Icon.vue'
 
 const props = defineProps({
   /** 是否显示(由父组件的悬停状态驱动) */
-  show: { type: Boolean, default: false }
+  show: { type: Boolean, default: false },
+  /** 预告的是哪一首:'next'(默认)或 'prev' */
+  direction: { type: String, default: 'next' }
 })
 
 const playerStore = usePlayerStore()
-// 随机模式下 nextUpSong 为 null,卡片自然不出现 —— 不做假预告
-const song = computed(() => (props.show ? playerStore.nextUpSong : null))
+// 随机模式下 nextUpSong 为 null(乱序刚开头时 prevUpSong 同理),卡片自然不出现 —— 不做假预告
+const song = computed(() => {
+  if (!props.show) return null
+  return props.direction === 'prev' ? playerStore.prevUpSong : playerStore.nextUpSong
+})
 const abActive = computed(() => playerStore.abState === 'active')
 
-// 说明"为什么是这一首":单曲循环时"下一首"其实是它自己,不写清楚会让人以为预览错了
+// 说明"为什么是这一首":单曲循环时"下一首/上一首"其实是它自己,不写清楚会让人以为预览错了
 const label = computed(() => {
   const m = playerStore.playMode
-  if (m === 'repeatOne') return '单曲循环 · 将重播'
-  if (m === 'repeat') return '列表循环 · 下一首'
-  return '下一首'
+  const isPrev = props.direction === 'prev'
+  if (m === 'repeatOne') return isPrev ? '单曲循环 · 仍是这一首' : '单曲循环 · 将重播'
+  if (m === 'repeat') return isPrev ? '列表循环 · 上一首' : '列表循环 · 下一首'
+  return isPrev ? '上一首' : '下一首'
 })
 </script>
 

@@ -39,6 +39,15 @@ describe('歌词行渲染必须两面共用', () => {
     expect(s, '又出现内联的 .lyric-trans 渲染(应该只在 LyricLine.vue 里)').not.toMatch(/class="lyric-trans"/)
   })
 
+  it('逐字高亮是三档(已唱/当前/未唱),两个渲染面必须一致', () => {
+    // 原先只有两档:当前字原色、其余(含已唱过的)一律 47% —— 看不出唱到哪儿,所以"不明显"
+    const line = read('src/components/LyricLine.vue')
+    expect(line, 'LyricLine 里没有三档表达式').toMatch(/wi < props\.wordIdx \? 'cc' : '66'/)
+    const win = read('public/lyric.html')
+    expect(win, 'lyric.html 初次渲染没跟上三档').toMatch(/\$\{wi<wordIdx\?'cc':'66'\}/)
+    expect(win, 'lyric.html 的定时器更新没跟上三档').toMatch(/\(i<wordIdx\?'cc':'66'\)/)
+  })
+
   it('歌词行前不显示行时间戳(2026-09-24 按用户要求去掉)', () => {
     expect(read('src/components/LyricLine.vue'), 'LyricLine 里又渲染出 .lyric-time 了').not.toMatch(/class="lyric-time"/)
     expect(pv(), 'PlayerView 又给歌词页传 show-time 了').not.toMatch(/show-time/)

@@ -1830,6 +1830,27 @@ export const usePlayerStore = defineStore('player', () => {
     return q[i < q.length ? i : 0] || null
   })
 
+  /**
+   * 上一首预览:与 nextUpSong 完全对称(供两处播放栏的"上一首"悬停卡片用)。
+   * 乱序模式下从池的 history 栈顶**只读**取 —— 绝不能调 playPrev 里那个 back(),
+   * 它会把游标真的移回去(预览就变成真回退)。池的 history 是只读副本,安全。
+   */
+  const prevUpSong = computed(() => {
+    const q = playQueue.value
+    if (!q.length) return null
+    if (playMode.value === 'repeatOne') return q[currentIndex.value] || null
+    if (playMode.value === 'random') {
+      // 读一下 currentIndex:池的 history 不是响应式的,靠这个依赖保证换歌后重算
+      // (与 nextUpSong 把 currentIndex 传给 peek 同一个道理)
+      void currentIndex.value
+      const h = _pool.history
+      const i = h.length ? h[h.length - 1] : -1
+      return i >= 0 && i < q.length ? q[i] : null
+    }
+    const i = currentIndex.value - 1
+    return q[i >= 0 ? i : q.length - 1] || null
+  })
+
   // ===== A-B 循环 =====
   // 状态取在 store 而不是播放页:迷你窗、播放栏、MediaSession 都要能反映同一份区间。
   // 三种态由两个值派生:未设 / 只设了 A / 区间生效。
@@ -2150,7 +2171,7 @@ export const usePlayerStore = defineStore('player', () => {
     endAction, setEndAction,
     userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory, transcodePct, isTranscoded,
-    abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong,
+    abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong, prevUpSong,
     pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,

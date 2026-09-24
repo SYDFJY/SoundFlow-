@@ -326,6 +326,26 @@ app.whenReady().then(async () => {
   })()`)
   check('分栏下点「逐字」真的生效(两面共用同一套渲染)', splitWords && splitWords.words > 2, JSON.stringify(splitWords))
 
+  // 采样前必须**恢复播放**:上面量当前行颜色时暂停过,而 currentWordIdx 只在播放中推进
+  // (暂停时恒为 -1,所有字片同色 —— 第一版就是这么误报的)
+  await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
+  await sleep(900)
+
+  // 逐字是否"明显":采样若干次,出现过 **3 种**颜色(已唱 80% / 当前全色 / 未唱 40%)就说明
+  // 高亮在像进度一样推进。只有两档时永远只有 2 种 —— 这条就是"不明显"的可判据。
+  let tiers = 0
+  for (let i = 0; i < 15; i++) {
+    const info = await run(`(() => {
+      const els = [...document.querySelectorAll('.split-lyrics .lyric-line.active .lyric-word')]
+      const cols = new Set(els.map((e) => getComputedStyle(e).color))
+      return { n: els.length, distinct: cols.size, sample: [...cols].slice(0, 3) }
+    })()`)
+    tiers = Math.max(tiers, (info && info.distinct) || 0)
+    if (tiers >= 3) break
+    await sleep(320)
+  }
+  check('逐字高亮有三档(已唱/当前/未唱),不是一个孤立的亮字', tiers >= 3, `最多见到 ${tiers} 种颜色`)
+
   // 7) 桌面歌词窗必须跟随应用侧设置(此前它只读自己的 lyric_window_settings,自成一套)
   //    先在播放页把"逐字"打开(上一步已开),然后**回列表页**再点开关 ——
   //    播放页里整条播放栏不存在(.player-right 里的按钮自然也找不到)
@@ -364,6 +384,58 @@ app.whenReady().then(async () => {
     check('桌面歌词窗也能逐字高亮', lw && lw.words > 2, JSON.stringify(lw))
     try { await run(`(async () => { try { await window.electronAPI.lyricClose() } catch (e) {} return true })()`) } catch {}
   }
+
+  // 8) 上一首/下一首的悬停预览:主界面播放栏与播放页控制栏**都要有**。
+  //    先把当前曲目定下来(暂停),再据"播放栏标题"在队列里定位,算出生效的上一首/下一首。
+  await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
+  await sleep(700)
+
+  const hoverCard = async (scope, which) => {
+    // 索引在 Node 侧算好再插值:two 个 hint-wrap 的顺序固定是 [上一首, 下一首]
+    const wrapIndex = which === 'prev' ? 0 : 1
+    const moved = await run(`(() => {
+      const sc = document.querySelector(${JSON.stringify(scope)})
+      if (!sc) return 'no-scope'
+      const wraps = [...sc.querySelectorAll('.hint-wrap')]
+      const target = wraps[${wrapIndex}]
+      if (!target) return 'no-wrap:' + wraps.length
+      target.dispatchEvent(new MouseEvent('mouseenter'))
+      return 'ok'
+    })()`)
+    await sleep(520)
+    const card = await run(`(() => {
+      const el = document.querySelector('.next-hint')
+      return el ? { title: (el.querySelector('.nh-title') || {}).textContent.trim(), label: (el.querySelector('.nh-label') || {}).textContent.trim() } : null
+    })()`)
+    await run(`(() => { document.querySelectorAll('.hint-wrap').forEach((w) => w.dispatchEvent(new MouseEvent('mouseleave'))); return true })()`)
+    await sleep(220)
+    return { moved, card }
+  }
+
+  const curTitle = await run(`(() => ((document.querySelector('.player-title') || {}).textContent || '').trim())()`)
+  const curAt = items.findIndex((i) => i.title === curTitle)
+  const total = items.length
+  const wantPrev = curAt > 0 ? items[curAt - 1].title : items[total - 1].title // playPrev 会绕回队尾
+  const wantNext = items[(curAt + 1) % total].title
+  console.log('当前曲目:', curTitle, '→ 期望上一首/下一首:', wantPrev, '/', wantNext)
+
+  // 主界面播放栏(此刻在列表页,播放栏在场)
+  const barPrev = await hoverCard('.player-bar', 'prev')
+  check('主界面播放栏:悬停「上一首」显示上一首的信息', !!barPrev.card && barPrev.card.title === wantPrev,
+    `${JSON.stringify(barPrev)} 期望「${wantPrev}」`)
+  const barNext = await hoverCard('.player-bar', 'next')
+  check('主界面播放栏:悬停「下一首」显示下一首的信息', !!barNext.card && barNext.card.title === wantNext,
+    `${JSON.stringify(barNext)} 期望「${wantNext}」`)
+
+  // 播放页控制栏
+  await run(`(() => { location.hash = '#/player'; return true })()`)
+  await sleep(2200)
+  const pvPrev = await hoverCard('.player-view', 'prev')
+  check('播放页控制栏:悬停「上一首」显示上一首的信息', !!pvPrev.card && pvPrev.card.title === wantPrev,
+    `${JSON.stringify(pvPrev)} 期望「${wantPrev}」`)
+  const pvNext = await hoverCard('.player-view', 'next')
+  check('播放页控制栏:悬停「下一首」显示下一首的信息', !!pvNext.card && pvNext.card.title === wantNext,
+    `${JSON.stringify(pvNext)} 期望「${wantNext}」`)
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

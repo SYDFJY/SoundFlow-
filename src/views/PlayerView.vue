@@ -302,20 +302,23 @@
               <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
               <Icon v-else name="modeShuffle" :size="18" />
             </button>
-            <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()">
-              <Icon name="prev" :size="20" fill="currentColor" />
-            </button>
+            <div class="hint-wrap" @mouseenter="showPrevHint = true" @mouseleave="showPrevHint = false">
+              <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()" title="上一曲" aria-label="上一曲">
+                <Icon name="prev" :size="20" fill="currentColor" />
+              </button>
+              <TrackHint :show="showPrevHint" direction="prev" />
+            </div>
             <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" v-tooltip:top="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + shortcutHint('playPause'))">
               <span v-if="playerStore.isBuffering" class="sf-dots sf-dots--sm" aria-label="缓冲中"><i></i><i></i><i></i><i></i><i></i></span>
               <Icon v-else-if="playerStore.isPlaying" name="pause" :size="22" fill="currentColor" />
               <Icon v-else name="play" :size="22" fill="currentColor" />
             </button>
-            <div class="next-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
+            <div class="hint-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
               <button class="ctrl-btn ctrl-next" @click="playerStore.playNext()" title="下一曲" aria-label="下一曲">
                 <Icon name="next" :size="20" fill="currentColor" />
               </button>
               <!-- 与播放栏共用同一张预览卡(此前只有播放栏有,播放页没有) -->
-              <NextTrackHint :show="showNextHint" />
+              <TrackHint :show="showNextHint" />
             </div>
             <!-- 倍速(自定义) -->
             <div class="rate-control">
@@ -452,7 +455,7 @@ import { useRouter } from 'vue-router'
 import { t } from '@/i18n'
 import ProgressBar from '@/components/ProgressBar.vue'
 import EqPanel from '@/components/EqPanel.vue'
-import NextTrackHint from '@/components/NextTrackHint.vue'
+import TrackHint from '@/components/TrackHint.vue'
 import QueuePanel from '@/components/QueuePanel.vue'
 import { useVolumeControl } from '@/composables/useVolumeControl'
 import { buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
@@ -838,8 +841,9 @@ const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_si
 
 // 歌词排版弹出面板(字号 / 行距 / 偏移)
 const showFormatPanel = ref(false)
-// 下一首预览卡(悬停"下一曲"时显示;内容由 NextTrackHint 按 store 状态给出)
+// 曲目预览卡(悬停"上一曲/下一曲"时显示;内容由 TrackHint 按 store 状态给出)
 const showNextHint = ref(false)
+const showPrevHint = ref(false) // 与下一首同一张卡:上一首也做悬停预览
 // 偏移滑杆节流:拖动期间每 150ms 落盘一次,松手的 @change 再补一次精确值。
 // playerStore.setLyricUserOffset 每次都会序列化整份「按曲偏移表」并同步写 localStorage,
 // 直接绑在 @input 上等于拖动过程中每秒上百次同步写。
@@ -1396,8 +1400,8 @@ async function searchLyric() {
 .ab-btn--setting { background: rgba(255, 255, 255, 0.16); }
 .ab-btn--active { background: var(--color-primary); color: #fff; }
 
-/* 下一首预览的定位容器(卡片本体样式在 NextTrackHint 组件内) */
-.next-wrap { position: relative; display: flex; }
+/* 曲目预览的定位容器(卡片本体样式在 TrackHint 组件内) */
+.hint-wrap { position: relative; display: flex; }
 /* 设定进度直接落在字母上:只设了 A → A 亮;B 也设了 → 同时亮 */
 .ab-dot { opacity: 0.45; transition: opacity var(--transition-fast), color var(--transition-fast); }
 .ab-dot.on { opacity: 1; color: #fff; }

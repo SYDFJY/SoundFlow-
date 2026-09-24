@@ -33,19 +33,22 @@
           <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
           <Icon v-else name="modeShuffle" :size="18" />
         </button>
-        <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + shortcutHint('prev')">
-          <Icon name="prev" :size="18" fill="currentColor" />
-        </button>
+        <div class="hint-wrap" @mouseenter="showPrevHint = true" @mouseleave="showPrevHint = false">
+          <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + shortcutHint('prev')" aria-label="上一曲">
+            <Icon name="prev" :size="18" fill="currentColor" />
+          </button>
+          <TrackHint :show="showPrevHint" direction="prev" />
+        </div>
         <button class="ctrl-btn ctrl-btn--play" @click="playerStore.togglePlay()" :title="playerStore.isBuffering ? '缓冲中' : ((playerStore.isPlaying ? '暂停' : '播放') + shortcutHint('playPause'))">
           <span v-if="playerStore.isBuffering" class="sf-dots sf-dots--sm" aria-label="缓冲中"><i></i><i></i><i></i><i></i><i></i></span>
           <Icon :key="'play-on'" v-else-if="playerStore.isPlaying" class="pop-anim" name="pause" :size="20" fill="currentColor" />
           <Icon :key="'play-off'" v-else class="pop-anim" name="play" :size="20" fill="currentColor" />
         </button>
-        <div class="next-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
+        <div class="hint-wrap" @mouseenter="showNextHint = true" @mouseleave="showNextHint = false">
           <button class="ctrl-btn" @click="playerStore.playNext()" :title="t('player.next') + shortcutHint('next')" aria-label="下一曲">
             <Icon name="next" :size="18" fill="currentColor" />
           </button>
-          <NextTrackHint :show="showNextHint" />
+          <TrackHint :show="showNextHint" />
         </div>
         <!-- 倍速(自定义面板) -->
         <div class="pb-rate-control">
@@ -211,7 +214,7 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { t } from '@/i18n'
 import { useMusicStore } from '@/stores/musicStore'
 import ProgressBar from '@/components/ProgressBar.vue'
-import NextTrackHint from '@/components/NextTrackHint.vue'
+import TrackHint from '@/components/TrackHint.vue'
 import Icon from '@/components/icons/Icon.vue'
 import EqPanel from '@/components/EqPanel.vue'
 import Sortable from 'sortablejs'
@@ -245,6 +248,7 @@ function toggleCollapse() {
 const showTimer = ref(false)
 // 下一首预览卡:悬停"下一曲"时显示
 const showNextHint = ref(false)
+const showPrevHint = ref(false) // 上一首同样给悬停预览(与下一首共用同一张卡)
 const customMinutes = ref(30)
 const showEqPanel = ref(false)
 // 播放栏内嵌 EQ 面板的定位覆盖(CSS 变量传入共享 EqPanel 组件,还原播放栏风格)
