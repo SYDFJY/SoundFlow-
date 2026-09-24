@@ -18,19 +18,15 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 .line.active{font-size:18px;font-weight:700;padding:5px 8px}
 .line.near{color:rgba(255,255,255,0.55)}
 .line.past{opacity:.12}
+.lyric-word{transition:color .12s}
+.lyric-word.cur{font-weight:700}
+.lyric-trans{margin-top:2px;font-size:.82em;opacity:.72}
 .empty{color:rgba(255,255,255,0.18);font-size:14px;text-align:center;padding-top:40%;-webkit-app-region:no-drag}
 #ctx{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:5px 0;min-width:175px;max-height:calc(100vh - 8px);overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,0.55);z-index:999;-webkit-app-region:no-drag}
 #ctx div{padding:7px 13px;margin:1px 5px;border-radius:5px;font-size:12px;color:#d5dce6;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
 #ctx div:hover{background:rgba(77,148,255,0.16);color:#4d94ff}
 #ctx .sep{height:1px;background:rgba(255,255,255,0.07);margin:4px 12px;padding:0;cursor:default}
 #ctx .sep:hover{background:rgba(255,255,255,0.07)}
-#submenu{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:5px 0;min-width:140px;max-height:calc(100vh - 8px);overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,0.55);z-index:1000;-webkit-app-region:no-drag}
-#submenu div{padding:7px 13px;margin:1px 5px;border-radius:5px;font-size:12px;color:#d5dce6;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
-#submenu div:hover{background:rgba(77,148,255,0.16);color:#4d94ff}
-#submenu .sep{height:1px;background:rgba(255,255,255,0.07);margin:4px 12px;padding:0;cursor:default}
-#submenu .sep:hover{background:rgba(255,255,255,0.07)}
-#submenu .sub-trigger{position:relative}
-#submenu .sub-trigger::after{content:'▸';float:right;margin-left:12px;font-size:10px;color:#8a93a3}
 #size-handle{position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;-webkit-app-region:no-drag;z-index:10}
 #size-handle::after{content:'';position:absolute;bottom:3px;right:3px;width:8px;height:8px;border-right:2px solid rgba(255,255,255,0.25);border-bottom:2px solid rgba(255,255,255,0.25);border-radius:1px}
 #toast{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.82);color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:9999;pointer-events:none;transition:opacity .3s;border:1px solid rgba(255,255,255,0.08);box-shadow:0 6px 24px rgba(0,0,0,0.45)}
@@ -46,12 +42,6 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div data-a="copy">📋 复制当前歌词</div>
   <div data-a="copy-all">📄 复制全部歌词</div>
   <div class="sep"></div>
-  <div data-a="font-sub" class="sub-trigger">🔤 字号设置 ▸</div>
-  <div data-a="color-sub" class="sub-trigger">🎨 歌词颜色 ▸</div>
-  <div class="sep"></div>
-  <div data-a="fs-">A- 字号减小</div>
-  <div data-a="fs+">A+ 字号增大</div>
-  <div class="sep"></div>
   <div data-a="bg-">透明度 -</div>
   <div data-a="bg+">透明度 +</div>
   <div class="sep"></div>
@@ -60,34 +50,34 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div data-a="pin">📌 置顶切换</div>
   <div class="sep"></div>
   <div data-a="save">💾 保存歌词到文件</div>
-  <div data-a="reset">🔄 重置所有设置</div>
+  <div data-a="reset">🔄 重置窗口设置(透明度/锁定)</div>
   <div class="sep"></div>
   <div data-a="close">✕ 关闭歌词</div>
 </div>
-<div id="submenu"></div>
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s)
 const api=window.electronAPI
-const lyric=$('#lyric'),ctx=$('#ctx'),submenu=$('#submenu'),app=$('#app'),toast=$('#toast')
-let lines=[],fontSize=14,bgAlpha=0.05,pinned=true,locked=false,lyricColor='#4d94ff',activeIdx=-1
-let subType=null
-
-// ===== 持久化设置 =====
+const lyric=$('#lyric'),ctx=$('#ctx'),app=$('#app'),toast=$('#toast')
+let lines=[],bgAlpha=0.05,pinned=true,locked=false,activeIdx=-1
+// 逐字/翻译:由应用侧随每次推送带下来(窗口不再自己推算,也就不会有第二套算法)
+let words=[],wordIdx=-1,translation='',playing=false,baseTime=0,syncAt=0,wordTimer=null
+/**
+ * 外观设置**来自应用侧**(歌词侧栏那套:字号/行距/对齐/特效/颜色/逐字)。
+ * 此前窗口只读自己的 lyric_window_settings,于是"侧栏改了字号/颜色,桌面歌词没反应"。
+ * 这里只保留两个窗口专有项:背景透明度、锁定。
+ */
+const appStyle={fontSize:14,gap:1.6,align:'center',effect:false,color:'#4d94ff',wordMode:false}
 function loadSettings(){
   try{
     const s=JSON.parse(localStorage.getItem('lyric_window_settings')||'{}')
-    if(s.fontSize) fontSize=s.fontSize
     if(s.bgAlpha!==undefined) bgAlpha=s.bgAlpha
-    if(s.lyricColor) lyricColor=s.lyricColor
     if(s.locked!==undefined) locked=s.locked
     app.style.background=`rgba(0,0,0,${bgAlpha})`
-    applyFont();applyColor()
-    // 锁定 = 禁止拖动(JS 拖拽由 locked 变量控制,不再用 webkitAppRegion)
   }catch{}
 }
 function saveSettings(){
-  try{localStorage.setItem('lyric_window_settings',JSON.stringify({fontSize,bgAlpha,lyricColor,locked}))}catch{}
+  try{localStorage.setItem('lyric_window_settings',JSON.stringify({bgAlpha,locked}))}catch{}
 }
 
 // ===== 歌词更新 =====
@@ -95,51 +85,89 @@ if(api){
   api.on('lyric:update',(d)=>{
     if(!d||!d.lines||!d.lines.length){lyric.innerHTML='<div class="empty">🎵 暂无歌词</div>';lines=[];return}
     lines=d.lines
-    lyric.innerHTML=lines.map((l,i)=>`<div class="line" data-i="${i}">${escapeHtml(l.text||l)}</div>`).join('')
-    applyFont();applyColor()
-    if(d.currentIdx>=0) setActive(d.currentIdx)
+    // 应用侧带下来的外观设置(带默认值兜底:老版本推送没有 style 字段)
+    if(d.style) Object.assign(appStyle,d.style)
+    words=Array.isArray(d.words)?d.words:[]
+    wordIdx=typeof d.wordIdx==='number'?d.wordIdx:-1
+    translation=d.translation||''
+    playing=!!d.playing
+    baseTime=Number(d.currentTime)||0
+    syncAt=Date.now()
+    activeIdx=typeof d.currentIdx==='number'?d.currentIdx:-1
+    renderLines()
+    scrollToActive()
+    startWordTimer()
   })
-  api.on('lyric:index',(idx)=>setActive(idx))
+  api.on('lyric:index',(idx)=>{activeIdx=idx;renderLines();scrollToActive()})
 }
 function escapeHtml(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
 }
-function setActive(idx){
-  activeIdx=idx
-  const els=lyric.querySelectorAll('.line')
-  els.forEach((el,i)=>{
-    el.className='line'
-    if(i===idx) el.classList.add('active')
-    else if(i>idx&&i-idx<=2) el.classList.add('near')
-    else if(i<idx) el.classList.add('past')
-  })
-  const active=lyric.querySelector('.line.active')
-  if(active){
-    const ch=lyric.clientHeight,ot=active.offsetTop,oh=active.offsetHeight
-    lyric.scrollTo({top:ot-ch/2+oh/2,behavior:'smooth'})
+/** 当前行内容:逐字模式且有词片 → 逐字;否则整行文本。翻译挂在当前行下面 */
+function lineInner(l,i){
+  let html
+  if(i===activeIdx&&appStyle.wordMode&&words.length){
+    html=words.map((w,wi)=>`<span class="lyric-word${wi===wordIdx?' cur':''}"${wi!==wordIdx?` style="color:${appStyle.color}77"`:''}>${escapeHtml(w.c)}</span>`).join('')
+  }else{
+    html=escapeHtml(l.text||l)
   }
-  applyFont();applyColor()
+  if(i===activeIdx&&translation) html+=`<div class="lyric-trans">${escapeHtml(translation)}</div>`
+  return html
 }
-function applyFont(){
-  lyric.querySelectorAll('.line').forEach(el=>el.style.fontSize=fontSize+'px')
-  const a=lyric.querySelector('.line.active')
-  if(a) a.style.fontSize=(fontSize+4)+'px'
+function renderLines(){
+  lyric.innerHTML=lines.map((l,i)=>{
+    const cls=i===activeIdx?'line active':(i>activeIdx&&i-activeIdx<=2?'line near':(i<activeIdx?'line past':'line'))
+    return `<div class="${cls}" data-i="${i}">${lineInner(l,i)}</div>`
+  }).join('')
+  applyStyle()
+}
+function scrollToActive(){
+  const active=lyric.querySelector('.line.active')
+  if(!active) return
+  const ch=lyric.clientHeight,ot=active.offsetTop,oh=active.offsetHeight
+  lyric.scrollTo({top:ot-ch/2+oh/2,behavior:'smooth'})
+}
+/**
+ * 逐字要随时间推进,而推送只在切行/状态变化时来 —— 这里用"快照时间 + 已过时长"插值,
+ * 每 120ms 只改 .cur 类(不重建 DOM)。
+ */
+function startWordTimer(){
+  if(wordTimer){clearInterval(wordTimer);wordTimer=null}
+  if(!appStyle.wordMode) return
+  wordTimer=setInterval(()=>{
+    if(!playing||!words.length) return
+    const t=baseTime+(Date.now()-syncAt)/1000
+    let idx=-1
+    for(let i=0;i<words.length;i++){ if(words[i].t<=t) idx=i; else break }
+    if(idx===wordIdx) return
+    wordIdx=idx
+    const spans=lyric.querySelectorAll('.line.active .lyric-word')
+    spans.forEach((el,i)=>{
+      el.classList.toggle('cur',i===wordIdx)
+      el.style.color=i===wordIdx?'':(appStyle.color+'77')
+    })
+  },120)
+}
+function applyStyle(){
+  lyric.style.textAlign=appStyle.align==='left'?'left':'center'
+  lyric.querySelectorAll('.line').forEach((el,i)=>{
+    const active=i===activeIdx
+    el.style.fontSize=(active?appStyle.fontSize+4:appStyle.fontSize)+'px'
+    el.style.lineHeight=String(appStyle.gap)
+    el.style.fontWeight=active?700:400
+    el.style.color=active?appStyle.color:(i>activeIdx&&i-activeIdx<=2?'rgba(255,255,255,0.55)':'rgba(255,255,255,0.28)')
+    el.style.textShadow=active?`0 0 20px ${hexToRgba(appStyle.color,0.4)}`:'none'
+  })
 }
 function hexToRgba(hex,alpha){
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16)
   return `rgba(${r},${g},${b},${alpha})`
 }
-function applyColor(){
-  lyric.querySelectorAll('.line.active').forEach(el=>{
-    el.style.color=lyricColor
-    el.style.textShadow=`0 0 20px ${hexToRgba(lyricColor,0.4)}`
-  })
-}
+
 
 // ===== 主菜单 =====
 document.addEventListener('contextmenu',e=>{
   e.preventDefault()
-  hideSub()
   ctx.style.display='block'
   const cw=ctx.offsetWidth,ch=ctx.offsetHeight,winW=window.innerWidth,winH=window.innerHeight
   let x=e.clientX,y=e.clientY
@@ -149,73 +177,22 @@ document.addEventListener('contextmenu',e=>{
   ctx.style.left=x+'px'; ctx.style.top=y+'px'
 })
 document.addEventListener('click',e=>{
-  if(!ctx.contains(e.target)&&!submenu.contains(e.target)){ctx.style.display='none';hideSub()}
+  if(!ctx.contains(e.target)) ctx.style.display='none'
 })
 function showToast(msg,dur=1500){
   toast.textContent=msg;toast.style.display='block';toast.style.opacity='1'
   setTimeout(()=>{toast.style.opacity='0';setTimeout(()=>{toast.style.display='none'},300)},dur)
 }
 
-// ===== 子菜单 =====
-const FONT_SUB=[
-  {a:'fs10',label:'10px 小'},{a:'fs12',label:'12px'},{a:'fs14',label:'14px 默认'},
-  {a:'fs16',label:'16px'},{a:'fs18',label:'18px 大'},{a:'fs22',label:'22px 超大'},{a:'fs28',label:'28px 巨大'}
-]
-const COLOR_SUB=[
-  {a:'color-blue',label:'蓝色 (默认)',hex:'#4d94ff'},
-  {a:'color-green',label:'绿色',hex:'#4dff88'},
-  {a:'color-red',label:'红色',hex:'#ff4d6a'},
-  {a:'color-purple',label:'紫色',hex:'#b44dff'},
-  {a:'color-orange',label:'橙色',hex:'#ff9f43'},
-  {a:'color-white',label:'白色',hex:'#ffffff'},
-  {a:'color-gold',label:'金色',hex:'#ffd700'}
-]
-function hideSub(){submenu.style.display='none';subType=null}
-function showSub(type,anchorEl){
-  const rect=anchorEl.getBoundingClientRect()
-  const items=type==='font'?FONT_SUB:COLOR_SUB
-  submenu.innerHTML=items.map(it=>{
-    if(type==='color'){
-      return `<div data-a="${it.a}"><span class="color-dot" style="background:${it.hex}"></span>${it.label}</div>`
-    }
-    return `<div data-a="${it.a}">${it.label}</div>`
-  }).join('')
-  submenu.style.display='block'
-  submenu.style.left='0px';submenu.style.top='0px'
-  const sw=submenu.offsetWidth,sh=submenu.offsetHeight
-  const winW=window.innerWidth,winH=window.innerHeight
-  let x=rect.right+2,y=rect.top
-  if(x+sw>winW) x=rect.left-sw-2
-  if(x<2) x=2
-  if(y+sh>winH) y=winH-sh-2
-  if(y<2) y=2
-  submenu.style.left=x+'px';submenu.style.top=y+'px'
-  subType=type
-}
 ctx.addEventListener('click',e=>{
   const a=e.target.dataset.a; if(!a) return
-  if(a==='font-sub'){showSub('font',e.target);return}
-  if(a==='color-sub'){showSub('color',e.target);return}
-  ctx.style.display='none';hideSub()
-  handleAction(a)
-})
-submenu.addEventListener('click',e=>{
-  const el=e.target.closest('[data-a]')
-  if(!el) return
-  const a=el.dataset.a
-  if(!a) return
-  submenu.style.display='none'
+  ctx.style.display='none'
   handleAction(a)
 })
 
 function handleAction(a){
   if(!api) return
   if(a==='close') api.lyricClose()
-  else if(a==='fs+'){fontSize=Math.min(28,fontSize+2);applyFont();saveSettings();showToast('字号: '+fontSize+'px')}
-  else if(a==='fs-'){fontSize=Math.max(10,fontSize-2);applyFont();saveSettings();showToast('字号: '+fontSize+'px')}
-  else if(a.startsWith('fs')&&a!=='fs-'&&a!=='fs+'){
-    fontSize=parseInt(a.replace('fs',''));applyFont();saveSettings();showToast('字号: '+fontSize+'px')
-  }
   else if(a==='bg+'){bgAlpha=Math.min(0.9,+(bgAlpha+0.1).toFixed(1));app.style.background=`rgba(0,0,0,${bgAlpha})`;saveSettings();showToast('背景: '+Math.round(bgAlpha*100)+'%')}
   else if(a==='bg-'){bgAlpha=Math.max(0.05,+(bgAlpha-0.1).toFixed(1));app.style.background=`rgba(0,0,0,${bgAlpha})`;saveSettings();showToast('背景: '+Math.round(bgAlpha*100)+'%')}
   else if(a==='through'){
@@ -240,11 +217,6 @@ function handleAction(a){
     if(allText){navigator.clipboard.writeText(allText);showToast('已复制全部歌词 ('+lines.length+'行)')}
     else{showToast('暂无歌词')}
   }
-  else if(a.startsWith('color-')){
-    const colorMap={blue:'#4d94ff',green:'#4dff88',red:'#ff4d6a',purple:'#b44dff',orange:'#ff9f43',white:'#ffffff',gold:'#ffd700'}
-    lyricColor=colorMap[a.replace('color-','')]||'#4d94ff'
-    applyColor();saveSettings();showToast('颜色已切换')
-  }
   else if(a==='save'){
     if(lines.length===0){showToast('暂无歌词可保存');return}
     const allText=lines.map(l=>{
@@ -255,10 +227,11 @@ function handleAction(a){
     showToast('正在保存歌词文件...')
   }
   else if(a==='reset'){
-    fontSize=14;bgAlpha=0.05;lyricColor='#4d94ff';locked=false
+    // 只重置窗口专有项;字号/颜色/逐字/翻译由应用侧栏统一管理,不在这里动
+    bgAlpha=0.05;locked=false
     app.style.background=`rgba(0,0,0,${bgAlpha})`
-    applyFont();applyColor();saveSettings()
-    showToast('所有设置已重置')
+    saveSettings()
+    showToast('窗口设置已重置(透明度/锁定)')
   }
 }
 

@@ -211,6 +211,147 @@ app.whenReady().then(async () => {
   check('设置页:已导入字体计数画对了', fontPanel && fontPanel.hasImportedLabel, JSON.stringify(fontPanel))
   check('设置页:字体"整理字体文件"入口存在', fontPanel && fontPanel.hasTidyBtn, JSON.stringify(fontPanel))
 
+  // 6) 封面分栏的歌词必须与歌词页功能对齐 —— 用户报过"侧栏功能只作用在歌词界面的歌词上"。
+  //    设成"分栏 + 指定颜色 + 带时间轴的歌词",再驱动真实界面。
+  //    每个夹具都写一份:起播的是"当前行"那首,不一定是第一首(第一版只给第一首写,于是没歌词)
+  //    时间戳要**密**(每 0.5 秒一句):夹具歌只有 3~40 秒,按 10 秒一句的话第 25 句标在 4:40,
+  //    seek 会被夹到歌尾、当前行根本落不到深处(第一版就是这样,定位那条断言没法测)
+  const TIMED_LRC = Array.from({ length: 40 }, (_, i) => {
+    const t = i * 0.5
+    return `[${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}]第 ${i + 1} 句歌词`
+  }).join('\n')
+  for (const it of items) fs.writeFileSync(it.path.replace(/\.[^.]+$/, '') + '.lrc', TIMED_LRC)
+  await run(`(() => {
+    localStorage.setItem('soundflow_pv_split', 'on')
+    localStorage.setItem('soundflow_lyric_color', '#ff00aa')
+    localStorage.setItem('soundflow_lyric_mode', 'line')
+    localStorage.setItem('soundflow_lyric_effect', '1')
+    return true
+  })()`)
+  await win.webContents.reload()
+  await sleep(4000)
+  // 上一组检查把页面停在 #/settings:先回列表再起播(第一版忘了回首页,列表行不在 DOM 里)
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1800)
+  const started = await run(`(async () => {
+    const row = document.querySelector('.list-row.active') || document.querySelector('.list-row')
+    if (!row) return 'no-row'
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 1800))
+    return 'ok'
+  })()`)
+  console.log('起播:', started)
+
+  await run(`(() => { location.hash = '#/player'; return true })()`)
+  await sleep(2600)
+  const dump = await run(`(() => ({
+    hash: location.hash,
+    playerView: !!document.querySelector('.player-view'),
+    tabs: document.querySelectorAll('.tab-btn').length,
+    split: !!document.querySelector('.split-lyrics'),
+    lyricMode: !!document.querySelector('.lyric-mode'),
+    lyricRight: document.querySelectorAll('.lyric-right .lyric-line').length,
+    empty: !!document.querySelector('.lyrics-empty'),
+    lyricsCount: (document.querySelectorAll('.lyric-line').length),
+    pvSplit: localStorage.getItem('soundflow_pv_split'),
+    title: (document.querySelector('.player-title') || {}).textContent,
+    err: (window.__errs || []).slice(0, 3)
+  }))()`)
+  console.log('播放页诊断:', JSON.stringify(dump))
+
+  // 进歌词页:用顶部的"歌词"页签(分栏模式下没有 .disc-area,点唱片那招无效)
+  await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[1]) t[1].click(); return true })()`)
+  await sleep(1400)
+  const seeked = await run(`(() => {
+    const lines = document.querySelectorAll('.lyric-right .lyric-line')
+    if (lines.length < 25) return { err: '歌词行不足', n: lines.length }
+    lines[25].click()
+    return { n: lines.length }
+  })()`)
+  console.log('歌词页跳转:', JSON.stringify(seeked))
+  const playState = await run(`(() => {
+    const pb = document.querySelector('.ctrl-btn--play')
+    const lines = [...document.querySelectorAll('.lyric-right .lyric-line')]
+    return { playTitle: pb ? (pb.getAttribute('title') || '') : null, activeIdx: lines.findIndex((el) => el.classList.contains('active')) }
+  })()`)
+  console.log('播放/当前行:', JSON.stringify(playState))
+  await sleep(1600)
+  // 切回封面页(分栏):当前行应当被滚进视口 —— 此前只有歌词页做了这件事
+  await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)
+  await sleep(1700)
+  // 颜色要在**暂停后**量:.lyric-line 有 transition:all .4s,而播放中当前行每 0.5 秒换一次,
+  // 随便什么时候量都会量到过渡中间色(第一版量到 oklab(...) 就是这么来的)
+  await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
+  await sleep(900)
+  const split = await run(`(() => {
+    const box = document.querySelector('.split-lyrics')
+    if (!box) return { err: '没有 .split-lyrics(分栏没生效?)' }
+    const list = box.querySelector('.lyrics-scroll')
+    const active = box.querySelector('.lyric-line.active')
+    const lr = list.getBoundingClientRect()
+    const ar = active ? active.getBoundingClientRect() : null
+    return {
+      lines: box.querySelectorAll('.lyric-line').length,
+      activeColor: active ? getComputedStyle(active).color : null,
+      inView: ar ? (ar.top >= lr.top - 4 && ar.bottom <= lr.bottom + 4) : null,
+      scrollTop: Math.round(list.scrollTop)
+    }
+  })()`)
+  console.log('分栏:', JSON.stringify(split))
+  check('分栏歌词已渲染(封面页确实有歌词)', split && split.lines > 20, JSON.stringify(split))
+  check('分栏当前行颜色跟随设置(不再被 !important 锁成金色)',
+    split && split.activeColor === 'rgb(255, 0, 170)', `实际 ${split && split.activeColor}`)
+  check('切回封面页(分栏)会定位到当前行(不停在歌词开头)',
+    split && split.scrollTop > 0 && split.inView !== false, JSON.stringify(split))
+
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]'); if (b) b.click(); return true })()`)
+  await sleep(1100)
+  const splitWords = await run(`(() => {
+    const box = document.querySelector('.split-lyrics')
+    const tb = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')
+    return { words: box ? box.querySelectorAll('.lyric-word').length : -1, label: tb ? tb.textContent.trim() : null }
+  })()`)
+  check('分栏下点「逐字」真的生效(两面共用同一套渲染)', splitWords && splitWords.words > 2, JSON.stringify(splitWords))
+
+  // 7) 桌面歌词窗必须跟随应用侧设置(此前它只读自己的 lyric_window_settings,自成一套)
+  //    先在播放页把"逐字"打开(上一步已开),然后**回列表页**再点开关 ——
+  //    播放页里整条播放栏不存在(.player-right 里的按钮自然也找不到)
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1800)
+  // 必须走 UI(store 的 cycleDesktopLyric):直接调 IPC 不会更新 store 的 desktopLyricState,
+  // 于是 sendLyricUpdate 一直早退,窗口开着却永远没数据(第一版就是这么错的)
+  const rightBtns = await run(`(() => [...document.querySelectorAll('.right-btn')].map(b => ({ cls: b.className, al: b.getAttribute('aria-label'), title: b.getAttribute('title') })))()`)
+  console.log('右侧按钮:', JSON.stringify(rightBtns).slice(0, 400))
+  const toggleRes = await run(`(() => {
+    const b = document.querySelector('.right-btn[aria-label="歌词"]')
+    if (!b) return 'no-button'
+    b.click()
+    return 'clicked'
+  })()`)
+  console.log('桌面歌词开关:', toggleRes)
+  await sleep(2600)
+  const lyricWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w !== win)
+  check('桌面歌词窗已打开', !!lyricWin)
+  if (lyricWin) {
+    let lw = null
+    try {
+      lw = await lyricWin.webContents.executeJavaScript(`(() => {
+        const active = document.querySelector('.line.active')
+        return {
+          size: active ? getComputedStyle(active).fontSize : null,
+          color: active ? getComputedStyle(active).color : null,
+          words: document.querySelectorAll('.lyric-word').length,
+          trans: document.querySelectorAll('.lyric-trans').length
+        }
+      })()`, true)
+    } catch (e) { lw = { err: e.message } }
+    console.log('桌面歌词窗:', JSON.stringify(lw))
+    check('桌面歌词窗跟随应用侧字号(18 设置 → 当前行 22px)', lw && lw.size === '22px', JSON.stringify(lw))
+    check('桌面歌词窗跟随应用侧颜色', lw && lw.color === 'rgb(255, 0, 170)', JSON.stringify(lw))
+    check('桌面歌词窗也能逐字高亮', lw && lw.words > 2, JSON.stringify(lw))
+    try { await run(`(async () => { try { await window.electronAPI.lyricClose() } catch (e) {} return true })()`) } catch {}
+  }
+
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
   await sleep(400)

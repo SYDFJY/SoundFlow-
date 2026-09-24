@@ -113,7 +113,7 @@
       </button>
 
       <!-- 桌面歌词 -->
-      <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" @click="playerStore.cycleDesktopLyric()" v-tooltip:top="t('player.lyrics')">
+      <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" :aria-label="t('player.lyrics')" :aria-pressed="playerStore.desktopLyricState !== 0" @click="playerStore.cycleDesktopLyric()" v-tooltip:top="t('player.lyrics')">
         <Icon name="lyrics" :size="18" />
 
       </button>

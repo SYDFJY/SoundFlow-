@@ -95,26 +95,18 @@
             </div>
             <div v-else class="lyrics-content" :class="{ 'no-lyric-effect': !lyricEffect }">
               <div style="height:30%"></div>
-              <div
+              <!-- 与歌词页共用 LyricLine:逐字/翻译不再只在歌词页生效(分栏窄,不显示时间戳列) -->
+              <LyricLine
                 v-for="(line, idx) in playerStore.lyrics" :key="idx"
-                class="lyric-line"
-                :class="{
-                  active: idx === playerStore.currentLyricIndex,
-                  left: lyricAlign === 'left',
-                  near: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) === 1,
-                  far: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) > 1
-                }"
-                :style="{
-                  fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
-                  lineHeight: lyricLineGap,
-                  fontWeight: idx === playerStore.currentLyricIndex ? 700 : 400,
-                  color: lyricLineColor(idx),
-                  textShadow: lyricLineShadow(idx)
-                }"
-                :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
-                @click="seekToLine(line)"
-                :ref="el => { if (idx === playerStore.currentLyricIndex) splitActiveEl = el }"
-              >{{ line.text }}</div>
+                :line="line" :idx="idx" :current-idx="playerStore.currentLyricIndex"
+                :effect="lyricEffect" :align="lyricAlign" :font-size="lyricFontSize" :gap="lyricLineGap"
+                :color="lyricLineColor(idx)" :shadow="lyricLineShadow(idx)"
+                :word-mode="lyricMode === 'word'"
+                :words="idx === playerStore.currentLyricIndex ? lyricWordSegments(line) : []"
+                :word-idx="currentWordIdx" :word-color="lyricColor"
+                :translation="playerStore.showTranslation ? (playerStore.translations[idx] || '') : ''"
+                @seek="seekToLine"
+              />
               <div style="height:30%"></div>
             </div>
           </div>
@@ -157,40 +149,19 @@
             </div>
             <div v-else class="lyrics-content" :class="{ 'no-lyric-effect': !lyricEffect }">
               <div style="height:40%"></div>
-              <div
-                v-for="(line, idx) in playerStore.lyrics"
-                :key="idx"
-                class="lyric-line"
-                :class="{
-                  active: idx === playerStore.currentLyricIndex,
-                  left: lyricAlign === 'left',
-                  near: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) === 1,
-                  far: lyricEffect && Math.abs(idx - playerStore.currentLyricIndex) > 1
-                }"
-                :style="{
-                  fontSize: (idx === playerStore.currentLyricIndex ? lyricFontSize + 4 : (Math.abs(idx - playerStore.currentLyricIndex) === 1 ? lyricFontSize + 1.5 : lyricFontSize)) + 'px',
-                  lineHeight: lyricLineGap,
-                  fontWeight: idx === playerStore.currentLyricIndex ? 700 : 400,
-                  color: lyricLineColor(idx),
-                  textShadow: lyricLineShadow(idx)
-                }"
-                :title="'点击跳转到 ' + playerStore.formatTime(line.time)"
-                @click="seekToLine(line)"
-                :ref="el => { if (idx === playerStore.currentLyricIndex) activeLyricEl = el }"
-              >
-                <!-- 行时间戳:当前行常显,其他行 hover 显示(QQ 音乐风) -->
-                <span class="lyric-time">{{ playerStore.formatTime(line.time) }}</span>
-                <!-- 逐字高亮模式:当前行按字/词渲染,实时高亮当前字词(强调色区分) -->
-                <template v-if="lyricMode === 'word' && idx === playerStore.currentLyricIndex">
-                  <span v-for="(w, wi) in lyricWordSegments(line)" :key="wi"
-                    class="lyric-word"
-                    :class="{ cur: wi === currentWordIdx }"
-                    :style="wi !== currentWordIdx ? { color: lyricColor + '77' } : {}"
-                  >{{ w.c }}</span>
-                </template>
-                <template v-else>{{ line.text }}</template>
-                <div v-if="playerStore.showTranslation && playerStore.translations[idx]" class="lyric-trans">{{ playerStore.translations[idx] }}</div>
-              </div>
+              <!-- 与封面分栏共用 LyricLine(此处多一个行时间戳列) -->
+              <LyricLine
+                v-for="(line, idx) in playerStore.lyrics" :key="idx"
+                :line="line" :idx="idx" :current-idx="playerStore.currentLyricIndex"
+                :effect="lyricEffect" :align="lyricAlign" :font-size="lyricFontSize" :gap="lyricLineGap"
+                :color="lyricLineColor(idx)" :shadow="lyricLineShadow(idx)"
+                show-time :time-text="playerStore.formatTime(line.time)"
+                :word-mode="lyricMode === 'word'"
+                :words="idx === playerStore.currentLyricIndex ? lyricWordSegments(line) : []"
+                :word-idx="currentWordIdx" :word-color="lyricColor"
+                :translation="playerStore.showTranslation ? (playerStore.translations[idx] || '') : ''"
+                @seek="seekToLine"
+              />
               <div style="height:40%"></div>
             </div>
           </div>
@@ -282,7 +253,7 @@
         <div v-if="showColorPanel" class="color-panel" @click.stop>
           <div class="color-panel-title">歌词颜色</div>
           <button v-for="c in lyricColorOptions" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: lyricColor === c.value }" :title="c.name" @click="setLyricColor(c.value)"></button>
-          <button class="color-dot color-dot-custom" :style="{ background: lyricColor }" :class="{ active: lyricIsCustom }" title="自定义取色" @click="openLyricPicker"></button>
+          <button class="color-dot color-dot-custom" ref="lyricColorPickrEl" :style="{ background: lyricColor }" :class="{ active: lyricIsCustom }" title="自定义取色" @click="openLyricPicker"></button>
         </div>
       </div>
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
@@ -484,9 +455,10 @@ import EqPanel from '@/components/EqPanel.vue'
 import NextTrackHint from '@/components/NextTrackHint.vue'
 import QueuePanel from '@/components/QueuePanel.vue'
 import { useVolumeControl } from '@/composables/useVolumeControl'
-import { buildWordSegments } from '@/utils/lyricTiming'
+import { buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
 import { isCustomCoverUrl } from '@/utils/cover'
 import { shortcutHint } from '@/utils/shortcut'
+import LyricLine from '@/components/LyricLine.vue'
 import { useSpectrum } from '@/composables/useSpectrum'
 import { usePlayerBackground } from '@/composables/usePlayerBackground'
 
@@ -503,7 +475,7 @@ function goBack() {
 }
 
 const lyricsPanel = ref(null)
-const activeLyricEl = ref(null)
+const splitLyricsEl = ref(null)
 
 // 播放列表面板
 const showQueuePanel = ref(false)
@@ -539,6 +511,7 @@ function onPvPanelDocClick(e) {
   showPitchPanel.value = false
   showRatePanel.value = false
   showSpecPanel.value = false
+  showFormatPanel.value = false // 此前漏了它(点外部关闭里有,Esc 没有)
 }
 const activeTab = ref('cover')
 
@@ -728,27 +701,62 @@ const playModeLabelKey = computed(() => {
 })
 const playModeLabel = computed(() => t(playModeLabelKey.value))
 
+/**
+ * 两处歌词面的滚动定位共用同一套"按容器查当前行"的写法。
+ * 此前各用一份 ref 回调(`activeLyricEl` / `splitActiveEl`)由模板赋值,两份实现还长得不一样,
+ * 于是"进去时定位到当前行"只在歌词页做了 —— 分栏进播放页停在歌词开头。
+ */
+function activeLineElIn(container) {
+  return container ? container.querySelector('.lyric-line.active') : null
+}
+
 // 滚动歌词到当前播放行(近距离平滑/远距离直接跳)
 function scrollToActiveLyric() {
   nextTick(() => {
-    if (activeLyricEl.value && lyricsPanel.value) {
-      const panel = lyricsPanel.value.getBoundingClientRect()
-      const el = activeLyricEl.value.getBoundingClientRect()
-      const dist = (el.top + el.height / 2) - (panel.top + panel.height / 2)
-      activeLyricEl.value.scrollIntoView({ behavior: Math.abs(dist) <= 200 ? 'smooth' : 'auto', block: 'center' })
-    }
+    const panel = lyricsPanel.value
+    const el = activeLineElIn(panel)
+    if (!panel || !el) return
+    const pr = panel.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const dist = (r.top + r.height / 2) - (pr.top + pr.height / 2)
+    el.scrollIntoView({ behavior: Math.abs(dist) <= 200 ? 'smooth' : 'auto', block: 'center' })
   })
+}
+
+// 分栏那份:容器不是滚动元素本身,自己算 scrollTop(近距离平滑)
+function scrollSplitToActive(smooth = false) {
+  nextTick(() => {
+    const wrap = splitLyricsEl.value
+    const list = wrap && wrap.querySelector('.lyrics-scroll')
+    const el = activeLineElIn(list)
+    if (!list || !el) return
+    const lr = el.getBoundingClientRect()
+    const sr = list.getBoundingClientRect()
+    const delta = lr.top - sr.top - sr.height / 2 + lr.height / 2
+    if (smooth && Math.abs(delta) <= 200) list.scrollTo({ top: list.scrollTop + delta, behavior: 'smooth' })
+    else list.scrollTop += delta
+  })
+}
+
+/** 当前可见的那个歌词面定位到当前行 */
+function locateActiveLyric(smooth = false) {
+  if (activeTab.value === 'lyric') scrollToActiveLyric()
+  else if (useSplit.value) scrollSplitToActive(smooth)
 }
 
 // 切歌时自动滚动歌词:近距离平滑、远距离直接跳(避免播放中每句 smooth 的持续合成开销)
 watch(() => playerStore.currentLyricIndex, () => {
   scrollToActiveLyric()
+  scrollSplitToActive()
 })
 
-// 进入歌词 tab 时跳转到当前播放行(播放一会后进歌词不再停在开头)
+// 进入歌词 tab / 进入分栏时都定位到当前播放行(播放一会后再进不再停在开头)
 watch(activeTab, (v) => {
   if (v === 'lyric') scrollToActiveLyric()
+  else locateActiveLyric(true)
 })
+// 分栏相关的两个 watcher 见文件下方 useSplit 声明之后 ——
+// watch 注册时会立刻求值源,写在这里会撞 useSplit 的暂时性死区(播放页整页白屏)
 
 // 切歌时自动切换到封面模式
 watch(() => playerStore.currentSong, () => {
@@ -822,14 +830,11 @@ function onSidebarKeydown(e) {
 function toggleLyricEffect() {
   lyricEffect.value = !lyricEffect.value
   try { localStorage.setItem('soundflow_lyric_effect', lyricEffect.value ? '1' : '0') } catch {}
+  playerStore.refreshLyricWindowStyle() // 桌面歌词窗也吃这套样式,改完立刻重推
 }
 
 // 歌词字号(可调,localStorage 持久化)
 const lyricFontSize = ref(parseInt(localStorage.getItem('soundflow_lyric_font_size')) || 18)
-function changeLyricFont(delta) {
-  lyricFontSize.value = Math.max(12, Math.min(36, lyricFontSize.value + delta))
-  localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
-}
 
 // 歌词排版弹出面板(字号 / 行距 / 偏移)
 const showFormatPanel = ref(false)
@@ -845,10 +850,11 @@ function slideLyricOffset(v) {
   _offsetSlideTs = now
   playerStore.setLyricUserOffset(v)
 }
-// 滑杆用的绝对设定:与 changeLyricFont 共用同一夹取范围与持久化键
+// 滑杆用的绝对设定(与行距同样的夹取方式)
 function setLyricFont(v) {
   lyricFontSize.value = Math.max(12, Math.min(36, Math.round(v) || 18))
   localStorage.setItem('soundflow_lyric_font_size', String(lyricFontSize.value))
+  playerStore.refreshLyricWindowStyle()
 }
 
 // 歌词行距(1.3-2.4,持久化)
@@ -856,10 +862,7 @@ const lyricLineGap = ref(parseFloat(localStorage.getItem('soundflow_lyric_gap'))
 function setLyricGap(v) {
   lyricLineGap.value = Math.max(1.3, Math.min(2.4, Math.round((Number(v) || 1.6) * 100) / 100))
   localStorage.setItem('soundflow_lyric_gap', String(lyricLineGap.value))
-}
-function changeLyricGap(delta) {
-  lyricLineGap.value = Math.max(1.3, Math.min(2.4, Math.round((lyricLineGap.value + delta) * 100) / 100))
-  localStorage.setItem('soundflow_lyric_gap', String(lyricLineGap.value))
+  playerStore.refreshLyricWindowStyle()
 }
 
 // 歌词颜色(8 色色板,持久化)
@@ -880,12 +883,14 @@ const lyricColor = ref(getSetting('soundflow_lyric_color'))
 function setLyricColor(v) {
   lyricColor.value = v
   localStorage.setItem('soundflow_lyric_color', v)
+  playerStore.refreshLyricWindowStyle()
   try { window.$toast?.('歌词颜色已更新', 'success') } catch {}
 }
 const lyricIsCustom = computed(() => !lyricColorOptions.some(c => c.value === lyricColor.value))
 // 背景纯色自定义取色:当前色不在预设色板里时,给"自定义"色点加选中描边
 const bgColorIsCustom = computed(() => !bgPresets.color.some(c => c.value === bgColor.value))
 const bgColorPickrEl = ref(null)
+const lyricColorPickrEl = ref(null)
 let _bgPickr = null
 function openBgColorPicker() {
   const btn = bgColorPickrEl.value
@@ -904,7 +909,9 @@ function openBgColorPicker() {
 
 let _lyricPickr = null
 function openLyricPicker() {
-  const btn = document.querySelector('.color-dot-custom')
+  // 用 ref 而不是 querySelector:页面里有两个 .color-dot-custom(背景面板那个 DOM 更靠前),
+  // 背景面板开着时 querySelector 会取到背景那个点,取色器就挂错地方了
+  const btn = lyricColorPickrEl.value
   if (!btn || typeof window.Pickr === 'undefined') return
   if (_lyricPickr) { _lyricPickr.destroy(); _lyricPickr = null }
   _lyricPickr = window.Pickr.create({
@@ -950,8 +957,6 @@ function toggleSplit() {
   useSplit.value = !useSplit.value
   try { localStorage.setItem('soundflow_pv_split', useSplit.value ? 'on' : 'off') } catch {}
 }
-const splitLyricsEl = ref(null)
-let splitActiveEl = null
 function onSplitResize() {
   // 未手动设置时才跟随窗口宽度
   try {
@@ -960,15 +965,12 @@ function onSplitResize() {
   } catch {}
   useSplit.value = window.innerWidth > 900
 }
-watch(() => playerStore.currentLyricIndex, () => {
-  if (!useSplit.value || !splitLyricsEl.value) return
-  const el = splitActiveEl
-  const list = splitLyricsEl.value.querySelector('.lyrics-scroll')
-  if (el && list) {
-    const lr = el.getBoundingClientRect(), sr = list.getBoundingClientRect()
-    list.scrollTop += lr.top - sr.top - sr.height / 2 + lr.height / 2
-  }
-})
+
+// 分栏是本次新补的能力:打开分栏、或歌词刚加载出来时,同样要定位到当前行。
+// 注意这两个必须写在 useSplit 声明**之后** —— watch 注册时会立刻求值一次源,
+// 放前面会撞暂时性死区(ReferenceError: Cannot access ... before initialization,整页白屏)。
+watch(useSplit, (on) => { if (on && activeTab.value === 'cover') scrollSplitToActive(true) })
+watch(() => playerStore.lyrics, () => locateActiveLyric())
 const showRatePanel = ref(false) // 倍速面板默认收起
 // 音调/速度数字输入(Enter/失焦确认)
 const pitchInput = ref(playerStore.pitch)
@@ -1000,6 +1002,7 @@ function onPvEsc() {
   showPitchPanel.value = false
   showRatePanel.value = false
   showSpecPanel.value = false
+  showFormatPanel.value = false // 此前漏了它(点外部关闭里有,Esc 没有)
 }
 // 双击封面全屏切换;ESC 退出全屏
 function toggleFullscreen() {
@@ -1051,6 +1054,7 @@ onUnmounted(() => {
 const lyricAlign = ref(localStorage.getItem('soundflow_lyric_align') || 'center')
 function toggleLyricAlign() {
   lyricAlign.value = lyricAlign.value === 'center' ? 'left' : 'center'
+  playerStore.refreshLyricWindowStyle()
   localStorage.setItem('soundflow_lyric_align', lyricAlign.value)
 }
 
@@ -1058,6 +1062,7 @@ function toggleLyricAlign() {
 const lyricMode = ref(localStorage.getItem('soundflow_lyric_mode') || 'line')
 function toggleLyricMode() {
   lyricMode.value = lyricMode.value === 'word' ? 'line' : 'word'
+  playerStore.refreshLyricWindowStyle()
   localStorage.setItem('soundflow_lyric_mode', lyricMode.value)
 }
 // 当前逐字索引(基于 currentTime 与行内时间戳;标准LRC按均分时间近似)
@@ -1069,13 +1074,7 @@ const currentWordIdx = computed(() => {
   if (!segs.length) return -1
   // 用共享的 lyricClock(已扣除歌词偏移)而不是原始 currentTime:
   // 否则调整偏移后行高亮会跟着变、逐字高亮却不变,两者错位
-  const t = playerStore.lyricClock
-  let idx = -1
-  for (let i = 0; i < segs.length; i++) {
-    if (segs[i].t <= t) idx = i
-    else break
-  }
-  return idx
+  return wordIndexAt(segs, playerStore.lyricClock)
 })
 // 文本切分与权重计时已收敛到 @/utils/lyricTiming(可单测;原实现内联在本组件内)
 
@@ -1084,16 +1083,6 @@ const lyricOffsetLabel = computed(() => {
   const ms = playerStore.lyricUserOffsetMs || 0
   if (!ms) return '±0'
   return `${ms > 0 ? '+' : ''}${(ms / 1000).toFixed(1)}s`
-})
-const lyricOffsetTitle = computed(() => {
-  const parts = []
-  const user = playerStore.lyricUserOffsetMs || 0
-  parts.push(user ? `本曲微调 ${user > 0 ? '+' : ''}${user}ms(点击归零)` : '本曲未微调')
-  const file = playerStore.lyricFileOffsetMs || 0
-  if (file) parts.push(`文件 [offset:${file > 0 ? '+' : ''}${file}]`)
-  const eff = playerStore.lyricOffsetSeconds || 0
-  parts.push(`有效偏移 ${eff > 0 ? '+' : ''}${(eff * 1000).toFixed(0)}ms(${eff > 0 ? '歌词延后' : eff < 0 ? '歌词提前' : '无偏移'})`)
-  return parts.join(';')
 })
 // 逐字渲染段:有增强时间戳直接用;无则由 utils/lyricTiming 按权重推算
 // (标点不计时、拉丁词按长度加权、CJK 逐字,详见该模块)
@@ -1310,8 +1299,11 @@ async function searchLyric() {
   mix-blend-mode: screen;
 }
 .cd-half.spinning { animation: spin 24s linear infinite; }
-/* 分栏歌词:当前行金色高亮(文档 #FFD700) */
-.split-lyrics .lyric-line.active { color: #FFD700 !important; font-weight: 700; text-shadow: 0 0 18px rgba(255, 215, 0, 0.55); background: none; box-shadow: none; }
+/* 分栏歌词:当前行只保留"加粗"这一层强调,颜色/发光/胶囊底都交给共用规则 ——
+   用户设的歌词颜色走行内 style,胶囊底受 ✨ 特效开关控制。
+   此前这条写着 `color: #FFD700 !important` 且 `background:none`,把当前行锁成金色、
+   还干掉了胶囊高亮,于是在这一面"歌词颜色"设置看起来完全没生效。 */
+.split-lyrics .lyric-line.active { font-weight: 700; }
 
 .disc-area { position: relative; display: flex; flex-direction: column; align-items: center; }
 

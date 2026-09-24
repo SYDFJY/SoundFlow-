@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { DEFAULTS, getSetting } from '../config/defaults.js'
 import { ref, computed, watch, reactive } from 'vue'
 import { parseLRCWithMeta } from '@/utils/lrc'
-import { resolveLyricOffset } from '@/utils/lyricTiming'
+import { resolveLyricOffset, buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
 import { formatDuration } from '@/utils/time'
 import { noteFailure } from '@/utils/failures'
 import { createShufflePool } from '@/utils/shufflePool'
@@ -1390,27 +1390,55 @@ export const usePlayerStore = defineStore('player', () => {
   })
 
   // ========== 桌面歌词数据推送 ==========
+  /**
+   * 桌面歌词窗的载荷(纯函数,便于单测)。
+   *
+   * 此前只推 time/text —— 窗内因此拿不到逐字、翻译与任何样式,字号/颜色只能在窗自己的
+   * 右键菜单里单独设,应用侧的歌词设置一个都不读,表现为"侧栏的歌词设置对桌面歌词无效"。
+   * 现在把应用侧实际在用的那一套整份推过去;窗口只保留它专有的东西(背景透明度/锁定)。
+   * 时间还是推 currentTime 快照 + playing:窗内自己按 receivedAt 插值,逐字才走得动。
+   */
+  function buildLyricWindowPayload () {
+    updateLyricIndex()
+    const idx = currentLyricIndex.value
+    const line = lyrics.value[idx]
+    const next = lyrics.value[idx + 1]
+    const style = {
+      fontSize: Number(getSetting('soundflow_lyric_font_size')) || 18,
+      gap: Number(getSetting('soundflow_lyric_gap')) || 1.6,
+      align: getSetting('soundflow_lyric_align') || 'center',
+      effect: String(getSetting('soundflow_lyric_effect')) === '1',
+      color: getSetting('soundflow_lyric_color') || '#6ec6ff',
+      wordMode: String(getSetting('soundflow_lyric_mode')) === 'word'
+    }
+    const words = style.wordMode && line ? buildWordSegments(line, next ? next.time : null) : []
+    return {
+      title: currentSong.value?.title || '',
+      artist: currentSong.value?.artist || '',
+      lines: lyrics.value.map(l => ({ time: l.time, text: l.text })),
+      currentIdx: idx,
+      currentTime: currentTime.value || 0,
+      playing: isPlaying.value,
+      style,
+      words,
+      wordIdx: isPlaying.value ? wordIndexAt(words, lyricClock.value) : -1,
+      translation: showTranslation.value ? (translations.value[idx] || '') : ''
+    }
+  }
+
   function sendLyricUpdate() {
     if (!window.electronAPI || !window.electronAPI.sendLyricUpdate) return
     // 桌面歌词窗未打开时不推送:避免每次切歌/播放状态变化都深拷贝全量歌词并走 IPC
     if (desktopLyricState.value === 0) return
     try {
-      // 歌词可能刚加载而 currentTime 未变化 → 主动重算当前句索引
-      updateLyricIndex()
-      // 直接浅映射纯对象(time/text),避免无谓深拷贝;IPC 序列化时自会拷贝
-      const lines = lyrics.value.map(l => ({ time: l.time, text: l.text }))
-      window.electronAPI.sendLyricUpdate({
-        title: currentSong.value?.title || '',
-        artist: currentSong.value?.artist || '',
-        lines,
-        currentIdx: currentLyricIndex.value,
-        currentTime: currentTime.value || 0,
-        playing: isPlaying.value
-      })
+      window.electronAPI.sendLyricUpdate(buildLyricWindowPayload())
       // 同步当前句索引
       if (window.electronAPI.sendLyricIndex) window.electronAPI.sendLyricIndex(currentLyricIndex.value)
     } catch {}
   }
+
+  /** 歌词外观设置改了 → 立刻重推一次,不然要等切歌/播放状态变化才生效 */
+  function refreshLyricWindowStyle() { sendLyricUpdate() }
   watch(currentSong, () => sendLyricUpdate())
   watch(lyrics, () => sendLyricUpdate())
   watch(isPlaying, () => sendLyricUpdate())
@@ -2115,7 +2143,8 @@ export const usePlayerStore = defineStore('player', () => {
     songNotify,
     duration, volume, isMuted, playMode, lyrics, lyricLoading, currentLyricIndex, lyricOrigin,
     lyricOffsetSeconds, lyricUserOffsetMs, lyricFileOffsetMs, lyricClock,
-    setLyricUserOffset, nudgeLyricOffset, resetLyricUserOffset, getLyricUserOffset,
+    setLyricUserOffset,
+    refreshLyricWindowStyle, buildLyricWindowPayload, nudgeLyricOffset, resetLyricUserOffset, getLyricUserOffset,
     resumeProgress,
     volPanelOpen, miniOpen,
     endAction, setEndAction,

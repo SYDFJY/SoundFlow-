@@ -101,6 +101,22 @@ export function buildWordSegments(line, nextLineTime) {
 }
 
 /**
+ * 由"已扣掉歌词偏移的播放时间"与词级分段算出当前词序;拿不到返回 -1。
+ * 抽出来是为了让播放页与桌面歌词窗共用一份 —— 这段循环原本只写在播放页里,
+ * 桌面歌词窗要做逐字就得再抄一遍(上次的教训:同一逻辑抄两份,功能只会落在其中一面)。
+ */
+export function wordIndexAt(segments, t) {
+  if (!Array.isArray(segments) || !segments.length) return -1
+  const time = Number.isFinite(t) ? t : 0
+  let idx = -1
+  for (let i = 0; i < segments.length; i++) {
+    if (segments[i].t <= time) idx = i
+    else break
+  }
+  return idx
+}
+
+/**
  * 有效歌词偏移(秒)。正值 = 歌词需要**延后**显示。
  *
  * 两路来源相加:
