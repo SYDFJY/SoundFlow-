@@ -382,6 +382,46 @@ app.whenReady().then(async () => {
     check('桌面歌词窗跟随应用侧字号(18 设置 → 当前行 22px)', lw && lw.size === '22px', JSON.stringify(lw))
     check('桌面歌词窗跟随应用侧颜色', lw && lw.color === 'rgb(255, 0, 170)', JSON.stringify(lw))
     check('桌面歌词窗也能逐字高亮', lw && lw.words > 2, JSON.stringify(lw))
+    // 拖动/缩放:窗口必须跟随**指针的绝对位移**。
+    // 这里特意让"每帧上报的 movementX 之和"与"指针真实位移"不一致 —— 真实拖动时正是如此:
+    // 窗口在光标下移动会污染 Chromium 算出的 movementX(叠加反馈),于是越拖越跟不上。
+    const posBefore = lyricWin.getPosition()
+    const sizeBefore = lyricWin.getSize()
+    await lyricWin.webContents.executeJavaScript(`(() => {
+      const fire = (type, x, y, mvx, mvy, target) => (target || document.body).dispatchEvent(new MouseEvent(type, {
+        screenX: x, screenY: y, movementX: mvx || 0, movementY: mvy || 0, bubbles: true, button: 0
+      }))
+      fire('mousedown', 1000, 600)
+      for (let i = 1; i <= 4; i++) fire('mousemove', 1000 + i * 10, 600 + i * 4, 3, 1) // 指针走 40/16,movementX 之和只有 12/4
+      fire('mouseup', 1040, 616)
+      return true
+    })()`, true)
+    await sleep(700)
+    const posAfter = lyricWin.getPosition()
+    // 允许 ±1:setPosition 按 DIP、getPosition 取整,在非 100% 缩放下会差 1 像素
+    const dxOk = Math.abs((posAfter[0] - posBefore[0]) - 40) <= 1
+    const dyOk = Math.abs((posAfter[1] - posBefore[1]) - 16) <= 1
+    check('桌面歌词:拖动跟指针走(不随窗口自身移动漂移)',
+      dxOk && dyOk, `实际位移 ${posAfter[0] - posBefore[0]},${posAfter[1] - posBefore[1]} 期望 40,16(±1)`)
+
+    await lyricWin.webContents.executeJavaScript(`(() => {
+      const hd = document.querySelector('#size-handle')
+      const fire = (type, x, y, mvx, mvy, target) => (target || document.body).dispatchEvent(new MouseEvent(type, {
+        screenX: x, screenY: y, movementX: mvx || 0, movementY: mvy || 0, bubbles: true, button: 0
+      }))
+      fire('mousedown', 500, 500, 0, 0, hd)
+      for (let i = 1; i <= 3; i++) fire('mousemove', 500 + i * 20, 500 + i * 10, 2, 1) // 指针走 60/30,movementX 只有 2/1
+      fire('mouseup', 560, 530)
+      return true
+    })()`, true)
+    await sleep(700)
+    const sizeAfter = lyricWin.getSize()
+    // 尺寸同样允许 ±1:渲染端的 innerWidth/Height 是 CSS 像素,主进程 setSize 按 DIP
+    const dwOk = Math.abs((sizeAfter[0] - sizeBefore[0]) - 60) <= 1
+    const dhOk = Math.abs((sizeAfter[1] - sizeBefore[1]) - 30) <= 1
+    check('桌面歌词:缩放跟指针走(不再被每帧的小位移覆盖)',
+      dwOk && dhOk, `实际 ${sizeAfter[0] - sizeBefore[0]}x${sizeAfter[1] - sizeBefore[1]} 期望 60x30(±1)`)
+
     try { await run(`(async () => { try { await window.electronAPI.lyricClose() } catch (e) {} return true })()`) } catch {}
   }
 

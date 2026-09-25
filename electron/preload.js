@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // 主进程 → 渲染进程 的事件通道白名单(渲染端通过 on() 订阅)
 const RECEIVE_CHANNELS = [
-  'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut',
+  'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'lyric:drag-start',
   'mini:update', 'mini:state', 'mini:bg-sync', 'window-state',
   'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
   'app:before-close', 'update-available', 'update-not-available', 'update-error',
@@ -133,7 +133,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lyricClickThrough: (on) => ipcRenderer.send('lyric:click-through', on),
   lyricPin: (pinned) => ipcRenderer.send('lyric:pin', pinned),
   lyricClose: () => ipcRenderer.send('lyric:close'),
-  lyricDragMove: (dx, dy) => ipcRenderer.send('lyric:drag-move', dx, dy),
+  // 拖动按下时记锚点(指针绝对屏幕坐标),随后 lyricDragMove 也传绝对坐标 —— 见 main.js 的说明
+  lyricDragStart: (screenX, screenY) => ipcRenderer.send('lyric:drag-start', screenX, screenY),
+  lyricDragMove: (screenX, screenY) => ipcRenderer.send('lyric:drag-move', screenX, screenY),
   lyricResize: (w, h) => ipcRenderer.send('lyric:resize', w, h),
   lyricSeek: (time) => ipcRenderer.send('lyric:seek', time),
   lyricSave: (text) => ipcRenderer.send('lyric:save', text),

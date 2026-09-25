@@ -1153,11 +1153,29 @@ function setupIPC() {
   })
 
   // 歌词窗口拖动(JS 拖拽,增量移动)
-  ipcMain.on('lyric:drag-move', (event, dx, dy) => {
-    if (!lyricWindow || lyricWindow.isDestroyed() || lyricLocked) return
+  // 拖动:锚定**指针的绝对屏幕坐标**,而不是每帧的相对位移。
+  // 为什么:渲染端的 movementX 是 Chromium 按指针屏幕坐标相对上一次事件算出来的,而拖动时
+  // 窗口正在光标下面移动 —— 两者互相污染(反馈),上报的位移与指针真实走过的距离对不上,
+  // 表现为"越拖越跟不上、很难移动"。改成:按下时记锚点(指针 + 窗口位置),之后每次移动都用
+  // `锚点窗口位置 + (当前指针 − 锚点指针)` 直接设位置 —— 与指针严格 1:1,也不读窗口当前位置。
+  let lyricDragAnchor = null
+  ipcMain.on('lyric:drag-start', (event, screenX, screenY) => {
+    if (!lyricWindow || lyricWindow.isDestroyed() || lyricLocked) { lyricDragAnchor = null; return }
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) { lyricDragAnchor = null; return }
     try {
       const [x, y] = lyricWindow.getPosition()
-      lyricWindow.setPosition(Math.round(x + dx), Math.round(y + dy))
+      lyricDragAnchor = { screenX, screenY, winX: x, winY: y }
+    } catch (_) { lyricDragAnchor = null }
+  })
+  ipcMain.on('lyric:drag-move', (event, screenX, screenY) => {
+    if (!lyricWindow || lyricWindow.isDestroyed() || lyricLocked) return
+    if (!lyricDragAnchor) return
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return
+    try {
+      lyricWindow.setPosition(
+        Math.round(lyricDragAnchor.winX + (screenX - lyricDragAnchor.screenX)),
+        Math.round(lyricDragAnchor.winY + (screenY - lyricDragAnchor.screenY))
+      )
     } catch (_) {}
   })
 

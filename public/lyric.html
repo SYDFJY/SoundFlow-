@@ -238,39 +238,64 @@ function handleAction(a){
 }
 
 // ===== 窗口拖动 + 缩放(JS 实现:任意位置按住即拖,>4px 判定为拖动) =====
+// 坐标一律用**指针的绝对屏幕坐标**(screenX/screenY),由主进程按"按下时的锚点"换算位置。
+// 不能用 movementX/Y:那是 Chromium 按指针屏幕坐标相对上一次事件算的,而拖动时窗口正在光标
+// 下面移动 —— 两者互相污染,上报的位移与指针真实走过的距离对不上(越拖越跟不上)。
 let dragState = null
 let sizeState = null
 let suppressClick = false
+let _dragRaf = null
+let _pendingPointer = null
 
 document.addEventListener('mousedown', e => {
   if (locked) return
   if (e.button !== 0) return
-  // 只在精确落在缩放柄热区(12px)时才进入缩放模式,其余一律视为拖动
-  const hd = e.target.closest('#size-handle')
-  if (hd) {
-    sizeState = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight }
+  // 只在精确落在缩放柄热区时才进入缩放模式,其余一律视为拖动
+  if (e.target.closest?.('#size-handle')) {
+    sizeState = { sx: e.screenX, sy: e.screenY, w: window.innerWidth, h: window.innerHeight }
     return
   }
-  dragState = { x: e.screenX, y: e.screenY, moved: false }
+  dragState = { sx: e.screenX, sy: e.screenY, moved: false }
+  // 记锚点:主进程据此把"指针位移"映射成"窗口位置",不再读窗口当前位置(没有反馈)
+  if (api && api.lyricDragStart) api.lyricDragStart(e.screenX, e.screenY)
 })
 document.addEventListener('mousemove', e => {
   if (dragState) {
-    // 用 movementX/Y(相对上一事件的位移),不受窗口移动/坐标跳变影响
-    const mx = e.movementX || 0, my = e.movementY || 0
-    if (!dragState.moved && (Math.abs(mx) > 4 || Math.abs(my) > 4)) {
+    const dx = e.screenX - dragState.sx, dy = e.screenY - dragState.sy
+    if (!dragState.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
       dragState.moved = true
       suppressClick = true
     }
     if (dragState.moved && api && api.lyricDragMove) {
-      api.lyricDragMove(mx, my)
+      // 合并到每帧一次(mousemove 可达上百赫兹,不必逐条过 IPC);上报绝对坐标
+      _pendingPointer = { x: e.screenX, y: e.screenY }
+      if (!_dragRaf) {
+        _dragRaf = requestAnimationFrame(() => {
+          _dragRaf = null
+          const p = _pendingPointer
+          _pendingPointer = null
+          if (p && api && api.lyricDragMove) api.lyricDragMove(p.x, p.y)
+        })
+      }
     }
   }
   if (sizeState) {
-    const mx = e.movementX || 0, my = e.movementY || 0
-    if (api && api.lyricResize) api.lyricResize(Math.max(220, sizeState.w + mx), Math.max(60, sizeState.h + my))
+    // 尺寸同样按指针绝对位移算。旧写法把"起始尺寸 + 单帧 movementX"当绝对尺寸用,
+    // 每次事件都把尺寸拉回起始值附近 —— 所以缩放几乎不跟手
+    if (api && api.lyricResize) {
+      api.lyricResize(
+        Math.max(220, sizeState.w + (e.screenX - sizeState.sx)),
+        Math.max(60, sizeState.h + (e.screenY - sizeState.sy))
+      )
+    }
   }
 })
 document.addEventListener('mouseup', () => {
+  // 把攒着的那一帧**立刻补发**再清空:快速拖拽时鼠标一松,最后一帧还没发出去就被取消,
+  // 位置会停在上一帧(拖到哪儿差一点没跟上)
+  if (_pendingPointer && api && api.lyricDragMove) api.lyricDragMove(_pendingPointer.x, _pendingPointer.y)
+  if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = null }
+  _pendingPointer = null
   dragState = null
   sizeState = null
 })
@@ -279,17 +304,12 @@ document.addEventListener('click', e => {
   if (suppressClick) { e.stopPropagation(); suppressClick = false }
 }, true)
 
-// 右下角缩放柄
-$('#size-handle').addEventListener('mousedown', e => {
-  e.stopPropagation()
-  if (e.button !== 0) return
-  sizeState = { x: e.screenX, y: e.screenY, w: window.innerWidth, h: window.innerHeight }
-})
+// 右下角缩放柄不需要单独监听:上面的 mousedown 已按 closest('#size-handle') 分派到缩放
 
 // ===== 双击歌词行跳转 =====
 lyric.addEventListener('dblclick', e => {
   if (suppressClick) { suppressClick = false; return }
-  const el=e.target.closest('.line')
+  const el=e.target.closest?.('.line')
   if(!el) return
   const idx=parseInt(el.dataset.i)
   if(!isNaN(idx)&&lines[idx]&&lines[idx].time!=null){
