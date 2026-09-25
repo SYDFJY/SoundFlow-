@@ -260,6 +260,19 @@ document.addEventListener('mousedown', e => {
   if (api && api.lyricDragStart) api.lyricDragStart(e.screenX, e.screenY)
 })
 document.addEventListener('mousemove', e => {
+  // 鼠标在**窗口之外**松开时,这里收不到 mouseup —— 状态会一直留着,光标再回到窗口上就继续
+  // 拖/继续缩。用户报的"只是移动,歌词区域却同步变大"就是这个:上一次拖角落留下的 sizeState
+  // 没被清掉,于是之后每次移动都在按指针坐标改尺寸。用 buttons 判断"按键其实已经松了"。
+  if ((e.buttons & 1) === 0) {
+    if (dragState || sizeState) {
+      if (_pendingPointer && api && api.lyricDragMove) api.lyricDragMove(_pendingPointer.x, _pendingPointer.y)
+      dragState = null
+      sizeState = null
+      _pendingPointer = null
+      if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = null }
+    }
+    return
+  }
   if (dragState) {
     const dx = e.screenX - dragState.sx, dy = e.screenY - dragState.sy
     if (!dragState.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
@@ -299,6 +312,14 @@ document.addEventListener('mouseup', () => {
   dragState = null
   sizeState = null
 })
+// 失焦(切走/窗被隐藏)时也清掉,避免回来还处在拖动/缩放中
+window.addEventListener('blur', () => {
+  dragState = null
+  sizeState = null
+  _pendingPointer = null
+  if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = null }
+})
+
 // 拖动/缩放后消费一次 click,避免误触歌词/菜单
 document.addEventListener('click', e => {
   if (suppressClick) { e.stopPropagation(); suppressClick = false }

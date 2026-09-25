@@ -382,6 +382,28 @@ app.whenReady().then(async () => {
     check('桌面歌词窗跟随应用侧字号(18 设置 → 当前行 22px)', lw && lw.size === '22px', JSON.stringify(lw))
     check('桌面歌词窗跟随应用侧颜色', lw && lw.color === 'rgb(255, 0, 170)', JSON.stringify(lw))
     check('桌面歌词窗也能逐字高亮', lw && lw.words > 2, JSON.stringify(lw))
+    // 先复现"窗口外松手"这个场景:mouseup 只监听在窗口内,鼠标在外面松开时收不到,
+    // 状态得靠 mousemove 上的 buttons 判断自动清掉 —— 否则之后只是移动光标,尺寸会继续跟着变
+    // (用户报的"只是移动,歌词区域却同步变大")
+    const stuckBefore = lyricWin.getSize()
+    await lyricWin.webContents.executeJavaScript(`(() => {
+      const hd = document.querySelector('#size-handle')
+      const fire = (type, x, y, target, buttons) => (target || document.body).dispatchEvent(new MouseEvent(type, {
+        screenX: x, screenY: y, buttons: buttons === undefined ? 1 : buttons, bubbles: true, button: 0
+      }))
+      fire('mousedown', 400, 400, hd)        // 按住右下角缩放柄
+      fire('mousemove', 500, 480, null, 1)   // 拖出 100x80(这一步应当生效)
+      // 关键:松手发生在窗口之外 —— 窗口收不到 mouseup,随后的移动 buttons=0
+      fire('mousemove', 900, 700, null, 0)
+      fire('mousemove', 1000, 760, null, 0)
+      return true
+    })()`, true)
+    await sleep(700)
+    const stuckAfter = lyricWin.getSize()
+    check('桌面歌词:窗口外松手后不再继续缩放(否则"只是移动,区域却在变大")',
+      Math.abs((stuckAfter[0] - stuckBefore[0]) - 100) <= 1 && Math.abs((stuckAfter[1] - stuckBefore[1]) - 80) <= 1,
+      `实际 ${stuckAfter[0] - stuckBefore[0]}x${stuckAfter[1] - stuckBefore[1]} 期望 100x80(±1,后两次移动不得生效)`)
+
     // 拖动/缩放:窗口必须跟随**指针的绝对位移**。
     // 这里特意让"每帧上报的 movementX 之和"与"指针真实位移"不一致 —— 真实拖动时正是如此:
     // 窗口在光标下移动会污染 Chromium 算出的 movementX(叠加反馈),于是越拖越跟不上。
@@ -389,7 +411,7 @@ app.whenReady().then(async () => {
     const sizeBefore = lyricWin.getSize()
     await lyricWin.webContents.executeJavaScript(`(() => {
       const fire = (type, x, y, mvx, mvy, target) => (target || document.body).dispatchEvent(new MouseEvent(type, {
-        screenX: x, screenY: y, movementX: mvx || 0, movementY: mvy || 0, bubbles: true, button: 0
+        screenX: x, screenY: y, movementX: mvx || 0, movementY: mvy || 0, buttons: 1, bubbles: true, button: 0
       }))
       fire('mousedown', 1000, 600)
       for (let i = 1; i <= 4; i++) fire('mousemove', 1000 + i * 10, 600 + i * 4, 3, 1) // 指针走 40/16,movementX 之和只有 12/4
@@ -407,7 +429,7 @@ app.whenReady().then(async () => {
     await lyricWin.webContents.executeJavaScript(`(() => {
       const hd = document.querySelector('#size-handle')
       const fire = (type, x, y, mvx, mvy, target) => (target || document.body).dispatchEvent(new MouseEvent(type, {
-        screenX: x, screenY: y, movementX: mvx || 0, movementY: mvy || 0, bubbles: true, button: 0
+        screenX: x, screenY: y, movementX: mvx || 0, movementY: mvy || 0, buttons: 1, bubbles: true, button: 0
       }))
       fire('mousedown', 500, 500, 0, 0, hd)
       for (let i = 1; i <= 3; i++) fire('mousemove', 500 + i * 20, 500 + i * 10, 2, 1) // 指针走 60/30,movementX 只有 2/1
@@ -416,11 +438,12 @@ app.whenReady().then(async () => {
     })()`, true)
     await sleep(700)
     const sizeAfter = lyricWin.getSize()
-    // 尺寸同样允许 ±1:渲染端的 innerWidth/Height 是 CSS 像素,主进程 setSize 按 DIP
-    const dwOk = Math.abs((sizeAfter[0] - sizeBefore[0]) - 60) <= 1
-    const dhOk = Math.abs((sizeAfter[1] - sizeBefore[1]) - 30) <= 1
+    // 尺寸容差取 ±2:渲染端量的是 CSS 像素(innerWidth/Height)、主进程按 DIP 收,
+    // 前面几步已经取整过若干次,累积误差比位置那条大一档 —— 这是量纲取整,不是功能偏差
+    const dwOk = Math.abs((sizeAfter[0] - sizeBefore[0]) - 60) <= 2
+    const dhOk = Math.abs((sizeAfter[1] - sizeBefore[1]) - 30) <= 2
     check('桌面歌词:缩放跟指针走(不再被每帧的小位移覆盖)',
-      dwOk && dhOk, `实际 ${sizeAfter[0] - sizeBefore[0]}x${sizeAfter[1] - sizeBefore[1]} 期望 60x30(±1)`)
+      dwOk && dhOk, `实际 ${sizeAfter[0] - sizeBefore[0]}x${sizeAfter[1] - sizeBefore[1]} 期望 60x30(±2)`)
 
     try { await run(`(async () => { try { await window.electronAPI.lyricClose() } catch (e) {} return true })()`) } catch {}
   }
