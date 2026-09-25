@@ -48,6 +48,20 @@ describe('歌词行渲染必须两面共用', () => {
     expect(win, 'lyric.html 的定时器更新没跟上三档').toMatch(/\(i<wordIdx\?'cc':'66'\)/)
   })
 
+  it('歌词行的内部样式必须由组件自己持有(抽组件时曾把样式落在父组件里)', () => {
+    // 事故:抽 <LyricLine> 时把 .lyric-word / .lyric-trans 的规则留在了 PlayerView 的作用域样式里,
+    // 而 Vue 的 scoped 样式够不到**子组件内部**元素 → 译文变裸文本(用户: "像是在歌词行后面加翻译")、
+    // 逐字的当前字丢了强调色与加粗(用户: "逐字不明显")。
+    const line = read('src/components/LyricLine.vue')
+    expect(line, 'LyricLine 没有自己的 <style scoped>').toMatch(/<style scoped>/)
+    for (const sel of ['.lyric-word {', '.lyric-word.cur {', '.lyric-trans {']) {
+      expect(line, `组件里缺 ${sel} —— 父组件的 scoped 样式够不到子组件内部元素`).toContain(sel)
+    }
+    const view = read('src/views/PlayerView.vue')
+    expect(view, 'PlayerView 里还留着 .lyric-word 的规则(够不到子组件内部,是无效样式)').not.toMatch(/\.lyric-word/)
+    expect(view, 'PlayerView 里还留着 .lyric-trans 的规则(够不到子组件内部,是无效样式)').not.toMatch(/\.lyric-trans/)
+  })
+
   it('歌词行前不显示行时间戳(2026-09-24 按用户要求去掉)', () => {
     expect(read('src/components/LyricLine.vue'), 'LyricLine 里又渲染出 .lyric-time 了').not.toMatch(/class="lyric-time"/)
     expect(pv(), 'PlayerView 又给歌词页传 show-time 了').not.toMatch(/show-time/)

@@ -9,7 +9,7 @@
  *
  * 只读界面、不改设置以外的东西;断言失败会明确列出是哪一项。
  */
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -512,6 +512,105 @@ app.whenReady().then(async () => {
   const pvNext = await hoverCard('.player-view', 'next')
   check('播放页控制栏:悬停「下一首」显示下一首的信息', !!pvNext.card && pvNext.card.title === wantNext,
     `${JSON.stringify(pvNext)} 期望「${wantNext}」`)
+
+  // 9) 歌词翻译:译文是歌词行**下方的一行**(由组件自带样式呈现),且译过的不重复翻译。
+  //    离线验证:把主进程的 translate-lyrics 换成计数桩(不联网),再看界面与调用次数。
+  //    顺序要点:进这一组时人在**封面页(分栏)**,`.lyric-right` 那时还不存在 ——
+  //    先验分栏,再切到歌词页验那一面(第一版反过来查,报了三处假红)。
+  const transBtn = `document.querySelector('.ls-btn[aria-label="歌词翻译"]')`
+  let transCalls = 0
+  try { ipcMain.removeHandler('translate-lyrics') } catch {}
+  ipcMain.handle('translate-lyrics', async (event, { lines }) => {
+    transCalls++
+    return (lines || []).map((_, i) => `译${i + 1}`)
+  })
+  await run(`(() => { const b = ${transBtn}; if (b) b.click(); return !!b })()`)
+  await sleep(1600)
+
+  const readTrans = (scopeSel) => run(`(() => {
+    const box = document.querySelector('${scopeSel}')
+    const line = box && box.querySelector('.lyric-line.active')
+    const tr = line && line.querySelector('.lyric-trans')
+    if (!tr) return { err: '当前行下面没有 .lyric-trans' }
+    const cs = getComputedStyle(tr)
+    const ls = getComputedStyle(line)
+    return {
+      text: tr.textContent.trim(),
+      transPx: parseFloat(cs.fontSize), linePx: parseFloat(ls.fontSize),
+      opacity: parseFloat(cs.opacity), nowrap: cs.whiteSpace
+    }
+  })()`)
+  const transOk = (r) => r && /^译\d+$/.test(String(r.text)) && r.transPx > 0 && r.linePx > 0 && r.transPx < r.linePx && r.opacity < 1
+
+  const splitTrans = await readTrans('.split-lyrics')
+  console.log('分栏译文行:', JSON.stringify(splitTrans))
+  check('分栏:译文在歌词行下方自成一行,字号小于歌词行、半透明(组件自带样式)',
+    transOk(splitTrans), JSON.stringify(splitTrans))
+
+  await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[1]) t[1].click(); return true })()`)
+  await sleep(1500)
+  const pageTrans = await readTrans('.lyric-right')
+  console.log('歌词页译文行:', JSON.stringify(pageTrans))
+  check('歌词页:译文同样自成一行且样式一致(两面共用组件)',
+    transOk(pageTrans), JSON.stringify(pageTrans))
+
+  // 逐字在更早一段已经打开了;这里只兜底:若按钮显示"整行"(aria-pressed=false)才点一下
+  const hiBtn = `document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')`
+  const wordPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  if (wordPressed === 'false') {
+    await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
+    await sleep(1100)
+  }
+  // .cur 只在播放中推进;若当前行索引不动,说明暂停着 —— 量一下再决定,不盲点
+  const activeIdx = () => run(`(() => [...document.querySelectorAll('.lyric-right .lyric-line')].findIndex((l) => l.classList.contains('active')))()`)
+  const i1 = await activeIdx()
+  await sleep(1300)
+  const i2 = await activeIdx()
+  if (i1 === i2) {
+    await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
+    await sleep(1200)
+  }
+
+  // 逐字切换有 0.18s 的 color/text-shadow 过渡:一个字刚变成"当前字"的那几帧,读到的
+  // 是插值中间值(实测 rgba(92,167,254,0.98)、光晕正在展开),按它判定会误报。
+  // 所以在若干帧里找一次**过渡结束后的稳态**(全色 + 带 18px 光晕)再下结论。
+  let curSeen = null
+  let curWord = null
+  for (let i = 0; i < 14; i++) {
+    const s = await run(`(() => {
+      const line = document.querySelector('.lyric-right .lyric-line.active')
+      const el = line && line.querySelector('.lyric-word.cur')
+      if (!el) return { err: '没有当前字(.cur)' }
+      const cs = getComputedStyle(el)
+      const sib = [...line.querySelectorAll('.lyric-word')].find((e) => e !== el)
+      const ss = sib ? getComputedStyle(sib) : null
+      const shadows = (s) => { const m = String(s).match(/[0-9]+px/g); return m ? m.length : 0 }
+      return {
+        weight: cs.fontWeight, color: cs.color,
+        glowPx: /18px/.test(cs.textShadow),
+        curShadows: shadows(cs.textShadow), sibShadows: ss ? shadows(ss.textShadow) : -1
+      }
+    })()`)
+    if (s && !s.err) {
+      curSeen = s
+      if (s.glowPx === true && s.curShadows > s.sibShadows) { curWord = s; break }
+    }
+    await sleep(240)
+  }
+  // 判据取"当前字比同行的字多一层发光":组件那份 .lyric-word.cur 有 0 0 18px 的光晕。
+  // 只断言 weight 是假绿 —— 当前行本身就是 700,权重会继承下来;颜色同样不判别
+  // (没有这条规则时,颜色会从当前行继承下来,一样是强调色)。
+  check('逐字:当前字比同行的字多一层发光(组件自带样式,不再裸奔)',
+    !!curWord, JSON.stringify(curWord || curSeen))
+
+  // 不重复翻译:关掉再打开,缓存命中 → 桩的调用次数不增加
+  const callsBeforeToggle = transCalls
+  await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
+  await sleep(700)
+  await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
+  await sleep(1600)
+  check('译过的不会重复翻译(缓存命中即复用)', transCalls === callsBeforeToggle,
+    `桩被调用 ${callsBeforeToggle} 次 → ${transCalls} 次`)
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

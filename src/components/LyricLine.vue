@@ -83,3 +83,25 @@ const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText
     <div v-if="translation" class="lyric-trans">{{ translation }}</div>
   </div>
 </template>
+
+<style scoped>
+/*
+ * 这些规则原本在 PlayerView.vue 的作用域样式里 —— 抽出本组件时样式没跟着搬,
+ * 而 Vue 的 scoped 样式**够不到子组件内部元素**,于是:
+ *   · 译文变成裸文本贴在本行后面(用户看到的"像是在歌词行后面加翻译");
+ *   · 逐字的当前字丢了强调色/加粗/发光(用户报的"逐字不明显")。
+ * 组件应当拥有它所渲染元素的样式。
+ */
+.lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65); }
+.lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 18px var(--color-primary); }
+/* 译文:比歌词小一号、淡一些,作为本行下面的一行(超出单行省略) */
+.lyric-trans {
+  font-size: 0.82em;
+  font-weight: 400;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+</style>

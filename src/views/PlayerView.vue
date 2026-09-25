@@ -1496,17 +1496,6 @@ async function searchLyric() {
 .ls-sep { height: 1px; width: 22px; margin: 3px auto; background: rgba(255,255,255,0.14); }
 .ls-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
-.lyric-word { transition: color 0.18s ease, text-shadow 0.18s ease; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65); }
-.lyric-word.cur { color: var(--color-primary); font-weight: 700; text-shadow: 0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65), 0 0 18px var(--color-primary); }
-.lyric-trans {
-  font-size: 0.82em;
-  font-weight: 400;
-  opacity: 0.6;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 2px;
-}
 .lyric-line:hover {
   color: rgba(255,255,255,0.75);
   background: rgba(255,255,255,0.06);
