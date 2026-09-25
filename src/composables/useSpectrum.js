@@ -290,10 +290,18 @@ export function useSpectrum(playerStore, activeTab) {
     }
     lastSpecTs = ts || 0
     const playing = playerStore.isPlaying
-    // 任一 canvas 可见才继续;全部不可见/未播放 → 停
-    const barVisible = spectrumCanvas.value && specMode.value !== 'ring'
-    const ringVisible = spectrumRingCanvas.value && specMode.value !== 'bar'
-    if (!playing || (!barVisible && !ringVisible)) { spectrumRAF = null; return }
+    // 任一 canvas 可用才继续;全部不可用/未播放 → 停
+    // 环形模式在**分栏布局**下没有环形画布(那是唱片那一侧的),此时退回柱状 ——
+    // 此前这种情况两个 canvas 都判为"不可用",循环直接停,而且**不清屏**,
+    // 屏幕上留着最后一帧静止画面,看起来就是"频谱卡住了"。
+    const hasRing = !!spectrumRingCanvas.value
+    const barVisible = spectrumCanvas.value && (specMode.value !== 'ring' || !hasRing)
+    const ringVisible = hasRing && specMode.value !== 'bar'
+    if (!playing || (!barVisible && !ringVisible)) {
+      spectrumRAF = null
+      clearSpectrumCanvases()
+      return
+    }
     if (barVisible) paintBarSpectrum()
     if (ringVisible) paintRingSpectrum()
     spectrumRAF = requestAnimationFrame(spectrumLoop)
@@ -301,6 +309,13 @@ export function useSpectrum(playerStore, activeTab) {
   // 组件挂载后启动常驻绘制
   function startSpectrum() {
     spectrumLoop()
+  }
+  /** 停表时要清屏:留着最后一帧静止画面会被当成"频谱卡住了" */
+  function clearSpectrumCanvases() {
+    for (const cv of [spectrumCanvas.value, spectrumRingCanvas.value]) {
+      if (!cv) continue
+      try { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height) } catch {}
+    }
   }
   // 用定时轮询保证 canvas 一出现就恢复绘制(切 tab 卸载 canvas 会断 rAF,不依赖 watch 时序)—— 仅播放时存在,暂停/卸载即清
   let spectrumTimer = null
@@ -330,14 +345,7 @@ export function useSpectrum(playerStore, activeTab) {
     else {
       if (spectrumRAF) { cancelAnimationFrame(spectrumRAF); spectrumRAF = null }
       if (spectrumTimer) { clearInterval(spectrumTimer); spectrumTimer = null }
-      if (spectrumCanvas.value) {
-        const ctx = spectrumCanvas.value.getContext('2d')
-        ctx.clearRect(0, 0, spectrumCanvas.value.width, spectrumCanvas.value.height)
-      }
-      if (spectrumRingCanvas.value) {
-        const ctx2 = spectrumRingCanvas.value.getContext('2d')
-        ctx2.clearRect(0, 0, spectrumRingCanvas.value.width, spectrumRingCanvas.value.height)
-      }
+      clearSpectrumCanvases()
     }
   })
 

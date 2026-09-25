@@ -21,6 +21,13 @@ export const DEFAULTS = {
   soundflow_lyric_effect: '0',
   soundflow_lyric_mode: 'line',
   soundflow_lyric_source: 'auto',
+  // 桌面歌词窗专有项(字号/对齐/颜色那些是歌词通用的,在"歌词"那一组)
+  // 背景:dark/light = 半透明深/浅色底,none = 完全透明
+  soundflow_lyric_win_bg: 'dark',
+  soundflow_lyric_win_alpha: '0.05',
+  soundflow_lyric_win_locked: '0',
+  soundflow_lyric_win_pinned: '1',
+  soundflow_lyric_win_title: '1',
   // 迷你窗
   soundflow_mini_bg_mode: 'dark',
   soundflow_mini_bg_color: '#161b22',

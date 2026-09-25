@@ -71,6 +71,9 @@ export const LOCAL_ONLY = {
     'soundflow_search_history', 'soundflow_shortcuts',
     // 列表「添加时间」列的显隐(默认隐藏,按添加时间排序时自动打开)
     'soundflow_col_added',
+    // 桌面歌词窗专有设置(背景/透明度/锁定/置顶/显示歌名)
+    'soundflow_lyric_win_bg', 'soundflow_lyric_win_alpha', 'soundflow_lyric_win_locked',
+    'soundflow_lyric_win_pinned', 'soundflow_lyric_win_title',
   ],
   /** 用户数据(丢失有代价,但只存本地) */
   data: [

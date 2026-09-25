@@ -134,9 +134,11 @@ describe('桌面歌词窗的译文不再错行/滞后', () => {
     expect(s, '译文落地后桌面歌词窗不会更新').toMatch(/watch\(translations, \(\) => sendLyricUpdate\(\)\)/)
   })
 
-  it('两处 .lyric-trans 的透明度一致', () => {
+  it('两处 .lyric-trans 的透明度一致,且窗口译文不折行(原文截断、译文反而换行会很怪)', () => {
     expect(read('src/components/LyricLine.vue'), '应用侧译文行透明度变了').toMatch(/opacity: 0\.6/)
-    expect(read('public/lyric.html'), '桌面歌词窗的译文透明度与应用侧不一致').toMatch(/\.lyric-trans\{margin-top:2px;font-size:\.82em;opacity:\.6\}/)
+    const win = read('public/lyric.html')
+    expect(win, '桌面歌词窗的译文透明度与应用侧不一致').toMatch(/\.lyric-trans\{margin-top:2px;font-size:\.82em;opacity:\.6/)
+    expect(win, '窗口译文行没有单行省略(会换行成两行)').toMatch(/\.lyric-trans\{[^}]*white-space:nowrap/)
   })
 })
 
@@ -173,5 +175,48 @@ describe('保存歌词到本地:译文轨并成"一行双语"', () => {
   it('PlayerView 保存前确实并了译文', () => {
     const pv = read('src/views/PlayerView.vue')
     expect(pv, '保存到本地时没并译文轨(下载下来的 .lrc 丢了译文)').toMatch(/mergeTranslatedLRC\(res\.lyrics, res\.translation \|\| ''\)/)
+  })
+})
+
+describe('桌面歌词窗的右键菜单(2026-09-26 重做)', () => {
+  const win = () => read('public/lyric.html')
+
+  it('设置只有一份真源:窗口不再自己存 lyric_window_settings', () => {
+    // 按"带引号的键"判:文件里那句历史注释提到过这个键名(说明为什么废弃),不算违规
+    expect(win(), '窗口又在自己存一份窗口设置(勾选态/重启后的置顶会与应用侧对不上)')
+      .not.toMatch(/'lyric_window_settings'/)
+    expect(win(), '窗口没走"改设置交给应用侧"的通道').toMatch(/api\.lyricSetting\(/)
+  })
+
+  it('应用侧推来的字段要真的被消费(effect/align/歌名此前推了却没用)', () => {
+    const s = win()
+    expect(s, 'style.effect 没被消费(特效开关对窗口无效)').toMatch(/appStyle\.effect/)
+    expect(s, '行上又写了 text-align(会把容器的左对齐压掉)').not.toMatch(/\.line\{[^}]*text-align/)
+    expect(s, '载荷里的 title/artist 没被使用(桌面歌词看不到歌名)').toMatch(/d\.title/)
+    expect(s, 'win 字段没被消费(背景/锁定/置顶/显示歌名)').toMatch(/d\.win/)
+  })
+
+  it('保存结果与穿透解除都要有反馈(此前主进程发了事件、窗口没订阅)', () => {
+    const s = win()
+    expect(s, '没订阅 lyric:save-done(永远停在"正在保存…")').toMatch(/on\('lyric:save-done'/)
+    expect(s, '没订阅 lyric:through(托盘恢复交互后窗口状态不符)').toMatch(/on\('lyric:through'/)
+  })
+
+  it('菜单:分组标题 + 内联 SVG 图标,不再用 emoji', () => {
+    const s = win()
+    const menu = s.slice(s.indexOf('<div id="ctx"'), s.indexOf('<div id="toast"'))
+    expect(menu, '菜单里没有分组标题').toMatch(/class="ctx-group"/)
+    expect((menu.match(/<svg/g) || []).length, '菜单项缺少内联 SVG 图标').toBeGreaterThanOrEqual(18)
+    expect(menu, '菜单里又出现 emoji 当图标(项目早已废弃这种用法)')
+      .not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)
+    for (const key of ['wordMode', 'translation', 'effect', 'title', 'bg-dark', 'locked', 'pinned', 'reset', 'close']) {
+      expect(menu, `菜单缺少项:${key}`).toContain(`data-a="${key}"`)
+    }
+  })
+
+  it('Esc 先关菜单、再关窗口;菜单支持键盘上下与回车', () => {
+    const s = win()
+    expect(s, 'Esc 直接关窗口(菜单开着时应当先关菜单)').toMatch(/if\(menuOpen\)\{ closeMenu\(\); return \}/)
+    expect(s, '菜单不支持方向键/回车').toMatch(/ArrowDown/)
   })
 })

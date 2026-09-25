@@ -8,6 +8,8 @@ const RECEIVE_CHANNELS = [
   'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'lyric:drag-start',
   'mini:update', 'mini:state', 'mini:bg-sync', 'window-state',
   'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
+  // 桌面歌词窗改了设置(字号/对齐/特效/逐字/翻译/背景/锁定/置顶/显示歌名)→ 主窗口落盘并回推
+  'lyric-setting',
   'app:before-close', 'update-available', 'update-not-available', 'update-error',
   'external-command', 'lyric-state-sync',
   'library-folder-changed', 'system-theme', 'backup-request',
@@ -26,6 +28,8 @@ const SEND_CHANNELS = [
   'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index',
   'scan-cancel',
   'lyric:seek', 'lyric:save', 'notify-song',
+  // 窗口侧改设置 / 主窗口把持久化的"置顶"告诉主进程(建窗时要用)
+  'lyric:setting', 'lyric:win-config',
 ]
 
 // 启动预填数据改为异步拉取(preload 不再 sendSync 同步阻塞渲染进程启动;
@@ -139,6 +143,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lyricResize: (w, h) => ipcRenderer.send('lyric:resize', w, h),
   lyricSeek: (time) => ipcRenderer.send('lyric:seek', time),
   lyricSave: (text) => ipcRenderer.send('lyric:save', text),
+  // 桌面歌词窗主动改设置(值由**主窗口**落盘,窗口只是入口 —— 避免两边各存一份)
+  lyricSetting: (key, value) => ipcRenderer.send('lyric:setting', key, value),
+  // 主窗口应用窗口侧设置后回推(窗口据此更新自身外观与勾选态)
+  onLyricSetting: (cb) => ipcRenderer.on('lyric-setting', (_e, key, value) => cb(key, value)),
+  // 主窗口告诉主进程:窗口该不该置顶(持久化值在建窗时用)
+  lyricWinConfig: (cfg) => ipcRenderer.send('lyric:win-config', cfg),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
   sendLyricIndex: (idx) => ipcRenderer.send('lyric:index', idx),
   // 响度分析(ReplayGain)

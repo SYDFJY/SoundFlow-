@@ -756,7 +756,9 @@ function createLyricWindow() {
     height: size.height || 260,
     transparent: true,
     frame: false,
-    alwaysOnTop: true,
+    // 置顶用渲染端持久化的值(由 lyric:win-config 告知):此前写死 true,
+    // 于是"取消置顶"在重启后又被顶回最前面
+    alwaysOnTop: lyricPinned !== false,
     skipTaskbar: true,
     resizable: true,
     minimizable: false,
@@ -806,6 +808,9 @@ function createLyricWindow() {
   })
   syncLyricState(1)
 }
+
+// 桌面歌词窗是否置顶(渲染端持久化,建窗时按它来)
+let lyricPinned = true
 
 // 锁定 = 点击穿透(不挡桌面操作);解锁恢复交互
 function setLyricLocked(locked) {
@@ -1123,6 +1128,21 @@ function setupIPC() {
       lyricWindow.close(); lyricWindow = null
     } else {
       createLyricWindow()
+    }
+  })
+
+  // 桌面歌词窗改了设置 → 转给主窗口(由它落盘并回推,窗口只是入口,避免两处各存一份)
+  ipcMain.on('lyric:setting', (event, key, value) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('lyric-setting', key, value)
+    }
+  })
+
+  // 主窗口告知:窗口该不该置顶(持久化值,建窗时用)
+  ipcMain.on('lyric:win-config', (event, cfg) => {
+    if (cfg && typeof cfg.pinned === 'boolean') {
+      lyricPinned = cfg.pinned
+      if (lyricWindow && !lyricWindow.isDestroyed()) lyricWindow.setAlwaysOnTop(cfg.pinned)
     }
   })
 

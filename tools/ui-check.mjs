@@ -102,6 +102,12 @@ app.whenReady().then(async () => {
     localStorage.setItem('soundflow_favorites', JSON.stringify([${JSON.stringify(items[0].path)}]))
     localStorage.setItem('soundflow_queue', JSON.stringify({ queue: ${JSON.stringify(items.map((i) => i.path))}, index: 0 }))
     localStorage.setItem('soundflow_auto_play', '0')
+    // 音量必须非 0:音量 0 时元素就是静音,分析器读到的必然是全零,
+    // "频谱在动"这条断言会变成无意义的假绿(踩过:沙箱里音量是 0,查了半天频谱)
+    localStorage.setItem('soundflow_volume', '0.6')
+    // 歌词字号也显式摆成默认 18:第 7 组那条"窗口跟随应用侧字号(18 → 22px)"依赖它,
+    // 若上一轮跑测试时改过(比如桌面歌词菜单里的字号 +),断言就会无故变红
+    localStorage.setItem('soundflow_lyric_font_size', '18')
     localStorage.setItem('soundflow_autolocate', '1')
     localStorage.setItem('soundflow_schema_version', '1')
     return true
@@ -798,6 +804,172 @@ app.whenReady().then(async () => {
     check('桌面歌词窗:译文与当前行是同一句(不错行),且全窗只有这一处译文',
       !!nLine && !!nTrans && nLine[1] === nTrans[1] && winTrans.transCount === 1,
       `行内数字 ${nLine && nLine[1]} / 译文数字 ${nTrans && nTrans[1]} | ${JSON.stringify(winTrans)}`)
+  }
+
+  // 10) 频谱:播放时画布上的像素必须真的在变
+  //     用户报过"频谱播放时不会动了"。能造成这个观感的路径有三种,而且**全都静默**:
+  //     分析器没接上、AudioContext 被挂起/僵尸、循环被停掉而画布留着最后一帧。
+  //     这里只认像素:柱子高度或像素和变了才算在动。
+  await run(`(() => { location.hash = '#/player'; return true })()`)
+  await sleep(1800)
+  await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)
+  await sleep(1200)
+  // 确保在播放(靠"当前行索引在推进"判断,不猜按钮标题)
+  const specAdvancing = async () => {
+    const a = await run(`(() => [...document.querySelectorAll('.lyric-line')].findIndex((l) => l.classList.contains('active')))()`)
+    await sleep(1500)
+    const b = await run(`(() => [...document.querySelectorAll('.lyric-line')].findIndex((l) => l.classList.contains('active')))()`)
+    return a !== b
+  }
+  if (!(await specAdvancing())) {
+    await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return !!b })()`)
+    await sleep(2200)
+  }
+  // 柱状画布可能被"圆形"模式隐藏 → 切到柱状再量
+  const barShown = await run(`(() => {
+    const cv = document.querySelector('.spectrum-bar')
+    if (cv && getComputedStyle(cv).display !== 'none') return true
+    const panelBtn = document.querySelector('.spec-control .ctrl-btn')
+    if (panelBtn) panelBtn.click()
+    return false
+  })()`)
+  if (!barShown) {
+    await sleep(600)
+    await run(`(() => {
+      const b = [...document.querySelectorAll('.spec-panel .pitch-preset')].find((x) => /(直线|两者)/.test(x.textContent || ''))
+      if (b) b.click()
+      return true
+    })()`)
+    await sleep(900)
+    await run(`(() => { const b = document.querySelector('.spec-control .ctrl-btn'); if (b) b.click(); return true })()`)
+    await sleep(500)
+  }
+  // 柱子高度画像:每列取"最高被画到的像素"(越小越矮)+ 像素和
+  const specProfile = () => run(`(() => {
+    const cv = document.querySelector('.spectrum-bar')
+    if (!cv) return { err: '没有 .spectrum-bar' }
+    const cs = getComputedStyle(cv)
+    const img = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height)
+    const { width, height, data } = img
+    let top = height
+    for (let y = 0; y < height; y++) {
+      let hit = false
+      for (let x = 0; x < width; x += 7) { if (data[(y * width + x) * 4 + 3] > 40) { hit = true; break } }
+      if (hit) { top = y; break }
+    }
+    let sum = 0
+    for (let i = 3; i < data.length; i += 4 * 41) sum += data[i]
+    return { barPx: height - top, sum, display: cs.display, w: cv.width, h: cv.height }
+  })()`)
+  const prof = []
+  for (let i = 0; i < 4; i++) { prof.push(await specProfile()); await sleep(500) }
+  const sums = prof.map((p) => p && p.sum)
+  console.log('频谱采样:', JSON.stringify(prof))
+  check('频谱:播放时画布像素在变(定住=静默失效,自愈逻辑与绘制循环的守卫)',
+    prof.every((p) => p && !p.err && p.display !== 'none' && p.w > 10 && p.h > 10) &&
+    prof.some((p) => p.barPx > 10) &&
+    new Set(sums).size > 1,
+    JSON.stringify(prof))
+
+  // 11) 桌面歌词的右键菜单:结构、勾选态、以及"窗口改设置 → 应用侧落盘 → 回推"这条回路
+  //     用户报的是"右键菜单功能缺失、界面丑"。丑不靠肉眼判(这台机器截图拿不到帧),
+  //     改成可判据的几条:分组标题、勾选项、内联 SVG(项目早就不用 emoji 当图标)、
+  //     危险项配色、以及每一个"看起来能点"的项都真的改了应用侧设置。
+  let lwMenu = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w !== win)
+  if (!lwMenu) {
+    await run(`(() => { location.hash = '#/home'; return true })()`)
+    await sleep(1700)
+    await run(`(() => { const b = document.querySelector('.right-btn[aria-label="歌词"]'); if (b) b.click(); return !!b })()`)
+    await sleep(3000)
+    lwMenu = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w !== win)
+  }
+  if (!lwMenu) {
+    check('桌面歌词菜单:能拿到歌词窗', false, '窗口不在')
+  } else {
+    const lwRun = (code) => lwMenu.webContents.executeJavaScript(code, true)
+    // 右键打开菜单(合成 contextmenu 事件)
+    const menuInfo = await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const ctx = document.getElementById('ctx')
+      const cs = getComputedStyle(ctx)
+      const items = [...ctx.querySelectorAll('.ctx-item')]
+      const emoji = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/u
+      const vals = items.map((el) => el.dataset.a)
+      const labels = items.map((el) => el.textContent.trim())
+      return {
+        open: ctx.classList.contains('open') && cs.display !== 'none',
+        radius: cs.borderRadius, bg: cs.backgroundColor, border: cs.borderTopWidth,
+        groups: [...ctx.querySelectorAll('.ctx-group')].map((g) => g.textContent.trim()),
+        count: items.length,
+        vals,
+        // 每个项都要有内联 SVG 图标 + 文案(项目早已废弃 emoji 当图标)
+        allHaveSvg: items.every((el) => el.querySelector('svg')),
+        emojiLabels: labels.filter((t) => emoji.test(t)),
+        checks: ctx.querySelectorAll('.ctx-check').length,
+        danger: [...ctx.querySelectorAll('.ctx-item.danger')].map((el) => el.dataset.a),
+        bgOn: [...ctx.querySelectorAll('[data-a^="bg-"]')].filter((el) => el.classList.contains('on')).map((el) => el.dataset.a)
+      }
+    })()`)
+    console.log('菜单:', JSON.stringify(menuInfo))
+    const wantItems = ['wordMode', 'translation', 'effect', 'title', 'font-', 'font+', 'align',
+      'bg-dark', 'bg-light', 'bg-none', 'alpha-', 'alpha+', 'locked', 'pinned', 'through',
+      'copy', 'copy-all', 'save', 'reset', 'close']
+    const missing = wantItems.filter((k) => !((menuInfo && menuInfo.vals) || []).includes(k))
+    check('菜单:功能齐全(逐字/翻译/特效/歌名/字号/对齐/背景/透明度/锁定/置顶/穿透/复制/保存/重置/关闭)',
+      missing.length === 0, missing.length ? '缺:' + missing.join(',') : `${menuInfo && menuInfo.count} 项`)
+    check('菜单:分组标题 + 内联 SVG 图标(无 emoji) + 勾选位',
+      !!menuInfo && menuInfo.groups.length >= 3 && menuInfo.allHaveSvg === true &&
+      menuInfo.emojiLabels.length === 0 && menuInfo.checks >= 7,
+      JSON.stringify({ groups: menuInfo && menuInfo.groups, svg: menuInfo && menuInfo.allHaveSvg, emoji: menuInfo && menuInfo.emojiLabels, checks: menuInfo && menuInfo.checks }))
+    check('菜单:卡片式外观(圆角 + 描边 + 深色底 + 已打开)',
+      // 描边宽度按 CSS 像素报,125% 缩放下 1px 报成 0.8px —— 用 >0 判"有没有描边"
+      !!menuInfo && parseFloat(menuInfo.radius) >= 8 && parseFloat(menuInfo.border) > 0 &&
+      /rgba?\(/.test(String(menuInfo.bg)) && menuInfo.open === true,
+      JSON.stringify(menuInfo && { open: menuInfo.open, radius: menuInfo.radius, border: menuInfo.border, bg: menuInfo.bg }))
+    check('菜单:背景三选一互斥(当前项有勾选态)',
+      !!menuInfo && menuInfo.bgOn.length === 1, JSON.stringify(menuInfo && menuInfo.bgOn))
+    check('菜单:危险项(重置/关闭)有独立配色',
+      !!menuInfo && ['reset', 'close'].every((k) => menuInfo.danger.includes(k)), JSON.stringify(menuInfo && menuInfo.danger))
+
+    // Esc 先关菜单、不关窗口
+    await lwRun(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return true })()`)
+    await sleep(300)
+    const afterEsc = await lwRun(`(() => ({ open: document.getElementById('ctx').classList.contains('open') }))()`)
+    const winAlive = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w !== win)
+    check('菜单:Esc 只关菜单,不关窗口', afterEsc && afterEsc.open === false && winAlive === true,
+      JSON.stringify({ ...afterEsc, winAlive }))
+
+    // 回路:从窗口点"字号 +" → 应用侧设置落盘并回推 → 窗口与主界面的渲染都跟着变
+    const fontBefore = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
+    const winFontBefore = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? parseFloat(getComputedStyle(el).fontSize) : 0 })()`)
+    await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const el = document.querySelector('#ctx [data-a="font+"]')
+      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(1800)
+    const fontAfter = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
+    const winFontAfter = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? parseFloat(getComputedStyle(el).fontSize) : 0 })()`)
+    const appFontAfter = await run(`(() => { const el = document.querySelector('.lyric-line.active'); return el ? parseFloat(getComputedStyle(el).fontSize) : 0 })()`)
+    console.log('字号回路:', JSON.stringify({ fontBefore, fontAfter, winFontBefore, winFontAfter, appFontAfter }))
+    check('菜单:从窗口改字号 → 应用侧设置落盘(窗口只是入口,真源在应用侧)',
+      fontAfter === fontBefore + 1, `${fontBefore} → ${fontAfter}`)
+    check('菜单:改字号后窗口自己与主界面的渲染都跟着变',
+      winFontAfter > 0 && winFontAfter !== winFontBefore && appFontAfter > 0,
+      JSON.stringify({ winFontBefore, winFontAfter, appFontAfter }))
+    // 还原:第 7 组那条"桌面歌词窗跟随应用侧字号(18 → 22px)"依赖字号是 18,
+    // 这里改过就得改回去,否则跨组的共享状态被污染(踩过:反向验证时它跟着变红)
+    await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const el = document.querySelector('#ctx [data-a="font-"]')
+      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(1500)
+    const fontRestored = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
+    check('菜单:字号能改也能改回来(测试结束恢复原值,避免污染其它断言)',
+      fontRestored === fontBefore, `${fontAfter} → ${fontRestored}(期望回到 ${fontBefore})`)
   }
 
   const failed = results.filter((r) => !r.ok)

@@ -257,7 +257,7 @@
         </div>
       </div>
       <!-- 音频频谱:独立于面板常驻(切 tab 不销毁,即时恢复跳动);封面界面下方显示,歌词界面隐藏不占位 -->
-      <canvas v-show="activeTab === 'cover' && specMode !== 'ring'" ref="spectrumCanvas" class="spectrum-bar"></canvas>
+      <canvas v-show="activeTab === 'cover' && (specMode !== 'ring' || useSplit)" ref="spectrumCanvas" class="spectrum-bar"></canvas>
 
       <!-- 底部控制栏 -->
       <div class="player-controls">
@@ -393,6 +393,9 @@
                     <div class="spec-opts">
                       <button v-for="m in SPEC_MODES" :key="m.v" class="pitch-preset" :class="{ active: specMode === m.v }" @click="specMode = m.v; localStorage.setItem('soundflow_spec_mode', m.v)">{{ m.l }}</button>
                     </div>
+                  </div>
+                  <div v-if="useSplit && specMode === 'ring'" class="spec-group">
+                    <div class="spec-group-note">分栏布局没有圆形频谱(它画在唱片外圈),这一侧用柱状显示</div>
                   </div>
                   <div class="spec-group">
                     <div class="spec-group-name">柱数密度</div>
@@ -1065,6 +1068,18 @@ function toggleLyricAlign() {
 
 // 歌词模式:整行 / 逐字高亮(持久化)
 const lyricMode = ref(localStorage.getItem('soundflow_lyric_mode') || 'line')
+
+// 桌面歌词窗也能改这几项(它的右键菜单是同一个真源的另一个入口):
+// store 落盘后会自增 lyricSettingRev,这里据此重读,界面与应用侧设置才同步。
+watch(() => playerStore.lyricSettingRev, () => {
+  try {
+    lyricFontSize.value = parseInt(localStorage.getItem('soundflow_lyric_font_size')) || lyricFontSize.value
+    lyricLineGap.value = parseFloat(localStorage.getItem('soundflow_lyric_gap')) || lyricLineGap.value
+    lyricAlign.value = localStorage.getItem('soundflow_lyric_align') || lyricAlign.value
+    lyricEffect.value = localStorage.getItem('soundflow_lyric_effect') === '1'
+    lyricMode.value = localStorage.getItem('soundflow_lyric_mode') || lyricMode.value
+  } catch {}
+})
 function toggleLyricMode() {
   lyricMode.value = lyricMode.value === 'word' ? 'line' : 'word'
   playerStore.refreshLyricWindowStyle()
@@ -1901,6 +1916,7 @@ async function searchLyric() {
   box-shadow: 0 8px 28px rgba(0,0,0,0.35); z-index: 60; color: rgba(255,255,255,0.85);
 }
 .spec-group { margin: 6px 0 2px; }
+.spec-group-note { font-size: 11px; line-height: 1.5; color: var(--text-tertiary); padding: 2px 2px 0; }
 .spec-group-name { font-size: 11px; color: #aab6cc; margin-bottom: 4px; }
 .spec-opts { display: flex; gap: 4px; }
 .spec-opts .pitch-preset { flex: 1; min-width: 0; }

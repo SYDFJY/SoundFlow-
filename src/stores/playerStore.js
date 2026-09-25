@@ -149,7 +149,17 @@ export const usePlayerStore = defineStore('player', () => {
     initTranscodeProgress()
     // 已保存的输出设备:音频图建好后立刻应用(失败会记录原因并在设置页显示)
     if (outputDeviceId.value !== 'default') applyOutputDevice(outputDeviceId.value)
+    bindAudioElementEvents()
+    _startGraphWatch()
+  }
 
+  /**
+   * 给当前音频元素绑事件。
+   * **建元素与绑事件分开**:整体重建音频图时必须换元素(MediaElementSource 对同一个元素
+   * 只能建一次),换完要把事件重新绑上,否则新元素不出声、界面也不更新。
+   */
+  function bindAudioElementEvents() {
+    if (!audio.value) return
     audio.value.addEventListener('timeupdate', () => {
       currentTime.value = audio.value.currentTime
       // A-B 循环:播到 B 就回到 A。放在 timeupdate(≈4Hz)而不是 rAF:
@@ -199,6 +209,10 @@ export const usePlayerStore = defineStore('player', () => {
     audio.value.addEventListener('play', () => {
       isPlaying.value = true
       sendMiniUpdate(true)
+      // 每次开始/恢复播放都做一次轻量检查:缺分析器或 context 被挂起时才重建音频链。
+      // 此前音频图只在首次初始化建一次(initAudio 首行就短路),一旦那次没接上或
+      // 后来被设备事件挂起,**有声音但频谱永远不动**,且全程无日志。
+      ensureAudioGraphIfNeeded()
     })
     audio.value.addEventListener('pause', () => {
       isPlaying.value = false
@@ -408,7 +422,17 @@ export const usePlayerStore = defineStore('player', () => {
       if (!audio.value) return
       const AC = window.AudioContext || window.webkitAudioContext
       if (!AC) return
-      if (!_audioCtx) _audioCtx = new AC()
+      if (!_audioCtx) {
+        _audioCtx = new AC()
+        // context 被设备事件搞死时要立刻知道:此前没有任何监听,唯一的线索只是"频谱不动"
+        try {
+          _audioCtx.onstatechange = () => {
+            const st = _audioCtx && _audioCtx.state
+            if (st === 'closed' || st === 'interrupted') _markCtxBroken('state=' + st)
+          }
+          _audioCtx.onerror = () => _markCtxBroken('AudioContext error 事件')
+        } catch {}
+      }
       if (_audioCtx.state === 'suspended') _audioCtx.resume()
       if (!_mediaSourceNode) {
         _mediaSourceNode = _audioCtx.createMediaElementSource(audio.value)
@@ -641,6 +665,167 @@ export const usePlayerStore = defineStore('player', () => {
     }
     _analyser.getByteFrequencyData(_spectrumBuf)
     return _spectrumBuf
+  }
+
+  // ===== 音频图自愈 =====
+  // 为什么需要:分析器没接上、或 AudioContext 被挂起/变成僵尸时,**有声音但频谱定住**,
+  // 而这个状态完全静默 —— 画面上只是柱高恒等于下限(3px),与"这段真的没声音"无法区分。
+  // 这台机器的日志里多次出现 "AudioContext encountered an error from the audio device",
+  // 而此前除了首次初始化再没有任何恢复路径(initAudio 首行就短路)。
+  let _ctxBroken = false      // context 已不可用(closed/error),只能整体重建
+  let _recoverAt = 0          // 上次自愈时间(限流,别在坏设备上反复重建)
+  let _recoverCount = 0       // 本轮静默内的自愈次数
+  let _graphWatchTimer = null
+  let _silentStreak = 0
+  let _rebuildInFlight = false
+  let _lightTried = false     // 轻量自愈(重建链)是否已试过;治好之前不再重复
+  let _silentLogged = false   // 本轮静默是否已打过诊断日志
+
+  /** 音频图健康快照:给自检、探针与失败记录用(ctx 状态 / 分析器在不在 / 数据是否全零) */
+  function getAudioGraphState() {
+    const d = getSpectrumData()
+    let peak = -1
+    if (d) {
+      peak = 0
+      for (let i = 0; i < d.length; i++) { if (d[i] > peak) peak = d[i] }
+    }
+    return {
+      ctx: _audioCtx ? _audioCtx.state : 'none',
+      analyser: !!_analyser,
+      source: !!_mediaSourceNode,
+      // 判据是**峰值**:没有输入的 AnalyserNode 会返回 0~2 的底噪,按"全零"判永远判不出来。
+      // 真正在放的音乐峰值接近 255(实测低音段常在 200 以上)。
+      peak,
+      silent: peak < 8,
+      volume: audio.value ? audio.value.volume : -1,
+      muted: audio.value ? audio.value.muted : null,
+      paused: audio.value ? audio.value.paused : null,
+      broken: _ctxBroken,
+      element: !!audio.value
+    }
+  }
+
+  function _markCtxBroken(why) {
+    if (_ctxBroken) return
+    _ctxBroken = true
+    console.error('[音频图] AudioContext 不可用:', why)
+    noteFailure('audio.graph', `音频图失效(${why}),将尝试自动恢复`, null)
+  }
+
+  /** 只在真的缺东西时才重建音频链(健康时零开销 —— 重建带 40ms 淡出淡入) */
+  function ensureAudioGraphIfNeeded() {
+    if (!audio.value) return
+    if (!_audioCtx || _ctxBroken) { ensureAudioGraph(); return }
+    if (_audioCtx.state !== 'running') {
+      try { _audioCtx.resume() } catch (e) { _markCtxBroken('resume 抛错:' + (e && e.message)) }
+    }
+    if (!_analyser || !_mediaSourceNode) ensureAudioGraph()
+  }
+
+  /**
+   * 恢复音频图。
+   * 轻量路径(resume + 重建链)覆盖两种常见故障:分析器缺失、context 被挂起;
+   * 重路径(换 context + 换 Audio 元素)只在 context 已经死掉时走 ——
+   * MediaElementSource 对同一个元素只能建一次,换 context 就必须换元素。
+   */
+  async function recoverAudioGraph(reason) {
+    if (!audio.value || _rebuildInFlight) return false
+    const now = Date.now()
+    if (now - _recoverAt < 8000) return false // 限流
+    _recoverAt = now
+    _recoverCount++
+    // 轻量路径:先补缺的节点/恢复挂起的 context,再**强制重建一次链** ——
+    // "看起来接好了却拿不到数据"只能靠重新连线解决(重连会把分析器重新接到链尾)
+    if (!_ctxBroken && !_lightTried) {
+      _lightTried = true
+      ensureAudioGraphIfNeeded()
+      try { rebuildAudioChain() } catch (e) { _markCtxBroken('重建链抛错:' + (e && e.message)) }
+      console.warn(`[音频图] 自愈(轻量:${reason}) ctx=${_audioCtx ? _audioCtx.state : 'none'} analyser=${!!_analyser} source=${!!_mediaSourceNode}`)
+      return true
+    }
+    // 轻量没治好 → 整体重建(换 context 必须换元素)
+    return await rebuildAudioGraph(reason)
+  }
+
+  /** 整体重建:换 AudioContext 与 Audio 元素,尽量把播放状态搬过去 */
+  async function rebuildAudioGraph(reason) {
+    const old = audio.value
+    if (!old) return false
+    _rebuildInFlight = true
+    const st = {
+      src: old.src,
+      time: old.currentTime || 0,
+      volume: old.volume,
+      muted: old.muted,
+      rate: old.playbackRate,
+      preserve: old.preservesPitch,
+      wasPlaying: !old.paused && !old.ended
+    }
+    console.warn(`[音频图] 自愈(整体重建:${reason})`)
+    try { old.pause() } catch {}
+    try { old.removeAttribute('src'); old.load() } catch {} // 断开旧元素,避免两路同时出声
+    // 旧节点全部属于旧 context,引用一律作废
+    _mediaSourceNode = null; _analyser = null; _fadeGain = null; _outGain = null
+    _rgGain = null; _limiter = null; _eqFilters = []; _bassFilter = null
+    _trebleFilter = null; _midFilter = null; _widthMerger = null; _reverbConvolver = null
+    _reverbGain = null; _reverbDryGain = null; _compressor = null; _pitchNode = null; _pitchST = null
+    if (_audioCtx) { try { await _audioCtx.close() } catch {} }
+    _audioCtx = null
+    _ctxBroken = false
+    audio.value = new Audio()
+    audio.value.volume = st.volume
+    audio.value.muted = st.muted
+    audio.value.playbackRate = st.rate
+    audio.value.preservesPitch = st.preserve
+    bindAudioElementEvents()
+    applyPitch()
+    ensureAudioGraph()
+    if (st.src) {
+      try {
+        audio.value.src = st.src
+        if (st.time > 0) audio.value.currentTime = st.time
+        if (st.wasPlaying) await audio.value.play().catch(() => {})
+      } catch (e) {
+        noteFailure('audio.graph', '重建后恢复播放失败', e)
+      }
+    }
+    noteFailure('audio.graph', '音频设备异常,已整体重建音频图(播放状态尽量保留)', null)
+    _rebuildInFlight = false
+    return true
+  }
+
+  /** 播放中每 1.5 秒自检一次:分析器拿不到数据就自愈,连续失败记一条 failure(不再静默) */
+  function _startGraphWatch() {
+    if (_graphWatchTimer) return
+    _graphWatchTimer = setInterval(() => {
+      if (!isPlaying.value || !audio.value) return
+      // 调试钩子:localStorage 里开 sf_debug_audio=1 时,把音频图快照挂到 window 上
+      // (探针/排查用;键名刻意不用 soundflow_ 前缀 —— 那个前缀由 storageSchema 守卫管辖)
+      try {
+        if (localStorage.getItem('sf_debug_audio') === '1') window.__sfAudioGraph = getAudioGraphState()
+      } catch {}
+      const st = getAudioGraphState()
+      const audible = !audio.value.muted && (audio.value.volume || 0) > 0.01
+      const bad = st.broken || !st.analyser || st.ctx !== 'running' || (st.silent && audible)
+      if (!bad) {
+        _silentStreak = 0; _recoverCount = 0
+        _lightTried = false; _silentLogged = false
+        return
+      }
+      if (!_silentLogged) {
+        _silentLogged = true
+        // 一条带全部判据的诊断:下次再出问题,日志里能直接看出是"没分析器"还是"接上了没数据"
+        console.warn(`[音频图] 频谱拿不到数据: ctx=${st.ctx} analyser=${st.analyser} source=${st.source} peak=${st.peak} volume=${audio.value.volume} muted=${audio.value.muted} broken=${st.broken}`)
+      }
+      _silentStreak++
+      if (_silentStreak < 2) return // 约 3 秒
+      _silentStreak = 0
+      if (_recoverCount < 3) {
+        recoverAudioGraph(`ctx=${st.ctx} analyser=${st.analyser} silent=${st.silent}`)
+      } else if (_recoverCount === 3) {
+        noteFailure('audio.spectrum', '频谱持续拿不到音频数据(已多次自愈),重启应用可恢复', null)
+      }
+    }, 1500)
   }
 
   // 生成短混响脉冲(噪声指数衰减)
@@ -923,6 +1108,9 @@ export const usePlayerStore = defineStore('player', () => {
       outputDeviceError.value = `该设备无法切换:${(e && e.message) || '未知原因'}(已回退系统默认)`
       try { await _audioCtx.setSinkId('') } catch (_) {}
       return false
+    } finally {
+      // 切换输出设备可能让 context 挂起/掉出音频链:补一次检查(健康时零开销)
+      ensureAudioGraphIfNeeded()
     }
   }
 
@@ -1099,6 +1287,8 @@ export const usePlayerStore = defineStore('player', () => {
   const lyricOrigin = ref('')
   // 歌词翻译
   const showTranslation = ref(false)
+  // 桌面歌词窗改了应用侧设置(字号/对齐/特效/逐字)时自增 → 主界面据此重读设置
+  const lyricSettingRev = ref(0)
   const translating = ref(false)
   let _transReqSeq = 0 // 翻译并发请求序号,仅最晚请求落地并复位 translating
   const translations = ref([])
@@ -1537,6 +1727,14 @@ export const usePlayerStore = defineStore('player', () => {
       // 每行自带译文:窗口按行取,就不会出现"译文是这一句、行号是另一句"的错配
       // (早先只推一个"当前行译文"字符串,与索引是两条推送,谁快谁慢都会错行)
       lines: lyrics.value.map((l, i) => ({ time: l.time, text: l.text, trans: translationFor(i) })),
+      // 窗口专有设置(背景/透明度/锁定/置顶/显示歌名):真源在应用侧,窗口只消费
+      win: {
+        bg: getSetting('soundflow_lyric_win_bg') || 'dark',
+        alpha: Number(getSetting('soundflow_lyric_win_alpha')) || 0.05,
+        locked: String(getSetting('soundflow_lyric_win_locked')) === '1',
+        pinned: String(getSetting('soundflow_lyric_win_pinned')) === '1',
+        showTitle: String(getSetting('soundflow_lyric_win_title')) === '1'
+      },
       currentIdx: idx,
       currentTime: currentTime.value || 0,
       playing: isPlaying.value,
@@ -1578,6 +1776,10 @@ export const usePlayerStore = defineStore('player', () => {
     try {
       window.electronAPI.on('lyric-state-sync', (state) => {
         if (typeof state === 'number') desktopLyricState.value = state
+      })
+      // 桌面歌词窗改了设置 → 在这里落盘并回推(窗口只是入口;真源始终在应用侧)
+      window.electronAPI.on('lyric-setting', (key, value) => {
+        applyLyricSettingFromWindow(key, value)
       })
     } catch {}
   }
@@ -2112,6 +2314,51 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 桌面歌词:开/关(锁定等操作在歌词窗口右键菜单)
+  // 窗口侧改了设置(字号/对齐/特效/逐字/翻译/背景/锁定/置顶/显示歌名)→ 在这里落盘并回推。
+  // 让窗口自己存一份会有两套真源(勾选态、应用侧设置都会对不上),所以窗口只当入口。
+  /** 桌面歌词窗发来的设置改动:写入设置 → 通知界面刷新 → 回推给窗口 */
+  function applyLyricSettingFromWindow(key, value) {
+    const isWinKey = key === 'bg' || key === 'alpha' || key === 'locked' || key === 'pinned' || key === 'title'
+    if (key === 'translation') {
+      toggleTranslation()
+      lyricSettingRev.value++
+      return true
+    }
+    const map = {
+      fontSize: 'soundflow_lyric_font_size',
+      align: 'soundflow_lyric_align',
+      effect: 'soundflow_lyric_effect',
+      wordMode: 'soundflow_lyric_mode',
+      bg: 'soundflow_lyric_win_bg',
+      alpha: 'soundflow_lyric_win_alpha',
+      locked: 'soundflow_lyric_win_locked',
+      pinned: 'soundflow_lyric_win_pinned',
+      title: 'soundflow_lyric_win_title'
+    }
+    const storeKey = map[key]
+    if (!storeKey) return false
+    let v = value
+    if (key === 'fontSize') {
+      const want = Math.max(12, Math.min(36, Math.round(Number(getSetting(storeKey)) + Number(value))))
+      if (!Number.isFinite(want)) return false
+      v = String(want)
+    } else if (key === 'alpha') {
+      const want = Math.max(0.05, Math.min(0.9, Math.round((Number(getSetting(storeKey)) + Number(value)) * 100) / 100))
+      if (!Number.isFinite(want)) return false
+      v = String(want)
+    } else if (key !== 'align') {
+      v = String(value)
+    }
+    if (key === 'align' && v !== 'left' && v !== 'center') return false
+    try { localStorage.setItem(storeKey, v) } catch (e) { noteFailure('lyric.win', '桌面歌词设置写入失败', e) }
+    if (isWinKey && key === 'pinned' && window.electronAPI && window.electronAPI.lyricWinConfig) {
+      window.electronAPI.lyricWinConfig({ pinned: v === '1' })
+    }
+    lyricSettingRev.value++      // 主界面据此重读设置(字号/对齐/特效/逐字那几处)
+    refreshLyricWindowStyle()    // 立刻把新样式推给窗口
+    return true
+  }
+
   function cycleDesktopLyric() {
     desktopLyricState.value = desktopLyricState.value === 0 ? 1 : 0
     if (window.electronAPI && window.electronAPI.lyricToggle) {
@@ -2120,6 +2367,9 @@ export const usePlayerStore = defineStore('player', () => {
     // 播放中点开桌面歌词:立即推送当前歌词(此前被 sendLyricUpdate 的 state===0 守卫拦截,要等下次切歌才显示)
     // 延迟 300ms 给主进程建窗时间;窗口加载后主进程还会重放 lastLyricData 兜底
     if (desktopLyricState.value === 1) {
+      if (window.electronAPI && window.electronAPI.lyricWinConfig) {
+        window.electronAPI.lyricWinConfig({ pinned: String(getSetting('soundflow_lyric_win_pinned')) === '1' })
+      }
       setTimeout(() => sendLyricUpdate(), 300)
     }
   }
@@ -2294,6 +2544,8 @@ export const usePlayerStore = defineStore('player', () => {
     volPanelOpen, miniOpen,
     endAction, setEndAction,
     userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics, translationFor,
+    lyricSettingRev, applyLyricSettingFromWindow,
+    getAudioGraphState,
     playbackRate, showLyricPanel, isBuffering, progressHistory, transcodePct, isTranscoded,
     abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong, prevUpSong,
     clearTranslationCache,
