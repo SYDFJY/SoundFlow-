@@ -4,6 +4,7 @@ import { ref, computed, watch, reactive } from 'vue'
 import { parseLRCWithMeta } from '@/utils/lrc'
 import { resolveLyricOffset, buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
 import { lyricSourceSignature, isCacheEntryFor } from '@/utils/lyricSource'
+import { detectSongLang, splitLyricLines, targetLangFor, originalSample } from '@/utils/lyricLang'
 import { formatDuration } from '@/utils/time'
 import { noteFailure } from '@/utils/failures'
 import { createShufflePool } from '@/utils/shufflePool'
@@ -1064,18 +1065,26 @@ export const usePlayerStore = defineStore('player', () => {
     saveQueueState()
   }
 
-  // 在线歌词缓存(主进程 JSON,键=标题|歌手)
+  // 在线歌词缓存(主进程 JSON,键=标题|歌手|时长)
+  // 值形如 { lyrics, translation }:translation 是在线源自带的译文轨(网易云 tlyric / QQ trans)。
+  // 兼容旧条目 —— 升级前存的是**纯字符串**(只有原文),读到字符串就当作 { lyrics: 字符串 }。
   async function _getCachedOnlineLyric(key) {
     try {
       const cache = await window.electronAPI.storeGet('lyricsCache') || {}
-      return cache[key] || null
+      const hit = cache[key]
+      if (!hit) return null
+      if (typeof hit === 'string') return { lyrics: hit, translation: '' }
+      if (typeof hit === 'object' && typeof hit.lyrics === 'string') {
+        return { lyrics: hit.lyrics, translation: typeof hit.translation === 'string' ? hit.translation : '' }
+      }
+      return null
     } catch { return null }
   }
 
-  async function _setCachedOnlineLyric(key, lyricsText) {
+  async function _setCachedOnlineLyric(key, lyricsText, translationText = '') {
     try {
       const cache = await window.electronAPI.storeGet('lyricsCache') || {}
-      cache[key] = lyricsText
+      cache[key] = translationText ? { lyrics: lyricsText, translation: translationText } : lyricsText
       const keys = Object.keys(cache)
       // 容量上限 800 条(每条约 3-5KB,约 3MB);按最早写入淘汰(FIFO)
       if (keys.length > 800) {
@@ -1146,7 +1155,9 @@ export const usePlayerStore = defineStore('player', () => {
     } catch {}
   }
 
-  // 翻译当前歌词:自动判断目标语言(原文含中文→英文,否则→中文)
+  // 翻译当前歌词:方向由**歌曲语言**决定(外语→中文、中文→外语),显式发给主进程。
+  // 此前方向由主进程拿整份文本自己猜,双语歌词会让它判成"原文是中文"→ 译成英文,
+  // 底下那行显示的成了原文(用户报的"翻译打开后下面是英文")。
   async function translateCurrentLyrics() {
     if (!window.electronAPI || lyrics.value.length === 0) return
     const song = currentSong.value
@@ -1155,6 +1166,14 @@ export const usePlayerStore = defineStore('player', () => {
     // 请求发出时记下歌词签名:响应落地前要比对,确认它对应的还是当前这版歌词
     const reqSig = lyricSourceSignature(lyrics.value)
     const seq = ++_transReqSeq // 同歌/连点并发保护:只让最新请求落地
+    // 歌词源自带的译文已覆盖全部有文本的行(本地双语 .lrc 拆出来的、或在线源的译文轨)
+    // → 一次请求都不用发,用户说的"译过的存着,省得重复翻译"就是这一条
+    const textLines = lyrics.value.filter(l => l.text && l.text.trim())
+    if (textLines.length && textLines.every(l => l.trans)) {
+      translations.value = []
+      translating.value = false
+      return
+    }
     const cached = _cachedTranslation(song.path, lyrics.value)
     if (cached) {
       translations.value = cached
@@ -1170,6 +1189,8 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
     const texts = lyrics.value.map(l => l.text)
+    // 目标语言:中文歌→英文,其余(拉丁/日/韩)→中文;判不出时按原文文本兜底
+    const targetLang = targetLangFor(detectSongLang(song), originalSample(lyrics.value))
     // 翻译服务:deepseek(需 key)或 mymemory(免费);配置存 localStorage
     let service = 'mymemory'
     let deepseekKey = ''
@@ -1179,6 +1200,7 @@ export const usePlayerStore = defineStore('player', () => {
     try {
       const result = await window.electronAPI.translateLyrics({
         lines: texts,
+        targetLang,
         service,
         deepseekKey
       })
@@ -1198,7 +1220,12 @@ export const usePlayerStore = defineStore('player', () => {
         translateNotice.value = 'empty'
         return
       }
-      translations.value = Array.isArray(result) ? result : []
+      // 请求整首发(行号必须一一对应),落地时**源自带的译文优先**、AI 只补缺的行
+      const ai = Array.isArray(result) ? result : []
+      translations.value = lyrics.value.map((l, i) => {
+        const own = typeof l.trans === 'string' ? l.trans : ''
+        return own || ai[i] || ''
+      })
       // 仅缓存有效译文(失败/空结果不缓存,下次可重试)
       if (_isValidTranslation(translations.value)) {
         // 存的时候带上"这版歌词"的签名,命中时才校验得了(旧格式条目会被 isCacheEntryFor 判无效)
@@ -1253,10 +1280,10 @@ export const usePlayerStore = defineStore('player', () => {
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
 
-      const showLyrics = (text, origin) => {
+      const showLyrics = (text, origin, translationText = '') => {
         if (currentSong.value !== reqSong) return false
         lyricOrigin.value = origin
-        setLyricsFromText(text)
+        setLyricsFromText(text, translationText)
         if (showTranslation.value) translateCurrentLyrics()
         return true
       }
@@ -1271,7 +1298,9 @@ export const usePlayerStore = defineStore('player', () => {
         // 键里带时长:同名同歌手的两个文件(Intro/Live/另一版本)时长几乎不会相同,
         // 不带的话它们会共用同一份歌词 —— 表现为"这首歌显示的是别人的歌词"
         const cacheKey = `${source}|${song.title}|${song.artist || ''}|${Math.round(song.duration || 0)}`
-        let onlineText = await _getCachedOnlineLyric(cacheKey)
+        let onlineHit = await _getCachedOnlineLyric(cacheKey)
+        let onlineText = onlineHit ? onlineHit.lyrics : null
+        let onlineTrans = onlineHit ? onlineHit.translation : ''
         let origin = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : (cacheKey.startsWith('qq|') ? 'QQ音乐' : '自动'))
         if (!onlineText) {
           const res = await window.electronAPI.fetchOnlineLyric({
@@ -1291,13 +1320,15 @@ export const usePlayerStore = defineStore('player', () => {
             return
           }
           onlineText = (res && res.lyrics) || null
+          // 源自带的译文轨(网易云 tlyric / QQ trans):有就一起存、一起用,不用再花钱翻译
+          onlineTrans = (res && typeof res.translation === 'string') ? res.translation : ''
           if (onlineText) {
             origin = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : (res.source === 'qq' ? 'QQ音乐' : '自动'))
-            await _setCachedOnlineLyric(cacheKey, onlineText)
+            await _setCachedOnlineLyric(cacheKey, onlineText, onlineTrans)
           }
         }
         if (onlineText) {
-          showLyrics(onlineText, origin)
+          showLyrics(onlineText, origin, onlineTrans)
           return
         }
       }
@@ -1319,18 +1350,67 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  // 解析 LRC
   // 解析歌词文本:统一走这里,顺带取出 [offset:] 并套用当前歌曲的用户微调。
   // 此前直接调 parseLRC,offset 标签被静默忽略,且全项目没有任何偏移校正。
-  function setLyricsFromText(text) {
+  /**
+   * @param {string} text 歌词文本(LRC)
+   * @param {string} [translationText] 在线歌词源自带的**译文轨**(网易云 tlyric / QQ trans),
+   *        没有就传空 —— 单行双语歌词由 splitLyricLines 当场拆开
+   */
+  function setLyricsFromText(text, translationText = '') {
     const { offsetMs, lines } = parseLRCWithMeta(text)
     lyricFileOffsetMs.value = offsetMs
     lyricUserOffsetMs.value = getLyricUserOffset(currentSong.value)
-    lyrics.value = lines
+    // 主行只留原文、另一种语言进 line.trans:大量 .lrc 是"一行里写原文+译文",
+    // 不拆的话关着翻译也能看见译文(用户报的"没点翻译怎么同一行后面有翻译"),
+    // 而整行送翻译又会把语言检测带偏(判成"原文是中文"→ 译成英文)。
+    const songLang = detectSongLang(currentSong.value)
+    const split = splitLyricLines(lines, songLang)
+    lyrics.value = translationText ? _attachTransTrack(split, translationText) : split
     // 换歌词(切来源/导入/删除本地歌词都会走到这里)要同步作废旧译文,并重置当前行 ——
     // 否则新歌词会短暂配着上一版的译文与高亮行
     translations.value = []
     currentLyricIndex.value = -1
+  }
+
+  /**
+   * 把"译文轨"(与原文各占一行、时间戳相同)贴到歌词行的 trans 上。
+   * 只在行内没有 trans 时贴(同一物理行里切出来的译文更可信)。
+   * 时间轴对不上的轨整条丢弃 —— 宁可没有译文,也不要把别人的句子贴到这一行。
+   */
+  function _attachTransTrack(lines, translationText) {
+    let track = []
+    try { track = parseLRCWithMeta(translationText).lines } catch { return lines }
+    if (!track.length) return lines
+    const byTime = new Map()
+    for (const t of track) {
+      if (!t.text) continue
+      byTime.set(Math.round(t.time * 1000), t.text)
+    }
+    let hit = 0
+    const merged = lines.map((l) => {
+      if (l.trans || !l.text) return l
+      const t = byTime.get(Math.round(l.time * 1000))
+      if (!t) return l
+      hit++
+      return { ...l, trans: t }
+    })
+    const textLines = lines.filter(l => l.text).length
+    if (hit < Math.max(1, Math.floor(textLines * 0.5))) return lines
+    return merged
+  }
+
+  /**
+   * 某一行要显示的译文(桌面歌词窗也走这里)。
+   * 优先级:歌词源自带的译文 → AI 译文;"翻译"开关是唯一的闸门 ——
+   * 关着时**什么都没有**(此前译文会混在主行文本里,关不掉)。
+   */
+  function translationFor (idx) {
+    if (!showTranslation.value) return ''
+    const line = lyrics.value[idx]
+    if (!line) return ''
+    const own = typeof line.trans === 'string' ? line.trans : ''
+    return own || translations.value[idx] || ''
   }
 
   /** 取某首歌的用户偏移微调(毫秒) */
@@ -1454,14 +1534,16 @@ export const usePlayerStore = defineStore('player', () => {
     return {
       title: currentSong.value?.title || '',
       artist: currentSong.value?.artist || '',
-      lines: lyrics.value.map(l => ({ time: l.time, text: l.text })),
+      // 每行自带译文:窗口按行取,就不会出现"译文是这一句、行号是另一句"的错配
+      // (早先只推一个"当前行译文"字符串,与索引是两条推送,谁快谁慢都会错行)
+      lines: lyrics.value.map((l, i) => ({ time: l.time, text: l.text, trans: translationFor(i) })),
       currentIdx: idx,
       currentTime: currentTime.value || 0,
       playing: isPlaying.value,
       style,
       words,
       wordIdx: isPlaying.value ? wordIndexAt(words, lyricClock.value) : -1,
-      translation: showTranslation.value ? (translations.value[idx] || '') : ''
+      translation: translationFor(idx)
     }
   }
 
@@ -1471,7 +1553,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (desktopLyricState.value === 0) return
     try {
       window.electronAPI.sendLyricUpdate(buildLyricWindowPayload())
-      // 同步当前句索引
+      // 同步当前句索引(译文随 "行"走 —— 见 buildLyricWindowPayload 里的 lines[].trans)
       if (window.electronAPI.sendLyricIndex) window.electronAPI.sendLyricIndex(currentLyricIndex.value)
     } catch {}
   }
@@ -1481,6 +1563,9 @@ export const usePlayerStore = defineStore('player', () => {
   watch(currentSong, () => sendLyricUpdate())
   watch(lyrics, () => sendLyricUpdate())
   watch(isPlaying, () => sendLyricUpdate())
+  // 翻译开关/译文落地也要推:此前点"歌词翻译"桌面歌词窗毫无变化,要等下一次切歌才出现
+  watch(showTranslation, () => sendLyricUpdate())
+  watch(translations, () => sendLyricUpdate())
   // 当前句索引变化 → 推送桌面歌词高亮(节流:歌词切换频率本身低)
   watch(currentLyricIndex, (idx) => {
     if (window.electronAPI && window.electronAPI.sendLyricIndex) {
@@ -2208,7 +2293,7 @@ export const usePlayerStore = defineStore('player', () => {
     resumeProgress,
     volPanelOpen, miniOpen,
     endAction, setEndAction,
-    userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
+    userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics, translationFor,
     playbackRate, showLyricPanel, isBuffering, progressHistory, transcodePct, isTranscoded,
     abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong, prevUpSong,
     clearTranslationCache,

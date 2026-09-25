@@ -40,6 +40,14 @@ describe('歌词来源签名', () => {
     const online = lines(['第一句', '第二句', '第三句', '第四句']) // 在线源多一行
     expect(lyricSourceSignature(local)).not.toBe(lyricSourceSignature(online))
   })
+
+  it('歌词文件里的译文也算一行身份(换了一版翻译 → 旧译文作废)', () => {
+    const before = [{ time: 1, text: 'Hello world', trans: '你好世界' }]
+    const after = [{ time: 1, text: 'Hello world', trans: '你好,世界' }]
+    expect(lyricSourceSignature(before)).not.toBe(lyricSourceSignature(after))
+    // 原文相同、译文也相同 → 稳定
+    expect(lyricSourceSignature(before)).toBe(lyricSourceSignature([{ time: 9, text: 'Hello world', trans: '你好世界' }]))
+  })
 })
 
 describe('缓存条目归属校验', () => {

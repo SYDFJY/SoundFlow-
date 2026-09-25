@@ -26,11 +26,14 @@ describe('歌词行渲染必须两面共用', () => {
 
   it('分栏那份也接上了逐字与翻译(这正是用户报的缺失)', () => {
     const s = pv()
-    // 两处都应带 word-mode / words / translation 绑定
+    // 两处都应带 word-mode / translation 绑定
     const wordMode = [...s.matchAll(/:word-mode="lyricMode === 'word'"/g)].length
-    const trans = [...s.matchAll(/:translation="playerStore\.showTranslation/g)].length
+    // 译文统一走 store.translationFor(idx):"翻译开关 + 源自带译文优先 + AI 兜底"
+    // 这套优先级只该有一处实现(此前两个面各写一遍,而桌面窗又是第三份)
+    const trans = [...s.matchAll(/:translation="playerStore\.translationFor\(idx\)"/g)].length
     expect(wordMode, '分栏那份没接逐字(word-mode)').toBeGreaterThanOrEqual(2)
-    expect(trans, '分栏那份没接翻译(translation)').toBeGreaterThanOrEqual(2)
+    expect(trans, '分栏那份没接翻译(translationFor)').toBeGreaterThanOrEqual(2)
+    expect(s, '又回到各写一遍的译文取值(showTranslation ? translations[idx] ...)').not.toMatch(/showTranslation \? \(playerStore\.translations\[idx\]/)
   })
 
   it('PlayerView 里不再内联复制逐字/翻译的渲染分支', () => {

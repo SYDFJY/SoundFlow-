@@ -104,7 +104,7 @@
                 :word-mode="lyricMode === 'word'"
                 :words="idx === playerStore.currentLyricIndex ? lyricWordSegments(line) : []"
                 :word-idx="currentWordIdx" :word-color="lyricColor"
-                :translation="playerStore.showTranslation ? (playerStore.translations[idx] || '') : ''"
+                :translation="playerStore.translationFor(idx)"
                 @seek="seekToLine"
               />
               <div style="height:30%"></div>
@@ -159,7 +159,7 @@
                 :word-mode="lyricMode === 'word'"
                 :words="idx === playerStore.currentLyricIndex ? lyricWordSegments(line) : []"
                 :word-idx="currentWordIdx" :word-color="lyricColor"
-                :translation="playerStore.showTranslation ? (playerStore.translations[idx] || '') : ''"
+                :translation="playerStore.translationFor(idx)"
                 @seek="seekToLine"
               />
               <div style="height:40%"></div>
@@ -459,6 +459,7 @@ import TrackHint from '@/components/TrackHint.vue'
 import QueuePanel from '@/components/QueuePanel.vue'
 import { useVolumeControl } from '@/composables/useVolumeControl'
 import { buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
+import { mergeTranslatedLRC } from '@/utils/lrc'
 import { isCustomCoverUrl } from '@/utils/cover'
 import { shortcutHint } from '@/utils/shortcut'
 import LyricLine from '@/components/LyricLine.vue'
@@ -1155,7 +1156,10 @@ async function searchLyric() {
       source: lyricSource === 'local' ? 'auto' : lyricSource
     })
     if (res?.lyrics) {
-      const saved = await window.electronAPI.saveLyricFile(song.path, res.lyrics, lyricFoldersForSave())
+      // 源自带译文轨时并成"一行双语"再写盘(与用户手里那些双语 .lrc 同格式);
+      // 下次加载会被拆分逻辑还原成"主行原文 + 一行译文"
+      const saveText = mergeTranslatedLRC(res.lyrics, res.translation || '')
+      const saved = await window.electronAPI.saveLyricFile(song.path, saveText, lyricFoldersForSave())
       if (saved?.ok) {
         searchLyricMsg.value = '✅ 已保存到歌曲同目录'
         await playerStore.loadLyrics(song)

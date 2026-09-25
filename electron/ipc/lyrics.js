@@ -195,11 +195,23 @@ const {
   /** MyMemory 的最低匹配度:低于它就认为命中的是"别的文档片段",宁可留空 */
   const MYMEMORY_MIN_MATCH = 0.35
 
-  async function translateWithDeepSeek(lines, apiKey) {
+  /** 目标语言代码 → prompt 里用的语言名 */
+  const TARGET_LANG_NAMES = {
+    'zh-CN': 'Simplified Chinese',
+    'zh': 'Simplified Chinese',
+    'en': 'English',
+    'ja': 'Japanese',
+    'ko': 'Korean'
+  }
+
+  async function translateWithDeepSeek(lines, apiKey, targetLang) {
     if (!apiKey) return null
-    // 源语言检测:中文→译英,否则→译中
+    // 目标语言:渲染端按**歌曲语言**算好后显式传进来(外语→中文、中文→外语)。
+    // 此前这里自己拿整份文本猜,双语歌词(一行里既有原文又有译文)会被带偏成"原文是中文"
+    // → 译成英文,界面底下那行显示的反而是原文。传了就以传进来的为准,没传才退回自测。
+    const explicit = TARGET_LANG_NAMES[String(targetLang || '').toLowerCase()] || TARGET_LANG_NAMES[String(targetLang || '')]
+    const target = explicit || (/[\u4e00-\u9fff]/.test(lines.join('\n')) ? 'English' : 'Simplified Chinese')
     const text = lines.join('\n')
-    const target = /[\u4e00-\u9fff]/.test(text) ? 'English' : 'Simplified Chinese'
     try {
       const res = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
@@ -237,7 +249,7 @@ const {
   ipcMain.handle('translate-lyrics', async (event, { lines, targetLang, service, deepseekKey }) => {
     if (!Array.isArray(lines) || !lines.length) return []
     if (service === 'deepseek' && deepseekKey) {
-      const r = await translateWithDeepSeek(lines, deepseekKey)
+      const r = await translateWithDeepSeek(lines, deepseekKey, targetLang)
       if (r) return r
       // DeepSeek 失败回退 MyMemory
     }

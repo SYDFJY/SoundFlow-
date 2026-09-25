@@ -29,6 +29,16 @@ function lineText (l) {
 }
 
 /**
+ * 一行的"身份":原文 + 源自带的译文。
+ * 译文也进签名 —— 歌词文件改了译文(同一句原文换了一版翻译)时缓存的 AI 译文同样该作废,
+ * 否则界面会继续展示旧的那一版。
+ */
+function lineIdentity (l) {
+  const own = l && typeof l === 'object' && typeof l.trans === 'string' ? l.trans : ''
+  return `${lineText(l)}\u0000${own}`
+}
+
+/**
  * 由歌词行数组算出签名,形如 `"43:1a2b3c4d"`(行数 + 全文哈希)。
  * 逐行喂给哈希并夹入行分隔符,避免 ["ab","c"] 与 ["a","bc"] 撞成同一个值。
  */
@@ -36,7 +46,7 @@ export function lyricSourceSignature (lines) {
   const arr = Array.isArray(lines) ? lines : []
   let h = 2166136261
   for (const l of arr) {
-    const s = lineText(l)
+    const s = lineIdentity(l)
     h ^= s.length
     h = Math.imul(h, 16777619)
     for (let i = 0; i < s.length; i++) {

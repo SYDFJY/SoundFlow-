@@ -90,3 +90,38 @@ export function parseLRC(text) {
 export function hasTimeTag(text) {
   return TIME_TAG_RE.test(String(text == null ? '' : text))
 }
+
+/**
+ * 把"译文轨"(与原文各占一行、时间戳相同)并成**一行双语**的 LRC。
+ * 保存歌词到本地时用:这样下载下来的 .lrc 与用户手里那些双语歌词文件同格式
+ * (`[00:12.34]English 中文`),下次加载由拆分逻辑还原成"主行原文 + 一行译文"。
+ * 已在行内出现过该译文的、或时间戳对不上的行,原样保留。
+ */
+export function mergeTranslatedLRC(lrcText, translationText) {
+  const track = String(translationText == null ? '' : translationText)
+  if (!track.trim()) return lrcText
+  const transLines = parseLRCWithMeta(track).lines
+  if (!transLines.length) return lrcText
+  const byTime = new Map()
+  for (const l of transLines) {
+    if (!l.text) continue
+    const k = Math.round(l.time * 1000)
+    if (!byTime.has(k)) byTime.set(k, l.text)
+  }
+  let hit = 0
+  const out = String(lrcText).split(/\r?\n/).map((line) => {
+    const times = []
+    TIME_TAG_RE_G.lastIndex = 0
+    let m
+    while ((m = TIME_TAG_RE_G.exec(line)) !== null) times.push(toSeconds(m[1], m[2], m[3]))
+    if (!times.length) return line
+    const body = line.replace(TIME_TAG_RE_G, '')
+    if (!body.trim()) return line
+    const trans = byTime.get(Math.round(times[0] * 1000))
+    if (!trans || body.includes(trans)) return line
+    hit++
+    const prefix = line.slice(0, line.length - body.length) // 只去掉时间标签,其它原样
+    return `${prefix}${body.trim()} ${trans}`
+  })
+  return hit ? out.join('\n') : lrcText
+}

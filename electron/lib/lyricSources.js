@@ -93,7 +93,10 @@ async function fetchNetEaseLyric(info) {
           if (!lr.ok) continue
           const ldata = await lr.json()
           const lrc = ldata?.lrc?.lyric || ''
-          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, source: 'netease' }
+          // 网易云的译文轨(tlyric,请求里的 tv=-1 就是它):此前取了却丢掉,
+          // 于是外语歌明明有官方译文也要花钱再翻一遍
+          const tlyric = ldata?.tlyric?.lyric || ''
+          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, translation: tlyric, source: 'netease' }
         } catch {}
       }
       return null
@@ -138,7 +141,9 @@ async function fetchQQMusicLyric(info) {
           if (!lr.ok) continue
           const ldata = await lr.json()
           const lrc = ldata?.lyric || ''
-          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, source: 'qq' }
+          // QQ 的译文轨(trans,与 lyric 各占一行、时间戳相同):同样别丢
+          const trans = ldata?.trans || ''
+          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, translation: trans, source: 'qq' }
         } catch { continue }
       }
       return null

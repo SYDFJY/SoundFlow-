@@ -20,7 +20,7 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 .line.past{opacity:.12}
 .lyric-word{transition:color .12s}
 .lyric-word.cur{font-weight:700}
-.lyric-trans{margin-top:2px;font-size:.82em;opacity:.72}
+.lyric-trans{margin-top:2px;font-size:.82em;opacity:.6}
 .empty{color:rgba(255,255,255,0.18);font-size:14px;text-align:center;padding-top:40%;-webkit-app-region:no-drag}
 #ctx{display:none;position:fixed;background:rgba(20,20,40,0.96);border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:5px 0;min-width:175px;max-height:calc(100vh - 8px);overflow-y:auto;box-shadow:0 8px 28px rgba(0,0,0,0.55);z-index:999;-webkit-app-region:no-drag}
 #ctx div{padding:7px 13px;margin:1px 5px;border-radius:5px;font-size:12px;color:#d5dce6;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
@@ -115,7 +115,10 @@ function lineInner(l,i){
   }else{
     html=escapeHtml(l.text||l)
   }
-  if(i===activeIdx&&translation) html+=`<div class="lyric-trans">${escapeHtml(translation)}</div>`
+  // 译文**按行取**(l.trans 随载荷里的行一起来,与行号天然对齐);只有老格式载荷没有它时
+  // 才退回全局 translation —— 那个值与索引是两条推送,谁快谁慢都会让译文错行
+  const ownTrans=(l&&typeof l==='object'&&l.trans)||translation
+  if(i===activeIdx&&ownTrans) html+=`<div class="lyric-trans">${escapeHtml(ownTrans)}</div>`
   return html
 }
 function renderLines(){

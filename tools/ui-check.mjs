@@ -30,7 +30,11 @@ function ensureMedia () {
   fs.mkdirSync(mediaDir, { recursive: true })
   const have = fs.readdirSync(mediaDir).filter((f) => /\.(mp3|flac|wav)$/i.test(f))
   // 40 首:足够让列表出现滚动条 —— 定位当前播放只有在能滚动时才有意义
-  if (have.length >= 40) return have.length
+  // 元信息**交替**:奇数首用拉丁标题/歌手(Track N / Test Artist N)、偶数首用中文(曲目 N / 测试歌手 N)。
+  // 翻译方向那条(外语翻中文、中文翻外语)需要两种语言的歌各有一批,否则只能验到一半。
+  // 标记文件用于一次性重建:改过元信息规则之后,旧夹具必须重造才生效。
+  const marker = path.join(mediaDir, '.fixture-zhlatin')
+  if (have.length >= 40 && fs.existsSync(marker)) return have.length
   const audioTools = require(path.join(here, '..', 'electron', 'lib', 'audioTools.js'))
   const { execFileSync } = require('node:child_process')
   const ffmpeg = audioTools.getFfmpegPath()
@@ -39,8 +43,13 @@ function ensureMedia () {
   for (let i = 1; i <= 40; i++) {
     const out = path.join(mediaDir, `ui${i}.mp3`)
     // 各文件频率/时长不同:这样列表有内容、时长列不重复,便于观察
-    execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', `sine=frequency=${200 + i * 60}:duration=${2 + i}`, '-c:a', 'libmp3lame', '-q:a', '5', '-metadata', `title=曲目${i}`, '-metadata', `artist=测试歌手${(i % 3) + 1}`, '-metadata', `album=测试专辑${(i % 2) + 1}`, out, '-y'])
+    const latin = i % 2 === 1
+    const meta = latin
+      ? ['-metadata', `title=Track ${i}`, '-metadata', `artist=Test Artist ${(i % 3) + 1}`, '-metadata', `album=Test Album ${(i % 2) + 1}`]
+      : ['-metadata', `title=曲目${i}`, '-metadata', `artist=测试歌手${(i % 3) + 1}`, '-metadata', `album=测试专辑${(i % 2) + 1}`]
+    execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', `sine=frequency=${200 + i * 60}:duration=${2 + i}`, '-c:a', 'libmp3lame', '-q:a', '5', ...meta, out, '-y'])
   }
+  fs.writeFileSync(marker, 'ok')
   return fs.readdirSync(mediaDir).filter((f) => /\.mp3$/i.test(f)).length
 }
 
@@ -81,7 +90,14 @@ app.whenReady().then(async () => {
     app.exit(1)
     return
   }
-  await run(`(() => {
+  await run(`(async () => {
+    // 曲库/队列要写进**主进程存储**:App.vue onMounted 会拿 get-preloaded-data 覆盖 localStorage
+    // 里的 soundflow_library(见音乐库启动恢复),只写 localStorage 的话应用启动后读到的还是
+    // 主进程那份(上一轮留下的旧数据 —— 夹具元信息一改,界面上的标题就与探针拿到的对不上)
+    if (window.electronAPI && window.electronAPI.storeSet) {
+      await window.electronAPI.storeSet('library', ${JSON.stringify(items)})
+      await window.electronAPI.storeSet('queue', { queue: ${JSON.stringify(items.map((i) => i.path))}, index: 0 })
+    }
     localStorage.setItem('soundflow_library', ${JSON.stringify(JSON.stringify(items))})
     localStorage.setItem('soundflow_favorites', JSON.stringify([${JSON.stringify(items[0].path)}]))
     localStorage.setItem('soundflow_queue', JSON.stringify({ queue: ${JSON.stringify(items.map((i) => i.path))}, index: 0 }))
@@ -106,8 +122,16 @@ app.whenReady().then(async () => {
     typeof lyricText === 'string' && lyricText.includes('测试歌词第一行'),
     JSON.stringify(lyricText).slice(0, 80))
 
-  // 3) 列表:定位当前播放 —— 把当前索引挪到队列尾部,再点"定位",滚动位置必须变
-  await run(`(() => { localStorage.setItem('soundflow_queue', JSON.stringify({ queue: ${JSON.stringify(items.map((i) => i.path))}, index: ${items.length - 1} })); return true })()`)
+  // 3) 列表:定位当前播放 —— 把当前曲目挪到列表**深处**,再点"定位",滚动位置必须变
+  //    为什么不用队尾:列表按标题排序("Track N" 全排在 "曲目N" 之前),队尾那首未必在深处,
+  //    若它本来就在可视区内,滚动位置不变、断言就随机红。夹具 items[1] 是 "曲目10"(偶数首是中文),
+  //    标题排序里稳稳在 20 首之后。队列要同时写 localStorage 与**主进程存储**,两边一致才确定。
+  await run(`(async () => {
+    const state = { queue: ${JSON.stringify(items.map((i) => i.path))}, index: 1 }
+    localStorage.setItem('soundflow_queue', JSON.stringify(state))
+    if (window.electronAPI && window.electronAPI.storeSet) await window.electronAPI.storeSet('queue', state)
+    return true
+  })()`)
   await win.webContents.reload()
   await sleep(4000)
   win.setSize(900, 520) // 窗口调小:确保列表一定溢出,否则 max=0、定位无从验证
@@ -115,6 +139,8 @@ app.whenReady().then(async () => {
   const locate = await run(`(async () => {
     const body = document.querySelector('.list-body')
     if (!body) return { err: '没找到歌曲列表(曲库为空?)' }
+    body.scrollTop = 0 // 从顶部出发:当前曲目在列表深处,定位一定得往下滚
+    await new Promise(r => setTimeout(r, 300))
     const before = body.scrollTop
     const btn = [...document.querySelectorAll('.toolbar-btn')].find(b => (b.textContent || '').includes('定位'))
     if (!btn) return { err: '工具栏里没有定位按钮' }
@@ -128,7 +154,7 @@ app.whenReady().then(async () => {
       const b = body.getBoundingClientRect(), r = active.getBoundingClientRect()
       inView = r.top >= b.top - 2 && r.bottom <= b.bottom + 2
     }
-    return { before, after: body.scrollTop, max: body.scrollHeight - body.clientHeight, inView, hasActive: !!active }
+    return { before, after: body.scrollTop, max: body.scrollHeight - body.clientHeight, inView, hasActive: !!active, activeText: active ? (active.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 20) : null }
   })()`)
   check('定位当前播放:滚动位置真的变了', locate && locate.after > locate.before, JSON.stringify(locate))
   check('定位当前播放:目标行落在可视区内(行距算错会滚到错的地方)', locate && locate.inView === true,
@@ -282,17 +308,21 @@ app.whenReady().then(async () => {
   console.log('播放/当前行:', JSON.stringify(playState))
 
   // 用户要求:歌词行前面不要再显示时间戳(时间只留在悬停提示里)
+  // 读**当前挂着的那一面**:夹具歌偏短(2~42 秒),前面那次 seek 可能把歌放完 → 自动切下一首
+  // → 切歌会跳回封面模式,.lyric-right 就不在 DOM 里了(只认那一面会误报)
   const timeStamps = await run(`(() => {
     const right = document.querySelector('.lyric-right')
     const split = document.querySelector('.split-lyrics')
+    const box = right || split
+    const first = box ? box.querySelector('.lyric-line') : null
     return {
-      lyricPage: right ? right.querySelectorAll('.lyric-time').length : -1,
-      splitPage: split ? split.querySelectorAll('.lyric-time').length : -1,
-      firstLineText: right ? ((right.querySelector('.lyric-line') || {}).textContent || '').slice(0, 12) : null
+      surface: right ? 'lyric-page' : (split ? 'split' : 'none'),
+      lines: box ? box.querySelectorAll('.lyric-line').length : -1,
+      stamps: document.querySelectorAll('.lyric-time').length,
+      firstLineText: first ? first.textContent.trim().slice(0, 12) : null
     }
   })()`)
-  // 注意:此刻在歌词页,分栏那份不在 DOM 里(取不到返回 -1)—— 断言要接受"不存在"
-  check('歌词行前不再显示时间戳', timeStamps && timeStamps.lyricPage === 0 && timeStamps.splitPage <= 0, JSON.stringify(timeStamps))
+  check('歌词行前不再显示时间戳', timeStamps && timeStamps.lines > 20 && timeStamps.stamps === 0, JSON.stringify(timeStamps))
   await sleep(1600)
   // 切回封面页(分栏):当前行应当被滚进视口 —— 此前只有歌词页做了这件事
   await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)
@@ -489,11 +519,20 @@ app.whenReady().then(async () => {
   }
 
   const curTitle = await run(`(() => ((document.querySelector('.player-title') || {}).textContent || '').trim())()`)
-  const curAt = items.findIndex((i) => i.title === curTitle)
-  const total = items.length
-  const wantPrev = curAt > 0 ? items[curAt - 1].title : items[total - 1].title // playPrev 会绕回队尾
-  const wantNext = items[(curAt + 1) % total].title
-  console.log('当前曲目:', curTitle, '→ 期望上一首/下一首:', wantPrev, '/', wantNext)
+  // 上一首/下一首要按**应用当前的队列顺序**算,而不是播种时的数组顺序:起播时队列会按
+  // 列表的排序重建(夹具标题现在是 "Track N"/"曲目 N" 交替,按标题排序与播种序并不一致)。
+  const queuePaths = await run(`(() => {
+    try { const q = JSON.parse(localStorage.getItem('soundflow_queue') || '{}'); return Array.isArray(q.queue) ? q.queue : [] } catch { return [] }
+  })()`)
+  const titleOf = new Map(items.map((i) => [i.path, i.title]))
+  const queueTitles = queuePaths.map((p) => titleOf.get(p) || '')
+  const curAt = queueTitles.indexOf(curTitle)
+  const total = queueTitles.length || items.length
+  const wantPrev = curAt > 0 ? queueTitles[curAt - 1] : queueTitles[total - 1] // playPrev 会绕回队尾
+  const wantNext = curAt >= 0 ? queueTitles[(curAt + 1) % total] : items[0].title
+  console.log('当前曲目:', curTitle, `(队列 ${total} 首,第 ${curAt + 1} 位)`, '→ 期望上一首/下一首:', wantPrev, '/', wantNext)
+  check('悬停卡:能从应用队列里定位当前曲目(定位不到就无从判断上一首/下一首)',
+    curAt >= 0, `curAt=${curAt} 队列前几首: ${JSON.stringify(queueTitles.slice(0, 6))}`)
 
   // 主界面播放栏(此刻在列表页,播放栏在场)
   const barPrev = await hoverCard('.player-bar', 'prev')
@@ -513,104 +552,253 @@ app.whenReady().then(async () => {
   check('播放页控制栏:悬停「下一首」显示下一首的信息', !!pvNext.card && pvNext.card.title === wantNext,
     `${JSON.stringify(pvNext)} 期望「${wantNext}」`)
 
-  // 9) 歌词翻译:译文是歌词行**下方的一行**(由组件自带样式呈现),且译过的不重复翻译。
-  //    离线验证:把主进程的 translate-lyrics 换成计数桩(不联网),再看界面与调用次数。
-  //    顺序要点:进这一组时人在**封面页(分栏)**,`.lyric-right` 那时还不存在 ——
-  //    先验分栏,再切到歌词页验那一面(第一版反过来查,报了三处假红)。
-  const transBtn = `document.querySelector('.ls-btn[aria-label="歌词翻译"]')`
-  let transCalls = 0
+  // 9) 歌词翻译的**形态**与**方向**(用户 2026-09-25 报):
+  //    · 关着翻译,同一行后面不该有译文 —— 那是 .lrc 本身"单行双语",必须拆成"主行原文 + 一行译文"
+  //    · 打开翻译,下面那行要是译文而不是原文
+  //    · 方向:外语翻中文、中文翻外语
+  //    两段验:① AI 路径(纯外文歌词 → 目标语言应为中文);② 源自带译文路径(单行双语 .lrc →
+  //    一次请求都不发)。夹具元信息交替:奇数首 "Track N"(拉丁)、偶数首 "曲目 N"(中文),
+  //    两个方向都验得到。
+  const transCalls = []
   try { ipcMain.removeHandler('translate-lyrics') } catch {}
-  ipcMain.handle('translate-lyrics', async (event, { lines }) => {
-    transCalls++
-    return (lines || []).map((_, i) => `译${i + 1}`)
+  ipcMain.handle('translate-lyrics', async (event, payload) => {
+    const lines = (payload && payload.lines) || []
+    transCalls.push({ targetLang: (payload && payload.targetLang) || '', n: lines.length })
+    return lines.map((_, i) => `译${i + 1}`)
   })
-  await run(`(() => { const b = ${transBtn}; if (b) b.click(); return !!b })()`)
-  await sleep(1600)
 
-  const readTrans = (scopeSel) => run(`(() => {
-    const box = document.querySelector('${scopeSel}')
-    const line = box && box.querySelector('.lyric-line.active')
-    const tr = line && line.querySelector('.lyric-trans')
-    if (!tr) return { err: '当前行下面没有 .lyric-trans' }
-    const cs = getComputedStyle(tr)
+  const transBtn = `document.querySelector('.ls-btn[aria-label="歌词翻译"]')`
+  const hiBtn = `document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')`
+  const transOn = () => run(`(() => { const b = ${transBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  const setTrans = async (on) => {
+    if ((await transOn()) === (on ? 'true' : 'false')) return
+    await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
+    await sleep(1900)
+  }
+  /** 回歌词页 —— **切歌会自动跳回封面模式**(PlayerView 里 watch currentSong → activeTab='cover'),
+   *  所以每次换歌之后都要重新点一次页签,否则 .lyric-right 根本不在 DOM 里 */
+  const gotoLyricTab = async () => {
+    await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[1]) t[1].click(); return true })()`)
+    await sleep(1300)
+  }
+  /** 直接播**标题匹配的那一首**:去列表里找到那一行双击。
+   *  为什么不用"点下一首"凑:列表是按标题排序的("Track N" 全排在 "曲目N" 之前),
+   *  从中文那一片往里走要转十几首才绕回另一种语言,点 8 次仍是一种 —— 那样判方向就会假红。 */
+  const playByTitle = async (pattern) => {
+    await run(`(() => { location.hash = '#/home'; return true })()`)
+    await sleep(1900)
+    const hit = await run(`(async () => {
+      const re = new RegExp(${JSON.stringify(pattern)})
+      const body = document.querySelector('.list-body')
+      // 列表是虚拟滚动:只渲染可见行。先找当前视口,找不到就滚到底再找一遍
+      // (标题排序里 "曲目N" 全在 "Track N" 之后,找中文那首时视口通常还停在拉丁那一片)
+      for (const attempt of [0, 1]) {
+        const rows = [...document.querySelectorAll('.list-row')]
+        const row = rows.find((r) => re.test(r.textContent || ''))
+        if (row) {
+          const label = (row.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 24)
+          row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+          return { label }
+        }
+        if (attempt === 0 && body) {
+          body.scrollTop = body.scrollHeight
+          await new Promise((r) => setTimeout(r, 500))
+        }
+      }
+      const rows = [...document.querySelectorAll('.list-row')]
+      return { err: 'no-row', hash: location.hash, rows: rows.length, sample: rows.slice(0, 3).map((r) => (r.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40)) }
+    })()`)
+    await sleep(2800)
+    await run(`(() => { location.hash = '#/player'; return true })()`)
+    await sleep(2000)
+    await gotoLyricTab()
+    return hit && hit.label ? hit.label : JSON.stringify(hit)
+  }
+  const activeLine = () => run(`(() => {
+    // 读**当前挂着的那一面**:切歌会自动跳回封面模式(activeTab='cover'),而夹具歌只有几秒、
+    // 唱完就自动切下一首 —— 只认 .lyric-right 会时不时读到"元素不存在"
+    const right = document.querySelector('.lyric-right')
+    const box = right || document.querySelector('.split-lyrics')
+    if (!box) return { err: '两个歌词面都不在' }
+    const line = box.querySelector('.lyric-line.active')
+    if (!line) return { err: '没有当前行' }
+    const tr = line.querySelector('.lyric-trans')
+    const cs = tr ? getComputedStyle(tr) : null
     const ls = getComputedStyle(line)
     return {
-      text: tr.textContent.trim(),
-      transPx: parseFloat(cs.fontSize), linePx: parseFloat(ls.fontSize),
-      opacity: parseFloat(cs.opacity), nowrap: cs.whiteSpace
+      surface: right ? 'lyric-page' : 'split',
+      text: tr ? (line.textContent || '').replace(tr.textContent, '').trim() : (line.textContent || '').trim(),
+      trans: tr ? tr.textContent.trim() : '',
+      transPx: cs ? parseFloat(cs.fontSize) : 0, linePx: parseFloat(ls.fontSize),
+      transOpacity: cs ? parseFloat(cs.opacity) : 0, nowrap: cs ? cs.whiteSpace : '',
+      transLines: box.querySelectorAll('.lyric-trans').length
     }
   })()`)
-  const transOk = (r) => r && /^译\d+$/.test(String(r.text)) && r.transPx > 0 && r.linePx > 0 && r.transPx < r.linePx && r.opacity < 1
+  const CJK = /[\u4e00-\u9fff]/
+  const stamp = (t) => `[${String(Math.floor(t / 60)).padStart(2, '0')}:${(t % 60).toFixed(2).padStart(5, '0')}]`
+  const writeLrc = (text) => { for (const it of items) fs.writeFileSync(it.path.replace(/\.[^.]+$/, '') + '.lrc', text) }
 
-  const splitTrans = await readTrans('.split-lyrics')
-  console.log('分栏译文行:', JSON.stringify(splitTrans))
-  check('分栏:译文在歌词行下方自成一行,字号小于歌词行、半透明(组件自带样式)',
-    transOk(splitTrans), JSON.stringify(splitTrans))
-
-  await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[1]) t[1].click(); return true })()`)
-  await sleep(1500)
-  const pageTrans = await readTrans('.lyric-right')
-  console.log('歌词页译文行:', JSON.stringify(pageTrans))
-  check('歌词页:译文同样自成一行且样式一致(两面共用组件)',
-    transOk(pageTrans), JSON.stringify(pageTrans))
-
-  // 逐字在更早一段已经打开了;这里只兜底:若按钮显示"整行"(aria-pressed=false)才点一下
-  const hiBtn = `document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')`
-  const wordPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
-  if (wordPressed === 'false') {
+  // 先明确回到播放页(上一组结束时可能在列表页),再进歌词页
+  await run(`(() => { location.hash = '#/player'; return true })()`)
+  await sleep(1600)
+  await gotoLyricTab()
+  const hiPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  if (hiPressed === 'false') {
     await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
-    await sleep(1100)
-  }
-  // .cur 只在播放中推进;若当前行索引不动,说明暂停着 —— 量一下再决定,不盲点
-  const activeIdx = () => run(`(() => [...document.querySelectorAll('.lyric-right .lyric-line')].findIndex((l) => l.classList.contains('active')))()`)
-  const i1 = await activeIdx()
-  await sleep(1300)
-  const i2 = await activeIdx()
-  if (i1 === i2) {
-    await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
     await sleep(1200)
   }
 
-  // 逐字切换有 0.18s 的 color/text-shadow 过渡:一个字刚变成"当前字"的那几帧,读到的
-  // 是插值中间值(实测 rgba(92,167,254,0.98)、光晕正在展开),按它判定会误报。
-  // 所以在若干帧里找一次**过渡结束后的稳态**(全色 + 带 18px 光晕)再下结论。
-  let curSeen = null
+  // ---- (a) AI 路径:纯外文歌词 → 方向必须是"外语翻中文" ----
+  // 每行带本次运行的标记:否则会命中上一轮跑测试时留下的译文缓存,一次请求都不发(测不到方向)
+  const runTag = `run${Date.now().toString(36)}`
+  const EN_LRC = Array.from({ length: 40 }, (_, i) => `${stamp(i * 0.5)}${runTag} english line ${i + 1}`).join('\n')
+  // 先关翻译再换歌:否则换歌时的加载会顺带发起一次翻译,那个请求会把下面的计数与
+  // "缓存命中即复用"搅在一起(第二次打开就命中缓存、一次新请求都没有 → 偶发假红)
+  await setTrans(false)
+  writeLrc(EN_LRC)
+  const latinTitle = await playByTitle('Track\\s+\\d+')
+  await gotoLyricTab()
+  const aiOff = await activeLine()
+  console.log('歌词页(纯外文,未开翻译):', JSON.stringify(aiOff))
+  check('关着翻译:主行只有原文、整页没有译文行(此前译文混在同一行里,关不掉)',
+    !!aiOff && !aiOff.err && !CJK.test(aiOff.text) && aiOff.transLines === 0 && !aiOff.trans,
+    JSON.stringify(aiOff))
+
+  const callsBeforeAi = transCalls.length
+  await setTrans(true)
+  const aiOn = await activeLine()
+  console.log('歌词页(纯外文,已开翻译):', JSON.stringify(aiOn), '| 桩收到:', JSON.stringify(transCalls.slice(-1)))
+  check('开着翻译:译文在歌词行下方自成一行,字号更小、半透明(组件自带样式)',
+    !!aiOn && !aiOn.err && /^译\d+$/.test(aiOn.trans) && aiOn.transPx > 0 && aiOn.transPx < aiOn.linePx && aiOn.transOpacity < 1 && aiOn.nowrap === 'nowrap',
+    JSON.stringify(aiOn))
+  check('方向:外语歌 → 中文(显式传给主进程,不再靠整份文本猜)',
+    transCalls.length > callsBeforeAi && transCalls[transCalls.length - 1].targetLang === 'zh-CN',
+    `桩收到 ${JSON.stringify(transCalls.slice(callsBeforeAi))} 期望 targetLang=zh-CN`)
+
+  // 逐字的当前字要有一层额外发光(组件自带样式,与译文行同一次改动)
   let curWord = null
   for (let i = 0; i < 14; i++) {
     const s = await run(`(() => {
-      const line = document.querySelector('.lyric-right .lyric-line.active')
+      const box = document.querySelector('.lyric-right') || document.querySelector('.split-lyrics')
+      const line = box && box.querySelector('.lyric-line.active')
       const el = line && line.querySelector('.lyric-word.cur')
       if (!el) return { err: '没有当前字(.cur)' }
       const cs = getComputedStyle(el)
       const sib = [...line.querySelectorAll('.lyric-word')].find((e) => e !== el)
       const ss = sib ? getComputedStyle(sib) : null
-      const shadows = (s) => { const m = String(s).match(/[0-9]+px/g); return m ? m.length : 0 }
-      return {
-        weight: cs.fontWeight, color: cs.color,
-        glowPx: /18px/.test(cs.textShadow),
-        curShadows: shadows(cs.textShadow), sibShadows: ss ? shadows(ss.textShadow) : -1
-      }
+      const shadows = (v) => { const m = String(v).match(/[0-9]+px/g); return m ? m.length : 0 }
+      return { weight: cs.fontWeight, color: cs.color, glowPx: /18px/.test(cs.textShadow), curShadows: shadows(cs.textShadow), sibShadows: ss ? shadows(ss.textShadow) : -1 }
     })()`)
+    // 切换有 0.18s 过渡:找一次**过渡结束后的稳态**再下结论(中间帧会读到插值色)
     if (s && !s.err) {
-      curSeen = s
-      if (s.glowPx === true && s.curShadows > s.sibShadows) { curWord = s; break }
+      curWord = s
+      if (s.glowPx === true && s.curShadows > s.sibShadows) break
     }
     await sleep(240)
   }
-  // 判据取"当前字比同行的字多一层发光":组件那份 .lyric-word.cur 有 0 0 18px 的光晕。
-  // 只断言 weight 是假绿 —— 当前行本身就是 700,权重会继承下来;颜色同样不判别
-  // (没有这条规则时,颜色会从当前行继承下来,一样是强调色)。
   check('逐字:当前字比同行的字多一层发光(组件自带样式,不再裸奔)',
-    !!curWord, JSON.stringify(curWord || curSeen))
+    !!curWord && !curWord.err && curWord.glowPx === true && curWord.curShadows > curWord.sibShadows,
+    JSON.stringify(curWord))
 
-  // 不重复翻译:关掉再打开,缓存命中 → 桩的调用次数不增加
-  const callsBeforeToggle = transCalls
-  await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
-  await sleep(700)
-  await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
-  await sleep(1600)
-  check('译过的不会重复翻译(缓存命中即复用)', transCalls === callsBeforeToggle,
-    `桩被调用 ${callsBeforeToggle} 次 → ${transCalls} 次`)
+  // 关掉再打开:缓存命中 → 不再请求
+  const callsBeforeToggle = transCalls.length
+  await setTrans(false)
+  await setTrans(true)
+  check('译过的不会重复翻译(缓存命中即复用)', transCalls.length === callsBeforeToggle,
+    `桩调用 ${callsBeforeToggle} → ${transCalls.length} 次`)
+
+  // ---- (b) 单行双语 .lrc(用户手里大量的歌词就是这种)→ 拆开、且**不请求翻译** ----
+  // 中文在前、外文在后:拉丁歌 → 主行外文/译文中文;中文歌 → 主行中文/译文外文。
+  // 注意**不要**在这行前面再加拉丁标记:前缀会让一行出现"拉丁+中文+拉丁"三段,
+  // 交错的行按设计不拆(只有两组语言才认),那样就验不到拆分了。
+  const BI_LRC = Array.from({ length: 40 }, (_, i) => `${stamp(i * 0.5)}第 ${i + 1} 句歌词 Hello line ${i + 1}`).join('\n')
+  await setTrans(false)
+  writeLrc(BI_LRC)
+  const latinAgain = await playByTitle('Track\\s+\\d+')
+  await gotoLyricTab()
+  console.log('第 9 组当前曲目(单行双语夹具):', latinTitle, '→', latinAgain)
+  const biOff = await activeLine()
+  console.log('单行双语 · 未开翻译:', JSON.stringify(biOff))
+  check('单行双语(关着翻译):主行只留原文,译文那半不再混在同一行里',
+    !!biOff && !biOff.err && !CJK.test(biOff.text) && biOff.transLines === 0 && /^Hello line \d+$/.test(biOff.text),
+    JSON.stringify(biOff))
+
+  const callsBeforeSource = transCalls.length
+  await setTrans(true)
+  const biOn = await activeLine()
+  console.log('单行双语 · 已开翻译:', JSON.stringify(biOn))
+  check('单行双语(开着翻译):下面那行是这句的译文(中文),不是原文',
+    !!biOn && !biOn.err && /^第 \d+ 句歌词$/.test(biOn.trans) && biOn.transPx < biOn.linePx && biOn.transOpacity < 1,
+    JSON.stringify(biOn))
+  check('歌词源自带译文时一次翻译请求都不发(用户说的"译过的省得重复翻译")',
+    transCalls.length === callsBeforeSource,
+    `桩调用 ${callsBeforeSource} → ${transCalls.length} 次`)
+
+  // 反向那一半:中文歌 → 主行中文、译文外文(方向由歌曲语言决定)
+  const zhTitle = await playByTitle('曲目\\s*\\d+')
+  await gotoLyricTab()
+  const biZh = await activeLine()
+  console.log('单行双语 · 中文歌:', zhTitle, JSON.stringify(biZh))
+  check('中文歌:主行中文、译文行外文(中文翻外语)',
+    !!biZh && !biZh.err && CJK.test(biZh.text) && /^Hello line \d+$/.test(biZh.trans),
+    JSON.stringify(biZh))
+
+  // 分栏那一面(用户日常用的就是它)也要显示译文行
+  await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)
+  await sleep(1500)
+  const splitLine = await activeLine()
+  console.log('分栏 · 中文歌:', JSON.stringify(splitLine))
+  check('封面分栏那面同样显示译文行(两面共用组件与同一个闸门)',
+    !!splitLine && !splitLine.err && CJK.test(splitLine.text) && /^Hello line \d+$/.test(splitLine.trans),
+    JSON.stringify(splitLine))
+
+  // 桌面歌词窗:译文要跟着**当前行**走(此前只推索引不推译文,窗口里会挂上一句的译文)。
+  // 第 8 组末尾把窗口关掉了,这里从列表页的右侧按钮重新打开(播放页里没有那个按钮)。
+  // 先把"逐字"关掉:开着逐字时窗口的当前行显示的是**词片**(随整份载荷推来的那一行),
+  // 与索引可以不同步 —— 那样量到的"行内数字"是词片那一行的,判不了译文对不对得上。
+  const hiNow = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  if (hiNow === 'true') {
+    await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
+    await sleep(1400)
+  }
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1800)
+  await run(`(() => { const b = document.querySelector('.right-btn[aria-label="歌词"]'); if (b) b.click(); return !!b })()`)
+  await sleep(3200)
+  const lw = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w !== win)
+  if (!lw) {
+    check('桌面歌词窗:译文跟着当前行走(不再挂上一句的)', false, '歌词窗没打开')
+  } else {
+    let winTrans = null
+    for (let i = 0; i < 4; i++) {
+      winTrans = await lw.webContents.executeJavaScript(`(() => {
+        const line = document.querySelector('.line.active')
+        const tr = line && line.querySelector('.lyric-trans')
+        const all = [...document.querySelectorAll('.line')]
+        return {
+          text: line ? line.textContent.trim() : null,
+          trans: tr ? tr.textContent.trim() : '',
+          transCount: document.querySelectorAll('.lyric-trans').length,
+          // 诊断用:窗口自己认的当前行号(data-i)与第一行文本(可判断这份 lines 是哪一版的)
+          activeI: line ? line.getAttribute('data-i') : null,
+          lineCount: all.length,
+          line0: all.length ? all[0].textContent.trim().slice(0, 24) : null
+        }
+      })()`, true)
+      if (winTrans && winTrans.trans) break
+      await sleep(1000)
+    }
+    console.log('桌面歌词窗当前行:', JSON.stringify(winTrans))
+    // 判据:窗口里那行译文必须与本行是**同一句**(夹具每行都带序号:第 N 句 ↔ Hello line N)
+    // 行号判据**与方向无关**:主行文本里去掉译文那段之后取第一个数字,与译文里的数字必须相同
+    // (夹具每行都带序号:第 N 句 ↔ Hello line N)。早先译文与索引是两条推送,出现过"第15句 + Hello line 21"
+    const lineOnly = String(winTrans && winTrans.text || '').replace(String(winTrans && winTrans.trans || ''), '').trim()
+    const nLine = /(\d+)/.exec(lineOnly)
+    const nTrans = /(\d+)/.exec(String(winTrans && winTrans.trans || ''))
+    check('桌面歌词窗:译文与当前行是同一句(不错行),且全窗只有这一处译文',
+      !!nLine && !!nTrans && nLine[1] === nTrans[1] && winTrans.transCount === 1,
+      `行内数字 ${nLine && nLine[1]} / 译文数字 ${nTrans && nTrans[1]} | ${JSON.stringify(winTrans)}`)
+  }
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
