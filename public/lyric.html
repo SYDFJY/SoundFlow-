@@ -10,7 +10,7 @@
 *{margin:0;padding:0;box-sizing:border-box;user-select:none}
 html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:no-drag}
 #app{position:relative;height:100%;background:rgba(0,0,0,0.05);border-radius:12px;overflow:hidden}
-#lyric{height:100%;overflow-y:auto;padding:22px 12px 10px;scroll-behavior:smooth}
+#lyric{height:100%;overflow-y:auto;padding:22px 12px 18px;scroll-behavior:smooth} /* 底部留够:最后一行不压在缩放柄上 */
 #lyric::-webkit-scrollbar{width:3px}
 #lyric::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}
 #lyric::-webkit-scrollbar-track{background:transparent}
@@ -27,8 +27,11 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 #ctx div:hover{background:rgba(77,148,255,0.16);color:#4d94ff}
 #ctx .sep{height:1px;background:rgba(255,255,255,0.07);margin:4px 12px;padding:0;cursor:default}
 #ctx .sep:hover{background:rgba(255,255,255,0.07)}
-#size-handle{position:absolute;bottom:0;right:0;width:16px;height:16px;cursor:nwse-resize;-webkit-app-region:no-drag;z-index:10}
-#size-handle::after{content:'';position:absolute;bottom:3px;right:3px;width:8px;height:8px;border-right:2px solid rgba(255,255,255,0.25);border-bottom:2px solid rgba(255,255,255,0.25);border-radius:1px}
+/* 缩放柄:透明窗 + 浅色桌面时原来的白色角标基本看不见,所以给一层很淡的暗底 + 提高对比,
+   并把热区从 16 收到 12(它就在最顺手的右下角,误按=以为在拖动却在改尺寸) */
+#size-handle{position:absolute;bottom:0;right:0;width:12px;height:12px;cursor:nwse-resize;-webkit-app-region:no-drag;z-index:10;
+  background:linear-gradient(135deg,transparent 50%,rgba(0,0,0,0.22) 100%);border-bottom-right-radius:10px}
+#size-handle::after{content:'';position:absolute;bottom:2px;right:2px;width:7px;height:7px;border-right:2px solid rgba(255,255,255,0.6);border-bottom:2px solid rgba(255,255,255,0.6);border-radius:1px;filter:drop-shadow(0 0 1px rgba(0,0,0,0.8))}
 #toast{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.82);color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;z-index:9999;pointer-events:none;transition:opacity .3s;border:1px solid rgba(255,255,255,0.08);box-shadow:0 6px 24px rgba(0,0,0,0.45)}
 .color-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
 </style>
@@ -252,9 +255,11 @@ document.addEventListener('mousedown', e => {
   if (e.button !== 0) return
   // 只在精确落在缩放柄热区时才进入缩放模式,其余一律视为拖动
   if (e.target.closest?.('#size-handle')) {
+    dragState = null // 拖动/缩放互斥:否则拖动的"锁定尺寸"会把缩放结果盖掉
     sizeState = { sx: e.screenX, sy: e.screenY, w: window.innerWidth, h: window.innerHeight }
     return
   }
+  sizeState = null
   dragState = { sx: e.screenX, sy: e.screenY, moved: false }
   // 记锚点:主进程据此把"指针位移"映射成"窗口位置",不再读窗口当前位置(没有反馈)
   if (api && api.lyricDragStart) api.lyricDragStart(e.screenX, e.screenY)

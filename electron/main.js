@@ -1164,7 +1164,9 @@ function setupIPC() {
     if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) { lyricDragAnchor = null; return }
     try {
       const [x, y] = lyricWindow.getPosition()
-      lyricDragAnchor = { screenX, screenY, winX: x, winY: y }
+      const [width, height] = lyricWindow.getSize()
+      // 尺寸在这里**锁定**:下面每次移动都用 setBounds 带上它(见 drag-move 的说明)
+      lyricDragAnchor = { screenX, screenY, winX: x, winY: y, width, height }
     } catch (_) { lyricDragAnchor = null }
   })
   ipcMain.on('lyric:drag-move', (event, screenX, screenY) => {
@@ -1172,10 +1174,16 @@ function setupIPC() {
     if (!lyricDragAnchor) return
     if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return
     try {
-      lyricWindow.setPosition(
-        Math.round(lyricDragAnchor.winX + (screenX - lyricDragAnchor.screenX)),
-        Math.round(lyricDragAnchor.winY + (screenY - lyricDragAnchor.screenY))
-      )
+      // 用 setBounds 一次设全,并带上拖动开始时锁定的尺寸。
+      // 只调 setPosition 时:在非整数缩放(如 125%)下,Windows 会按物理像素重算窗口边界,
+      // **尺寸会随每次移动漂移 1~2px** —— 实测一次拖动 480→486,用户看到的就是
+      // "拖动的时候歌词区域自己变大"。setBounds 里尺寸是整数且一次成型,不再漂。
+      lyricWindow.setBounds({
+        x: Math.round(lyricDragAnchor.winX + (screenX - lyricDragAnchor.screenX)),
+        y: Math.round(lyricDragAnchor.winY + (screenY - lyricDragAnchor.screenY)),
+        width: lyricDragAnchor.width,
+        height: lyricDragAnchor.height
+      })
     } catch (_) {}
   })
 

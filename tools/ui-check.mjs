@@ -45,6 +45,11 @@ function ensureMedia () {
 }
 
 require(path.join(here, '..', 'electron', 'main.js'))
+// 脚本自己出错(比如引用未声明的变量)会让整个流程静默停住、进程不退 ——
+// 外面看起来就是"卡死",只能靠外层超时才结束(这次就白等了 20 分钟)。这里让它立刻可见。
+process.on('unhandledRejection', (e) => { console.error('✗ 检查脚本内部错误(未处理的 Promise):', e && e.stack || e); app.exit(1) })
+process.on('uncaughtException', (e) => { console.error('✗ 检查脚本内部错误:', e && e.stack || e); app.exit(1) })
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const results = []
 const check = (name, ok, detail = '') => {
@@ -425,6 +430,14 @@ app.whenReady().then(async () => {
     const dyOk = Math.abs((posAfter[1] - posBefore[1]) - 16) <= 1
     check('桌面歌词:拖动跟指针走(不随窗口自身移动漂移)',
       dxOk && dyOk, `实际位移 ${posAfter[0] - posBefore[0]},${posAfter[1] - posBefore[1]} 期望 40,16(±1)`)
+    // 同一次拖动里,尺寸**不该变**:只调 setPosition 时,在 125% 这类非整数缩放下 Windows 会按
+    // 物理像素重算边界,尺寸每次移动漂移 1~2px(实测一次拖动 480→486)—— 用户看到的就是
+    // "拖动的时候歌词区域自己变大"。现在用 setBounds 带上锁定的尺寸,不再累积(±2 是读数抖动)。
+    const sizeAfterDrag = lyricWin.getSize() // 就地取:下面缩放段那个 sizeAfter 此刻还没声明(踩过 TDZ)
+    const dsw = Math.abs(sizeAfterDrag[0] - sizeBefore[0])
+    const dsh = Math.abs(sizeAfterDrag[1] - sizeBefore[1])
+    check('桌面歌词:拖动只改位置、不改尺寸(非整数缩放下的漂移已修)',
+      dsw <= 2 && dsh <= 2, `尺寸变化 ${sizeAfterDrag[0] - sizeBefore[0]}x${sizeAfterDrag[1] - sizeBefore[1]}(应 ≤2)`)
 
     await lyricWin.webContents.executeJavaScript(`(() => {
       const hd = document.querySelector('#size-handle')
