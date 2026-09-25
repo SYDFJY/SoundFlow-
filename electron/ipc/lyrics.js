@@ -192,6 +192,9 @@ const {
 } = require('../lib/lyricSources')
 
   // DeepSeek 翻译:一次请求翻译整首歌词,返回与输入等长的译文数组
+  /** MyMemory 的最低匹配度:低于它就认为命中的是"别的文档片段",宁可留空 */
+  const MYMEMORY_MIN_MATCH = 0.35
+
   async function translateWithDeepSeek(lines, apiKey) {
     if (!apiKey) return null
     // 源语言检测:中文→译英,否则→译中
@@ -204,7 +207,9 @@ const {
         body: JSON.stringify({
           model: 'deepseek-chat',
           messages: [
-            { role: 'system', content: `你是歌词翻译助手。请把用户提供的歌词逐行翻译成${target}。严格保持行数与原文一致,每行输出一条译文,只输出译文,不要序号、不要解释、不要空行。` },
+            // 行数必须严格对齐 —— 输入里**有空行**(纯音乐/间奏),所以不能像以前那样要求"不要空行":
+            // 模型一旦少输出一行,后面每行都会错位一格(表现为"译文完全不是这首歌")
+            { role: 'system', content: `你是歌词翻译助手。请把用户提供的歌词逐行翻译成${target}。输入有几行,输出就必须有几行,**输入中的空行也要原样输出为空行**,不得合并或增删任何一行。只输出译文,不要序号、不要解释。` },
             { role: 'user', content: text }
           ],
           temperature: 0.3
@@ -215,7 +220,13 @@ const {
       const data = await res.json()
       const content = data?.choices?.[0]?.message?.content || ''
       const out = content.split('\n').map(s => s.trim())
-      return lines.map((_, i) => out[i] || '')
+      // 行数对不上就**整份弃用**(返回 null → 上层回落 MyMemory),而不是按位置硬套:
+      // 少一行会让后面每一行都错位,那种"译文对不上歌"的观感比没有译文糟得多
+      if (out.length !== lines.length) {
+        console.error(`[翻译] DeepSeek 返回行数不一致(${out.length} ≠ ${lines.length}),弃用`)
+        return null
+      }
+      return out
     } catch (e) {
       console.error('[翻译] DeepSeek 失败:', e.message)
       return null
@@ -257,6 +268,10 @@ const {
           if (!res.ok) continue
           const data = await res.json()
           const text = (data?.responseData?.translatedText || '').trim()
+          // MyMemory 是**公共翻译记忆库**:短句/不常见的句子上它会给出"别人文档里的相似句"
+          // (responseData.match 很低)。这种译文跟本句毫不相干,宁可留空 —— 没有译文好过错译文。
+          const match = Number(data?.responseData?.match)
+          if (Number.isFinite(match) && match < MYMEMORY_MIN_MATCH) continue
           // MyMemory 免费配额耗尽(WARNING)标记,整段返回配额错误
           if (text.includes('MYMEMORY WARNING')) {
             quotaHit = true

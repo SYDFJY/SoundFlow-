@@ -275,6 +275,13 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">翻译缓存</span>
+            <span class="label-desc">译文按原文逐行校验，歌词换过之后旧译文会自动作废；这里只是手动兜底</span>
+          </div>
+          <button class="btn" @click="clearTransCache">清除翻译缓存</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">歌词文件夹</span>
             <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲</span>
           </div>
@@ -1105,6 +1112,18 @@ function setTranslateService(v) {
 }
 function saveDeepseekKey() {
   localStorage.setItem('soundflow_deepseek_key', deepseekKey.value.trim())
+}
+
+// 清除译文缓存:正常使用中它靠"原文签名"自净(歌词变了旧译文就作废),这个入口是给
+// "想立刻重来一遍"或用过旧版本、想清掉历史坏数据的人
+async function clearTransCache() {
+  if (!(await confirmDialog({ message: '清除翻译缓存?', detail: '只删译文,不动歌词与曲库;下次显示翻译会重新请求', confirmText: '清除' }))) return
+  try {
+    playerStore.clearTranslationCache()
+    window.$toast?.('翻译缓存已清除', 'success')
+  } catch (e) {
+    window.$toast?.('清除失败:' + (e && e.message), 'error')
+  }
 }
 
 // 快捷键自定义(动作清单与默认值都来自 @/utils/shortcut,避免界面与匹配逻辑各写一份)

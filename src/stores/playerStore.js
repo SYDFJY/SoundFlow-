@@ -3,6 +3,7 @@ import { DEFAULTS, getSetting } from '../config/defaults.js'
 import { ref, computed, watch, reactive } from 'vue'
 import { parseLRCWithMeta } from '@/utils/lrc'
 import { resolveLyricOffset, buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
+import { lyricSourceSignature, isCacheEntryFor } from '@/utils/lyricSource'
 import { formatDuration } from '@/utils/time'
 import { noteFailure } from '@/utils/failures'
 import { createShufflePool } from '@/utils/shufflePool'
@@ -745,6 +746,7 @@ export const usePlayerStore = defineStore('player', () => {
     duration.value = 0
     lyrics.value = []
     currentLyricIndex.value = -1
+    translations.value = [] // 歌词换了,旧译文立刻失效(否则新歌词会配着上一版译文显示)
     saveQueueState()
   }
 
@@ -1092,7 +1094,10 @@ export const usePlayerStore = defineStore('player', () => {
   let _transReqSeq = 0 // 翻译并发请求序号,仅最晚请求落地并复位 translating
   const translations = ref([])
   const translateNotice = ref('') // 翻译服务不可用提示弹窗:'' 无 / 'quota' 额度用完 / 'empty' 服务不可用
-  let _translationCache = new Map() // 歌曲路径 -> 译文数组(会话内缓存)
+  // 歌曲路径 -> { sig, trans }:sig 是**译文所对应那版歌词**的签名。
+  // 命中时必须重算并比对 —— 否则同一首歌换过歌词来源/导入过修正版之后,旧译文会按行号
+  // 铺到新歌词上(每行挂的都是别处的句子,且写进 localStorage 后重启也不修)
+  let _translationCache = new Map()
   const TRANS_CACHE_KEY = 'soundflow_translation_cache'
   const TRANS_CACHE_MAX = 500
   // 从 localStorage 加载持久化翻译缓存(懒加载,首次使用某首歌时)
@@ -1103,13 +1108,30 @@ export const usePlayerStore = defineStore('player', () => {
       const obj = JSON.parse(raw)
       for (const k of Object.keys(obj)) {
         if (_translationCache.size >= TRANS_CACHE_MAX) break
-        if (_isValidTranslation(obj[k])) _translationCache.set(k, obj[k])
+        // 只收 {sig, trans}:升级前那种扁平数组一律丢弃(它们无法校验属于哪版歌词)
+        if (obj[k] && typeof obj[k] === 'object' && !Array.isArray(obj[k]) && _isValidTranslation(obj[k].trans)) {
+          _translationCache.set(k, obj[k])
+        }
       }
     } catch {}
   }
   // 译文有效性:非空数组且至少一行有实际译文(过滤掉失败/配额期间存的空结果)
   function _isValidTranslation(arr) {
     return Array.isArray(arr) && arr.length > 0 && arr.some(t => t && String(t).trim())
+  }
+
+  /** 取缓存里"属于这版歌词"的译文;签名对不上或格式过旧就丢弃(顺带清掉,避免一直占位) */
+  function _cachedTranslation(path, lines) {
+    const hit = _translationCache.get(path)
+    if (!hit) return null
+    if (!isCacheEntryFor(hit, lines)) { _translationCache.delete(path); return null }
+    return hit.trans
+  }
+
+  /** 清除全部译文缓存(设置页"清除翻译缓存"用;正常使用中它靠签名自净,这一步是给用户的手动兜底) */
+  function clearTranslationCache() {
+    _translationCache.clear()
+    try { localStorage.removeItem(TRANS_CACHE_KEY) } catch {}
   }
   function _saveTransCache() {
     try {
@@ -1130,16 +1152,20 @@ export const usePlayerStore = defineStore('player', () => {
     const song = currentSong.value
     if (!song) return
     const reqSong = song
+    // 请求发出时记下歌词签名:响应落地前要比对,确认它对应的还是当前这版歌词
+    const reqSig = lyricSourceSignature(lyrics.value)
     const seq = ++_transReqSeq // 同歌/连点并发保护:只让最新请求落地
-    if (_translationCache.has(song.path) && _isValidTranslation(_translationCache.get(song.path))) {
-      translations.value = _translationCache.get(song.path)
+    const cached = _cachedTranslation(song.path, lyrics.value)
+    if (cached) {
+      translations.value = cached
       translating.value = false // 缓存命中:若此前有旧请求在途,需复位标志避免卡死
       return
     }
     // 懒加载持久化缓存
     if (_translationCache.size === 0) _loadTransCache()
-    if (_translationCache.has(song.path) && _isValidTranslation(_translationCache.get(song.path))) {
-      translations.value = _translationCache.get(song.path)
+    const cached2 = _cachedTranslation(song.path, lyrics.value)
+    if (cached2) {
+      translations.value = cached2
       translating.value = false
       return
     }
@@ -1158,6 +1184,9 @@ export const usePlayerStore = defineStore('player', () => {
       })
       // 竞态保护:翻译期间可能已切歌,或已有更新的翻译请求
       if (currentSong.value !== reqSong || seq !== _transReqSeq) return
+      // 同一首歌里歌词也可能被换掉(切换来源/重新导入/删除本地歌词):签名对不上就整份弃用,
+      // 并把旧译文清掉 —— 留着它就是"新歌词配旧译文"
+      if (reqSig !== lyricSourceSignature(lyrics.value)) { translations.value = []; translating.value = false; return }
       // 免费配额耗尽 / 服务不可用:友好提示 + 引导配置 DeepSeek
       if (result && result.error === 'quota') {
         translations.value = []
@@ -1172,7 +1201,8 @@ export const usePlayerStore = defineStore('player', () => {
       translations.value = Array.isArray(result) ? result : []
       // 仅缓存有效译文(失败/空结果不缓存,下次可重试)
       if (_isValidTranslation(translations.value)) {
-        _translationCache.set(song.path, translations.value)
+        // 存的时候带上"这版歌词"的签名,命中时才校验得了(旧格式条目会被 isCacheEntryFor 判无效)
+        _translationCache.set(song.path, { sig: lyricSourceSignature(lyrics.value), trans: translations.value })
         _saveTransCache()
       }
     } catch {
@@ -1196,6 +1226,9 @@ export const usePlayerStore = defineStore('player', () => {
     lyricLoading.value = true
     lyrics.value = []
     currentLyricIndex.value = -1
+    // 旧译文必须同时作废:译文是按行号对齐的,新歌词配着上一版译文显示就是"完全不是一首歌"
+    // (切歌、切换歌词来源、导入/删除本地歌词都会走到这里)
+    translations.value = []
     // 换歌即重置文件偏移:新歌的 [offset:] 会在成功解析后由 setLyricsFromText 重新套用。
     // 若这首歌最终没有歌词,偏移也不应沿用上一首的。用户微调按曲读取。
     lyricFileOffsetMs.value = 0
@@ -1235,7 +1268,9 @@ export const usePlayerStore = defineStore('player', () => {
       }
       // 显式源(或 auto 但无本地):尝试在线
       if (onlineEnabled && song.title) {
-        const cacheKey = `${source}|${song.title}|${song.artist || ''}`
+        // 键里带时长:同名同歌手的两个文件(Intro/Live/另一版本)时长几乎不会相同,
+        // 不带的话它们会共用同一份歌词 —— 表现为"这首歌显示的是别人的歌词"
+        const cacheKey = `${source}|${song.title}|${song.artist || ''}|${Math.round(song.duration || 0)}`
         let onlineText = await _getCachedOnlineLyric(cacheKey)
         let origin = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : (cacheKey.startsWith('qq|') ? 'QQ音乐' : '自动'))
         if (!onlineText) {
@@ -1292,6 +1327,10 @@ export const usePlayerStore = defineStore('player', () => {
     lyricFileOffsetMs.value = offsetMs
     lyricUserOffsetMs.value = getLyricUserOffset(currentSong.value)
     lyrics.value = lines
+    // 换歌词(切来源/导入/删除本地歌词都会走到这里)要同步作废旧译文,并重置当前行 ——
+    // 否则新歌词会短暂配着上一版的译文与高亮行
+    translations.value = []
+    currentLyricIndex.value = -1
   }
 
   /** 取某首歌的用户偏移微调(毫秒) */
@@ -2172,6 +2211,7 @@ export const usePlayerStore = defineStore('player', () => {
     userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics,
     playbackRate, showLyricPanel, isBuffering, progressHistory, transcodePct, isTranscoded,
     abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong, prevUpSong,
+    clearTranslationCache,
     pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,
