@@ -28,6 +28,8 @@ export const DEFAULTS = {
   soundflow_lyric_win_locked: '0',
   soundflow_lyric_win_pinned: '1',
   soundflow_lyric_win_title: '1',
+  // 桌面歌词自己的颜色:'auto' = 跟随应用侧歌词颜色;设了色值就只影响那个窗口
+  soundflow_lyric_win_color: 'auto',
   // 迷你窗
   soundflow_mini_bg_mode: 'dark',
   soundflow_mini_bg_color: '#161b22',

@@ -36,6 +36,14 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 #ctx::-webkit-scrollbar{width:4px}
 #ctx::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.16);border-radius:2px}
 .ctx-group{font-size:11px;color:rgba(255,255,255,0.38);padding:7px 10px 3px;letter-spacing:.02em}
+.ctx-swatches{display:flex;align-items:center;gap:7px;padding:5px 10px 8px;flex-wrap:wrap}
+.ctx-swatch{width:18px;height:18px;border-radius:50%;background:var(--c,#888);cursor:pointer;position:relative;border:1px solid rgba(255,255,255,0.22);box-sizing:border-box}
+.ctx-swatch:hover{transform:scale(1.12)}
+.ctx-swatch.on{box-shadow:0 0 0 2px rgba(24,26,32,0.97),0 0 0 3.5px var(--c,#fff)}
+.ctx-swatch.custom{overflow:hidden;background:conic-gradient(#ff5f6d,#ffc371,#7ee787,#6ec6ff,#c792ea,#ff5f6d)}
+.ctx-swatch.custom input{opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
+.ctx-swatch.auto{background:rgba(255,255,255,0.1);color:#dfe5ee;font-size:11px;line-height:16px;text-align:center;border-style:dashed}
+.ctx-swatch.auto.on{background:rgba(77,148,255,0.25);color:#fff}
 .ctx-item{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;font-size:13px;color:#dfe5ee;cursor:pointer;position:relative;white-space:nowrap}
 .ctx-item:hover,.ctx-item.kbd{background:rgba(255,255,255,0.09);color:#fff}
 .ctx-item:hover::before,.ctx-item.kbd::before{content:'';position:absolute;left:2px;top:50%;transform:translateY(-50%);width:2px;height:14px;border-radius:1px;background:var(--accent,#4d94ff)}
@@ -95,6 +103,20 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div class="ctx-item" data-a="align">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6H3"/><path d="M15 12H3"/><path d="M17 18H3"/></svg>
     <span class="ctx-label">左对齐</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+  </div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-group">歌词颜色</div>
+  <div class="ctx-swatches">
+    <span class="ctx-swatch" data-color="#6ec6ff" style="--c:#6ec6ff" title="#6ec6ff"></span>
+    <span class="ctx-swatch" data-color="#7ee787" style="--c:#7ee787" title="#7ee787"></span>
+    <span class="ctx-swatch" data-color="#ffd700" style="--c:#ffd700" title="#ffd700"></span>
+    <span class="ctx-swatch" data-color="#ff7eb6" style="--c:#ff7eb6" title="#ff7eb6"></span>
+    <span class="ctx-swatch" data-color="#c792ea" style="--c:#c792ea" title="#c792ea"></span>
+    <span class="ctx-swatch" data-color="#ffffff" style="--c:#ffffff" title="#ffffff"></span>
+    <label class="ctx-swatch custom" title="自定义颜色(系统取色器)">
+      <input type="color" id="ctx-color-input">
+    </label>
+    <span class="ctx-swatch auto" data-a="color-auto" title="跟随应用侧歌词颜色">A</span>
   </div>
   <div class="ctx-sep"></div>
   <div class="ctx-group">背景</div>
@@ -172,6 +194,12 @@ let songTitle='',songArtist=''
  * 此前窗口只读自己的 lyric_window_settings,于是"侧栏改了字号/颜色,桌面歌词没反应"。
  */
 const appStyle={fontSize:18,gap:1.6,align:'center',effect:false,color:'#4d94ff',wordMode:false}
+/** 当前生效的歌词颜色:桌面窗自己的色(win.color)优先,'auto' 才跟随应用侧 ——
+ *  用户要求"在桌面歌词改颜色不能连带改掉播放界面",所以这里绝不回写应用侧设置 */
+function lyricColor(){
+  const c = win.color && win.color !== 'auto' ? String(win.color) : ''
+  return c || appStyle.color
+}
 
 function applyBackground(){
   const rgb = win.bg==='light' ? '255,255,255' : '0,0,0'
@@ -198,6 +226,18 @@ function syncMenuChecks(){
   on('bg-dark', win.bg === 'dark')
   on('bg-light', win.bg === 'light')
   on('bg-none', win.bg === 'none')
+  const cur=lyricColor().toLowerCase()
+  const autoOn=!(win.color && win.color!=='auto')
+  ctx.querySelectorAll('.ctx-swatch[data-color]').forEach((el)=>{
+    el.classList.toggle('on', !autoOn && el.dataset.color.toLowerCase()===cur)
+  })
+  const autoEl=ctx.querySelector('[data-a="color-auto"]')
+  if(autoEl) autoEl.classList.toggle('on', autoOn)
+  const customEl=ctx.querySelector('.ctx-swatch.custom')
+  if(customEl){
+    const isPreset=[...ctx.querySelectorAll('.ctx-swatch[data-color]')].some((el)=>el.dataset.color.toLowerCase()===cur)
+    customEl.classList.toggle('on', !autoOn && !isPreset)
+  }
   const fv=ctx.querySelector('[data-v="font"]'); if(fv) fv.textContent = appStyle.fontSize + 'px'
   const av=ctx.querySelector('[data-v="alpha"]'); if(av) av.textContent = win.bg==='none' ? '—' : Math.round((Number(win.alpha)||0)*100) + '%'
 }
@@ -239,7 +279,7 @@ function lineInner(l,i){
   let html
   if(i===activeIdx&&appStyle.wordMode&&words.length){
     // 三档与播放页 LyricLine 一致:已唱 80% / 当前全色 / 未唱 40%
-    html=words.map((w,wi)=>`<span class="lyric-word${wi===wordIdx?' cur':''}"${wi!==wordIdx?` style="color:${appStyle.color}${wi<wordIdx?'cc':'66'}"`:''}>${escapeHtml(w.c)}</span>`).join('')
+    html=words.map((w,wi)=>`<span class="lyric-word${wi===wordIdx?' cur':''}"${wi!==wordIdx?` style="color:${lyricColor()}${wi<wordIdx?'cc':'99'}"`:''}>${escapeHtml(w.c)}</span>`).join('')
   }else{
     html=escapeHtml(l.text||l)
   }
@@ -280,7 +320,7 @@ function startWordTimer(){
     spans.forEach((el,i)=>{
       el.classList.toggle('cur',i===wordIdx)
       // 同样三档(与 LyricLine 那份保持一致)
-      el.style.color=i===wordIdx?'':(appStyle.color+(i<wordIdx?'cc':'66'))
+      el.style.color=i===wordIdx?'':(lyricColor()+(i<wordIdx?'cc':'99'))
     })
   },120)
 }
@@ -303,9 +343,12 @@ function applyStyle(){
     el.style.fontSize=(active?appStyle.fontSize+4:(near?appStyle.fontSize+1.5:appStyle.fontSize))+'px'
     el.style.lineHeight=String(appStyle.gap)
     el.style.fontWeight=active?700:400
-    // 特效关:不做远近变淡与发光(与应用侧"歌词特效"开关一致;此前窗口完全没消费这个字段)
-    el.style.color=active?appStyle.color:(appStyle.effect?(near?dim(0.62):dim(0.34)):dim(0.5))
-    el.style.textShadow=active?(appStyle.effect?`0 0 20px ${hexToRgba(appStyle.color,0.4)}`:'none'):'none'
+    // 特效关:不做远近变淡与发光(与应用侧"歌词特效"开关一致)。
+    // 对比度按桌面场景调过:壁纸什么颜色不知道,没唱到的行太淡就看不清
+    // (原来 0.34/0.62、特效关 0.5)。已唱过的那档保持很淡不动。
+    const accent=lyricColor()
+    el.style.color=active?accent:(appStyle.effect?(near?dim(0.82):dim(0.62)):dim(0.72))
+    el.style.textShadow=active?(appStyle.effect?`0 0 20px ${hexToRgba(accent,0.4)}`:'none'):'none'
   })
 }
 
@@ -344,11 +387,28 @@ function showToast(msg,dur=1600){
 }
 
 ctx.addEventListener('click',e=>{
+  // 色块:点了立刻生效,菜单**不关**(方便连着试几个色)
+  const sw=e.target.closest?.('.ctx-swatch')
+  if(sw){
+    e.stopPropagation()
+    if(sw.classList.contains('custom')) return // 交给 input 自己的事件
+    if(sw.dataset.a==='color-auto'){ pushSetting('color','auto'); showToast('颜色:跟随应用侧') }
+    else if(sw.dataset.color){ pushSetting('color', sw.dataset.color); showToast('颜色:'+sw.dataset.color) }
+    return
+  }
   const item=e.target.closest?.('.ctx-item'); if(!item) return
   const a=item.dataset.a; if(!a) return
   closeMenu()
   handleAction(a)
 })
+// 系统取色器:拖动过程中连续上报会刷屏,用 change(松开/确认时一次)
+const colorInput=document.getElementById('ctx-color-input')
+if(colorInput){
+  colorInput.addEventListener('change',()=>{
+    pushSetting('color', colorInput.value)
+    showToast('颜色:'+colorInput.value)
+  })
+}
 /** 设置类动作一律转给**应用侧**(它是真源):窗口不自己存,改完等回推 */
 function pushSetting(key,value){ if(api&&api.lyricSetting) api.lyricSetting(key,value) }
 

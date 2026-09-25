@@ -44,15 +44,17 @@ const fontPx = computed(() => (active.value ? props.fontSize + 4 : (near.value ?
 const showWords = computed(() => props.wordMode && active.value && props.words.length > 0)
 
 /**
- * 逐字三档:已唱 → 较亮(80%)、当前字 → 全色(推进的前沿)、未唱 → 明显偏暗(40%)。
+ * 逐字三档:已唱 → 较亮(80%)、当前字 → 全色(推进的前沿)、未唱 → 60%。
  * 原先只有两档:当前字原色、其余(含已唱过的)一律 47% —— 看不出唱到哪儿了,
- * 屏幕上只有一个孤立的亮字,所以"不明显"。桌面歌词窗(public/lyric.html)里
+ * 屏幕上只有一个孤立的亮字,所以"不明显"(未唱档后来也从 40% 提到 60%:
+ * 太淡看不清。桌面歌词窗(public/lyric.html)里
  * 那份定时器更新逻辑必须与此一致,两处不能各写一套。
  */
 function wordStyle (wi) {
   if (wi === props.wordIdx) return {}
   if (!props.wordColor) return {}
-  return { color: props.wordColor + (wi < props.wordIdx ? 'cc' : '66') }
+  // 未唱到的一档从 66(40%)提到 99(60%):太淡的话"还没唱到"的字看不清
+  return { color: props.wordColor + (wi < props.wordIdx ? 'cc' : '99') }
 }
 const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText}` : '点击跳转'))
 </script>

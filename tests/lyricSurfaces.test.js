@@ -45,10 +45,11 @@ describe('歌词行渲染必须两面共用', () => {
   it('逐字高亮是三档(已唱/当前/未唱),两个渲染面必须一致', () => {
     // 原先只有两档:当前字原色、其余(含已唱过的)一律 47% —— 看不出唱到哪儿,所以"不明显"
     const line = read('src/components/LyricLine.vue')
-    expect(line, 'LyricLine 里没有三档表达式').toMatch(/wi < props\.wordIdx \? 'cc' : '66'/)
+    // 未唱档 99(60%):曾经是 66(40%),太淡看不清(用户:"还没播放到的歌词是浅色的")
+    expect(line, 'LyricLine 里没有三档表达式').toMatch(/wi < props\.wordIdx \? 'cc' : '99'/)
     const win = read('public/lyric.html')
-    expect(win, 'lyric.html 初次渲染没跟上三档').toMatch(/\$\{wi<wordIdx\?'cc':'66'\}/)
-    expect(win, 'lyric.html 的定时器更新没跟上三档').toMatch(/\(i<wordIdx\?'cc':'66'\)/)
+    expect(win, 'lyric.html 初次渲染没跟上三档').toMatch(/\$\{wi<wordIdx\?'cc':'99'\}/)
+    expect(win, 'lyric.html 的定时器更新没跟上三档').toMatch(/\(i<wordIdx\?'cc':'99'\)/)
   })
 
   it('歌词行的内部样式必须由组件自己持有(抽组件时曾把样式落在父组件里)', () => {

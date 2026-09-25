@@ -1733,7 +1733,10 @@ export const usePlayerStore = defineStore('player', () => {
         alpha: Number(getSetting('soundflow_lyric_win_alpha')) || 0.05,
         locked: String(getSetting('soundflow_lyric_win_locked')) === '1',
         pinned: String(getSetting('soundflow_lyric_win_pinned')) === '1',
-        showTitle: String(getSetting('soundflow_lyric_win_title')) === '1'
+        showTitle: String(getSetting('soundflow_lyric_win_title')) === '1',
+        // 桌面歌词自己的颜色:'auto' 表示跟随应用侧。
+        // 用户要求:在桌面歌词上改颜色,不能连带改掉播放界面那套
+        color: getSetting('soundflow_lyric_win_color') || 'auto'
       },
       currentIdx: idx,
       currentTime: currentTime.value || 0,
@@ -2333,7 +2336,8 @@ export const usePlayerStore = defineStore('player', () => {
       alpha: 'soundflow_lyric_win_alpha',
       locked: 'soundflow_lyric_win_locked',
       pinned: 'soundflow_lyric_win_pinned',
-      title: 'soundflow_lyric_win_title'
+      title: 'soundflow_lyric_win_title',
+      color: 'soundflow_lyric_win_color'
     }
     const storeKey = map[key]
     if (!storeKey) return false
@@ -2350,6 +2354,8 @@ export const usePlayerStore = defineStore('player', () => {
       v = String(value)
     }
     if (key === 'align' && v !== 'left' && v !== 'center') return false
+    // 颜色只接受 #rgb / #rrggbb 或 auto(窗口传来的值同样不可全信)
+    if (key === 'color' && v !== 'auto' && !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(String(v))) return false
     try { localStorage.setItem(storeKey, v) } catch (e) { noteFailure('lyric.win', '桌面歌词设置写入失败', e) }
     if (isWinKey && key === 'pinned' && window.electronAPI && window.electronAPI.lyricWinConfig) {
       window.electronAPI.lyricWinConfig({ pinned: v === '1' })

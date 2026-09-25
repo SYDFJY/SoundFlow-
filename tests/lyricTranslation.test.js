@@ -220,3 +220,33 @@ describe('桌面歌词窗的右键菜单(2026-09-26 重做)', () => {
     expect(s, '菜单不支持方向键/回车').toMatch(/ArrowDown/)
   })
 })
+
+describe('桌面歌词的颜色独立(2026-09-26:改桌面歌词颜色不能连带改播放界面)', () => {
+  const winSrc = () => read('public/lyric.html')
+  const storeSrc = () => read('src/stores/playerStore.js')
+
+  it('窗口走自己的颜色设置,绝不写应用侧那一个', () => {
+    const s = winSrc()
+    expect(s, '窗口把颜色写到了应用侧的 soundflow_lyric_color').not.toMatch(/'soundflow_lyric_color'/)
+    expect(s, '窗口没有自己的取色优先级函数').toMatch(/function lyricColor\(\)/)
+    expect(s, '没有 win.color 优先的逻辑(会一直跟随应用侧)').toMatch(/win\.color && win\.color !== 'auto'/)
+  })
+
+  it('应用侧只新增一个窗口颜色键,颜色映射也只指向它', () => {
+    const s = storeSrc()
+    expect(s, '窗口颜色没映射到 soundflow_lyric_win_color').toMatch(/color: 'soundflow_lyric_win_color'/)
+    expect(s, '颜色值没做校验(窗口传来的值不能直接落盘)').toMatch(/\[0-9a-f\]\{3\}/i)
+    expect(read('src/config/defaults.js'), '默认值不是 auto(应当默认跟随应用侧)')
+      .toMatch(/soundflow_lyric_win_color: 'auto'/)
+  })
+
+  it('未被唱到的字与行都提亮过(用户:"浅色不易看到")', () => {
+    expect(read('src/components/LyricLine.vue'), '应用侧未唱档没提亮').toMatch(/'cc' : '99'/)
+    const s = winSrc()
+    expect(s, '窗口未唱档没提亮').toMatch(/'cc':'99'/)
+    // 行对比度:邻近 0.82 / 未到 0.62 / 特效关统一 0.72(原来是 0.62 / 0.34 / 0.5)
+    expect(s, '窗口邻近行没提亮').toMatch(/near\?dim\(0\.82\):dim\(0\.62\)/)
+    expect(s, '窗口"特效关"的统一档没提亮').toMatch(/dim\(0\.72\)/)
+    expect(s, '窗口又出现旧的过淡档位').not.toMatch(/dim\(0\.34\)/)
+  })
+})

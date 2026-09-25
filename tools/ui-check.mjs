@@ -108,6 +108,8 @@ app.whenReady().then(async () => {
     // 歌词字号也显式摆成默认 18:第 7 组那条"窗口跟随应用侧字号(18 → 22px)"依赖它,
     // 若上一轮跑测试时改过(比如桌面歌词菜单里的字号 +),断言就会无故变红
     localStorage.setItem('soundflow_lyric_font_size', '18')
+    // 桌面歌词颜色也回到"跟随应用侧":上一轮跑到颜色回路时改过它
+    localStorage.setItem('soundflow_lyric_win_color', 'auto')
     localStorage.setItem('soundflow_autolocate', '1')
     localStorage.setItem('soundflow_schema_version', '1')
     return true
@@ -334,9 +336,19 @@ app.whenReady().then(async () => {
   await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)
   await sleep(1700)
   // 颜色要在**暂停后**量:.lyric-line 有 transition:all .4s,而播放中当前行每 0.5 秒换一次,
-  // 随便什么时候量都会量到过渡中间色(第一版量到 oklab(...) 就是这么来的)
+  // 随便什么时候量都会量到过渡中间色(第一版量到 oklab(...) 就是这么来的)。
+  // 光"暂停 + 睡 900ms"还不够:重新设过歌词颜色时过渡会重新开始,所以这里**轮询到读数稳定**。
   await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
-  await sleep(900)
+  await sleep(700)
+  const readActiveColor = () => run(`(() => { const el = document.querySelector('.split-lyrics .lyric-line.active'); return el ? getComputedStyle(el).color : null })()`)
+  let colorStable = null
+  for (let i = 0; i < 10; i++) {
+    const c1 = await readActiveColor()
+    await sleep(350)
+    const c2 = await readActiveColor()
+    if (c1 && c1 === c2) { colorStable = c1; break }
+    colorStable = c2
+  }
   const split = await run(`(() => {
     const box = document.querySelector('.split-lyrics')
     if (!box) return { err: '没有 .split-lyrics(分栏没生效?)' }
@@ -353,10 +365,13 @@ app.whenReady().then(async () => {
   })()`)
   console.log('分栏:', JSON.stringify(split))
   check('分栏歌词已渲染(封面页确实有歌词)', split && split.lines > 20, JSON.stringify(split))
+  const settledColor = colorStable || (split && split.activeColor)
   check('分栏当前行颜色跟随设置(不再被 !important 锁成金色)',
-    split && split.activeColor === 'rgb(255, 0, 170)', `实际 ${split && split.activeColor}`)
+    settledColor === 'rgb(255, 0, 170)', `稳定后读取 ${settledColor}`)
+  // 判据只看"当前行在可视区内":scrollTop > 0 依赖当前行落在哪儿与歌曲时长,
+  // 夹具歌只有几秒、seek 会被夹到歌尾,当前行可能本来就在视口里(过脆,踩过一次)
   check('切回封面页(分栏)会定位到当前行(不停在歌词开头)',
-    split && split.scrollTop > 0 && split.inView !== false, JSON.stringify(split))
+    split && split.inView === true, JSON.stringify(split))
 
   await run(`(() => { const b = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]'); if (b) b.click(); return true })()`)
   await sleep(1100)
@@ -368,9 +383,20 @@ app.whenReady().then(async () => {
   check('分栏下点「逐字」真的生效(两面共用同一套渲染)', splitWords && splitWords.words > 2, JSON.stringify(splitWords))
 
   // 采样前必须**恢复播放**:上面量当前行颜色时暂停过,而 currentWordIdx 只在播放中推进
-  // (暂停时恒为 -1,所有字片同色 —— 第一版就是这么误报的)
-  await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
-  await sleep(900)
+  // (暂停时恒为 -1,所有字片同色 —— 第一版就是这么误报的)。
+  // 光点一下不够:若那次点击落在"缓冲中"或状态已变,就会停在暂停态 → 这里按"当前行是否在推进"确认。
+  const activeLineIdx = () => run(`(() => {
+    const box = document.querySelector('.split-lyrics') || document.querySelector('.lyric-right')
+    return box ? [...box.querySelectorAll('.lyric-line')].findIndex((el) => el.classList.contains('active')) : -1
+  })()`)
+  for (let i = 0; i < 3; i++) {
+    const a1 = await activeLineIdx()
+    await sleep(1500)
+    const b1 = await activeLineIdx()
+    if (a1 !== b1) break
+    await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
+    await sleep(1500)
+  }
 
   // 逐字是否"明显":采样若干次,出现过 **3 种**颜色(已唱 80% / 当前全色 / 未唱 40%)就说明
   // 高亮在像进度一样推进。只有两档时永远只有 2 种 —— 这条就是"不明显"的可判据。
@@ -970,7 +996,46 @@ app.whenReady().then(async () => {
     const fontRestored = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
     check('菜单:字号能改也能改回来(测试结束恢复原值,避免污染其它断言)',
       fontRestored === fontBefore, `${fontAfter} → ${fontRestored}(期望回到 ${fontBefore})`)
+
+    // 颜色回路:桌面歌词换色只影响那个窗口,播放界面那套(设置与渲染)都必须原样
+    const readLocal = (key) => run(`(() => { try { return localStorage.getItem(${JSON.stringify(key)}) } catch { return null } })()`)
+    const colorAppBefore = await readLocal('soundflow_lyric_color')
+    const appColorBefore = await run(`(() => { const el = document.querySelector('.lyric-line.active'); return el ? getComputedStyle(el).color : '' })()`)
+    const winColorBefore = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
+    const picked = '#7ee787'
+    const clicked = await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const sw = document.querySelector('#ctx .ctx-swatch[data-color="${'#7ee787'}"]')
+      if (sw) sw.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return !!sw
+    })()`)
+    await sleep(1900)
+    const winColorSetting = await readLocal('soundflow_lyric_win_color')
+    const colorAppAfter = await readLocal('soundflow_lyric_color')
+    const appColorAfter = await run(`(() => { const el = document.querySelector('.lyric-line.active'); return el ? getComputedStyle(el).color : '' })()`)
+    const winColorAfter = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
+    console.log('颜色回路:', JSON.stringify({ clicked, winColorSetting, winColorBefore, winColorAfter, colorAppBefore, colorAppAfter, appColorBefore, appColorAfter }))
+    check('菜单:从窗口换色只写"桌面歌词颜色"(播放界面那套设置不动)',
+      clicked === true && winColorSetting === picked && colorAppAfter === colorAppBefore,
+      JSON.stringify({ winColorSetting, colorAppBefore, colorAppAfter }))
+    check('菜单:换色后桌面窗自己变了,而播放界面的歌词颜色不变',
+      winColorAfter !== winColorBefore && /126, 231, 135/.test(String(winColorAfter)) && appColorAfter === appColorBefore,
+      JSON.stringify({ winColorBefore, winColorAfter, appColorBefore, appColorAfter }))
+    // 还原:改回"跟随应用侧"(同样要能改回来,免得污染后续运行)
+    await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const el = document.querySelector('#ctx [data-a="color-auto"]')
+      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(1700)
+    const winColorBack = await readLocal('soundflow_lyric_win_color')
+    const winColorRestored = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
+    check('菜单:颜色能改也能改回"跟随应用侧"(测完还原)',
+      winColorBack === 'auto' && winColorRestored === winColorBefore,
+      JSON.stringify({ winColorBack, winColorRestored, winColorBefore }))
   }
+
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
