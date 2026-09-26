@@ -89,3 +89,32 @@ describe('侧边栏:不再显示收藏数量徽标', () => {
     expect(read('src/stores/musicStore.js'), 'favoriteCount 被误删了(FavoritesView 还在用)').toMatch(/const favoriteCount = computed/)
   })
 })
+
+describe('小窗三处文字颜色(歌名/歌手/数字进度)', () => {
+  it('三个键都在 defaults 里,默认 auto(保持"按背景亮度自动适配")', () => {
+    const d = read('src/config/defaults.js')
+    for (const k of ['soundflow_mini_title_color', 'soundflow_mini_artist_color', 'soundflow_mini_time_color']) {
+      expect(d, `缺少 ${k}`).toContain(`${k}: 'auto'`)
+    }
+  })
+
+  it('小窗做 auto 回退,并且按钮/提示/进度条**不跟着**改(解耦成独立变量)', () => {
+    const s = mini()
+    expect(s, '没有 auto 回退函数').toMatch(/const pickColor = \(v, auto\) =>/)
+    expect(s, '三处文字没用回退后的值').toMatch(/'--mc': pickColor\(miniTitleColor\.value, mainText\.value\)/)
+    // 按钮/提示/进度条必须是另一批变量,否则改文字色会连带改掉它们
+    expect(s, '按钮颜色没解耦').toMatch(/color: var\(--mc-btn2,/)
+    expect(s, '提示颜色没解耦(还在用 --mc)').toMatch(/\.mini-hint \{[^}]*var\(--mc-btn/)
+    expect(s, '进度条没解耦').toMatch(/background: var\(--mc-track,/)
+    expect(s, '---mc/--mc2/--mc3 又被按钮复用了').not.toMatch(/\.mini-btn \{[^}]*var\(--mc2,/)
+  })
+
+  it('主进程双推与设置页 IPC 都带上三个字段,重启不丢', () => {
+    const m = read('electron/main.js')
+    expect(m, 'miniBg 读取没带文字色').toMatch(/titleColor: storageData\.miniTitleColor \|\| 'auto'/)
+    expect(m, 'applyBg 的 cfg 没带文字色').toMatch(/titleColor: storageData\.miniTitleColor \|\| 'auto'/)
+    expect(m, '设置页那条 mini:bg-changed 没落盘文字色').toMatch(/\['titleColor', 'miniTitleColor'\]/)
+    expect(m, '菜单里没有"文字颜色"一组').toMatch(/label: '文字颜色 ▸'/)
+    expect(read('src/App.vue'), '主窗口没把文字色落 localStorage').toMatch(/localStorage\.setItem\('soundflow_mini_title_color'/)
+  })
+})

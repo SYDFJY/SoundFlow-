@@ -186,10 +186,12 @@ onMounted(() => { if (props.show) nextTick(drawEqCurve) })
 <style scoped>
 .eq-panel {
   position: absolute;
-  bottom: var(--eq-bottom, 76px);
+  /* 贴控制栏上沿:控制栏高度随窗口宽度换行变化(136 → 176px),写死 76px 必然盖住播放键
+     —— 实测四档分辨率全部重叠,960×600 时把播放键整个盖住(56×56) */
+  bottom: calc(100% + 8px);
   right: var(--eq-right, 20px);
   width: var(--eq-width, min(640px, 92vw));
-  max-height: var(--eq-maxh, min(480px, 80vh));
+  max-height: var(--eq-maxh, min(70vh, 520px));
   border-radius: var(--eq-radius, 14px);
   display: flex; flex-direction: column; z-index: var(--eq-z, 40); overflow: hidden;
   /* 自带深色底 + 高对比文字(不依赖外部主题,保证两处 EQ 都清晰可读) */

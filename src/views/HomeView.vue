@@ -504,7 +504,7 @@ async function removeSelected() {
   backdrop-filter: blur(4px);
 }
 .dup-dialog {
-  padding: 0; width: 720px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+  padding: 0; width: 720px; max-width: 92vw; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;
 }
 .dialog-header {
   display: flex; align-items: center; gap: 12px;

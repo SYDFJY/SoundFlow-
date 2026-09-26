@@ -914,6 +914,15 @@ app.whenReady().then(async () => {
     for (let i = 3; i < data.length; i += 4 * 41) sum += data[i]
     return { barPx: height - top, sum, display: cs.display, w: cv.width, h: cv.height, graph: window.__sfAudioGraph || null }
   })()`)
+  // 前置条件:音量必须可听。元素音量偶发为 0(沙箱状态残留/淡出路径)时分析器读到的是全零,
+  // 那与"频谱坏了"在画面上无法区分 —— 这里先把音量顶起来(走应用自己的命令,不直接改状态)。
+  const volNow = () => run(`(() => (window.__sfAudioGraph || {}).volume)()`)
+  for (let i = 0; i < 8; i++) {
+    const v = await volNow()
+    if (typeof v !== 'number' || v >= 0.2) break
+    win.webContents.send('tray-command', 'volume-up')
+    await sleep(500)
+  }
   const prof = []
   for (let i = 0; i < 4; i++) { prof.push(await specProfile()); await sleep(500) }
   const sums = prof.map((p) => p && p.sum)
@@ -1230,6 +1239,115 @@ app.whenReady().then(async () => {
   check('侧边栏:我的收藏后面不再有数字徽标(而这一项与其它导航项都还在)',
     !!side && side.badges === 0 && side.favoriteItem === true && side.menuItems >= 5,
     JSON.stringify(side))
+
+  // 13) 窗口尺寸扫描:改了窗口大小,比例不能乱、组件不能错位
+  //     用户要求"改变窗口大小时界面各种比例要不变、组件不能错位"。
+  //     这一节的判据全部来自几何测量(越界不会出滚动条,只会互相叠压,肉眼很难发现):
+  //     ① EQ/队列面板不得压到播放键(此前写死 bottom:76px,四档分辨率全在压);
+  //     ② 封面区不得压到频谱条;③ 歌词居中占位块必须真的占位;
+  //     ④ 播放键要贴着控制行中心(此前被两个不等宽的工具组挤偏 24~32px)。
+  const geoProbe = () => run(`(() => {
+    const rect=(s)=>{const el=document.querySelector(s);if(!el)return null;const r=el.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,bottom:r.bottom,right:r.right}}
+    const ov=(a,b)=>{if(!a||!b)return null;const x=Math.min(a.right,b.right)-Math.max(a.x,b.x);const y=Math.min(a.bottom,b.bottom)-Math.max(a.y,b.y);return (x>0&&y>0)?Math.round(x)+'x'+Math.round(y):null}
+    const controls=rect('.controls-row'), play=rect('.ctrl-btn--play')
+    const cover=rect('.cover-mode.split .cover-left')||rect('.cover-left')
+    const spec=rect('.spectrum-bar')
+    const spacer=document.querySelector('.lyrics-content > div')
+    return {
+      win:[innerWidth,innerHeight],
+      playOffset: (controls&&play)?Math.round((play.x+play.w/2)-(controls.x+controls.w/2)):null,
+      eqOverPlay: ov(rect('.eq-panel'), play),
+      queueOverPlay: ov(rect('.queue-panel'), play),
+      coverOverSpec: ov(cover, spec),
+      spacerH: spacer?spacer.offsetHeight:null,
+      specH: spec?Math.round(spec.h):null
+    }
+  })()`)
+  const sizes = [[1280, 800], [1024, 640], [960, 600]]
+  const scans = []
+  for (const [w, h] of sizes) {
+    win.setSize(w, h)
+    await sleep(1300)
+    await run(`(() => { location.hash = '#/player'; return true })()`)
+    await sleep(900)
+    await run(`(() => { const t = document.querySelectorAll('.tab-btn'); if (t[0]) t[0].click(); return true })()`)
+    await sleep(800)
+    const base = await geoProbe()
+    // 开 EQ 面板再量一次(面板是最容易压到控制键的浮层)
+    await run(`(() => { const b=[...document.querySelectorAll('.tools-group .ctrl-btn')][1]; if(b) b.click(); return !!b })()`)
+    await sleep(800)
+    const withEq = await geoProbe()
+    await run(`(() => { const b=[...document.querySelectorAll('.tools-group .ctrl-btn')][1]; if(b) b.click(); return true })()`)
+    await sleep(500)
+    await run(`(() => { const b=document.querySelector('[data-queue-toggle]'); if(b) b.click(); return !!b })()`)
+    await sleep(800)
+    const withQueue = await geoProbe()
+    await run(`(() => { const b=document.querySelector('[data-queue-toggle]'); if(b) b.click(); return true })()`)
+    await sleep(500)
+    scans.push({ size: `${w}x${h}`, base, withEq, withQueue })
+  }
+  console.log('尺寸扫描:', JSON.stringify(scans))
+  check('尺寸扫描:每一档下 EQ/队列面板都不压播放键',
+    scans.every((s) => s.withEq && !s.withEq.eqOverPlay && s.withQueue && !s.withQueue.queueOverPlay),
+    JSON.stringify(scans.map((s) => ({ size: s.size, eq: s.withEq && s.withEq.eqOverPlay, queue: s.withQueue && s.withQueue.queueOverPlay }))))
+  check('尺寸扫描:每一档下封面区都不压频谱条',
+    scans.every((s) => s.base && !s.base.coverOverSpec),
+    JSON.stringify(scans.map((s) => ({ size: s.size, over: s.base && s.base.coverOverSpec }))))
+  check('尺寸扫描:歌词居中的占位块真的占位(此前恒为 0,首行贴顶、末行无法居中)',
+    scans.every((s) => s.base && s.base.spacerH > 40),
+    JSON.stringify(scans.map((s) => ({ size: s.size, spacerH: s.base && s.base.spacerH }))))
+  check('尺寸扫描:播放键贴着控制行中心(跨断点不漂)',
+    scans.every((s) => s.base && s.base.playOffset !== null && Math.abs(s.base.playOffset) <= 12),
+    JSON.stringify(scans.map((s) => ({ size: s.size, playOffset: s.base && s.base.playOffset }))))
+  check('尺寸扫描:矮窗下频谱自动减半(不给垂直预算雪上加霜)',
+    scans.filter((s) => s.base && s.base.win[1] <= 700).every((s) => s.base.specH <= 48),
+    JSON.stringify(scans.map((s) => ({ size: s.size, specH: s.base && s.base.specH }))))
+  // 收尾:回到默认窗口尺寸,避免影响后续(以及下次)运行的断言
+  win.setSize(1280, 800)
+  await sleep(900)
+
+  // 顺带:小窗三处文字色改了只影响那三处(按钮/提示/进度条不跟着变色)
+  let miniWin2 = BrowserWindow.getAllWindows().find(
+    (w) => !w.isDestroyed() && w !== win && /#\/mini/.test(String(w.webContents.getURL())))
+  if (!miniWin2) {
+    // 第 12 节末尾把小窗关掉了:这里要开回来再验文字色
+    await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+    await sleep(3200)
+    miniWin2 = BrowserWindow.getAllWindows().find(
+      (w) => !w.isDestroyed() && w !== win && /#\/mini/.test(String(w.webContents.getURL())))
+  }
+  await run(`(() => {
+    try {
+      localStorage.setItem('soundflow_mini_title_color', '#ff00aa')
+      localStorage.setItem('soundflow_mini_artist_color', '#ff00aa')
+      localStorage.setItem('soundflow_mini_time_color', '#ff00aa')
+      window.electronAPI.send('mini:bg-changed', { mode: 'dark', color: '#161b22', alpha: 0.05, titleColor: '#ff00aa', artistColor: '#ff00aa', timeColor: '#ff00aa' })
+    } catch (e) {}
+    return true
+  })()`)
+  await sleep(2200)
+  if (miniWin2 && !miniWin2.isDestroyed()) {
+    const txt = await miniWin2.webContents.executeJavaScript(`(() => {
+      const g=(s)=>{const el=document.querySelector(s);return el?getComputedStyle(el).color:null}
+      return { title: g('.mini-title'), artist: g('.mini-artist'), time: g('.mini-time'), btn: g('.mini-btn'), hint: g('.mini-hint'), track: g('.mini-progress') }
+    })()`, true)
+    console.log('小窗文字色:', JSON.stringify(txt))
+    check('小窗:三处文字各自可改色,而按钮/提示/进度条不跟着变色(变量已解耦)',
+      !!txt && /255, 0, 170/.test(String(txt.title)) && /255, 0, 170/.test(String(txt.artist)) && /255, 0, 170/.test(String(txt.time)) &&
+      !/255, 0, 170/.test(String(txt.btn)) && !/255, 0, 170/.test(String(txt.track)),
+      JSON.stringify(txt))
+  } else {
+    check('小窗:三处文字各自可改色,而按钮/提示/进度条不跟着变色(变量已解耦)', false, '小窗不在')
+  }
+  // 还原成 auto
+  await run(`(() => {
+    try {
+      for (const k of ['title', 'artist', 'time']) localStorage.setItem('soundflow_mini_' + k + '_color', 'auto')
+      window.electronAPI.send('mini:bg-changed', { mode: 'dark', color: '#161b22', alpha: 0.05, titleColor: 'auto', artistColor: 'auto', timeColor: 'auto' })
+    } catch (e) {}
+    return true
+  })()`)
+  await sleep(1500)
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

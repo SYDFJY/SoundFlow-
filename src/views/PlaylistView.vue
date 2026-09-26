@@ -283,7 +283,7 @@ async function importPlaylist() {
   backdrop-filter: blur(4px);
 }
 .dialog-box {
-  padding: 0; width: 560px; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
+  padding: 0; width: 560px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; overflow: hidden;
 }
 .dialog-header {
   display: flex; align-items: center; justify-content: space-between;

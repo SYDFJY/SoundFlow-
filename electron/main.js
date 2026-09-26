@@ -593,7 +593,8 @@ function createMiniWindow() {
     width: 320,
     height: 80,
     frame: false,
-    alwaysOnTop: true,
+    // 置顶由小窗自己的菜单切换并持久化(此前写死 true:关掉置顶、重开又回来)
+    alwaysOnTop: storageData.miniAlwaysOnTop !== false,
     resizable: false,
     skipTaskbar: true,
     show: false, // 渲染完成前不显示,避免闪现一帧空白/默认画面
@@ -660,7 +661,14 @@ function createMiniWindow() {
 
   // 右键菜单:背景模式 / 透明度 / 恢复主窗口 / 退出应用
   miniWindow.on('context-menu', () => {
-    const miniBg = { mode: storageData.miniBgMode || 'dark', color: storageData.miniBgColor || '#161b22', alpha: storageData.miniBgAlpha ?? 0.05 }
+    const miniBg = {
+      mode: storageData.miniBgMode || 'dark',
+      color: storageData.miniBgColor || '#161b22',
+      alpha: storageData.miniBgAlpha ?? 0.05,
+      titleColor: storageData.miniTitleColor || 'auto',
+      artistColor: storageData.miniArtistColor || 'auto',
+      timeColor: storageData.miniTimeColor || 'auto'
+    }
     const presetColors = ['#161b22', '#1e90ff', '#2ecc71', '#e74c3c', '#f39c12']
     // 应用背景模式并同步渲染端
     const applyBg = (mode, color, alpha) => {
@@ -669,13 +677,37 @@ function createMiniWindow() {
       if (color) storageData.miniBgColor = color
       if (typeof alpha === 'number') storageData.miniBgAlpha = alpha
       saveStorage()
-      const cfg = { mode, color: storageData.miniBgColor, alpha: storageData.miniBgAlpha }
+      const cfg = {
+        mode,
+        color: storageData.miniBgColor,
+        alpha: storageData.miniBgAlpha,
+        titleColor: storageData.miniTitleColor || 'auto',
+        artistColor: storageData.miniArtistColor || 'auto',
+        timeColor: storageData.miniTimeColor || 'auto'
+      }
       try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', cfg) } catch {}
       if (miniWindow && !miniWindow.isDestroyed()) {
         // 只有**窗口级**参数(透明 ↔ 不透明)变了才需要重建;
         // 透明度只是 CSS 层的事 —— 此前每挪一档都关窗重建,拖动时窗口连续闪十几次
         if (mode !== prevMode) recreateMiniWindow()
         else { try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch {} }
+      }
+    }
+    /** 一次改三处文字色(窗口不用重建:只是 CSS 值) */
+    const applyTextColor = (v) => {
+      storageData.miniTitleColor = v
+      storageData.miniArtistColor = v
+      storageData.miniTimeColor = v
+      saveStorage()
+      const cfg = {
+        mode: storageData.miniBgMode,
+        color: storageData.miniBgColor,
+        alpha: storageData.miniBgAlpha,
+        titleColor: v, artistColor: v, timeColor: v
+      }
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', cfg) } catch {}
+      if (miniWindow && !miniWindow.isDestroyed()) {
+        try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch {}
       }
     }
     /** 重建迷你窗(窗口参数随模式变化时用;保留位置) */
@@ -689,7 +721,48 @@ function createMiniWindow() {
         createMiniWindow()
       }, 250)
     }
+    const sendCmd = (cmd) => {
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tray-command', cmd) } catch {}
+    }
     const menu = Menu.buildFromTemplate([
+      {
+        label: '播放控制',
+        submenu: [
+          { label: '上一曲', click: () => sendCmd('prev') },
+          { label: '播放 / 暂停', click: () => sendCmd('toggle-play') },
+          { label: '下一曲', click: () => sendCmd('next') },
+          { type: 'separator' },
+          { label: '快退 10 秒', click: () => sendCmd('skip-back') },
+          { label: '快进 10 秒', click: () => sendCmd('skip-forward') }
+        ]
+      },
+      {
+        label: '播放模式 ▸',
+        submenu: MINI_PLAY_MODES.map((m) => ({
+          label: m.l,
+          type: 'radio',
+          checked: miniMenuState.playMode === m.v,
+          click: () => sendCmd('play-mode:' + m.v)
+        }))
+      },
+      {
+        label: '音量 ▸',
+        submenu: [
+          { label: '音量 +', click: () => sendCmd('volume-up') },
+          { label: '音量 −', click: () => sendCmd('volume-down') },
+          { label: '静音切换', click: () => sendCmd('toggle-mute') }
+        ]
+      },
+      {
+        label: '倍速 ▸',
+        submenu: [0.75, 1, 1.25, 1.5, 2].map((r) => ({
+          label: r + '×',
+          type: 'radio',
+          checked: Math.abs((miniMenuState.rate || 1) - r) < 0.001,
+          click: () => sendCmd('rate:' + r)
+        }))
+      },
+      { type: 'separator' },
       {
         label: '背景模式 ▸',
         submenu: [
@@ -717,6 +790,32 @@ function createMiniWindow() {
           click: () => applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, a)
         }))
       },
+      {
+        // 一次改三处文字色;要分别调就走设置页(那里是三个独立色板)
+        label: '文字颜色 ▸',
+        submenu: [
+          { label: '自动(按背景亮度)', type: 'checkbox', checked: miniBg.titleColor === 'auto' && miniBg.artistColor === 'auto' && miniBg.timeColor === 'auto', click: () => applyTextColor('auto') },
+          { label: '白色', type: 'checkbox', checked: miniBg.titleColor === '#ffffff', click: () => applyTextColor('#ffffff') },
+          { label: '黑色', type: 'checkbox', checked: miniBg.titleColor === '#111111', click: () => applyTextColor('#111111') },
+          { label: '主题色', type: 'checkbox', checked: miniBg.titleColor === '#4d94ff', click: () => applyTextColor('#4d94ff') }
+        ]
+      },
+      {
+        label: '桌面歌词',
+        type: 'checkbox',
+        checked: !!miniMenuState.desktopLyric,
+        click: () => sendCmd('toggle-desktop-lyric')
+      },
+      {
+        label: '小窗置顶',
+        type: 'checkbox',
+        checked: storageData.miniAlwaysOnTop !== false,
+        click: () => {
+          storageData.miniAlwaysOnTop = storageData.miniAlwaysOnTop === false
+          saveStorage()
+          if (miniWindow && !miniWindow.isDestroyed()) miniWindow.setAlwaysOnTop(storageData.miniAlwaysOnTop)
+        }
+      },
       { type: 'separator' },
       {
         label: '恢复主窗口',
@@ -730,7 +829,7 @@ function createMiniWindow() {
         }
       },
       { type: 'separator' },
-      { label: '退出应用', click: () => { app.quit() } }
+      { label: '退出应用', click: () => { app.isQuitting = true; app.quit() } } // 与托盘一致:不设这个标志时 close 会被拦成隐藏,退不掉
     ])
     menu.popup({ window: miniWindow })
   })
@@ -822,6 +921,15 @@ function createLyricWindow() {
 
 // 桌面歌词窗是否置顶(渲染端持久化,建窗时按它来)
 let lyricPinned = true
+// 小窗右键菜单的勾选态来源:主进程读不到渲染端的 store(playerStore),所以由渲染端回推
+// (照 lyric:win-config 的范式)。缺省时按"列表播放 / 桌面歌词关"显示。
+let miniMenuState = { playMode: 'list', desktopLyric: false }
+const MINI_PLAY_MODES = [
+  { v: 'list', l: '列表播放' },
+  { v: 'repeat', l: '列表循环' },
+  { v: 'repeatOne', l: '单曲循环' },
+  { v: 'random', l: '随机播放' }
+]
 
 // 锁定 = 点击穿透(不挡桌面操作);解锁恢复交互
 function setLyricLocked(locked) {
@@ -1114,6 +1222,14 @@ function setupIPC() {
     else createMiniWindow()
   })
 
+  // 小窗菜单的勾选态:渲染端回推(播放模式 / 桌面歌词开关)
+  ipcMain.on('mini:menu-state', (event, state) => {
+    if (!state || typeof state !== 'object') return
+    if (typeof state.playMode === 'string') miniMenuState.playMode = state.playMode
+    if (typeof state.desktopLyric === 'boolean') miniMenuState.desktopLyric = state.desktopLyric
+    if (typeof state.rate === 'number') miniMenuState.rate = state.rate
+  })
+
   // 迷你窗背景变化:持久化。
   // **窗口参数**(透明 ↔ 不透明)变了才重建;只改透明度就推一条 mini:bg-sync 让窗口自己改 CSS ——
   // 设置页那个滑杆是 @input 触发的,此前每挪一档都关窗重建一次,拖一下连闪十几次。
@@ -1123,9 +1239,19 @@ function setupIPC() {
     storageData.miniBgMode = cfg.mode
     storageData.miniBgColor = cfg.color || storageData.miniBgColor || '#161b22'
     if (typeof cfg.alpha === 'number') storageData.miniBgAlpha = cfg.alpha
+    for (const k of [['titleColor', 'miniTitleColor'], ['artistColor', 'miniArtistColor'], ['timeColor', 'miniTimeColor']]) {
+      if (typeof cfg[k[0]] === 'string') storageData[k[1]] = cfg[k[0]]
+    }
     saveStorage()
     if (!miniWindow || miniWindow.isDestroyed()) return
-    const next = { mode: cfg.mode, color: storageData.miniBgColor, alpha: storageData.miniBgAlpha }
+    const next = {
+      mode: cfg.mode,
+      color: storageData.miniBgColor,
+      alpha: storageData.miniBgAlpha,
+      titleColor: storageData.miniTitleColor || 'auto',
+      artistColor: storageData.miniArtistColor || 'auto',
+      timeColor: storageData.miniTimeColor || 'auto'
+    }
     if (cfg.mode !== prevMode) {
       const pos = miniWindow.getPosition()
       miniWindow.close()

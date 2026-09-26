@@ -296,6 +296,8 @@
 
 <!-- 播放控制组(居中:播放模式/上一曲/播放/下一曲/倍速,与播放栏一致) -->
           <div class="controls-group">
+            <!-- 占位块:让"模式/上一曲/播放/下一曲"这组在整行里保持居中(右侧有倍速+变调两个按钮) -->
+            <div class="ctrl-sym-spacer" aria-hidden="true"></div>
             <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" v-tooltip:top="t(playModeLabelKey)">
               <Icon v-if="playerStore.playMode === 'list'" name="modeList" :size="18" />
               <Icon v-else-if="playerStore.playMode === 'repeat'" name="modeRepeat" :size="18" />
@@ -1260,7 +1262,10 @@ async function searchLyric() {
   flex: 1; min-height: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   /* 圆盘与间距随窗口高度自适应,防止小窗口组件被挤出变形 */
-  --disc: clamp(150px, min(32vh, 30vw), 300px);
+  /* 盘径要同时受**高度预算**约束:封面台是 1.5×盘径,而顶栏+频谱+控制栏+歌名信息
+     大约吃掉 460px —— 不扣这一项时,1280×800 就会超支并在纵向压到频谱条上(实测重叠 17px,
+     960×600 时 78px,封面顶部还会跑到顶栏下面) */
+  --disc: clamp(130px, min(32vh, 30vw, calc((100vh - 460px) / 1.5)), 300px);
   --gap: clamp(8px, 2.6vh, 32px);
   gap: var(--gap);
 }
@@ -1448,7 +1453,17 @@ async function searchLyric() {
   box-shadow: 0 8px 24px rgba(0,0,0,0.3);
 }
 .disc-cover-small img { width: 100%; height: 100%; object-fit: cover; }
-.spectrum-bar { display: block; margin: 14px auto 0; max-width: 520px; width: 100%; height: 80px; opacity: 0.9; }
+.spectrum-bar { display: block; margin: 14px auto 0; max-width: 520px; width: 100%; height: 80px; opacity: 0.9; pointer-events: none; }
+/* 矮窗(≤700px 高)下频谱条减半:它固定吃 94px,而垂直预算本来就紧张 */
+@media (max-height: 700px) {
+  .spectrum-bar { height: 44px; margin-top: 8px; }
+}
+/* 矮窗(≤640px 高)下把封面区的次要行收起来:专辑名/音质/封面按钮加起来约 60px,
+   不收的话封面块底边会压到频谱条上(960×600 实测重叠 54×17) */
+@media (max-height: 640px) {
+  .song-album, .song-info { display: none; }
+  .cover-actions { display: none; }
+}
 /* 圆形环绕频谱:相对 disc-area(唱片)居中,圆心=唱片圆心 */
 .spectrum-ring { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: calc(var(--disc) * 1.5); height: calc(var(--disc) * 1.5); pointer-events: none; z-index: 4; opacity: 0.85; }
 
@@ -1468,7 +1483,11 @@ async function searchLyric() {
   scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.15) transparent;
 }
 
-.lyrics-content { text-align: center; }
+/* height:100% 是必须的,不能只写 min-height:占位块用的是 height:30%/40%,而百分比高度**只认
+   父元素的 height**(min-height 不建立确定高度)→ 此前容器没高度、占位恒为 0,首行贴顶、
+   最后一句永远无法居中(实测 offsetHeight=0)。固定高度不影响滚动:行是它的子元素,
+   溢出部分照样计入滚动区。 */
+.lyrics-content { text-align: center; height: 100%; }
 
 .lyrics-empty {
   height: 100%; display: flex; flex-direction: column;
@@ -1706,7 +1725,12 @@ async function searchLyric() {
 }
 
 /* ===== 底部控制栏 ===== */
+/* 面板(EQ/队列)以自己的定位祖先为锚:这里设成 relative,
+   面板用 bottom: calc(100% + 8px) 就能"永远贴在控制栏上沿" ——
+   此前面板锚在整窗口 + 写死 bottom:76px,而控制栏实际高 136px(窄窗换行后 176px),
+   实测每档分辨率都在盖播放键,960×600 时把播放键盖掉 56×56(整个按钮) */
 .player-controls {
+  position: relative;
   flex-shrink: 0; padding: 14px 40px 20px;
   display: flex; flex-direction: column; gap: 12px;
   /* 毛玻璃:半透明底 + 背景模糊,层次更分明 */
@@ -1723,7 +1747,9 @@ async function searchLyric() {
   min-height: 56px;
 }
 .controls-group {
-  /* flex 流式一行居中:模式/上曲/播放/下曲/倍速/变调 天然左右对称 */
+  /* 整组**真正居中**:两侧工具组按钮数不同、宽度不等,靠 margin:auto 居中会偏 -12~-24px。
+     绝对定中之后位置与两侧内容无关,窗口怎么改都不会漂。 */
+  position: absolute; left: 50%; transform: translateX(-50%);
   display: flex; align-items: center; justify-content: center; gap: 10px;
   /* 按钮全部绝对定位:播放键居中,上一曲/下一曲对称贴靠,模式/倍速两端 */
 }
@@ -1733,7 +1759,7 @@ async function searchLyric() {
   display: flex; align-items: center; gap: 12px; margin-left: auto;
 }
 .ctrl-btn.active { color: var(--color-primary); }
-.ctrl-btn--small { width: 34px; height: 34px; font-size: var(--font-size-sm); }
+.ctrl-btn--small { width: var(--ctrl-btn-sm, 34px); height: var(--ctrl-btn-sm, 34px); font-size: var(--font-size-sm); }
 .ctrl-btn--small svg { width: 20px; height: 20px; }
 .volume-control {
   position: relative; display: flex; align-items: center;
@@ -1857,10 +1883,13 @@ async function searchLyric() {
 .voice-preset:hover { border-color: #6ec6ff; color: #6ec6ff; }
 .voice-preset.active { background: var(--color-primary, #4096ff); color: #fff; border-color: var(--color-primary, #4096ff); box-shadow: 0 0 0 1px var(--color-primary, #4096ff); }
 .rate-control { position: relative; display: flex; align-items: center; }
-/* 播放控制组对称定位(置于末尾确保优先级,覆盖上面相对定位):
-   播放键居中,上一曲/下一曲贴靠,倍速/变调在右端对称排列 */
-.rate-control { position: absolute; left: calc(50% + 102px); }
-.pitch-control { position: absolute; left: calc(50% + 152px); }
+/* 倍速/变调回到 flex 流内(不再绝对定位):
+   此前用 `left: calc(50% + 102px/152px)` 锚在**窗口**中心,而播放组因为两侧工具组宽度不等
+   本来就偏向一边 —— 结果是跨 1200px 断点时按钮间距 17px↔32px 跳变、播放键中心也偏离真中心。
+   现在:前面放一个与"倍速+变调+两个间距"等宽的占位块,整组仍然居中,且跟着按钮尺寸一起变。 */
+.ctrl-sym-spacer { flex: 0 0 auto; width: var(--ctrl-btn-sm, 34px); height: 1px; }
+/* 宽度 = 一个小按钮:把"播放键左右两侧占位"配平的解恰好是它 ——
+   左边(占位+模式+上曲+两个间距) 与 右边(下曲+倍速+变调+三个间距) 相等时播放键居中 */
 
 .rate-panel {
   position: absolute; bottom: calc(100% + 10px); left: 50%; margin-left: -140px;
@@ -1921,6 +1950,9 @@ async function searchLyric() {
 @media (max-width: 1200px) {
   .tools-group, .tools-group-left { gap: 8px; }
   .tools-group .ctrl-btn--small, .tools-group-left .ctrl-btn--small { width: 30px; height: 30px; }
+  /* 控制组的小按钮(倍速/变调)也跟着缩,占位块靠这个变量自动跟随 */
+  .controls-group { --ctrl-btn-sm: 30px; }
+  .controls-group .ctrl-btn--small { width: 30px; height: 30px; }
   .player-controls { padding: 12px 20px 16px; }
 }
 @media (max-width: 960px) {
@@ -1928,7 +1960,7 @@ async function searchLyric() {
   .tools-group, .tools-group-left { gap: 6px; }
   .tools-group .ctrl-btn--small, .tools-group-left .ctrl-btn--small { width: 28px; height: 28px; }
   .controls-row { flex-wrap: wrap; row-gap: 8px; min-height: 0; }
-  .controls-group { order: -1; width: 100%; justify-content: center; flex-wrap: wrap; gap: 8px; }
+  .controls-group { position: static; transform: none; order: -1; width: 100%; justify-content: center; flex-wrap: wrap; gap: 8px; }
   .controls-group .ctrl-btn--small, .controls-group .ctrl-btn { margin: 0 !important; }
 }
 

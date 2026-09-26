@@ -79,6 +79,16 @@ async function clearQueueConfirm() {
 // 队列面板自由伸缩(尺寸记忆到 localStorage,min 260×240 / max 不超视口)
 const queueW = ref(parseInt(localStorage.getItem('soundflow_queue_w')) || 320)
 const queueH = ref(parseInt(localStorage.getItem('soundflow_queue_h')) || 380)
+// 面板尺寸此前**只在拖动的那一帧**被夹紧过:在大窗口把面板拖到很大,再把窗口缩小,
+// 面板顶部与关闭键就跑到窗口外面去了(只能靠点外部/Esc 关)。这里随窗口尺寸再夹一次。
+const clampQueueSize = () => {
+  const maxW = Math.max(240, window.innerWidth - 60)
+  const maxH = Math.max(240, window.innerHeight - 150)
+  if (queueW.value > maxW) queueW.value = maxW
+  if (queueH.value > maxH) queueH.value = maxH
+}
+window.addEventListener('resize', clampQueueSize)
+onUnmounted(() => window.removeEventListener('resize', clampQueueSize))
 let _resizeCleanup = null
 function onQueueResizeStart(e) {
   if (e.button !== 0) return
@@ -124,7 +134,7 @@ function setupQueueSortable() {
   })
 }
 function doScroll() { scrollToActiveQueue(queueListEl.value, activeQueueEl.value) }
-onMounted(() => { setupQueueSortable(); doScroll() })
+onMounted(() => { clampQueueSize(); setupQueueSortable(); doScroll() })
 watch(() => playerStore.currentIndex, () => { if (props.show) nextTick(doScroll) })
 onUnmounted(() => { if (queueSortable) { try { queueSortable.destroy() } catch (_) {} } if (_resizeCleanup) { _resizeCleanup(); _resizeCleanup = null } })
 </script>
@@ -132,8 +142,10 @@ onUnmounted(() => { if (queueSortable) { try { queueSortable.destroy() } catch (
 <style scoped>
 .queue-panel {
   position: absolute;
-  bottom: 76px;
+  /* 贴控制栏上沿(控制栏在窄窗会换行变高,写死 76px 会盖住播放控制) */
+  bottom: calc(100% + 8px);
   right: 20px;
+  max-height: min(70vh, 520px);
   display: flex;
   flex-direction: column;
   background: rgba(18, 20, 28, 0.94);

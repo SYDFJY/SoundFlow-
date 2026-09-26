@@ -25,6 +25,8 @@ const SEND_CHANNELS = [
   'smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore',
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
   'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
+  // 渲染端把"小窗菜单要显示的勾选态"(播放模式/桌面歌词开关)回推给主进程
+  'mini:menu-state',
   'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index',
   'scan-cancel',
   'lyric:seek', 'lyric:save', 'notify-song',
@@ -149,6 +151,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onLyricSetting: (cb) => ipcRenderer.on('lyric-setting', (_e, key, value) => cb(key, value)),
   // 主窗口告诉主进程:窗口该不该置顶(持久化值在建窗时用)
   lyricWinConfig: (cfg) => ipcRenderer.send('lyric:win-config', cfg),
+  // 小窗右键菜单的勾选态:主进程拿不到渲染端的 store,只能由渲染端回推(照 lyric:win-config 的范式)
+  sendMiniMenuState: (state) => ipcRenderer.send('mini:menu-state', state),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
   sendLyricIndex: (idx) => ipcRenderer.send('lyric:index', idx),
   // 响度分析(ReplayGain)

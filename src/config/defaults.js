@@ -36,6 +36,10 @@ export const DEFAULTS = {
   soundflow_mini_bg_mode: 'dark',
   soundflow_mini_bg_color: '#161b22',
   soundflow_mini_bg_alpha: '0.05',
+  // 小窗三处文字(歌名/歌手/数字进度)的颜色:'auto' = 按背景亮度自动适配(默认行为)
+  soundflow_mini_title_color: 'auto',
+  soundflow_mini_artist_color: 'auto',
+  soundflow_mini_time_color: 'auto',
   // 行为
   soundflow_auto_play: '0',
   soundflow_close_action: 'minimize',

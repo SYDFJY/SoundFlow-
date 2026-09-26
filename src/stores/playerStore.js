@@ -1797,6 +1797,19 @@ export const usePlayerStore = defineStore('player', () => {
     }
   })
 
+  // 小窗右键菜单的勾选态:主进程读不到这里的 store(播放模式/桌面歌词/倍速),
+  // 所以由渲染端回推(照 lyric:win-config 的范式)。三处变化频率都很低。
+  function pushMiniMenuState() {
+    try {
+      window.electronAPI?.sendMiniMenuState?.({
+        playMode: playMode.value,
+        desktopLyric: desktopLyricState.value !== 0,
+        rate: playbackRate.value
+      })
+    } catch (_) {}
+  }
+  watch([playMode, desktopLyricState, playbackRate], pushMiniMenuState)
+
   // 桌面歌词窗口被系统/托盘关闭时,主进程通知归零状态
   if (window.electronAPI && window.electronAPI.on) {
     try {

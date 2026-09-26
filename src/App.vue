@@ -311,6 +311,10 @@ onMounted(async () => {
       if (cfg.mode) localStorage.setItem('soundflow_mini_bg_mode', cfg.mode)
       if (cfg.color) localStorage.setItem('soundflow_mini_bg_color', cfg.color)
       if (typeof cfg.alpha === 'number') localStorage.setItem('soundflow_mini_bg_alpha', String(cfg.alpha))
+      // 三处文字色(标题/歌手/时间):'auto' 也存,表示回到"按背景亮度自动"
+      if (typeof cfg.titleColor === 'string') localStorage.setItem('soundflow_mini_title_color', cfg.titleColor)
+      if (typeof cfg.artistColor === 'string') localStorage.setItem('soundflow_mini_artist_color', cfg.artistColor)
+      if (typeof cfg.timeColor === 'string') localStorage.setItem('soundflow_mini_time_color', cfg.timeColor)
       document.dispatchEvent(new CustomEvent('mini-bg-synced', { detail: cfg }))
     })
   }
@@ -377,11 +381,20 @@ onMounted(async () => {
     })
     window.electronAPI.on('menu-add-folder', () => { try { musicStore.addFolder() } catch (e) { console.error(e) } })
     window.electronAPI.on('menu-add-files', () => { try { musicStore.addFiles() } catch (e) { console.error(e) } })
+    // 托盘 / 迷你小窗右键菜单 → 播放器命令(小窗菜单就是复用这条通道,不新增 IPC)
     window.electronAPI.on('tray-command', (cmd) => {
       try {
         if (cmd === 'toggle-play') playerStore.togglePlay()
         else if (cmd === 'prev') playerStore.playPrev()
         else if (cmd === 'next') playerStore.playNext()
+        else if (cmd === 'skip-back') playerStore.skipBackward(10)
+        else if (cmd === 'skip-forward') playerStore.skipForward(10)
+        else if (cmd.startsWith('play-mode:')) playerStore.setPlayMode(cmd.slice('play-mode:'.length))
+        else if (cmd.startsWith('rate:')) playerStore.setPlaybackRate(Number(cmd.slice(5)) || 1)
+        else if (cmd === 'volume-up') playerStore.setVolume(playerStore.volume + 0.1)
+        else if (cmd === 'volume-down') playerStore.setVolume(playerStore.volume - 0.1)
+        else if (cmd === 'toggle-mute') playerStore.toggleMute()
+        else if (cmd === 'toggle-desktop-lyric') playerStore.cycleDesktopLyric()
       } catch (e) { console.error(e) }
     })
     window.electronAPI.on('global-hotkey', (cmd) => {

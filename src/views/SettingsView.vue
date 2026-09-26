@@ -200,6 +200,19 @@
             <span class="volume-val">{{ miniBgColor }}</span>
           </div>
         </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">文字颜色</span>
+            <span class="label-desc">歌名 / 歌手 / 进度时间各自可调;默认"自动"跟随背景亮度 —— 换桌面壁纸后看不清时在这里改</span>
+          </div>
+          <div class="setting-control mini-text-colors">
+            <div v-for="row in [['title', '歌名'], ['artist', '歌手'], ['time', '进度']]" :key="row[0]" class="mini-text-row">
+              <span class="mini-text-name">{{ row[1] }}</span>
+              <button class="mini-swatch mini-swatch--auto" :class="{ active: miniTextColors[row[0]] === 'auto' }" title="自动(按背景亮度)" @click="setMiniTextColor(row[0], 'auto')">自动</button>
+              <button v-for="c in MINI_TEXT_PRESETS" :key="c" class="mini-swatch" :class="{ active: miniTextColors[row[0]].toLowerCase() === c }" :style="{ background: c }" :title="c" @click="setMiniTextColor(row[0], c)"></button>
+            </div>
+          </div>
+        </div>
         <div class="setting-item" v-if="miniBgMode === 'transparent'">
           <div class="setting-label">
             <span class="label-text">背景透明度</span>
@@ -862,6 +875,11 @@ function onMiniBgSynced(e) {
   if (cfg.mode) miniBgMode.value = cfg.mode
   if (cfg.color) miniBgColor.value = cfg.color
   if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
+  const next = { ...miniTextColors.value }
+  if (typeof cfg.titleColor === 'string') next.title = cfg.titleColor
+  if (typeof cfg.artistColor === 'string') next.artist = cfg.artistColor
+  if (typeof cfg.timeColor === 'string') next.time = cfg.timeColor
+  miniTextColors.value = next
 }
 onMounted(() => document.addEventListener('soundflow:esc', onSettingsEsc))
 onMounted(() => playerStore.initOutputDevices()) // 设备列表 + devicechange 监听
@@ -986,6 +1004,26 @@ async function clearTagBackups() {
 }
 
 // ===== 迷你播放器背景(深色/白色/自定义/透明) =====
+// 小窗三处文字色:'auto' = 按背景亮度自动适配(与 MiniView 里同名语义)
+const miniTextColors = ref({
+  title: localStorage.getItem('soundflow_mini_title_color') || 'auto',
+  artist: localStorage.getItem('soundflow_mini_artist_color') || 'auto',
+  time: localStorage.getItem('soundflow_mini_time_color') || 'auto'
+})
+const MINI_TEXT_KEYS = { title: 'soundflow_mini_title_color', artist: 'soundflow_mini_artist_color', time: 'soundflow_mini_time_color' }
+const MINI_TEXT_PRESETS = ['#ffffff', '#111111', '#4d94ff', '#ffd166', '#7ee787']
+function setMiniTextColor(which, value) {
+  miniTextColors.value = { ...miniTextColors.value, [which]: value }
+  try { localStorage.setItem(MINI_TEXT_KEYS[which], value) } catch (_) {}
+  // 与背景走同一条 IPC(主进程落 storageData 再双推),避免两边各存一份
+  try {
+    const payload = { mode: miniBgMode.value, color: miniBgColor.value, alpha: miniBgAlpha.value }
+    payload.titleColor = miniTextColors.value.title
+    payload.artistColor = miniTextColors.value.artist
+    payload.timeColor = miniTextColors.value.time
+    window.electronAPI?.send('mini:bg-changed', payload)
+  } catch (_) {}
+}
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
 const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
 // 迷你窗自定义选色:预设色块 + pickr 取色器

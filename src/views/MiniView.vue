@@ -111,11 +111,21 @@ const playerBg = computed(() => {
   if (miniBgMode.value === 'custom') return miniBgColor.value
   return 'var(--player-bg-dark, #161b22)'
 })
+// 三处文字各自的颜色:'auto' = 用上面那套按背景亮度算出来的自动色(默认行为不变)
+const miniTitleColor = ref(localStorage.getItem('soundflow_mini_title_color') || 'auto')
+const miniArtistColor = ref(localStorage.getItem('soundflow_mini_artist_color') || 'auto')
+const miniTimeColor = ref(localStorage.getItem('soundflow_mini_time_color') || 'auto')
+const pickColor = (v, auto) => (v && v !== 'auto') ? v : auto
 const playerStyle = computed(() => ({
   background: playerBg.value,
-  '--mc': mainText.value,
-  '--mc2': subText.value,
-  '--mc3': dimText.value
+  // --mc/--mc2/--mc3 只给这三处文字用;按钮/提示/进度条走 --mc-btn*,所以自定义文字色
+  // 不会连带把按钮和进度条也改掉(这是"只想改三处文字"的关键)
+  '--mc': pickColor(miniTitleColor.value, mainText.value),
+  '--mc2': pickColor(miniArtistColor.value, subText.value),
+  '--mc3': pickColor(miniTimeColor.value, dimText.value),
+  '--mc-btn': mainText.value,
+  '--mc-btn2': subText.value,
+  '--mc-track': dimText.value
 }))
 
 // 时长格式化已改为从 @/utils/time 引入(同名别名 formatTime,模板无需改动)
@@ -153,6 +163,9 @@ onMounted(() => {
       if (cfg.mode) miniBgMode.value = cfg.mode
       if (cfg.color) miniBgColor.value = cfg.color
       if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
+      if (typeof cfg.titleColor === 'string') miniTitleColor.value = cfg.titleColor
+      if (typeof cfg.artistColor === 'string') miniArtistColor.value = cfg.artistColor
+      if (typeof cfg.timeColor === 'string') miniTimeColor.value = cfg.timeColor
     })
     // 兜底:主进程若没有可回放的状态(例如刚启动还没播过歌),这里也必须放行,
     // 否则窗口会一直不显示,只能等主进程 600ms 的兜底 —— 那一下会显得很迟钝。
@@ -218,11 +231,11 @@ function restoreMain() {
   width: 32px; height: 32px;
   display: flex; align-items: center; justify-content: center;
   border-radius: 50%;
-  color: var(--mc2, rgba(255,255,255,0.7));
+  color: var(--mc-btn2, rgba(255,255,255,0.7));
   transition: all 0.15s ease;
   background: rgba(0,0,0,0.25); /* 透明/浅色背景上按钮清晰可见 */
 }
-.mini-btn:hover { color: var(--mc, #fff); background: rgba(0,0,0,0.4); }
+.mini-btn:hover { color: var(--mc-btn, #fff); background: rgba(0,0,0,0.4); }
 .mini-btn svg { width: 16px; height: 16px; }
 
 .mini-btn--play {
@@ -251,7 +264,7 @@ function restoreMain() {
   top: 3px;
   font-size: 11px;
   line-height: 1.4;
-  color: var(--mc, #fff);
+  color: var(--mc-btn, #fff);
   text-shadow: 0 1px 4px rgba(0,0,0,0.85);
   pointer-events: none;
   -webkit-app-region: no-drag;
@@ -264,7 +277,7 @@ function restoreMain() {
   right: 0;
   height: 3px;
   cursor: pointer;
-  background: var(--mc3, rgba(255,255,255,0.1));
+  background: var(--mc-track, rgba(255,255,255,0.1));
 }
 /* 3px 视觉高度低于可点击最小高度(4px):用透明伪元素把命中区扩到 7px,拖动更稳 */
 .mini-progress::before { content: ''; position: absolute; left: 0; right: 0; top: -4px; height: 7px; }

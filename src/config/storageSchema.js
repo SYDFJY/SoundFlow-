@@ -75,6 +75,8 @@ export const LOCAL_ONLY = {
     'soundflow_lyric_win_bg', 'soundflow_lyric_win_alpha', 'soundflow_lyric_win_locked',
     'soundflow_lyric_win_pinned', 'soundflow_lyric_win_title', 'soundflow_lyric_win_color',
     'soundflow_lyric_win_line_style',
+    // 迷你小窗的三处文字色
+    'soundflow_mini_title_color', 'soundflow_mini_artist_color', 'soundflow_mini_time_color',
   ],
   /** 用户数据(丢失有代价,但只存本地) */
   data: [

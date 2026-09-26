@@ -596,6 +596,13 @@ body, .sidebar, .topbar, .player-bar, .main-content, .main-content > * {
 .mini-swatch { width: 26px; height: 26px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; transition: transform 0.12s; }
 .mini-swatch:hover { transform: scale(1.12); }
 .mini-swatch.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-alpha); }
+/* 小窗文字颜色:每行一个元素(歌名/歌手/进度),行首是名字、末尾是"自动" */
+.mini-text-colors { display: flex; flex-direction: column; gap: 8px; }
+.mini-text-row { display: flex; align-items: center; gap: 6px; }
+.mini-text-name { width: 34px; font-size: var(--font-size-sm); color: var(--text-secondary); flex-shrink: 0; }
+.mini-swatch--auto { width: auto; min-width: 44px; height: 26px; padding: 0 8px; font-size: 11px; border-radius: 6px;
+  background: var(--bg-tertiary, rgba(128,128,128,0.15)); color: var(--text-secondary); border: 2px solid transparent; cursor: pointer; }
+.mini-swatch--auto:hover { transform: scale(1.04); }
 .mini-hsv { display: flex; flex-direction: column; gap: 6px; }
 .sv-canvas { border-radius: 8px; cursor: crosshair; border: 1px solid var(--border-color); touch-action: none; }
 .hue-canvas { border-radius: 8px; cursor: pointer; border: 1px solid var(--border-color); touch-action: none; }
