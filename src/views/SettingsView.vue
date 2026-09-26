@@ -171,60 +171,6 @@
         </div>
       </div>
 
-      <!-- 迷你播放器背景 -->
-      <div class="settings-section">
-        <h3 class="section-title">迷你播放器背景</h3>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">背景样式</span>
-            <span class="label-desc">文字颜色随背景亮度自动适配;透明模式小窗无底色</span>
-          </div>
-          <div class="mini-bg-options">
-            <button class="chip chip--sm" :class="{ active: miniBgMode === 'dark' }" @click="setMiniBgMode('dark')">深色</button>
-            <button class="chip chip--sm" :class="{ active: miniBgMode === 'white' }" @click="setMiniBgMode('white')">白色</button>
-            <button class="chip chip--sm" :class="{ active: miniBgMode === 'custom' }" @click="setMiniBgMode('custom')">自定义</button>
-            <button class="chip chip--sm" :class="{ active: miniBgMode === 'transparent' }" @click="setMiniBgMode('transparent')">透明</button>
-          </div>
-        </div>
-        <div class="setting-item" v-if="miniBgMode === 'custom'">
-          <div class="setting-label">
-            <span class="label-text">自定义颜色</span>
-          </div>
-          <div class="setting-control mini-color-picker">
-            <!-- 预设色块 -->
-            <div class="mini-swatches">
-              <button v-for="c in MINI_COLOR_SWATCHES" :key="c" class="mini-swatch" :class="{ active: miniBgColor.toLowerCase() === c.toLowerCase() }" :style="{ background: c }" :title="c" @click="setMiniBgMode('custom', c)"></button>
-            </div>
-            <!-- pickr 取色器(成熟组件:色相/SV/hex) -->
-            <div ref="pickrEl" class="pickr-wrap"></div>
-            <span class="volume-val">{{ miniBgColor }}</span>
-          </div>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">文字颜色</span>
-            <span class="label-desc">歌名 / 歌手 / 进度时间各自可调;默认"自动"跟随背景亮度 —— 换桌面壁纸后看不清时在这里改</span>
-          </div>
-          <div class="setting-control mini-text-colors">
-            <div v-for="row in [['title', '歌名'], ['artist', '歌手'], ['time', '进度']]" :key="row[0]" class="mini-text-row">
-              <span class="mini-text-name">{{ row[1] }}</span>
-              <button class="mini-swatch mini-swatch--auto" :class="{ active: miniTextColors[row[0]] === 'auto' }" title="自动(按背景亮度)" @click="setMiniTextColor(row[0], 'auto')">自动</button>
-              <button v-for="c in MINI_TEXT_PRESETS" :key="c" class="mini-swatch" :class="{ active: miniTextColors[row[0]].toLowerCase() === c }" :style="{ background: c }" :title="c" @click="setMiniTextColor(row[0], c)"></button>
-            </div>
-          </div>
-        </div>
-        <div class="setting-item" v-if="miniBgMode === 'transparent'">
-          <div class="setting-label">
-            <span class="label-text">背景透明度</span>
-            <span class="label-desc">底深程度 0%–80%;0% 完全透明(只剩内容),文字与按钮始终清晰</span>
-          </div>
-          <div class="setting-control">
-            <input type="range" min="0" max="80" step="5" :value="Math.round(miniBgAlpha * 100)" @input="e => setMiniBgMode('transparent', null, parseInt(e.target.value) / 100)" />
-            <span class="volume-val">{{ Math.round(miniBgAlpha * 100) }}%</span>
-          </div>
-        </div>
-      </div>
-
       <!-- 扫描设置 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.library') }}</h3>
@@ -869,23 +815,29 @@ const lyricMgrBusy = ref(false)
 // Esc 关闭弹窗
 function onSettingsEsc() { lyricMgrOpen.value = false }
 // 迷你窗背景同步(命名函数便于卸载时移除,避免监听泄漏)
-function onMiniBgSynced(e) {
-  const cfg = e.detail
-  if (!cfg) return
-  if (cfg.mode) miniBgMode.value = cfg.mode
-  if (cfg.color) miniBgColor.value = cfg.color
-  if (typeof cfg.alpha === 'number') miniBgAlpha.value = cfg.alpha
-  const next = { ...miniTextColors.value }
-  if (typeof cfg.titleColor === 'string') next.title = cfg.titleColor
-  if (typeof cfg.artistColor === 'string') next.artist = cfg.artistColor
-  if (typeof cfg.timeColor === 'string') next.time = cfg.timeColor
-  miniTextColors.value = next
+// 自定义主色(全局联动)
+const PRIMARY_SWATCHES = ['#1677E6', '#4493f8', '#722ed1', '#13c2c2', '#52c41a', '#fa8c16', '#f5222d', '#eb2f96', '#f2f0ea', '#1e2433']
+const primaryPickrEl = ref(null)
+let _primaryPickr = null
+function setPrimary(c) { appStore.setPrimaryColor(c) }
+function resetPrimary() { appStore.resetPrimaryColor() }
+function initPrimaryPickr() {
+  if (!primaryPickrEl.value || typeof window.Pickr === 'undefined') return
+  _primaryPickr = window.Pickr.create({
+    el: primaryPickrEl.value,
+    theme: 'nano',
+    default: appStore.customPrimary || '#1677E6',
+    swatches: PRIMARY_SWATCHES,
+    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
+  })
+  _primaryPickr.on('save', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
+  _primaryPickr.on('change', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
 }
+
 onMounted(() => document.addEventListener('soundflow:esc', onSettingsEsc))
 onMounted(() => playerStore.initOutputDevices()) // 设备列表 + devicechange 监听
 onUnmounted(() => {
   document.removeEventListener('soundflow:esc', onSettingsEsc)
-  document.removeEventListener('mini-bg-synced', onMiniBgSynced)
   if (_searchTimer) { clearTimeout(_searchTimer); _searchTimer = null }
 })
 const filteredSongs = computed(() => {
@@ -1003,83 +955,10 @@ async function clearTagBackups() {
   else { window.$toast?.(r?.error || '清空失败', 'error') }
 }
 
-// ===== 迷你播放器背景(深色/白色/自定义/透明) =====
-// 小窗三处文字色:'auto' = 按背景亮度自动适配(与 MiniView 里同名语义)
-const miniTextColors = ref({
-  title: localStorage.getItem('soundflow_mini_title_color') || 'auto',
-  artist: localStorage.getItem('soundflow_mini_artist_color') || 'auto',
-  time: localStorage.getItem('soundflow_mini_time_color') || 'auto'
-})
-const MINI_TEXT_KEYS = { title: 'soundflow_mini_title_color', artist: 'soundflow_mini_artist_color', time: 'soundflow_mini_time_color' }
-const MINI_TEXT_PRESETS = ['#ffffff', '#111111', '#4d94ff', '#ffd166', '#7ee787']
-function setMiniTextColor(which, value) {
-  miniTextColors.value = { ...miniTextColors.value, [which]: value }
-  try { localStorage.setItem(MINI_TEXT_KEYS[which], value) } catch (_) {}
-  // 与背景走同一条 IPC(主进程落 storageData 再双推),避免两边各存一份
-  try {
-    const payload = { mode: miniBgMode.value, color: miniBgColor.value, alpha: miniBgAlpha.value }
-    payload.titleColor = miniTextColors.value.title
-    payload.artistColor = miniTextColors.value.artist
-    payload.timeColor = miniTextColors.value.time
-    window.electronAPI?.send('mini:bg-changed', payload)
-  } catch (_) {}
-}
-const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
-const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
-// 迷你窗自定义选色:预设色块 + pickr 取色器
-const MINI_COLOR_SWATCHES = ['#161b22', '#1e2433', '#1f3a5f', '#1d3a34', '#3a1d24', '#3a2f1d', '#33415c', '#f2f0ea', '#f7d9e0', '#cfe8dd', '#d9d2f0', '#f0d9c2']
-const pickrEl = ref(null)
-// 自定义主色(全局联动)
-const PRIMARY_SWATCHES = ['#1677E6', '#4493f8', '#722ed1', '#13c2c2', '#52c41a', '#fa8c16', '#f5222d', '#eb2f96', '#f2f0ea', '#1e2433']
-const primaryPickrEl = ref(null)
-let _primaryPickr = null
-function setPrimary(c) { appStore.setPrimaryColor(c) }
-function resetPrimary() { appStore.resetPrimaryColor() }
-function initPrimaryPickr() {
-  if (!primaryPickrEl.value || typeof window.Pickr === 'undefined') return
-  _primaryPickr = window.Pickr.create({
-    el: primaryPickrEl.value,
-    theme: 'nano',
-    default: appStore.customPrimary || '#1677E6',
-    swatches: PRIMARY_SWATCHES,
-    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
-  })
-  _primaryPickr.on('save', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
-  _primaryPickr.on('change', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
-}
-let _pickr = null
-function initPickr() {
-  if (!pickrEl.value || typeof window.Pickr === 'undefined') return
-  _pickr = window.Pickr.create({
-    el: pickrEl.value,
-    theme: 'nano',
-    default: miniBgColor.value,
-    swatches: MINI_COLOR_SWATCHES,
-    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
-  })
-  _pickr.on('save', (color) => { if (color) setMiniBgMode('custom', color.toHEXA().toString()) })
-  _pickr.on('change', (color) => { if (color) setMiniBgMode('custom', color.toHEXA().toString()) })
-}
-// 别写 `parseFloat(x) || 0.05`:存进去的 "0" 是假值,读回来又变 0.05 → "完全透明"永远设不上
-const _miniAlpha = parseFloat(localStorage.getItem('soundflow_mini_bg_alpha'))
-const miniBgAlpha = ref(Number.isFinite(_miniAlpha) ? Math.min(1, Math.max(0, _miniAlpha)) : 0.05)
-function setMiniBgMode(mode, color, alpha) {
-  miniBgMode.value = mode
-  if (color) miniBgColor.value = color
-  if (typeof alpha === 'number') miniBgAlpha.value = alpha
-  localStorage.setItem('soundflow_mini_bg_mode', mode)
-  localStorage.setItem('soundflow_mini_bg_color', miniBgColor.value)
-  localStorage.setItem('soundflow_mini_bg_alpha', String(miniBgAlpha.value))
-  // 通知主进程:迷你窗开着则重建(带新窗口参数)
-  try { window.electronAPI?.send('mini:bg-changed', { mode, color: miniBgColor.value, alpha: miniBgAlpha.value }) } catch (_) {}
-}
-// 迷你窗右键菜单修改后同步设置页状态
+// 主色取色器(自定义主色,全局联动)
 onMounted(() => {
   loadTagBackups()
-  // 初始化迷你窗色板(当前色 → 色相/点位)
-  initPickr()
   initPrimaryPickr()
-  document.addEventListener('mini-bg-synced', onMiniBgSynced)
 })
 
 // 主题清单已收敛到 @/config/themeList(此前与 TopBar 各存一份重复列表)

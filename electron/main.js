@@ -693,17 +693,20 @@ function createMiniWindow() {
         else { try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch {} }
       }
     }
-    /** 一次改三处文字色(窗口不用重建:只是 CSS 值) */
-    const applyTextColor = (v) => {
-      storageData.miniTitleColor = v
-      storageData.miniArtistColor = v
-      storageData.miniTimeColor = v
+    /** 改文字色(可按元素:title/artist/time;窗口不用重建,只是 CSS 值) */
+    const applyTextColor = (key, v) => {
+      if (key === 'title') storageData.miniTitleColor = v
+      else if (key === 'artist') storageData.miniArtistColor = v
+      else if (key === 'time') storageData.miniTimeColor = v
+      else { storageData.miniTitleColor = v; storageData.miniArtistColor = v; storageData.miniTimeColor = v }
       saveStorage()
       const cfg = {
         mode: storageData.miniBgMode,
         color: storageData.miniBgColor,
         alpha: storageData.miniBgAlpha,
-        titleColor: v, artistColor: v, timeColor: v
+        titleColor: storageData.miniTitleColor || 'auto',
+        artistColor: storageData.miniArtistColor || 'auto',
+        timeColor: storageData.miniTimeColor || 'auto'
       }
       try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', cfg) } catch {}
       if (miniWindow && !miniWindow.isDestroyed()) {
@@ -724,18 +727,35 @@ function createMiniWindow() {
     const sendCmd = (cmd) => {
       try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tray-command', cmd) } catch {}
     }
+    // 小窗自己的设置与播放器设置**都在这个菜单里** —— 与桌面歌词右键菜单一个思路:
+    // 设置直接出现在菜单里,不必去应用设置页找(只为它开一节反而更绕)。
+    const alphaPresets = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85]
+    const textPresets = [
+      { v: 'auto', l: '自动(按背景亮度)' },
+      { v: '#ffffff', l: '白色' },
+      { v: '#111111', l: '黑色' },
+      { v: '#4d94ff', l: '主题蓝' },
+      { v: '#ffd166', l: '暖黄' },
+      { v: '#7ee787', l: '浅绿' },
+      { v: '#ff9ecd', l: '浅粉' }
+    ]
+    const curTextColor = (key) => (key === 'title' ? miniBg.titleColor : (key === 'artist' ? miniBg.artistColor : miniBg.timeColor))
+    const textSub = (key, label) => ({
+      label,
+      submenu: textPresets.map((p) => ({
+        label: p.l,
+        type: 'radio',
+        checked: curTextColor(key) === p.v,
+        click: () => applyTextColor(key, p.v)
+      }))
+    })
     const menu = Menu.buildFromTemplate([
-      {
-        label: '播放控制',
-        submenu: [
-          { label: '上一曲', click: () => sendCmd('prev') },
-          { label: '播放 / 暂停', click: () => sendCmd('toggle-play') },
-          { label: '下一曲', click: () => sendCmd('next') },
-          { type: 'separator' },
-          { label: '快退 10 秒', click: () => sendCmd('skip-back') },
-          { label: '快进 10 秒', click: () => sendCmd('skip-forward') }
-        ]
-      },
+      { label: '上一曲', click: () => sendCmd('prev') },
+      { label: '播放 / 暂停', click: () => sendCmd('toggle-play') },
+      { label: '下一曲', click: () => sendCmd('next') },
+      { label: '快退 10 秒', click: () => sendCmd('skip-back') },
+      { label: '快进 10 秒', click: () => sendCmd('skip-forward') },
+      { type: 'separator' },
       {
         label: '播放模式 ▸',
         submenu: MINI_PLAY_MODES.map((m) => ({
@@ -763,43 +783,32 @@ function createMiniWindow() {
         }))
       },
       { type: 'separator' },
+      { label: '背景:深色', type: 'radio', checked: miniBg.mode === 'dark', click: () => applyBg('dark') },
+      { label: '背景:白色', type: 'radio', checked: miniBg.mode === 'white', click: () => applyBg('white') },
       {
-        label: '背景模式 ▸',
-        submenu: [
-          { label: '深色', type: 'checkbox', checked: miniBg.mode === 'dark', click: () => applyBg('dark') },
-          { label: '白色', type: 'checkbox', checked: miniBg.mode === 'white', click: () => applyBg('white') },
-          {
-            label: '自定义色 ▸',
-            submenu: presetColors.map(c => ({
-              label: c,
-              type: 'checkbox',
-              checked: miniBg.mode === 'custom' && miniBg.color === c,
-              click: () => applyBg('custom', c)
-            }))
-          },
-          { label: '透明', type: 'checkbox', checked: miniBg.mode === 'transparent', click: () => applyBg('transparent') }
-        ]
+        label: '背景:自定义色 ▸',
+        submenu: presetColors.map((c) => ({
+          label: c,
+          type: 'radio',
+          checked: miniBg.mode === 'custom' && miniBg.color === c,
+          click: () => applyBg('custom', c)
+        }))
       },
+      { label: '背景:完全透明', type: 'radio', checked: miniBg.mode === 'transparent', click: () => applyBg('transparent') },
       {
-        label: '透明度 ▸',
-        // 0% = 完全透明(看不见底色);顺序从透明到最实
-        submenu: [0, 0.05, 0.2, 0.4, 0.6, 0.8].map(a => ({
+        label: '不透明度 ▸',
+        // 0% = 完全透明(看不见底色);只在"完全透明"模式下有意义
+        submenu: alphaPresets.map((a) => ({
           label: Math.round(a * 100) + '%',
-          type: 'checkbox',
+          type: 'radio',
           checked: Math.abs((miniBg.alpha || 0.05) - a) < 0.001,
           click: () => applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, a)
         }))
       },
-      {
-        // 一次改三处文字色;要分别调就走设置页(那里是三个独立色板)
-        label: '文字颜色 ▸',
-        submenu: [
-          { label: '自动(按背景亮度)', type: 'checkbox', checked: miniBg.titleColor === 'auto' && miniBg.artistColor === 'auto' && miniBg.timeColor === 'auto', click: () => applyTextColor('auto') },
-          { label: '白色', type: 'checkbox', checked: miniBg.titleColor === '#ffffff', click: () => applyTextColor('#ffffff') },
-          { label: '黑色', type: 'checkbox', checked: miniBg.titleColor === '#111111', click: () => applyTextColor('#111111') },
-          { label: '主题色', type: 'checkbox', checked: miniBg.titleColor === '#4d94ff', click: () => applyTextColor('#4d94ff') }
-        ]
-      },
+      textSub('title', '歌名颜色 ▸'),
+      textSub('artist', '歌手颜色 ▸'),
+      textSub('time', '进度颜色 ▸'),
+      { type: 'separator' },
       {
         label: '桌面歌词',
         type: 'checkbox',

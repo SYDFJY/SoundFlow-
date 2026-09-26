@@ -552,8 +552,14 @@ app.whenReady().then(async () => {
       const el = document.querySelector('.next-hint')
       return el ? { title: (el.querySelector('.nh-title') || {}).textContent.trim(), label: (el.querySelector('.nh-label') || {}).textContent.trim() } : null
     })()`)
+    // 离开后要等 Vue 把卡片收起来(异步更新):220ms 偶尔不够,下一张卡会读到上一张的内容
     await run(`(() => { document.querySelectorAll('.hint-wrap').forEach((w) => w.dispatchEvent(new MouseEvent('mouseleave'))); return true })()`)
-    await sleep(220)
+    await sleep(420)
+    for (let i = 0; i < 6; i++) {
+      const still = await run(`(() => !!document.querySelector('.next-hint'))()`)
+      if (!still) break
+      await sleep(200)
+    }
     return { moved, card }
   }
 
@@ -1095,6 +1101,15 @@ app.whenReady().then(async () => {
         futureColor: future ? getComputedStyle(future).color : ''
       }
     })()`)
+    // 先把当前行挪到列表中间:两种显示方式的判据都要"已唱过"与"未唱到"两侧的行都在
+    // (当前行落在尾部时没有未来行,对比就取不到 —— 踩过一次 future:null)
+    await lwRun(`(() => {
+      const all=[...document.querySelectorAll('.line')]
+      const mid=all[Math.floor(all.length/2)]
+      if(mid) mid.dispatchEvent(new MouseEvent('click',{bubbles:true}))
+      return true
+    })()`)
+    await sleep(1800)
     const dimState = await readWinLines()
     console.log('显示方式 dim:', JSON.stringify(dimState))
     check('显示方式:默认(淡色)下当前行没有胶囊背景,已唱过的行被额外淡化',
