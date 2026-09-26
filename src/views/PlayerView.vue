@@ -463,6 +463,7 @@ import QueuePanel from '@/components/QueuePanel.vue'
 import { useVolumeControl } from '@/composables/useVolumeControl'
 import { buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
 import { mergeTranslatedLRC } from '@/utils/lrc'
+import { lyricLineColor as lineColor, lyricLineShadow as lineShadow } from '@/utils/lyricStyle'
 import { isCustomCoverUrl } from '@/utils/cover'
 import { shortcutHint } from '@/utils/shortcut'
 import LyricLine from '@/components/LyricLine.vue'
@@ -935,19 +936,14 @@ function openLyricPicker() {
 const showBgPanel = ref(false)
 const showColorPanel = ref(false)
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
-// 歌词行颜色:特效开启才「中心高光+前后变淡」;默认(关闭)所有行不透明纯色(无模糊处理)
+// 歌词行颜色/阴影的规则在 src/utils/lyricStyle.js —— **与桌面歌词窗共用同一份**:
+// 桌面窗有个"与播放界面一致"的显示方式,它是独立页面(拿不到 ESM),所以由应用侧把
+// 算好的每行 color/shadow 随载荷下发(buildLyricWindowPayload)。规则别在这里再写一套。
 function lyricLineColor(idx) {
-  if (!lyricEffect.value) return lyricColor.value
-  if (idx === playerStore.currentLyricIndex) return lyricColor.value
-  const d = Math.abs(idx - playerStore.currentLyricIndex)
-  return `color-mix(in srgb, ${lyricColor.value} ${d === 1 ? 60 : 38}%, transparent)`
+  return lineColor({ color: lyricColor.value, effect: lyricEffect.value, idx, currentIdx: playerStore.currentLyricIndex })
 }
-// 歌词行阴影:描边始终保留(保证任何背景可读);中心发光仅特效开启时
 function lyricLineShadow(idx) {
-  const stroke = '0 0 2px rgba(0,0,0,.95), 0 2px 6px rgba(0,0,0,.65)'
-  if (!lyricEffect.value) return stroke
-  if (idx === playerStore.currentLyricIndex) return `${stroke}, 0 0 22px ${lyricColor.value}66`
-  return stroke
+  return lineShadow({ color: lyricColor.value, effect: lyricEffect.value, idx, currentIdx: playerStore.currentLyricIndex })
 }
 // 音量弹层开关已改为 playerStore.volPanelOpen(播放栏/播放页共享互斥)
 const showPitchPanel = ref(false) // 变调面板默认收起

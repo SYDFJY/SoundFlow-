@@ -8,6 +8,10 @@
  *   electron tools/ui-check.mjs [--user-data-dir=<沙箱>] [媒体目录]
  *
  * 只读界面、不改设置以外的东西;断言失败会明确列出是哪一项。
+ *
+ * ⚠️ 跑之前先关掉**打包版**(`SoundFlow 声流音乐.exe`)与其他 electron 进程:
+ *    · 打包版占着音频设备时,沙箱里拿到的频域数据全是 0 →"频谱在动"那条会假红;
+ *    · 两者共用一个 userData 的单实例锁,同时跑还可能互相抢窗口状态。
  */
 import { app, BrowserWindow, ipcMain } from 'electron'
 import { createRequire } from 'node:module'
@@ -110,6 +114,9 @@ app.whenReady().then(async () => {
     localStorage.setItem('soundflow_lyric_font_size', '18')
     // 桌面歌词颜色也回到"跟随应用侧":上一轮跑到颜色回路时改过它
     localStorage.setItem('soundflow_lyric_win_color', 'auto')
+    // 打开音频图调试快照(window.__sfAudioGraph):频谱那条断言失败时能一眼看出是
+    // "没在播放""没分析器"还是"接上了没数据",不用再猜
+    localStorage.setItem('sf_debug_audio', '1')
     localStorage.setItem('soundflow_autolocate', '1')
     localStorage.setItem('soundflow_schema_version', '1')
     return true
@@ -550,7 +557,21 @@ app.whenReady().then(async () => {
     return { moved, card }
   }
 
-  const curTitle = await run(`(() => ((document.querySelector('.player-title') || {}).textContent || '').trim())()`)
+  // 悬停卡检查前**暂停播放**:夹具歌只有 2~42 秒,读到当前曲名之后它可能已经自动切下一首,
+  // 于是"期望的上一首/下一首"全是过期的,卡片看着不对其实是对的(踩过一次:hover 两红、prev 两绿)
+  await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return true })()`)
+  await sleep(900)
+  // 曲名要**读到稳定为止**:切歌那一瞬间读到的是上一首,于是"上一首/下一首"整组偏一位
+  // (踩过一次:四条 hover 全红,卡片其实是对的,差的就是一首)
+  const readTitle = () => run(`(() => ((document.querySelector('.player-title') || {}).textContent || '').trim())()`)
+  let curTitle = ''
+  for (let i = 0; i < 8; i++) {
+    const t1 = await readTitle()
+    await sleep(900)
+    const t2 = await readTitle()
+    curTitle = t2 || t1
+    if (t1 && t1 === t2) break
+  }
   // 上一首/下一首要按**应用当前的队列顺序**算,而不是播种时的数组顺序:起播时队列会按
   // 列表的排序重建(夹具标题现在是 "Track N"/"曲目 N" 交替,按标题排序与播种序并不一致)。
   const queuePaths = await run(`(() => {
@@ -850,6 +871,12 @@ app.whenReady().then(async () => {
   if (!(await specAdvancing())) {
     await run(`(() => { const b = document.querySelector('.ctrl-btn--play'); if (b) b.click(); return !!b })()`)
     await sleep(2200)
+    if (!(await specAdvancing())) {
+      // 队列可能已经播完了(前面几组跑了好几分钟,夹具歌又短):回到列表点一首重新起播。
+      // 这不是"频谱坏了" —— 没在播放时柱子本来就该是静止的。
+      console.log('频谱:队列已播完,重新起播一首')
+      await playByTitle('Track\s+\d+')
+    }
   }
   // 柱状画布可能被"圆形"模式隐藏 → 切到柱状再量
   const barShown = await run(`(() => {
@@ -885,7 +912,7 @@ app.whenReady().then(async () => {
     }
     let sum = 0
     for (let i = 3; i < data.length; i += 4 * 41) sum += data[i]
-    return { barPx: height - top, sum, display: cs.display, w: cv.width, h: cv.height }
+    return { barPx: height - top, sum, display: cs.display, w: cv.width, h: cv.height, graph: window.__sfAudioGraph || null }
   })()`)
   const prof = []
   for (let i = 0; i < 4; i++) { prof.push(await specProfile()); await sleep(500) }
@@ -895,7 +922,7 @@ app.whenReady().then(async () => {
     prof.every((p) => p && !p.err && p.display !== 'none' && p.w > 10 && p.h > 10) &&
     prof.some((p) => p.barPx > 10) &&
     new Set(sums).size > 1,
-    JSON.stringify(prof))
+    JSON.stringify(prof) + '(若此时打包版正在运行,它会占住音频设备 → 沙箱里读到的全零,先关掉再跑)')
 
   // 11) 桌面歌词的右键菜单:结构、勾选态、以及"窗口改设置 → 应用侧落盘 → 回推"这条回路
   //     用户报的是"右键菜单功能缺失、界面丑"。丑不靠肉眼判(这台机器截图拿不到帧),
@@ -1018,9 +1045,11 @@ app.whenReady().then(async () => {
     check('菜单:从窗口换色只写"桌面歌词颜色"(播放界面那套设置不动)',
       clicked === true && winColorSetting === picked && colorAppAfter === colorAppBefore,
       JSON.stringify({ winColorSetting, colorAppBefore, colorAppAfter }))
-    check('菜单:换色后桌面窗自己变了,而播放界面的歌词颜色不变',
-      winColorAfter !== winColorBefore && /126, 231, 135/.test(String(winColorAfter)) && appColorAfter === appColorBefore,
-      JSON.stringify({ winColorBefore, winColorAfter, appColorBefore, appColorAfter }))
+    // 播放界面那侧只比**设置**(渲染值有 .4s 过渡,随手量会读到中间色 —— 不是判据);
+    // 桌面窗那侧比渲染值没问题:它是 applyStyle 直接写行内样式
+    check('菜单:换色后桌面窗自己变了,而播放界面的歌词颜色设置不变',
+      winColorAfter !== winColorBefore && /126, 231, 135/.test(String(winColorAfter)) && colorAppAfter === colorAppBefore,
+      JSON.stringify({ winColorBefore, winColorAfter, colorAppBefore, colorAppAfter }))
     // 还原:改回"跟随应用侧"(同样要能改回来,免得污染后续运行)
     await lwRun(`(() => {
       document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
@@ -1034,7 +1063,70 @@ app.whenReady().then(async () => {
     check('菜单:颜色能改也能改回"跟随应用侧"(测完还原)',
       winColorBack === 'auto' && winColorRestored === winColorBefore,
       JSON.stringify({ winColorBack, winColorRestored, winColorBefore }))
+
+    // 显示方式二选一:dim(淡色+当前行高亮) / app(与播放界面一致)
+    // 判据取两者真正的差别:dim 会给"已唱过"的行额外淡化(opacity 很小),播放界面的规则里
+    // **没有"已唱过"这一档**(只按 |行号-当前行|),所以 app 模式下已唱过的行与未来行颜色一致。
+    const readWinLines = () => lwRun(`(() => {
+      const all=[...document.querySelectorAll('.line')]
+      const active=all.findIndex((el)=>el.classList.contains('active'))
+      const past=active>0?all[active-1]:null
+      const future=all[active+3]||null
+      const aEl=all[active]||null
+      const cs=(el)=>el?getComputedStyle(el):null
+      return {
+        active,
+        hasAppClass: document.getElementById('lyric').classList.contains('app-mode'),
+        activeBg: aEl ? getComputedStyle(aEl).backgroundImage : '',
+        activeColor: aEl ? getComputedStyle(aEl).color : '',
+        activeShadow: aEl ? getComputedStyle(aEl).textShadow : '',
+        pastOpacity: past ? parseFloat(getComputedStyle(past).opacity) : null,
+        futureOpacity: future ? parseFloat(getComputedStyle(future).opacity) : null,
+        pastColor: past ? getComputedStyle(past).color : '',
+        futureColor: future ? getComputedStyle(future).color : ''
+      }
+    })()`)
+    const dimState = await readWinLines()
+    console.log('显示方式 dim:', JSON.stringify(dimState))
+    check('显示方式:默认(淡色)下当前行没有胶囊背景,已唱过的行被额外淡化',
+      !!dimState && dimState.hasAppClass === false && !/gradient/.test(dimState.activeBg) &&
+      dimState.pastOpacity !== null && dimState.pastOpacity < 0.4,
+      JSON.stringify(dimState))
+
+    await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const el = document.querySelector('#ctx [data-a="style-app"]')
+      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(1900)
+    const appSetting = await readLocal('soundflow_lyric_win_line_style')
+    const appState = await readWinLines()
+    console.log('显示方式 app:', JSON.stringify(appState))
+    check('显示方式:切到"与播放界面一致"写进设置并切了模式',
+      appSetting === 'app' && !!appState && appState.hasAppClass === true,
+      JSON.stringify({ appSetting, hasAppClass: appState && appState.hasAppClass }))
+    check('显示方式:app 模式下已唱过的行与未来行一样(播放界面没有"已唱过"这一档)',
+      !!appState && appState.pastOpacity === appState.futureOpacity && appState.pastColor === appState.futureColor,
+      JSON.stringify({ past: appState && appState.pastOpacity, future: appState && appState.futureOpacity, pc: appState && appState.pastColor, fc: appState && appState.futureColor }))
+    check('显示方式:app 模式下当前行有胶囊背景与描边阴影(补齐播放界面的高亮形态)',
+      !!appState && /gradient/.test(appState.activeBg) && /rgba?\(/.test(String(appState.activeShadow)) && appState.activeShadow !== 'none',
+      JSON.stringify({ bg: appState && appState.activeBg, shadow: appState && appState.activeShadow }))
+    // 还原成默认的淡色模式
+    await lwRun(`(() => {
+      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
+      const el = document.querySelector('#ctx [data-a="style-dim"]')
+      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`)
+    await sleep(1700)
+    const backSetting = await readLocal('soundflow_lyric_win_line_style')
+    const backState = await readWinLines()
+    check('显示方式:能改回"淡色"(测完还原)',
+      backSetting === 'dim' && !!backState && backState.hasAppClass === false && backState.pastOpacity < 0.4,
+      JSON.stringify({ backSetting, past: backState && backState.pastOpacity }))
   }
+
 
 
   const failed = results.filter((r) => !r.ok)

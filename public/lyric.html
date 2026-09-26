@@ -36,6 +36,12 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 #ctx::-webkit-scrollbar{width:4px}
 #ctx::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.16);border-radius:2px}
 .ctx-group{font-size:11px;color:rgba(255,255,255,0.38);padding:7px 10px 3px;letter-spacing:.02em}
+/* 「与播放界面一致」模式:行间距/过渡/hover 对齐播放界面;已唱过的行不再额外淡化
+   (播放界面只按 |行号-当前行| 分档,没有"已唱过"这一档) */
+#lyric.app-mode .line{padding:10px 0;transition:all .4s ease}
+#lyric.app-mode .line.past{opacity:1}
+#lyric.app-mode .line:hover{background:rgba(255,255,255,0.06)}
+#lyric.app-mode .line.active{background:transparent}
 .ctx-swatches{display:flex;align-items:center;gap:7px;padding:5px 10px 8px;flex-wrap:wrap}
 .ctx-swatch{width:18px;height:18px;border-radius:50%;background:var(--c,#888);cursor:pointer;position:relative;border:1px solid rgba(255,255,255,0.22);box-sizing:border-box}
 .ctx-swatch:hover{transform:scale(1.12)}
@@ -91,6 +97,14 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div class="ctx-item" data-a="title" role="menuitemcheckbox">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
     <span class="ctx-label">显示歌名</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+  </div>
+  <div class="ctx-item" data-a="style-dim" role="menuitemradio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+    <span class="ctx-label">淡色(当前行高亮)</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+  </div>
+  <div class="ctx-item" data-a="style-app" role="menuitemradio">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+    <span class="ctx-label">与播放界面一致</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
   </div>
   <div class="ctx-item" data-a="font-">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></svg>
@@ -223,6 +237,8 @@ function syncMenuChecks(){
   on('align', appStyle.align === 'left')
   on('locked', win.locked)
   on('pinned', win.pinned)
+  on('style-dim', win.lineStyle !== 'app')
+  on('style-app', win.lineStyle === 'app')
   on('bg-dark', win.bg === 'dark')
   on('bg-light', win.bg === 'light')
   on('bg-none', win.bg === 'none')
@@ -290,8 +306,16 @@ function lineInner(l,i){
   return html
 }
 function renderLines(){
+  const appMode=win.lineStyle==='app'
   lyric.innerHTML=lines.map((l,i)=>{
-    const cls=i===activeIdx?'line active':(i>activeIdx&&i-activeIdx<=2?'line near':(i<activeIdx?'line past':'line'))
+    let cls
+    if(appMode){
+      // 与播放界面一致:按 |行号-当前行| 分档,±1 行算 near;**没有"已唱过"这一档**
+      const d=Math.abs(i-activeIdx)
+      cls=i===activeIdx?'line active':(d===1?'line near':(d>1?'line far':'line'))
+    }else{
+      cls=i===activeIdx?'line active':(i>activeIdx&&i-activeIdx<=2?'line near':(i<activeIdx?'line past':'line'))
+    }
     return `<div class="${cls}" data-i="${i}">${lineInner(l,i)}</div>`
   }).join('')
   applyStyle()
@@ -324,6 +348,13 @@ function startWordTimer(){
     })
   },120)
 }
+/** 当前行胶囊:与 src/utils/lyricStyle.js 的 lyricActivePill 同一算式(窗口用不了 ESM) */
+function lyricActivePill(hex){
+  return {
+    background:`linear-gradient(90deg, transparent, ${hexToRgba(hex,0.16)}, transparent)`,
+    boxShadow:`inset 0 0 0 1px ${hexToRgba(hex,0.18)}`
+  }
+}
 function hexToRgba(hex,alpha){
   const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16)
   return `rgba(${r},${g},${b},${alpha})`
@@ -337,18 +368,36 @@ function applyStyle(){
   lyric.style.textAlign=appStyle.align==='left'?'left':'center'
   const light=document.body.classList.contains('on-light')
   const dim=(a)=>light?`rgba(20,22,28,${a})`:`rgba(255,255,255,${a})`
+  const appMode=win.lineStyle==='app'
+  lyric.classList.toggle('app-mode',appMode)
   lyric.querySelectorAll('.line').forEach((el,i)=>{
     const active=i===activeIdx
-    const near=i>activeIdx&&i-activeIdx<=2
+    // 相邻行:播放界面是 ±1 行(只有特效开着才算),淡色模式是后面 1~2 行
+    const near=appMode
+      ? (appStyle.effect&&Math.abs(i-activeIdx)===1)
+      : (i>activeIdx&&i-activeIdx<=2)
     el.style.fontSize=(active?appStyle.fontSize+4:(near?appStyle.fontSize+1.5:appStyle.fontSize))+'px'
     el.style.lineHeight=String(appStyle.gap)
     el.style.fontWeight=active?700:400
-    // 特效关:不做远近变淡与发光(与应用侧"歌词特效"开关一致)。
-    // 对比度按桌面场景调过:壁纸什么颜色不知道,没唱到的行太淡就看不清
-    // (原来 0.34/0.62、特效关 0.5)。已唱过的那档保持很淡不动。
-    const accent=lyricColor()
-    el.style.color=active?accent:(appStyle.effect?(near?dim(0.82):dim(0.62)):dim(0.72))
-    el.style.textShadow=active?(appStyle.effect?`0 0 20px ${hexToRgba(accent,0.4)}`:'none'):'none'
+    if(appMode){
+      // 与播放界面一致:颜色/阴影**用应用侧算好下发的那份**(规则只有一份,见 lyricStyle.js),
+      // 这里不做任何推导 —— 下发缺失(老载荷)才退回淡色那套,避免整块变黑
+      const l=lines[i]
+      const accent=lyricColor()
+      el.style.color=(l&&l.color)?l.color:accent
+      el.style.textShadow=(l&&l.shadow)?l.shadow:'none'
+      const pill=(active&&appStyle.effect)?lyricActivePill(accent):null
+      el.style.background=pill?pill.background:''
+      el.style.boxShadow=pill?pill.boxShadow:''
+    }else{
+      // 淡色模式(默认):中性色分档 + 已唱过更淡;对比度按桌面场景调过
+      // (壁纸什么颜色不知道,没唱到的行太淡就看不清 —— 原来 0.34/0.62、特效关 0.5)
+      const accent=lyricColor()
+      el.style.color=active?accent:(appStyle.effect?(near?dim(0.82):dim(0.62)):dim(0.72))
+      el.style.textShadow=active?(appStyle.effect?`0 0 20px ${hexToRgba(accent,0.4)}`:'none'):'none'
+      el.style.background=''
+      el.style.boxShadow=''
+    }
   })
 }
 
@@ -415,6 +464,8 @@ function pushSetting(key,value){ if(api&&api.lyricSetting) api.lyricSetting(key,
 function handleAction(a){
   if(!api) return
   if(a==='close') api.lyricClose()
+  else if(a==='style-dim'){ pushSetting('lineStyle','dim'); showToast('显示方式:淡色(当前行高亮)') }
+  else if(a==='style-app'){ pushSetting('lineStyle','app'); showToast('显示方式:与播放界面一致') }
   else if(a==='font+') pushSetting('fontSize',+1)
   else if(a==='font-') pushSetting('fontSize',-1)
   else if(a==='align') pushSetting('align', appStyle.align==='left'?'center':'left')

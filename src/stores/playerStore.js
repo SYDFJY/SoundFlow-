@@ -5,6 +5,7 @@ import { parseLRCWithMeta } from '@/utils/lrc'
 import { resolveLyricOffset, buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
 import { lyricSourceSignature, isCacheEntryFor } from '@/utils/lyricSource'
 import { detectSongLang, splitLyricLines, targetLangFor, originalSample } from '@/utils/lyricLang'
+import { lyricLineColor as lineColor, lyricLineShadow as lineShadow } from '@/utils/lyricStyle'
 import { formatDuration } from '@/utils/time'
 import { noteFailure } from '@/utils/failures'
 import { createShufflePool } from '@/utils/shufflePool'
@@ -697,6 +698,7 @@ export const usePlayerStore = defineStore('player', () => {
       // 真正在放的音乐峰值接近 255(实测低音段常在 200 以上)。
       peak,
       silent: peak < 8,
+      playing: isPlaying.value,
       volume: audio.value ? audio.value.volume : -1,
       muted: audio.value ? audio.value.muted : null,
       paused: audio.value ? audio.value.paused : null,
@@ -1707,6 +1709,17 @@ export const usePlayerStore = defineStore('player', () => {
    * 现在把应用侧实际在用的那一套整份推过去;窗口只保留它专有的东西(背景透明度/锁定)。
    * 时间还是推 currentTime 快照 + playing:窗内自己按 receivedAt 插值,逐字才走得动。
    */
+  /** 桌面歌词窗当前生效的歌词色:窗口自己的色(win.color)优先,'auto' 才跟随应用侧 */
+  function desktopLyricColor() {
+    const own = getSetting('soundflow_lyric_win_color') || 'auto'
+    if (own && own !== 'auto') return own
+    return getSetting('soundflow_lyric_color') || '#6ec6ff'
+  }
+  /** 歌词特效开关(与应用侧/播放界面同一个设置):决定当前行高亮与前后变淡是否生效 */
+  function wordEffectEnabled() {
+    return String(getSetting('soundflow_lyric_effect')) === '1'
+  }
+
   function buildLyricWindowPayload () {
     updateLyricIndex()
     const idx = currentLyricIndex.value
@@ -1726,7 +1739,15 @@ export const usePlayerStore = defineStore('player', () => {
       artist: currentSong.value?.artist || '',
       // 每行自带译文:窗口按行取,就不会出现"译文是这一句、行号是另一句"的错配
       // (早先只推一个"当前行译文"字符串,与索引是两条推送,谁快谁慢都会错行)
-      lines: lyrics.value.map((l, i) => ({ time: l.time, text: l.text, trans: translationFor(i) })),
+      // 每行连**颜色与阴影**一起算好发下去:桌面歌词的"与播放界面一致"模式直接用它们,
+      // 窗口自己不做任何颜色推导 —— 规则只留在 src/utils/lyricStyle.js 一份
+      lines: lyrics.value.map((l, i) => ({
+        time: l.time,
+        text: l.text,
+        trans: translationFor(i),
+        color: lineColor({ color: desktopLyricColor(), effect: wordEffectEnabled(), idx: i, currentIdx: idx }),
+        shadow: lineShadow({ color: desktopLyricColor(), effect: wordEffectEnabled(), idx: i, currentIdx: idx })
+      })),
       // 窗口专有设置(背景/透明度/锁定/置顶/显示歌名):真源在应用侧,窗口只消费
       win: {
         bg: getSetting('soundflow_lyric_win_bg') || 'dark',
@@ -1736,7 +1757,9 @@ export const usePlayerStore = defineStore('player', () => {
         showTitle: String(getSetting('soundflow_lyric_win_title')) === '1',
         // 桌面歌词自己的颜色:'auto' 表示跟随应用侧。
         // 用户要求:在桌面歌词上改颜色,不能连带改掉播放界面那套
-        color: getSetting('soundflow_lyric_win_color') || 'auto'
+        color: getSetting('soundflow_lyric_win_color') || 'auto',
+        // dim = 淡色 + 当前行高亮(默认);app = 与播放界面一致(用上面预算好的 color/shadow)
+        lineStyle: getSetting('soundflow_lyric_win_line_style') || 'dim'
       },
       currentIdx: idx,
       currentTime: currentTime.value || 0,
@@ -2337,7 +2360,8 @@ export const usePlayerStore = defineStore('player', () => {
       locked: 'soundflow_lyric_win_locked',
       pinned: 'soundflow_lyric_win_pinned',
       title: 'soundflow_lyric_win_title',
-      color: 'soundflow_lyric_win_color'
+      color: 'soundflow_lyric_win_color',
+      lineStyle: 'soundflow_lyric_win_line_style'
     }
     const storeKey = map[key]
     if (!storeKey) return false
@@ -2356,6 +2380,7 @@ export const usePlayerStore = defineStore('player', () => {
     if (key === 'align' && v !== 'left' && v !== 'center') return false
     // 颜色只接受 #rgb / #rrggbb 或 auto(窗口传来的值同样不可全信)
     if (key === 'color' && v !== 'auto' && !/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(String(v))) return false
+    if (key === 'lineStyle' && v !== 'dim' && v !== 'app') return false
     try { localStorage.setItem(storeKey, v) } catch (e) { noteFailure('lyric.win', '桌面歌词设置写入失败', e) }
     if (isWinKey && key === 'pinned' && window.electronAPI && window.electronAPI.lyricWinConfig) {
       window.electronAPI.lyricWinConfig({ pinned: v === '1' })

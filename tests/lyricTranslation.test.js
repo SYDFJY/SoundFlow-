@@ -122,7 +122,10 @@ describe('桌面歌词窗的译文不再错行/滞后', () => {
   it('译文**随行走**:载荷里每行自带 trans(与行号天然对齐)', () => {
     const s = store()
     expect(s, '载荷没给每行带译文(窗口只能拿到"当前行译文"那一个字符串,与索引是两条推送、必然错行)')
-      .toMatch(/lines: lyrics\.value\.map\(\(l, i\) => \(\{ time: l\.time, text: l\.text, trans: translationFor\(i\) \}\)\)/)
+      .toMatch(/trans: translationFor\(i\),/)
+    expect(s, '载荷没下发每行的颜色(桌面歌词"与播放界面一致"模式要用)')
+      .toMatch(/color: lineColor\(\{ color: desktopLyricColor\(\), effect: wordEffectEnabled\(\), idx: i, currentIdx: idx \}\)/)
+    expect(s, '载荷没下发每行的阴影').toMatch(/shadow: lineShadow\(\{/)
     const win = read('public/lyric.html')
     expect(win, '窗口没按行取译文').toMatch(/const ownTrans=\(l&&typeof l==='object'&&l\.trans\)\|\|translation/)
     expect(win, '窗口仍直接用全局 translation 渲染译文行').toMatch(/if\(i===activeIdx&&ownTrans\)/)
@@ -248,5 +251,39 @@ describe('桌面歌词的颜色独立(2026-09-26:改桌面歌词颜色不能连�
     expect(s, '窗口邻近行没提亮').toMatch(/near\?dim\(0\.82\):dim\(0\.62\)/)
     expect(s, '窗口"特效关"的统一档没提亮').toMatch(/dim\(0\.72\)/)
     expect(s, '窗口又出现旧的过淡档位').not.toMatch(/dim\(0\.34\)/)
+  })
+})
+
+describe('桌面歌词的显示方式:dim / app(2026-09-26)', () => {
+  const winSrc = () => read('public/lyric.html')
+
+  it('"与播放界面一致"用应用侧下发的每行颜色,窗口自己不做推导', () => {
+    const s = winSrc()
+    expect(s, '窗口没按 lineStyle 分支').toMatch(/win\.lineStyle==='app'/)
+    expect(s, 'app 模式没用下发的行颜色(自己又算了一套 → 必然与播放界面走偏)').toMatch(/l&&l\.color/)
+    expect(s, 'app 模式没用下发的行阴影').toMatch(/l&&l\.shadow/)
+  })
+
+  it('app 模式补齐播放界面的那几处:胶囊、去掉"已唱过"档、相邻行收窄到 ±1', () => {
+    const s = winSrc()
+    expect(s, 'app 模式没有当前行胶囊').toMatch(/function lyricActivePill/)
+    expect(s, 'app 模式仍给已唱过的行额外淡化(播放界面没有这一档)')
+      .toMatch(/#lyric\.app-mode \.line\.past\{opacity:1\}/)
+    expect(s, 'app 模式的相邻行判定不是 ±1').toMatch(/appMode\s*\?\s*\(appStyle\.effect&&Math\.abs\(i-activeIdx\)===1\)/)
+  })
+
+  it('规则只有一份:播放界面改用共享函数,不再内联 color-mix', () => {
+    const pv = read('src/views/PlayerView.vue')
+    expect(pv, 'PlayerView 没引入共享的行颜色函数').toMatch(/from '@\/utils\/lyricStyle'/)
+    expect(pv, 'PlayerView 里又内联了 color-mix 规则(规则应当只在 lyricStyle.js)').not.toMatch(/color-mix\(in srgb, \$\{lyricColor/)
+    expect(pv, 'PlayerView 的行阴影又内联了 22px 光晕').not.toMatch(/0 0 22px \$\{lyricColor\.value\}66/)
+  })
+
+  it('两种显示方式在菜单里互斥可选', () => {
+    const s = winSrc()
+    for (const key of ['style-dim', 'style-app']) {
+      expect(s, `菜单缺少显示方式项:${key}`).toContain(`data-a="${key}"`)
+    }
+    expect(s, '两个方式没有互斥勾选').toMatch(/on\('style-app', win\.lineStyle === 'app'\)/)
   })
 })

@@ -30,6 +30,8 @@ export const DEFAULTS = {
   soundflow_lyric_win_title: '1',
   // 桌面歌词自己的颜色:'auto' = 跟随应用侧歌词颜色;设了色值就只影响那个窗口
   soundflow_lyric_win_color: 'auto',
+  // 桌面歌词的显示方式:dim = 淡色 + 当前行高亮(默认);app = 与播放界面一致
+  soundflow_lyric_win_line_style: 'dim',
   // 迷你窗
   soundflow_mini_bg_mode: 'dark',
   soundflow_mini_bg_color: '#161b22',
