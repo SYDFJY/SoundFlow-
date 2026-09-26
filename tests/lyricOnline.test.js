@@ -267,6 +267,98 @@ describe('批量下载:同名曲的 .lrc 不能互相覆盖', () => {
   })
 })
 
+describe('域名排队节流:并发时也必须真的排队', () => {
+  it('同域名的并发请求按最小间隔一个个发(旧实现在这条上必红)', async () => {
+    const t0 = Date.now()
+    const marks = []
+    const fire = (i) => sources.withHostSlot('https://queue-test.invalid/x', async () => {
+      marks.push(Date.now() - t0)
+      await new Promise((r) => setTimeout(r, 40)) // 模拟请求耗时
+      return i
+    })
+    // 并发 4 个(旧实现:读同一个时间戳 → 睡同样久 → 几乎同时发出;
+    // 这正是上一个版本把 LRCLIB/QQ 打到整片 HTTP 错误的原因)
+    await Promise.all([1, 2, 3, 4].map(fire))
+    const gaps = marks.slice(1).map((at, i) => at - marks[i])
+    const min = sources.HOST_MIN_GAP_MS
+    expect(gaps.every((g) => g >= min - 15), `相邻发起间隔 ${gaps.join(',')} 小于 ${min}ms —— 没有真正排队`).toBe(true)
+  })
+
+  it('某个请求抛错不会把该域名后面的请求卡死', async () => {
+    const bad = sources.withHostSlot('https://queue-err.invalid/x', async () => { throw new Error('boom') })
+    await expect(bad).rejects.toThrow('boom')
+    const ok = await sources.withHostSlot('https://queue-err.invalid/x', async () => 'fine')
+    expect(ok).toBe('fine')
+  })
+})
+
+describe('在线歌词缓存:单键通道', () => {
+  it('主进程提供单键读写与清空(不再整份对象搬过 IPC)', () => {
+    const ipc = read('electron/ipc/storage.js')
+    for (const ch of ['lyric-cache-get', 'lyric-cache-set', 'lyric-cache-clear']) {
+      expect(ipc, `主进程缺少 ${ch} 通道`).toMatch(new RegExp(`ipcMain\\.handle\\('${ch}'`))
+    }
+    expect(ipc, '容量淘汰没有下移到主进程').toMatch(/LYRIC_CACHE_MAX/)
+    const pre = read('electron/preload.js')
+    for (const api of ['lyricCacheGet', 'lyricCacheSet', 'lyricCacheClear']) {
+      expect(pre, `preload 没有暴露 ${api}`).toMatch(new RegExp(`${api}:`))
+    }
+  })
+
+  it('渲染端不再整份读写 lyricsCache', () => {
+    const s = read('src/stores/playerStore.js')
+    expect(s, '又在整份读 lyricsCache 了').not.toMatch(/storeGet\('lyricsCache'\)/)
+    expect(s, '又在整份写 lyricsCache 了').not.toMatch(/storeSet\('lyricsCache'/)
+    expect(s, '读缓存没走单键通道').toMatch(/lyricCacheGet\(key\)/)
+    expect(s, '写缓存没走单键通道').toMatch(/lyricCacheSet\(key, value\)/)
+    expect(s, '丢弃坏条目没走单键通道').toMatch(/lyricCacheSet\(key, null\)/)
+  })
+})
+
+describe('本地歌词:回收站与路径校验', () => {
+  it('删歌词走系统回收站(与歌曲删除一致,删错能还原)', () => {
+    const s = read('electron/ipc/lyrics.js')
+    expect(s, '删歌词又用 unlinkSync 永久删除了').not.toMatch(/fs\.unlinkSync\((sameDir|exact)\)/)
+    expect(s, '没有走 shell.trashItem').toMatch(/shell\.trashItem\(target\)/)
+    expect(read('electron/ipc/lyrics.js'), 'shell 没导入').toMatch(/\{ dialog, shell \} = require\('electron'\)/)
+  })
+
+  it('绑定歌词文件只允许写进曲库内的歌曲(渲染端路径不可信)', () => {
+    const s = read('electron/ipc/lyrics.js')
+    expect(s, 'bind-lyric-file 没有曲库校验').toMatch(/if \(!isKnownSong\(audioPath\)\)/)
+    expect(s, '没有限制导入文件类型').toMatch(/只支持导入 \.lrc \/ \.txt 文件/)
+    expect(s, '曲库校验没做 resolve 全等').toMatch(/function isKnownSong/)
+  })
+
+  it('没人用又能枚举任意目录的 scan-lyric-folder 已删除', () => {
+    expect(read('electron/ipc/lyrics.js'), '通道又回来了').not.toMatch(/scan-lyric-folder/)
+    expect(read('electron/preload.js'), 'preload 又暴露了它').not.toMatch(/scanLyricFolder/)
+  })
+})
+
+describe('批量下载与桌面歌词窗保存', () => {
+  it('批量并发降到 3(并行取词后单首内部已 3 路)', () => {
+    expect(read('src/views/SettingsView.vue'), '批量并发又调高了').toMatch(/const CONCURRENCY = 3/)
+  })
+  it('桌面歌词窗保存失败会回 false(以前那条分支永远走不到)', () => {
+    const m = read('electron/main.js')
+    expect(m, '保存失败没回 false').toMatch(/send\('lyric:save-done', false\)/)
+    expect(m, '用户取消对话框应该保持安静').toMatch(/if \(canceled \|\| !filePath\) return/)
+  })
+})
+
+describe('元数据搜索:不要再按歌手名硬过滤', () => {
+  // 这个坑在四个源里出现了三次(网易云 / MusicBrainz / 酷狗):本地标签写"周杰伦",
+  // 对方库里写"周杰倫"或"Jay" —— 硬过滤会把整个源清成空,界面只说"没有候选"。
+  it('四个源都只用评分排序,不做淘汰', () => {
+    const s = read('electron/ipc/search.js')
+    expect(s, '又出现"歌手名不匹配就 continue"的硬过滤').not.toMatch(/_normName\(sArtist\)\.includes\(want\)\) continue/)
+    expect(s, '网易云缺少评分排序').toMatch(/const ranked = songs\.map/)
+    expect(s, 'MusicBrainz 缺少评分排序').toMatch(/const scored = out\.map/)
+    expect(s, '酷狗退回了 _exact 两档排序(应改成评分)').not.toMatch(/uniq\.sort\(\(a, b\) => a\._exact - b\._exact\)/)
+  })
+})
+
 describe('翻译:配额与重复行', () => {
   it('配额耗尽后停手(此前只 continue,剩下的行照发)', () => {
     const s = read('electron/ipc/lyrics.js')

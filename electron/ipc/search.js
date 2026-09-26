@@ -85,13 +85,20 @@ function register (ctx) {
       const list = (data.req_0 && data.req_0.data && data.req_0.data.body && data.req_0.data.body.song && data.req_0.data.body.song.list) || []
       const out = []
       const want = _normName(artist)
+      const wantTitle = _normName(title)
       for (const s of list) {
         const sArtist = (s.singer || []).map(x => x.name).join('/')
         const album = (s.album && s.album.name) || ''
         // 封面:专辑 mid 在 s.album.mid(部分接口为顶层 albummid)
         const albumMid = (s.album && s.album.mid) || s.albummid || ''
-        // 歌手过滤:要求归一化后包含目标歌手(防 UGC 翻唱条目)
-        if (want && !_normName(sArtist).includes(want)) continue
+        // 歌手名只参与排序、不做淘汰(与网易云/酷狗/MusicBrainz 一致:本地标签与对方库里的
+        // 艺术家名经常不一致 —— 繁简、别名、"Jay" vs "周杰伦",硬过滤会把整个源清成空)
+        const nTitle = _normName(s.name || title)
+        const nArtist = _normName(sArtist)
+        let sc = 0
+        if (nTitle && nTitle === wantTitle) sc += 100
+        else if (nTitle && wantTitle && (nTitle.includes(wantTitle) || wantTitle.includes(nTitle))) sc += 50
+        if (want && nArtist.includes(want)) sc += 40
         out.push({
           title: s.name || title,
           artist: sArtist,
@@ -99,11 +106,12 @@ function register (ctx) {
           year: '',
           duration: s.interval ? Math.round(s.interval) : 0,
           coverUrl: albumMid ? 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + albumMid + '.jpg' : '',
-          source: 'QQ音乐'
+          source: 'QQ音乐',
+          _score: sc
         })
-        if (out.length >= 5) break
       }
-      return out
+      out.sort((a, b) => b._score - a._score)
+      return out.slice(0, 5).map(({ _score, ...rest }) => rest)
     } catch (e) {
       // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
       // 真发生过)与"这个源没有这首歌"在界面上完全一样
@@ -141,9 +149,12 @@ function register (ctx) {
       // 而不是返回空 —— 网易云的搜索结果里常有整页翻唱(实测查询"晴天 周杰伦"的 8 条里
       // 没有一条歌手名含"周杰伦",真实那条署名是 "Jay"),硬过滤会把整个音源清成空,
       // 而界面只显示"这个源没有候选"。
+      // 按分数排序后取前 5(不要再按歌手做"硬过滤再退回"):
+      // 实测查询"晴天 周杰伦"时,网易云把真歌署名成 "Jay" —— 硬过滤会把它剔掉,
+      // 只留下歌手名里含"周杰伦"的《刀马旦》(歌名完全不对)当第一条。
+      // 评分里"标题精确"权重最高,所以排在最前的就是那首真歌;UGC/翻唱自然沉下去。
       const ranked = songs.map(s => ({ s, sc: scoreOf(s) })).sort((a, b) => b.sc - a.sc)
-      const strict = ranked.filter(x => want && _normName((x.s.artists || []).map(a => a.name).join('/')).includes(want))
-      const chosen = (strict.length ? strict : ranked).slice(0, 5)
+      const chosen = ranked.slice(0, 5)
       for (const { s } of chosen) {
         const sArtist = (s.artists || []).map(x => x.name).join('/')
         let coverUrl = '', year = ''
@@ -254,22 +265,27 @@ function register (ctx) {
       const out = []
       for (const s of list) {
         const sArtist = s.SingerName || ''
-        if (want && !_normName(sArtist).includes(want)) continue
         const sTitle = s.SongName || ''
-        // 精确标题优先;翻唱/Live/DJ 版标题不匹配的排后面
-        const exact = wantTitle && _normName(sTitle) === wantTitle
+        // 歌手名只参与**排序**、不做淘汰:实测三个源里有两个(网易云/ MusicBrainz)
+        // 的艺术家名与本地标签不一致(繁简/别名),硬过滤会把整个源清成空。
+        const nTitle = _normName(sTitle)
+        const nArtist = _normName(sArtist)
+        let sc = 0
+        if (wantTitle && nTitle === wantTitle) sc += 100
+        else if (wantTitle && nTitle && (nTitle.includes(wantTitle) || wantTitle.includes(nTitle))) sc += 50
+        if (want && nArtist.includes(want)) sc += 40
         out.push({
           title: sTitle, artist: sArtist,
           album: s.AlbumName || '', year: '',
           duration: s.Duration ? Math.round(s.Duration) : 0,
           coverUrl: '', source: '酷狗',
-          _exact: exact ? 0 : 1
+          _score: sc
         })
       }
-      // 精确匹配排前,去重
+      // 分数高的排前(标题精确 100 > 标题包含 50 > 歌手命中 40),再去重
       const seen = new Set()
       const uniq = out.filter(x => { const k = x.album + '|' + x.title; if (seen.has(k)) return false; seen.add(k); return true })
-      uniq.sort((a, b) => a._exact - b._exact)
+      uniq.sort((a, b) => b._score - a._score)
       return uniq.slice(0, 5).map(x => ({ title: x.title, artist: x.artist, album: x.album, year: x.year, duration: x.duration, coverUrl: x.coverUrl, source: x.source }))
     } catch (e) {
       // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
@@ -295,7 +311,12 @@ function register (ctx) {
       if (!res.ok) { log.failure('search.musicbrainz', `MusicBrainz 返回 HTTP ${res.status}`, title); return [] }
       const data = await res.json()
       // 提取候选:标题/艺术家/专辑/年份(去重按专辑)
+      // 注意**不要**在这里按歌手名硬过滤:MusicBrainz 返回的艺术家名常是繁体/别名
+      // (实测查询"晴天 周杰伦"时它给的是"周杰倫"),硬过滤会把整个源清成空 ——
+      // 网易云那边踩过同一个坑(见 search-netease 的说明),这里改成评分排序。
       const out = []
+      const wantTitle = _normName(title)
+      const wantArtist = _normName(artist)
       for (const rec of (data.recordings || [])) {
         const album = rec.releases && rec.releases[0]
         const item = {
@@ -306,7 +327,17 @@ function register (ctx) {
         }
         if (!out.some(x => x.album === item.album && x.artist === item.artist)) out.push(item)
       }
-      return out
+      // 标题/歌手对得上的排前面(都只当排序依据,不做淘汰)
+      const scored = out.map((x) => {
+        const nTitle = _normName(x.title)
+        const nArtist = _normName(x.artist)
+        let sc = 0
+        if (nTitle && nTitle === wantTitle) sc += 100
+        else if (nTitle && wantTitle && (nTitle.includes(wantTitle) || wantTitle.includes(nTitle))) sc += 50
+        if (wantArtist && nArtist && nArtist.includes(wantArtist)) sc += 40
+        return { x, sc }
+      }).sort((a, b) => b.sc - a.sc)
+      return scored.slice(0, 5).map(({ x }) => x)
     } catch (e) {
       // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
       // 真发生过)与"这个源没有这首歌"在界面上完全一样

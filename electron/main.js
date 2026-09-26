@@ -1430,19 +1430,23 @@ function setupIPC() {
 
   // 歌词窗口:保存歌词到文件
   ipcMain.on('lyric:save', async (event, text) => {
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
     try {
-      const win = BrowserWindow.fromWebContents(event.sender) || mainWindow
       const { canceled, filePath } = await dialog.showSaveDialog(win, {
         title: '保存歌词文件',
         defaultPath: 'lyrics.lrc',
         filters: [{ name: 'LRC 歌词', extensions: ['lrc'] }]
       })
-      if (!canceled && filePath) {
-        const fs = require('fs')
-        fs.writeFileSync(filePath, text, 'utf-8')
-        if (lyricWindow) lyricWindow.webContents.send('lyric:save-done', true)
-      }
-    } catch {}
+      if (canceled || !filePath) return // 用户取消:保持安静(窗口什么都不用提示)
+      fs.writeFileSync(filePath, String(text == null ? '' : text), 'utf-8')
+      if (lyricWindow) lyricWindow.webContents.send('lyric:save-done', true)
+    } catch (e) {
+      // 失败必须回一个 false:此前这条 catch 什么都不发,而桌面歌词窗里
+      // `lyric:save-done(false) → '保存失败'` 那个分支**从来没被触发过** ——
+      // 存到只读目录/磁盘满时,用户点了"保存歌词到文件"就是没有任何反应
+      log.warn('[歌词] 保存文件失败:', e.message)
+      try { if (lyricWindow) lyricWindow.webContents.send('lyric:save-done', false) } catch {}
+    }
   })
 
   ipcMain.on('mini:update', (event, data) => {

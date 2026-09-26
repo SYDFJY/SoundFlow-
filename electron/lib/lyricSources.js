@@ -126,22 +126,38 @@ function failFor (kind, source, detail) {
 
 // ===== HTTP =====
 
+// 每个域名一条"排队链":同一个域名上的请求**串行**,相邻两次之间至少隔 HOST_MIN_GAP_MS。
+// 上一版是"读时间戳 → 睡一会儿 → 打时间戳"的尽力而为版,并发下等于没有:三个源并行取词,
+// 或批量下载 5 个 worker 一起跑时,它们读到同一个时间戳、睡同样久、然后同时发出去 ——
+// 实测后果是 LRCLIB 与 QQ 在被反复请求后整片返回 HTTP 错误(被限流),用户看到"音源异常"。
+const _hostChain = new Map()
 const _hostLastAt = new Map()
-async function throttleHost (url) {
-  try {
-    const host = new URL(url).host
-    const wait = HOST_MIN_GAP_MS - (Date.now() - _hostLastAt.get(host) || 0)
+
+/** 在某个域名上排到一个位置,执行 fn(含读响应体),返回它的结果 */
+function withHostSlot (url, fn) {
+  let host = ''
+  try { host = new URL(url).host } catch { return fn() }
+  const prev = _hostChain.get(host) || Promise.resolve()
+  const run = prev.then(async () => {
+    const wait = HOST_MIN_GAP_MS - (Date.now() - (_hostLastAt.get(host) || 0))
     if (wait > 0) await new Promise((r) => setTimeout(r, wait))
     _hostLastAt.set(host, Date.now())
-  } catch {}
+    return fn()
+  })
+  // 链上只挂"不会因失败而断"的尾巴:某个请求抛错不该让这个域名后面的请求全卡死
+  _hostChain.set(host, run.then(() => {}, () => {}))
+  return run
 }
 
 /**
- * 带超时/节流/大小上限的 GET+JSON。返回 {ok:true,data} 或 {ok:false,kind,status?,detail?},
+ * 带超时/排队节流/大小上限的 GET+JSON。返回 {ok:true,data} 或 {ok:false,kind,status?,detail?},
  * kind ∈ network|timeout|http|parse|too-big —— 调用方据此决定"网络问题"还是"音源问题"。
  */
 async function httpGetJson (url, headers, timeoutMs = REQ_TIMEOUT_MS) {
-  await throttleHost(url)
+  return withHostSlot(url, () => httpGetJsonNow(url, headers, timeoutMs))
+}
+
+async function httpGetJsonNow (url, headers, timeoutMs) {
   let res
   try {
     res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
@@ -401,5 +417,8 @@ module.exports = {
   rankCandidates,
   pickBestCandidate,
   MIN_MATCH_SCORE,
-  AUTO_BUDGET_MS
+  AUTO_BUDGET_MS,
+  // 队列节流(单测要断言"并发时也真的排队",见 tests/lyricOnline.test.js)
+  withHostSlot,
+  HOST_MIN_GAP_MS
 }

@@ -1313,8 +1313,7 @@ export const usePlayerStore = defineStore('player', () => {
   // 兼容旧条目 —— 升级前存的是**纯字符串**(只有原文),读到字符串就当作 { lyrics: 字符串 }。
   async function _getCachedOnlineLyric(key) {
     try {
-      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
-      const hit = cache[key]
+      const hit = await window.electronAPI.lyricCacheGet(key)
       if (!hit) return null
       if (typeof hit === 'string') return { lyrics: hit, translation: '' }
       if (typeof hit === 'object' && typeof hit.lyrics === 'string') {
@@ -1326,15 +1325,10 @@ export const usePlayerStore = defineStore('player', () => {
 
   async function _setCachedOnlineLyric(key, lyricsText, translationText = '') {
     try {
-      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
-      cache[key] = translationText ? { lyrics: lyricsText, translation: translationText } : lyricsText
-      const keys = Object.keys(cache)
-      // 容量上限 800 条(每条约 3-5KB,约 3MB);按最早写入淘汰(FIFO)
-      if (keys.length > 800) {
-        const dropCount = keys.length - 800
-        for (let i = 0; i < dropCount; i++) delete cache[keys[i]]
-      }
-      await window.electronAPI.storeSet('lyricsCache', cache)
+      // 单键写入(容量淘汰在主进程的 lyric-cache-set 里):以前是"取整份 → 改一条 → 写整份",
+      // 每首歌切换搬约 3MB,两首歌的加载重叠时后写的还会把前一条覆盖掉
+      const value = translationText ? { lyrics: lyricsText, translation: translationText } : lyricsText
+      await window.electronAPI.lyricCacheSet(key, value)
     } catch (e) {
       // 写失败以前完全无声:表现为"这首歌每次都重新联网取歌词"
       noteFailure('lyric.cache', '在线歌词缓存写入失败', e)
@@ -1343,22 +1337,15 @@ export const usePlayerStore = defineStore('player', () => {
 
   /** 丢掉一条缓存(内容被发现不是歌词时用) */
   async function _dropCachedOnlineLyric(key) {
-    try {
-      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
-      if (!(key in cache)) return
-      delete cache[key]
-      await window.electronAPI.storeSet('lyricsCache', cache)
-    } catch {}
+    try { await window.electronAPI.lyricCacheSet(key, null) } catch {}
   }
 
   /** 在线歌词的清理入口(设置页用):曲库换过来源/发现歌词不对时可清 */
   async function clearOnlineLyricCache() {
     try {
-      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
-      const n = Object.keys(cache).length
-      await window.electronAPI.storeSet('lyricsCache', {})
+      const r = await window.electronAPI.lyricCacheClear()
       _onlineMisses.clear()
-      return n
+      return (r && r.removed) || 0
     } catch (e) {
       noteFailure('lyric.cache', '清理在线歌词缓存失败', e)
       return 0

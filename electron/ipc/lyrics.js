@@ -13,7 +13,7 @@ const path = require('path')
 // WebCrypto(没有 createHash),漏了不会报错、只会静默走 catch 分支 —— ipc/search.js 的
 // get-hd-cover 就是这么失效了很久(见那里的注释)。
 const crypto = require('crypto')
-const { dialog } = require('electron')
+const { dialog, shell } = require('electron')
 // 失败上报:日志 + 转给渲染端诊断面板(此模块原来 require 了 electron-log 和 https
 // 却一次都没用上 —— 拆模块时的遗留,一并清掉)
 const failLog = require('../lib/failureLog')
@@ -65,25 +65,35 @@ function register (ctx) {
   }
 
   // 删除本地歌词(精确匹配:歌曲同目录同名 .lrc,或歌词文件夹中完全同名;不做模糊匹配防误删)
+  /**
+   * 渲染端传来的音频路径必须落在**权威曲库**里(resolve 后完全相等,不做前缀匹配)。
+   * 与 trash-songs 用的是同一套规矩:渲染端路径一律不可信。
+   */
+  function isKnownSong (audioPath) {
+    try {
+      const full = path.resolve(String(audioPath))
+      const library = (storage() && Array.isArray(storage().library)) ? storage().library : []
+      return library.some((s) => {
+        try { return path.resolve(String(s.path)) === full } catch { return false }
+      })
+    } catch { return false }
+  }
+
   ipcMain.handle('delete-lyric-file', async (event, audioPath, lyricFolders) => {
     try {
+      // 删歌词走**系统回收站**(与歌曲删除一致):删错了能自己捞回来,而不是永久消失
+      const trash = async (target) => { await shell.trashItem(target); return { ok: true, deleted: target, trashed: true } }
       const ext = path.extname(audioPath)
       const base = path.basename(audioPath, ext)
       // 1. 同目录同名
       const sameDir = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
-      if (fs.existsSync(sameDir)) {
-        fs.unlinkSync(sameDir)
-        return { ok: true, deleted: sameDir }
-      }
+      if (fs.existsSync(sameDir)) return await trash(sameDir)
       // 2. 歌词文件夹完全同名(仅精确匹配,不模糊;且只认主进程记录的目录)
       const trusted = (lyricFolders || []).filter(isTrustedLyricFolder)
       if (trusted.length) {
         for (const folder of trusted) {
           const exact = path.join(folder, base + '.lrc')
-          if (fs.existsSync(exact)) {
-            fs.unlinkSync(exact)
-            return { ok: true, deleted: exact }
-          }
+          if (fs.existsSync(exact)) return await trash(exact)
         }
       }
       return { ok: false, error: '未找到该歌曲的本地歌词文件' }
@@ -410,13 +420,8 @@ const { resolveLyricTarget } = require('../lib/lyricFile')
     }
   })
 
-  // 扫描歌词文件夹，返回所有 .lrc 文件列表
-  ipcMain.handle('scan-lyric-folder', async (event, folderPath) => {
-    try {
-      const files = fs.readdirSync(folderPath).filter(f => f.endsWith('.lrc'))
-      return files.map(f => ({ name: path.basename(f, '.lrc'), path: path.join(folderPath, f) }))
-    } catch { return [] }
-  })
+  // 扫描歌词文件夹的那条通道已删除:它没有任何调用方,而且可以枚举**任意**目录 ——
+  // 渲染端路径不可信是项目惯例,一条没人用又能读任意目录的通道不值得留。
 
   // 选择歌词文件
   ipcMain.handle('select-lyric-file', async () => {
@@ -430,13 +435,18 @@ const { resolveLyricTarget } = require('../lib/lyricFile')
   // 绑定歌词文件：复制 .lrc 到音频同目录同名
   ipcMain.handle('bind-lyric-file', async (event, audioPath, lrcPath) => {
     try {
+      // 目标音频必须在曲库里:此前这条通道能把**任意**文件复制到**任意** .lrc 路径
+      // (写路径都做了校验,只有它没有 —— 渲染端路径不可信是项目惯例)
+      if (!isKnownSong(audioPath)) return { ok: false, error: '该歌曲不在曲库中,拒绝写入' }
+      if (!lrcPath || !/\.(lrc|txt)$/i.test(String(lrcPath))) return { ok: false, error: '只支持导入 .lrc / .txt 文件' }
+      if (!fs.existsSync(lrcPath)) return { ok: false, error: '源文件不存在(可能已被移动)' }
       const ext = path.extname(audioPath)
       const base = audioPath.substring(0, audioPath.length - ext.length)
       const targetPath = base + '.lrc'
       fs.copyFileSync(lrcPath, targetPath)
       return { ok: true }
     } catch (e) {
-      console.error('[歌词] 绑定失败:', e.message)
+      failLog.failure('lyric.bind', '绑定歌词文件失败', e)
       // 返回具体错误码,前端据此提示用户(权限/文件缺失/占用等)
       let err = '未知错误'
       if (e.code === 'ENOENT') err = '源文件不存在(可能已被移动)'

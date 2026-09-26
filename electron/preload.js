@@ -78,7 +78,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectLyricFile: () => ipcRenderer.invoke('select-lyric-file'),
   bindLyricFile: (audioPath, lrcPath) => ipcRenderer.invoke('bind-lyric-file', audioPath, lrcPath),
   deleteLyricFile: (audioPath, lyricFolders) => ipcRenderer.invoke('delete-lyric-file', audioPath, lyricFolders),
-  scanLyricFolder: (folderPath) => ipcRenderer.invoke('scan-lyric-folder', folderPath),
   fetchOnlineLyric: (info) => ipcRenderer.invoke('fetch-online-lyric', info),
   translateLyrics: (data) => ipcRenderer.invoke('translate-lyrics', data),
   searchOnlineLyric: (info) => ipcRenderer.invoke('search-lyric-online', info),
@@ -91,6 +90,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storeSetBulk: (payload) => ipcRenderer.invoke('store-set-bulk', payload),
   backupData: (localStorageData) => ipcRenderer.send('backup-data', localStorageData),
   storeDelete: (key) => ipcRenderer.invoke('store-delete', key),
+  // 在线歌词缓存:按单键读写(整份对象太大,别用 storeGet('lyricsCache') 搬)
+  lyricCacheGet: (key) => ipcRenderer.invoke('lyric-cache-get', key),
+  lyricCacheSet: (key, value) => ipcRenderer.invoke('lyric-cache-set', key, value),
+  lyricCacheClear: () => ipcRenderer.invoke('lyric-cache-clear'),
 
   // 应用
   getAppPath: () => ipcRenderer.invoke('get-app-path'),

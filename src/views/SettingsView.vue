@@ -809,7 +809,7 @@ async function deleteMgrLyric(s) {
       return
     }
     lyricStatus.value[s.path] = false
-    window.$toast?.('已删除「' + s.title + '」的本地歌词', 'success')
+    window.$toast?.('已把「' + s.title + '」的本地歌词移入回收站(可还原)', 'success')
   } catch (e) {
     noteFailure('lyric.delete', '删除本地歌词异常', e)
     window.$toast?.('删除失败', 'error')
@@ -1183,7 +1183,9 @@ async function batchDownloadLyrics() {
     msg: '正在下载…', showResult: false, elapsed: '', finishedAt: '', folder
   }
 
-  const CONCURRENCY = 5 // 并发数,避免单首慢导致进度停滞
+  // 并发 3:歌词源都是非官方接口,而且 auto 源内部已经是三个源并行取词 ——
+  // 再乘 5 个 worker 就是对同一域名 15 路同时打(实测会被限流,整片返回 HTTP 错误)
+  const CONCURRENCY = 3
   const lyricFolders = [...musicStore.lyricFolders] // 展开为纯数组(Proxy 无法过 IPC 序列化)
   let idx = 0
   let doneCount = 0

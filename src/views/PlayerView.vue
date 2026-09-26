@@ -1161,7 +1161,7 @@ async function deleteLocalLyric() {
   try { folders = JSON.parse(localStorage.getItem('soundflow_lyric_folders') || '[]') } catch {}
   const r = await window.electronAPI.deleteLyricFile(song.path, folders)
   if (r && r.ok) {
-    window.$toast?.('本地歌词已删除 ✓ 已切换到在线歌词', 'success')
+    window.$toast?.('本地歌词已移入回收站(可还原),已切回在线歌词', 'success')
     playerStore.loadLyrics(song)
   } else {
     window.$toast?.('删除失败:' + ((r && r.error) || '请检查文件权限'), 'error')

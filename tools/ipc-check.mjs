@@ -241,10 +241,11 @@ try { fs.writeFileSync(probeStrayFile, 'not audio, just bait') } catch (_) {}
 /** 只调用确定无副作用的只读通道(不弹对话框、不写盘、不改设置) */
 const READ_ONLY = [
   ['store-get', `window.electronAPI.storeGet('theme')`],
+  // 歌词缓存按单键读(取一个不存在的键:只读、不写盘)
+  ['lyric-cache-get', `window.electronAPI.lyricCacheGet('__sf_probe_missing__')`],
   ['get-storage-info', `window.electronAPI.getStorageInfo()`],
   ['get-app-path', `window.electronAPI.getAppPath()`],
   ['read-lyric-file', `window.electronAPI.readLyricFile('E:/__nope__.mp3', [])`],
-  ['scan-lyric-folder', `window.electronAPI.scanLyricFolder('E:/__nope__')`],
   ['scan-lyric-status', `window.electronAPI.scanLyricStatus([], [])`],
   ['delete-lyric-file', `window.electronAPI.deleteLyricFile('E:/__nope__.mp3', [])`],
   ['fetch-online-lyric', `window.electronAPI.fetchOnlineLyric({ source: 'local' })`],
