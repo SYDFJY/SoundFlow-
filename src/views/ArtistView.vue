@@ -41,7 +41,7 @@
             <button class="close-btn" title="关闭" aria-label="关闭歌手详情" @click="selectedArtist = null"><Icon name="close" :size="15" /></button>
           </div>
           <div class="detail-content">
-            <MusicList :songs="sortedArtistSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" />
+            <MusicList :reorderable="false" :songs="sortedArtistSongs" :sort-field="musicStore.sortField" @sort="musicStore.setSortField" />
           </div>
         </div>
       </div>

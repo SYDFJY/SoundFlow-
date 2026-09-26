@@ -118,9 +118,10 @@ const songs = computed(() => musicStore.getPlaylistSongs(route.params.id))
 
 const sortedSongs = computed(() => musicStore.sortSongs(songs.value))
 function onReorder({ from, to, pos }) {
-  // 拖拽自动解除列头排序:排序会遮蔽拖拽结果(显示顺序被排序覆盖),清空后按自定义顺序显示
+  // 把当前可见顺序一起交给 store,由它完成"先按看到的顺序落库、再解除列头排序" ——
+  // 这里**不能**先把 sortField 清掉:那样算出来的"可见顺序"已经变了(与屏幕上不一致)
+  musicStore.moveSongInPlaylist(playlist.id, from, to, pos, sortedSongs.value.map(s => s.path))
   musicStore.sortField = null
-  musicStore.moveSongInPlaylist(playlist.id, from, to, pos)
 }
 
 // 右键"移除"→ 从歌单移除(不从曲库删除)

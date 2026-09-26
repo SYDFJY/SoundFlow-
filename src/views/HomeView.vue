@@ -267,7 +267,9 @@ function onDrop(e) {
 }
 
 function onReorder({ from, to, pos }) {
-  musicStore.moveSong(from, to, pos)
+  // 把**当前可见顺序**一起交给 store:有搜索/列头排序时也以"看到的顺序"为准,
+  // 否则放下瞬间列表会从"排序后的样子"跳成"另一个顺序"(用户感受就是"没落到我放的地方")
+  musicStore.moveSong(from, to, pos, musicStore.filteredSongs.map(s => s.path))
 }
 function playAll() {  const songs = musicStore.filteredSongs
   if (songs.length > 0) {

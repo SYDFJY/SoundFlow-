@@ -61,7 +61,7 @@
       <div class="list-spacer" :style="{ height: songs.length * ROW_H + 'px' }">
         <!-- 拖拽插入指示线(内容坐标,随列表滚动) -->
         <div class="drop-line" :style="{ top: dropLineTop + 'px', display: draggingPath ? 'block' : 'none' }"></div>
-        <div class="list-virtual" :style="{ transform: 'translateY(' + virtualStart * ROW_H + 'px)' }">
+        <div class="list-virtual" :style="{ transform: 'translateY(' + virtualFrom * ROW_H + 'px)' }">
           <div
             v-for="(song, i) in virtualSongs"
             :key="song.path"
@@ -69,19 +69,19 @@
             role="option"
             :aria-selected="selectedSet.has(song.path)"
             :data-path="song.path"
-            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), dragging: draggingPath === song.path, 'keyboard-selected': keyboardIdx === virtualStart + i }"
-            :style="rowStyle(virtualStart + i)"
-            @dblclick="playSong(virtualStart + i)"
+            :class="{ active: isCurrentSong(song), selected: selectedSet.has(song.path), dragging: draggingPath === song.path, reorderable: props.reorderable, 'keyboard-selected': keyboardIdx === virtualFrom + i }"
+            :style="rowStyle(virtualFrom + i)"
+            @dblclick="onRowDblClick(virtualFrom + i)"
             @contextmenu.prevent="showContextMenu($event, song)"
             @mousedown="onRowMouseDown($event, song)"
           >
             <div v-if="batchOn" class="col-check" @click.stop>
-              <input type="checkbox" class="sf-check" :checked="selectedSet.has(song.path)" :aria-label="`选择 ${song.title || '这首歌'}`" @change="toggleSelect(virtualStart + i)" />
+              <input type="checkbox" class="sf-check" :checked="selectedSet.has(song.path)" :aria-label="`选择 ${song.title || '这首歌'}`" @change="toggleSelect(virtualFrom + i)" />
             </div>
             <div class="col-index">
               <span v-if="isCurrentSong(song) && playerStore.isPlaying" class="eq-bars"><i></i><i></i><i></i></span>
-              <span v-else class="index-num">{{ virtualStart + i + 1 }}</span>
-              <button class="play-icon" @click.stop="playSong(virtualStart + i)" :title="`播放 ${song.title || ''}`" :aria-label="`播放 ${song.title || '这首歌'}`">
+              <span v-else class="index-num">{{ virtualFrom + i + 1 }}</span>
+              <button class="play-icon" @click.stop="playSong(virtualFrom + i)" :title="`播放 ${song.title || ''}`" :aria-label="`播放 ${song.title || '这首歌'}`">
                 <Icon name="play" :size="14" fill="currentColor" />
               </button>
             </div>
@@ -316,6 +316,9 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { setDragSong, clearDragSong } from '@/composables/useDragSong'
 
 const props = defineProps({
+  /** 是否允许拖动重排(歌手/专辑这类派生视图没有重排语义,传 false 关掉;
+   *  此前它们没绑 @reorder —— 拖动反馈全有、松手却被静默丢弃) */
+  reorderable: { type: Boolean, default: true },
   songs: { type: Array, default: () => [] },
   sortField: { type: String, default: 'title' },
   batchMode: { type: Boolean, default: false },
@@ -332,19 +335,20 @@ const emit = defineEmits(['play', 'sort', 'context-action', 'play-all', 'selecti
 // 目标索引由鼠标坐标直接计算,虚拟滚动下也能精确落点;拖到侧边栏歌单经全局 dragSongPath 传递)
 let jsDrag = null
 const draggingPath = ref(null)
-const dragDX = ref(0)
-const dragDY = ref(0)
 const jsDragSourceIdx = ref(-1)
 const jsDragTargetIdx = ref(-1)
 const jsDragTargetPath = ref(null)
 const jsDragPos = ref('after')
 const dropLineTop = ref(0)
 let jsAutoScrollTimer = null
+let jsLastPointerY = null      // 最后一次指针可视区Y(自动滚动每拍据此重算落点)
+let jsJustDraggedAt = 0        // 刚刚拖完的时间戳(用来吞掉紧接着的那次 dblclick)
 // Shift 范围多选的锚点(上次勾选/区间选中的行索引)
 let _shiftAnchor = -1
 function onRowMouseDown(e, song) {
   if (e.button !== 0) return
-  if (e.target.closest('button, input, a, .col-check, .row-actions')) return
+  if (!props.reorderable) return // 派生视图(歌手/专辑)不做重排:不给"看着能拖、松手白拖"
+  if (e.target.closest('button, input, a, .col-check, .col-actions')) return
   // Shift + 批量模式:从锚点到当前行区间选中(拖拽不生效)
   if (e.shiftKey && props.batchMode) {
     const targetIdx = props.songs.findIndex(s => s.path === song.path)
@@ -358,7 +362,9 @@ function onRowMouseDown(e, song) {
     }
     return
   }
-  e.preventDefault() // 阻止拖动时文本选择
+  // 这里**不要** preventDefault:它会连带阻断 .list-body(tabindex=0)拿到焦点 ——
+  // 点过列表行之后方向键/Enter/Ctrl+A 全不响应,得先 Tab 进列表才行。
+  // 拖动真正开始后(过 3px 阈值)再禁止选中,见 onDocDragMove。
   jsDrag = { path: song.path, startX: e.clientX, startY: e.clientY, moved: false }
   document.addEventListener('mousemove', onDocDragMove)
   document.addEventListener('mouseup', onDocDragUp)
@@ -370,6 +376,9 @@ function onDocDragMove(e) {
     draggingPath.value = jsDrag.path
     setDragSong(jsDrag.path)
     jsDragSourceIdx.value = props.songs.findIndex(s => s.path === jsDrag.path)
+    // 拖动真正开始后才禁止选中(以前在 mousedown 里就 preventDefault,顺手把列表的焦点也挡了
+    // —— 点过行之后方向键/Enter/Ctrl+A 全不响应,得先 Tab 进列表才行)
+    try { document.body.style.userSelect = 'none' } catch (_) {}
   }
   if (!jsDrag.moved) return
   // 源行跟手:CSS 变量直写(不走 Vue ref,避免每帧重渲染行,跟手零延迟)
@@ -380,25 +389,45 @@ function onDocDragMove(e) {
   }
   if (!body) return
   const r = body.getBoundingClientRect()
-  // 自动滚动:拖动接近可视区上下边缘
+  jsLastPointerY = e.clientY
+  // 自动滚动:拖动接近可视区上下边缘。**每一拍都要重算落点** ——
+  // 此前定时器只改 scrollTop,而目标索引/指示线只在 mousemove 里算:
+  // 指针贴着边缘停住等它滚动时,落点停在"滚之前那一行"(拖到底部最明显)
   if (e.clientY < r.top + 32) {
-    if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop -= 14 }, 30)
+    if (!jsAutoScrollTimer) {
+      jsAutoScrollTimer = setInterval(() => { body.scrollTop -= 14; updateDropTarget() }, 30)
+    }
   } else if (e.clientY > r.bottom - 32) {
-    if (!jsAutoScrollTimer) jsAutoScrollTimer = setInterval(() => { body.scrollTop += 14 }, 30)
+    if (!jsAutoScrollTimer) {
+      jsAutoScrollTimer = setInterval(() => { body.scrollTop += 14; updateDropTarget() }, 30)
+    }
   } else if (jsAutoScrollTimer) {
     clearInterval(jsAutoScrollTimer); jsAutoScrollTimer = null
   }
-  // 目标索引:内容Y = 可视区Y + scrollTop,直接坐标计算;节流:仅索引变化时更新(减少重渲染)
-  const contentY = e.clientY - r.top + body.scrollTop
+  updateDropTarget()
+}
+
+/**
+ * 由"最后一次指针位置"算出落点行与插入方向(拖动中随时可重算)。
+ * 注意**插入方向也要跟着更新**:此前把 before/after 和索引绑在同一个"变了才更新"里,
+ * 于是同一行内从上半区滑到下半区不会翻转方向(细调半个行高无效),必须跨行才生效。
+ */
+function updateDropTarget() {
+  const body = listBodyEl.value
+  if (!body || jsLastPointerY == null) return
+  const r = body.getBoundingClientRect()
+  const contentY = jsLastPointerY - r.top + body.scrollTop
   let idx = Math.floor(contentY / ROW_H)
   idx = Math.max(0, Math.min(Math.max(props.songs.length - 1, 0), idx))
+  const rowOff = contentY - idx * ROW_H
+  const pos = rowOff < ROW_H / 2 ? 'before' : 'after'
+  const top = pos === 'before' ? idx * ROW_H : (idx + 1) * ROW_H
   if (idx !== jsDragTargetIdx.value) {
     jsDragTargetIdx.value = idx
     jsDragTargetPath.value = props.songs[idx]?.path || null
-    const rowOff = contentY - idx * ROW_H
-    if (rowOff < ROW_H / 2) { jsDragPos.value = 'before'; dropLineTop.value = idx * ROW_H }
-    else { jsDragPos.value = 'after'; dropLineTop.value = (idx + 1) * ROW_H }
   }
+  if (pos !== jsDragPos.value) jsDragPos.value = pos
+  if (top !== dropLineTop.value) dropLineTop.value = top
 }
 
 // 行 transform:源行跟手浮动(引用 CSS 变量,直写零延迟);源↔目标区间内的行实时让位(手机桌面式)
@@ -420,6 +449,7 @@ function teardownDocDrag() {
   document.removeEventListener('mousemove', onDocDragMove)
   document.removeEventListener('mouseup', onDocDragUp)
   if (jsAutoScrollTimer) { clearInterval(jsAutoScrollTimer); jsAutoScrollTimer = null }
+  try { document.body.style.userSelect = '' } catch (_) {}
 }
 function onDocDragUp(e) {
   teardownDocDrag()
@@ -432,6 +462,8 @@ function onDocDragUp(e) {
       emit('reorder', { from: jsDrag.path, to, pos: jsDragPos.value })
     }
   }
+  jsJustDraggedAt = Date.now()
+  jsLastPointerY = null
   clearDragSong()
   jsDrag = null
   jsDragSourceIdx.value = -1
@@ -474,7 +506,19 @@ const virtualEnd = computed(() => {
   const vh = viewportH.value > 0 ? viewportH.value : ROW_H * VIRTUAL_BUFFER * 3
   return Math.min(props.songs.length, Math.ceil((scrollTop.value + vh) / ROW_H) + VIRTUAL_BUFFER)
 })
-const virtualSongs = computed(() => props.songs.slice(virtualStart.value, virtualEnd.value))
+// 拖动期间把**源行**并进渲染窗口:虚拟滚动只渲染可视区附近的行,源行一旦滚出去就被卸载,
+// 表现为"跟手浮起的行突然消失、只剩一条插入线"
+const virtualFrom = computed(() => {
+  const src = jsDragSourceIdx.value
+  if (src < 0) return virtualStart.value
+  return Math.min(virtualStart.value, src)
+})
+const virtualTo = computed(() => {
+  const src = jsDragSourceIdx.value
+  if (src < 0) return virtualEnd.value
+  return Math.max(virtualEnd.value, src + 1)
+})
+const virtualSongs = computed(() => props.songs.slice(virtualFrom.value, virtualTo.value))
 
 let _scrollRaf = null
 function onListScroll() {
@@ -703,6 +747,12 @@ function isCurrentSong(song) {
 
 function isFav(song) {
   return musicStore.isFavorite(song.path)
+}
+
+function onRowDblClick(idx) {
+  // 拖动结束后短时间内不再响应双击:拖完紧接着点一下会凑成 dblclick,误触播放
+  if (Date.now() - jsJustDraggedAt < 400) return
+  playSong(idx)
 }
 
 function playSong(idx) {
@@ -1332,10 +1382,14 @@ watch(() => playerStore.currentSong?.path, (p) => {
   margin: 2px 8px;
   border-radius: 8px;
   cursor: default;
+  /* 可重排时给抓手光标(此前主列表一直是 default;QueuePanel 的拖动手感里有这一条) */
   transition: background var(--transition-fast), transform 0.15s ease;
   user-select: none;
 }
-.list-row.drag-over { background: var(--color-primary-alpha, rgba(64,150,255,0.22)); outline: 1px dashed var(--color-primary); }
+/* 历史遗留的命中高亮(elementFromPoint 版拖动留下的),坐标计算版不再使用 —— 已删,
+   删除理由登记在 tools/check-lost-styles.mjs 的 ALLOW 里 */
+.list-row.reorderable { cursor: grab; }
+.list-row.reorderable.dragging { cursor: grabbing; }
 .list-row:hover { background: var(--bg-hover); }
 .list-row.active { background: var(--color-primary-alpha); box-shadow: inset 3px 0 0 var(--color-primary); }
 .list-row.keyboard-selected { outline: 1px solid var(--color-primary); outline-offset: -1px; }

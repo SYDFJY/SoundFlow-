@@ -41,7 +41,8 @@ const ALLOW = {
     //   scoped 样式(抽组件时留在父组件里,而 scoped 样式够不到子组件内部元素 ——
     //   译文丢了字号/透明度、逐字的当前字丢了强调色,都是那一次留下的)
     '.lyric-word', '.lyric-word.cur', '.lyric-trans'],
-  'src/components/MusicList.vue': ['.list-row[draggable="true"]', '.list-row[draggable="true"]:active', '.empty-icon', '.empty-text'],
+  // .list-row.drag-over:elementFromPoint 版拖动留下的命中高亮,坐标计算版早已不用,2026-09-26 清掉
+  'src/components/MusicList.vue': ['.list-row[draggable="true"]', '.list-row[draggable="true"]:active', '.empty-icon', '.empty-text', '.list-row.drag-over'],
   'src/views/AlbumView.vue': ['.empty-icon', '.empty-text', '.empty-state'],
   'src/views/ArtistView.vue': ['.empty-icon', '.empty-text', '.empty-state'],
   'src/views/HistoryView.vue': ['.empty-icon', '.empty-text', '.empty-state'],

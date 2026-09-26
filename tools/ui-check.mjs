@@ -114,6 +114,8 @@ app.whenReady().then(async () => {
     localStorage.setItem('soundflow_lyric_font_size', '18')
     // 桌面歌词颜色也回到"跟随应用侧":上一轮跑到颜色回路时改过它
     localStorage.setItem('soundflow_lyric_win_color', 'auto')
+    // 曲库顺序也钉住:主列表拖动会改写 soundflow_song_order,不钉的话下一轮库顺序随上一轮变
+    localStorage.setItem('soundflow_song_order', JSON.stringify(${JSON.stringify(items.map((i) => i.path))}))
     // 打开音频图调试快照(window.__sfAudioGraph):频谱那条断言失败时能一眼看出是
     // "没在播放""没分析器"还是"接上了没数据",不用再猜
     localStorage.setItem('sf_debug_audio', '1')
@@ -1410,6 +1412,75 @@ app.whenReady().then(async () => {
     return true
   })()`)
   await sleep(1500)
+
+  // 14) 主界面列表拖动排序:以"看到的顺序"为准,且只在列表内微调、不整表跳变
+  //     用户报"主界面歌曲列表拖动改变歌曲位置有问题,播放列表拖动很完善"。
+  //     播放列表是全量渲染、Sortable 直接搬 DOM;主列表是虚拟滚动(361 首只渲染约 20 行),
+  //     仓库里已试过两次用库并放弃 —— 这里验的是坐标计算版修完之后的实际行为。
+  //     注意:虚拟列表在视口**上方**还渲染了缓冲行,所以"顺序"一律取**完整落在可视区内**的那几行
+  //     (拖的与量的是同一批),否则会出现"拖 A 行、量 B 行"的假失败(踩过两轮)。
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1800)
+  const dragRun = await run(`(() => {
+    const readVisibleRows = (body) => {
+      const br = body.getBoundingClientRect()
+      return [...body.querySelectorAll('.list-row')].filter((r) => {
+        const rc = r.getBoundingClientRect()
+        return rc.top >= br.top + 2 && rc.bottom <= br.bottom - 2
+      })
+    }
+    const bodies = [...document.querySelectorAll('.list-body')].filter((el) => el.offsetParent !== null && el.getBoundingClientRect().height > 50)
+    const body = bodies[0]
+    if (!body) return { err: '没有可见的 .list-body', n: document.querySelectorAll('.list-body').length }
+    const rows = readVisibleRows(body)
+    if (rows.length < 5) return { err: '可视区内完整行不足', n: rows.length }
+    const titleOf = (row) => (row.querySelector('.col-title') || {}).textContent.trim()
+    const before = rows.slice(0, 8).map(titleOf)
+    const drag = (src, dst) => {
+      const sr = src.getBoundingClientRect(), dr = dst.getBoundingClientRect()
+      const x = Math.round(sr.left + 60)
+      const fire = (target, type, y) => target.dispatchEvent(new MouseEvent(type, {
+        bubbles: true, cancelable: true, clientX: x, clientY: Math.round(y), buttons: 1, button: 0
+      }))
+      fire(src, 'mousedown', sr.top + sr.height / 2)
+      for (let i = 1; i <= 6; i++) {
+        const y = sr.top + sr.height / 2 + (dr.bottom - (sr.top + sr.height / 2)) * (i / 6)
+        fire(document, 'mousemove', y)
+      }
+      fire(document, 'mouseup', dr.bottom - 4)
+    }
+    const moved = titleOf(rows[0])
+    drag(rows[0], rows[3])
+    return { moved, before }
+  })()`)
+  await sleep(1400)
+  const dragAfter = await run(`(() => {
+    const body = [...document.querySelectorAll('.list-body')].filter((el) => el.offsetParent !== null && el.getBoundingClientRect().height > 50)[0]
+    if (!body) return []
+    const br = body.getBoundingClientRect()
+    return [...body.querySelectorAll('.list-row')].filter((r) => {
+      const rc = r.getBoundingClientRect()
+      return rc.top >= br.top + 2 && rc.bottom <= br.bottom - 2
+    }).slice(0, 8).map((r) => (r.querySelector('.col-title') || {}).textContent.trim())
+  })()`)
+  const stored = await run(`(() => { try { return JSON.parse(localStorage.getItem('soundflow_song_order') || 'null') } catch { return null } })()`)
+  console.log('拖动排序:', JSON.stringify({ dragRun, dragAfter }))
+  const moved = dragRun && dragRun.moved
+  const order0 = (dragRun && dragRun.before) || []
+  const idx0 = order0.indexOf(moved)
+  const idx1 = (dragAfter || []).indexOf(moved)
+  const others0 = order0.filter((t) => t !== moved)
+  const others1 = (dragAfter || []).filter((t) => t !== moved)
+  check('列表拖动:被拖的那一首落到新位置,其它歌相对次序不变(不会整表跳变)',
+    !!moved && idx0 === 0 && idx1 >= 3 && JSON.stringify(others0) === JSON.stringify(others1),
+    `拖「${moved}」位置 ${idx0} → ${idx1} / ${JSON.stringify(order0)} → ${JSON.stringify(dragAfter)}`)
+  // 落库:曲库顺序被改写(被拖那首的路径在 soundflow_song_order 里的位置变了)
+  // 落库判据:与夹具播种时的顺序(扫描序)相比**确实被改写了**,且长度不丢歌。
+  // (别去按标题反查路径再 indexOf —— 标题里带格式后缀、前缀还会互撞,写起来脆)
+  const seeded = items.map((i) => i.path)
+  check('列表拖动:顺序写进了 soundflow_song_order(重启后仍是这个顺序)',
+    Array.isArray(stored) && stored.length === seeded.length && JSON.stringify(stored) !== JSON.stringify(seeded),
+    `落库 ${Array.isArray(stored) ? stored.length : 'n/a'} 条(库 ${seeded.length} 条)/前 3:${JSON.stringify((stored || []).slice(0, 3))}`)
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

@@ -45,7 +45,7 @@ function gotoLibrary() {
 }
 
 function onReorder({ from, to, pos }) {
-  musicStore.moveFavorite(from, to, pos)
+  musicStore.moveFavorite(from, to, pos, sortedFavorites.value.map(s => s.path))
 }
 
 function playAll() {

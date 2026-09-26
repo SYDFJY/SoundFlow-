@@ -374,9 +374,35 @@ export const useMusicStore = defineStore('music', () => {
     return favs
   })
 
+  /**
+   * 按"用户看到的顺序"重排基数组:只把**可见项**占据的那些位置按新顺序填回去,
+   * 不在视图里的项(被搜索过滤掉的)保持原有相对次序。
+   *
+   * 为什么需要:列表可能正按列头排序或带搜索过滤,而拖拽改的是基数组顺序 ——
+   * 直接把"可见的第 N 位"当成"基数组的第 N 位"会让整张表在放下瞬间跳变
+   * (歌单那边就是先清 sortField 才正常的,注释里写过"排序会遮蔽拖拽结果")。
+   * @param {Array} base 基数组(曲库数组 / 歌单的路径数组)
+   * @param {Array<string>} viewPaths 当前可见顺序(path 数组)
+   * @param {(x:any)=>string} keyOf 取基数组项的身份
+   * @returns {Array|null} 重排后的新数组;入参不成立时返回 null(调用方回退旧逻辑)
+   */
+  function reorderByViewOrder(base, viewPaths, keyOf) {
+    if (!Array.isArray(base) || !Array.isArray(viewPaths) || viewPaths.length < 1) return null
+    const viewSet = new Set(viewPaths)
+    const byKey = new Map(base.map(it => [keyOf(it), it]))
+    const ordered = viewPaths.map(p => byKey.get(p)).filter(Boolean)
+    if (ordered.length < 1) return null
+    const out = [...base]
+    let k = 0
+    for (let i = 0; i < out.length; i++) {
+      if (viewSet.has(keyOf(out[i]))) out[i] = ordered[k++]
+    }
+    return k === ordered.length ? out : null
+  }
+
   // 收藏拖拽顺序(路径数组;空=按音乐库顺序)
   const favoriteOrderOverride = ref([])
-  function moveFavorite(fromPath, toPath, pos = 'after') {
+  function moveFavorite(fromPath, toPath, pos = 'after', viewPaths = null) {
     let base = favoriteOrderOverride.value.length
       ? [...favoriteOrderOverride.value]
       : songs.value.filter(s => favorites.has(s.path)).map(s => s.path)
@@ -386,6 +412,11 @@ export const useMusicStore = defineStore('music', () => {
     const ti = base.indexOf(toPath)
     if (ti < 0) return
     base.splice(pos === 'before' ? ti : ti + 1, 0, fromPath)
+    // 收藏页可能正按列头排序:同样以"看到的顺序"为准(否则放下瞬间整页跳变)
+    if (Array.isArray(viewPaths) && viewPaths.includes(fromPath)) {
+      const next = reorderByViewOrder(base, viewPaths, (x) => x)
+      if (next) base = next
+    }
     favoriteOrderOverride.value = base
     // 拖拽后解除排序遮蔽(先于持久化)
     sortField.value = null
@@ -632,7 +663,7 @@ export const useMusicStore = defineStore('music', () => {
   }
 
   // 歌单内拖拽排序(按 path 定位,避免虚拟滚动索引错位)
-  function moveSongInPlaylist(playlistId, fromPath, toPath, pos = 'after') {
+  function moveSongInPlaylist(playlistId, fromPath, toPath, pos = 'after', viewPaths = null) {
     const pl = playlists.value.find(p => p.id === playlistId)
     if (!pl) return
     const songs = [...pl.songs]
@@ -645,21 +676,46 @@ export const useMusicStore = defineStore('music', () => {
     } else {
       songs.splice(pos === 'before' ? ti : ti + 1, 0, item)
     }
-    playlists.value = playlists.value.map(p => (p.id === playlistId ? { ...p, songs } : p))
+    // 与 Home/收藏同一套:按可见顺序填回(歌单页也会被列头排序影响)
+    let finalSongs = songs
+    if (Array.isArray(viewPaths) && viewPaths.includes(fromPath)) {
+      const next = reorderByViewOrder(songs, viewPaths, (x) => x)
+      if (next) finalSongs = next
+    }
+    playlists.value = playlists.value.map(p => (p.id === playlistId ? { ...p, songs: finalSongs } : p))
     saveToStorage()
   }
 
   // 全局手动排序(Home 拖拽):持久化 soundflow_song_order
-  function moveSong(fromPath, toPath, pos = 'after') {
-    const arr = [...songs.value]
-    const fi = arr.findIndex(s => s.path === fromPath)
-    if (fi < 0) return
-    const [item] = arr.splice(fi, 1)
-    const ti = arr.findIndex(s => s.path === toPath)
-    if (ti < 0) arr.unshift(item)
-    else arr.splice(pos === 'before' ? ti : ti + 1, 0, item)
+  // viewPaths = 当前**可见顺序**(各视图传入)。有它时以"看到的顺序"为准:
+  // 先在可见序列里把 from 挪到 to 的前/后,再按位置填回曲库 —— 于是"拖完看到的"就是"落库的",
+  // 不会出现"按标题排序时拖一行、整张表突然换成另一个顺序"。
+  function moveSong(fromPath, toPath, pos = 'after', viewPaths = null) {
+    if (!fromPath || !toPath || fromPath === toPath) return
+    let arr
+    if (Array.isArray(viewPaths) && viewPaths.includes(fromPath) && viewPaths.includes(toPath)) {
+      const seq = [...viewPaths]
+      const fi = seq.indexOf(fromPath)
+      if (fi < 0) return
+      seq.splice(fi, 1)
+      const ti = seq.indexOf(toPath)
+      if (ti < 0) return
+      seq.splice(pos === 'before' ? ti : ti + 1, 0, fromPath)
+      const next = reorderByViewOrder(songs.value, seq, (x) => x.path)
+      if (!next) return
+      arr = next
+    } else {
+      arr = [...songs.value]
+      const fi = arr.findIndex(s => s.path === fromPath)
+      if (fi < 0) return
+      const [item] = arr.splice(fi, 1)
+      const ti = arr.findIndex(s => s.path === toPath)
+      if (ti < 0) arr.unshift(item)
+      else arr.splice(pos === 'before' ? ti : ti + 1, 0, item)
+    }
     songs.value = arr
-    // 拖拽后解除列头排序遮蔽(先于 saveToStorage,杜绝遮蔽残留)
+    // 解除列头排序遮蔽 —— 必须在**重排之前**就对显示生效(见函数头注释):
+    // 放到最后清会让列表先按排序渲染、再突然切到自定义顺序
     sortField.value = null
     saveToStorage()
     try { localStorage.setItem('soundflow_song_order', JSON.stringify(arr.map(s => s.path))) } catch {}

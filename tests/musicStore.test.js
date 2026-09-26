@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useMusicStore } from '../src/stores/musicStore'
+import fs from 'node:fs'
+import path from 'node:path'
 import { SCHEMA_VERSION } from '../src/config/storageSchema'
 
 // localStorage 最小 mock
@@ -502,3 +504,69 @@ function hoursAt (h, n) {
   a[h] = n
   return a
 }
+
+describe('musicStore 拖动排序:以"看到的顺序"为准(2026-09-26)', () => {
+  beforeEach(() => { setActivePinia(createPinia()) })
+  const lib = (paths) => paths.map(p => ({ path: p, title: p.toUpperCase(), artist: 'x', album: 'y' }))
+
+  it('按列头排序时拖动:可见顺序正确、其它歌相对次序不变(不会整表跳变)', () => {
+    const store = useMusicStore()
+    store.songs = lib(['a', 'b', 'c', 'd'])
+    store.sortField = 'title'
+    // 屏幕上(排序后)的顺序与曲库顺序不同
+    const visible = ['c', 'a', 'd', 'b']
+    store.moveSong('c', 'a', 'after', visible)
+    // 期望:可见序列里 c 挪到 a 后面 → [a, c, d, b];四首全在视图里,所以曲库顺序也跟着变成它
+    // (只有"视图是曲库的真子集"时,曲库才会保留隐藏歌的相对次序 —— 下面那条过滤用例专测这个)
+    expect(store.filteredSongs.map(s => s.path)).toEqual(['a', 'c', 'd', 'b'])
+    expect(store.songs.map(s => s.path)).toEqual(['a', 'c', 'd', 'b'])
+    // 拖完解除列头排序(否则显示被排序覆盖,看不到拖动结果)
+    expect(store.sortField).toBe(null)
+  })
+
+  it('搜索过滤时拖动:只重排可见子集,隐藏的歌保持相对次序', () => {
+    const store = useMusicStore()
+    store.songs = lib(['a', 'b', 'c', 'd'])
+    store.sortField = null
+    // 只看到 a 与 c(b、d 被过滤掉)
+    store.moveSong('c', 'a', 'before', ['a', 'c'])
+    expect(store.songs.map(s => s.path)).toEqual(['c', 'b', 'a', 'd'])
+  })
+
+  it('非法输入不改变任何东西', () => {
+    const store = useMusicStore()
+    store.songs = lib(['a', 'b', 'c'])
+    const before = store.songs.map(s => s.path)
+    store.moveSong('nope', 'a', 'after', ['a', 'b', 'c'])
+    store.moveSong('a', 'a', 'after', ['a', 'b', 'c'])
+    store.moveSong('a', 'not-visible', 'after', ['b', 'c'])
+    expect(store.songs.map(s => s.path)).toEqual(before)
+  })
+
+  it('顺序写进 soundflow_song_order(重启后仍是这个顺序)', () => {
+    const store = useMusicStore()
+    store.songs = lib(['a', 'b', 'c'])
+    store.moveSong('c', 'a', 'before', ['a', 'b', 'c'])
+    expect(JSON.parse(localStorage.getItem('soundflow_song_order'))).toEqual(['c', 'a', 'b'])
+  })
+
+  it('没有可见顺序时退回按曲库顺序(兼容旧调用)', () => {
+    const store = useMusicStore()
+    store.songs = lib(['a', 'b', 'c'])
+    store.moveSong('a', 'c', 'after')
+    expect(store.songs.map(s => s.path)).toEqual(['b', 'c', 'a'])
+  })
+})
+
+describe('派生视图(歌手/专辑)不假装能拖(2026-09-26)', () => {
+  it('两处传了 reorderable=false,MusicList 也据此提前返回', () => {
+    for (const f of ['src/views/ArtistView.vue', 'src/views/AlbumView.vue']) {
+      expect(fs.readFileSync(path.join(process.cwd(), f), 'utf8'), `${f} 没关掉拖动`)
+        .toMatch(/:reorderable="false"/)
+    }
+    const list = fs.readFileSync(path.join(process.cwd(), 'src/components/MusicList.vue'), 'utf8')
+    expect(list, 'MusicList 没按 reorderable 提前返回(按下仍会进入拖动)')
+      .toMatch(/if \(!props\.reorderable\) return/)
+    expect(list, '没有 reorderable 这个 prop').toMatch(/reorderable: \{ type: Boolean, default: true \}/)
+  })
+})
