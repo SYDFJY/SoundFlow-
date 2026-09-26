@@ -13,7 +13,7 @@
  *    · 打包版占着音频设备时,沙箱里拿到的频域数据全是 0 →"频谱在动"那条会假红;
  *    · 两者共用一个 userData 的单实例锁,同时跑还可能互相抢窗口状态。
  */
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu } from 'electron'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -1174,16 +1174,27 @@ app.whenReady().then(async () => {
     // 页面收不到任何鼠标事件(用户报的"右键小窗没反应"就是这个),只有真实输入才测得出来。
     await mRun(`(() => {
       window.__ctxCount = 0
-      document.addEventListener('contextmenu', (e) => { window.__ctxCount++; e.preventDefault() })
+      document.addEventListener('contextmenu', (e) => { window.__ctxCount++ })
       return true
     })()`)
-    const mSize = miniWin.getSize()
-    miniWin.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
-    miniWin.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
-    await sleep(900)
+    // 判据取"菜单真的弹了":拦一次 Menu.prototype.popup 计数。
+    // 只断言"渲染端收到 contextmenu"是不够的 —— Electron 的 context-menu 事件挂在 **webContents** 上,
+    // 挂 BrowserWindow 上的写法页面照样收得到事件、但回调永不触发(踩过:菜单做了内容却打不开)
+    const _origPopup = Menu.prototype.popup
+    let menuPopups = 0
+    Menu.prototype.popup = function (...args) { menuPopups++; return _origPopup.apply(this, args) }
+    try {
+      const mSize = miniWin.getSize()
+      miniWin.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
+      miniWin.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
+      await sleep(1200)
+    } finally {
+      Menu.prototype.popup = _origPopup
+    }
     const ctxCount = await mRun('window.__ctxCount')
-    check('小窗:真实右键能到达渲染端(菜单才会弹;此前整窗拖拽区把事件吞了)',
-      ctxCount >= 1, `收到 contextmenu ${ctxCount} 次`)
+    console.log('小窗右键:页面收到', ctxCount, '次 contextmenu,菜单弹出', menuPopups, '次')
+    check('小窗:真实右键真的弹出设置菜单(挂 webContents 上才触发;上一版挂在窗口对象上所以没反应)',
+      menuPopups >= 1 && ctxCount >= 1, `contextmenu ${ctxCount} 次 / Menu.popup ${menuPopups} 次`)
 
     // 拖动:页面→主进程→setBounds 这条链要真的移动窗口,且尺寸不漂
     const dragBefore = miniWin.getPosition()

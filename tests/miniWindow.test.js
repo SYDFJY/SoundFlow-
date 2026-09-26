@@ -172,3 +172,14 @@ describe('小窗右键菜单能弹出来:不能用整窗拖拽区(2026-09-26 用
     expect(read('electron/preload.js'), 'preload 没放行拖动通道').toMatch(/'mini:drag-start', 'mini:drag-move'/)
   })
 })
+
+describe('右键事件必须挂在 webContents 上(Electron 的坑)', () => {
+  it("`context-menu` 是 WebContents 的事件;挂 BrowserWindow 上的写法永远不会触发", () => {
+    const m = read('electron/main.js')
+    // 按"行首就是那句代码"来判:文件里的注释也提到了这个错写法(解释为什么不能这么写),不算违规
+    expect(m, "右键回调挂在了窗口对象上 —— 这个回调不会被调用(用户报的'右键没反应')")
+      .not.toMatch(/^\s*miniWindow\.on\('context-menu'/m)
+    expect(m, '右键回调没挂在 webContents 上').toMatch(/miniWindow\.webContents\.on\('context-menu'/)
+    expect(m, '没有说明这个坑').toMatch(/context-menu` 是 WebContents 的事件/)
+  })
+})

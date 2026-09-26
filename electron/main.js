@@ -659,8 +659,11 @@ function createMiniWindow() {
     }, 400)
   })
 
-  // 右键菜单:背景模式 / 透明度 / 恢复主窗口 / 退出应用
-  miniWindow.on('context-menu', () => {
+  // 右键菜单:**必须挂在 webContents 上** —— Electron 的 `context-menu` 是 WebContents 的事件
+  // (参数是 ContextMenuParams);BrowserWindow 上那个同名场景叫 `system-context-menu`,
+  // 只在标题栏这类非客户区触发。此前写成 `miniWindow.on('context-menu')`,回调**永远不会被调用**
+  // —— 用户报的"右键小窗没反应"就是这个(把菜单内容做得再全也没用)。
+  miniWindow.webContents.on('context-menu', () => {
     const miniBg = {
       mode: storageData.miniBgMode || 'dark',
       color: storageData.miniBgColor || '#161b22',
