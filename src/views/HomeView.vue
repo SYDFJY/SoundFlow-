@@ -134,7 +134,10 @@
             <div class="dialog-footer" v-if="dupGroups.length > 0">
               <button class="dialog-btn cancel" @click="closeDupDialog">取消</button>
               <button class="dialog-btn danger" :disabled="dupSelected.size === 0" @click="removeSelected">
-                删除选中 {{ dupSelected.size }} 首
+                仅移除 {{ dupSelected.size }} 首
+              </button>
+              <button class="dialog-btn danger" :disabled="dupSelected.size === 0" @click="removeSelectedWithFiles" title="把选中的文件移到系统回收站,并从曲库移除">
+                移除并删除文件
               </button>
             </div>
           </div>
@@ -358,6 +361,44 @@ async function removeSelected() {
   const groups = musicStore.findDuplicates()
   dupGroups.value = groups
   dupSelected.value = new Set()
+}
+
+/**
+ * "移除并删除文件":把选中项移到**系统回收站**,再从曲库移除。
+ * 与上面那条分开是因为这一步会**动磁盘** —— 用户点了"删除"通常就是要腾空间,
+ * 所以给他这个能力,但必须明确告诉他文件去哪了(回收站,可还原),而不是一句"不可恢复"。
+ * 正在播放的那首会被跳过:删掉正在播的文件会让播放立刻报错,没必要冒这个险。
+ */
+async function removeSelectedWithFiles() {
+  if (dupSelected.value.size === 0) return
+  const playing = playerStore.currentSong && playerStore.currentSong.path
+  const all = [...dupSelected.value]
+  const paths = all.filter(p => p !== playing)
+  const skippedPlaying = all.length - paths.length
+  if (paths.length === 0) {
+    await confirmDialog({ message: '选中的歌曲正在播放', detail: '正在播放的文件不会被删除,请先切换歌曲或在播放栏停止播放', confirmText: '知道了', cancelText: '' })
+    return
+  }
+  const ok = await confirmDialog({
+    message: `确定把选中的 ${paths.length} 个文件移到回收站,并从曲库移除？`,
+    detail: '文件会被移到系统回收站(可从回收站还原,不是永久删除)' + (skippedPlaying ? `;正在播放的 1 首会跳过` : ''),
+    confirmText: '移到回收站并移除',
+    danger: true
+  })
+  if (!ok) return
+  const res = await window.electronAPI.trashSongs(paths)
+  const trashed = (res && res.trashed) || []
+  const failed = (res && res.failed) || []
+  if (trashed.length) musicStore.removeSongs(trashed)
+  // 刷新查重结果
+  const groups = musicStore.findDuplicates()
+  dupGroups.value = groups
+  dupSelected.value = new Set()
+  if (failed.length) {
+    window.$toast?.(`${trashed.length} 个已移入回收站,${failed.length} 个未删除:${failed[0].error}`, 'warning', 6000)
+  } else if (trashed.length) {
+    window.$toast?.(`已移入回收站 ${trashed.length} 个文件(可从回收站还原)`, 'success')
+  }
 }
 </script>
 

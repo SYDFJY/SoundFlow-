@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import fs from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -76,5 +77,16 @@ describe('z-index 刻度', () => {
       }
     }
     expect(offenders, '请改用 var(--z-modal) / var(--z-nested) / var(--z-toast)').toEqual([])
+  })
+})
+
+describe('确认弹窗必须压在调用它的模态之上(2026-09-26 用户报"确认弹窗在查重界面下面")', () => {
+  it('ConfirmDialog 用 --z-nested,而不是与调用方同为 --z-modal', () => {
+    const s = fs.readFileSync(path.join(process.cwd(), 'src/components/ConfirmDialog.vue'), 'utf8')
+    // 同 z-index 时胜负只看 DOM 顺序:懒加载路由(如 HomeView 的查重弹窗)挂载更晚,
+    // 会盖住确认卡片并吃掉点击 —— 用户只能先叉掉那个界面。
+    expect(s, '确认弹窗回到了 --z-modal:与调用它的模态同层级,会被后挂载的那个压住')
+      .not.toMatch(/\.confirm-mask \{ z-index: var\(--z-modal\)/)
+    expect(s, '确认弹窗没有用 --z-nested').toMatch(/\.confirm-mask \{ z-index: var\(--z-nested\)/)
   })
 })

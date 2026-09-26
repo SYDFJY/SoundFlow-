@@ -68,7 +68,11 @@ onUnmounted(() => document.removeEventListener('keydown', onDocKey, true))
 </script>
 
 <style scoped>
-.confirm-mask { z-index: var(--z-modal); }
+/* 用 --z-nested(9000)而不是 --z-modal(300):确认弹窗是"从模态里再开的模态" ——
+   与调用它的模态同为 300 时,胜负只看 DOM 顺序,而后挂载的懒加载路由(如 HomeView 的查重弹窗)
+   会盖住它并吃掉点击(用户报的"确认弹窗在下面、得先叉掉原来的界面才能删")。
+   层级刻度:--z-menu(400) < --z-nested(9000) < --z-tooltip(9500) < --z-toast(9999)。 */
+.confirm-mask { z-index: var(--z-nested); }
 .confirm-card {
   width: 400px;
   max-width: 92vw;

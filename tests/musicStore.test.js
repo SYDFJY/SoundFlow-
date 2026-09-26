@@ -3,6 +3,8 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useMusicStore } from '../src/stores/musicStore'
 import fs from 'node:fs'
 import path from 'node:path'
+
+const readPreload = () => fs.readFileSync(path.join(process.cwd(), 'electron/preload.js'), 'utf8')
 import { SCHEMA_VERSION } from '../src/config/storageSchema'
 
 // localStorage 最小 mock
@@ -568,5 +570,22 @@ describe('派生视图(歌手/专辑)不假装能拖(2026-09-26)', () => {
     expect(list, 'MusicList 没按 reorderable 提前返回(按下仍会进入拖动)')
       .toMatch(/if \(!props\.reorderable\) return/)
     expect(list, '没有 reorderable 这个 prop').toMatch(/reorderable: \{ type: Boolean, default: true \}/)
+  })
+})
+
+describe('查重删文件的两条安全约定(2026-09-26)', () => {
+  it('删除文件走系统回收站,并在主进程校验"必须在权威曲库里"', () => {
+    const ipc = fs.readFileSync(path.join(process.cwd(), 'electron/ipc/audio.js'), 'utf8')
+    expect(ipc, '没有 trash-songs 通道').toMatch(/ipcMain\.handle\('trash-songs'/)
+    expect(ipc, '没有用系统回收站(硬删不可还原)').toMatch(/shell\.trashItem\(/)
+    expect(ipc, '没校验"路径必须在曲库里"').toMatch(/不在曲库中,拒绝删除/)
+    expect(ipc, '删除后没清权威曲库里的记录').toMatch(/library\.splice\(idx, 1\)/)
+    expect(readPreload(), 'preload 没暴露 trashSongs').toMatch(/trashSongs: \(paths\) => ipcRenderer\.invoke\('trash-songs'/)
+  })
+  it('正在播放的那首会被排除,并明确告知文件去处(不是"不可恢复")', () => {
+    const view = fs.readFileSync(path.join(process.cwd(), 'src/views/HomeView.vue'), 'utf8')
+    expect(view, '没排除正在播放的歌').toMatch(/const paths = all\.filter\(p => p !== playing\)/)
+    expect(view, '确认文案没有说清文件去处(回收站可还原)').toMatch(/可从回收站还原,不是永久删除/)
+    expect(view, '确认弹窗没有把"仅移除"与"删除文件"分开').toMatch(/仅移除 \{\{ dupSelected\.size \}\} 首/)
   })
 })

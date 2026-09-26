@@ -5,6 +5,7 @@
  *   - 响度均衡(ReplayGain):loudnorm 单遍测量 → 目标 -14 LUFS 增益;后台慢速串行队列
  *   - analyze-bpm:解码 60s PCM → 帧 RMS 能量峰值间距中位数 → BPM
  *   - rename-song:重命名文件 + 迁移封面缓存 + 更新权威曲库里的路径
+ *   - trash-songs:把选中的音频移入系统回收站(只认权威曲库里的路径)
  *
  * 这台机器的三件事必须走 ctx,不能自己 require:
  *   - needsTranscode / transcodeAudioQueued 是 main.js 的薄包装,注入了转码缓存目录,
@@ -212,6 +213,43 @@ function register (ctx) {
       persist()
       return { ok: true, newPath }
     } catch (e) { return { ok: false, error: e.message } }
+  })
+
+  /**
+   * 把音频文件移到**系统回收站**(不是永久删除 —— Windows 上"删除"的默认行为就是这个,
+   * 点错了还能从回收站还原)。
+   *
+   * 安全:渲染端传来的路径一律不可信(XSS 之后可以借它删任意文件)。这里只认
+   * **主进程权威曲库** `storage().library` 里的路径,且要求 resolve 后**完全相等**
+   * (不做前缀匹配)、扩展名在扫描白名单里。不在曲库/不存在的一律跳过并如实回报,不静默。
+   */
+  ipcMain.handle('trash-songs', async (event, paths) => {
+    const { shell } = require('electron')
+    const list = Array.isArray(paths) ? paths.filter(p => typeof p === 'string' && p) : []
+    if (!list.length) return { ok: false, error: '没有要删除的文件', trashed: [], failed: [] }
+    const library = Array.isArray(storage().library) ? storage().library : []
+    const known = new Map()
+    for (const s of library) { try { known.set(path.resolve(String(s.path)), s) } catch (_) {} }
+    const trashed = []
+    const failed = []
+    for (const raw of list) {
+      let full
+      try { full = path.resolve(raw) } catch (_) { failed.push({ path: raw, error: '路径不合法' }); continue }
+      if (!known.has(full)) { failed.push({ path: raw, error: '不在曲库中,拒绝删除' }); continue }
+      if (!fs.existsSync(full)) { failed.push({ path: raw, error: '文件已不存在' }); continue }
+      try {
+        await shell.trashItem(full)
+        trashed.push(full)
+        // 权威数据里也移除,并清掉指纹墓碑:文件是**故意删掉**的,
+        // 留着墓碑会让将来的"改名重连"把它当成待找回的目标
+        const idx = library.findIndex(s => { try { return path.resolve(String(s.path)) === full } catch (_) { return false } })
+        if (idx >= 0) library.splice(idx, 1)
+      } catch (e) {
+        failed.push({ path: raw, error: (e && e.message) || '移入回收站失败' })
+      }
+    }
+    if (trashed.length) persist()
+    return { ok: trashed.length > 0, trashed, failed }
   })
 
   return {

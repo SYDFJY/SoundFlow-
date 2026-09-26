@@ -16,6 +16,7 @@
 import { app, BrowserWindow } from 'electron'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -219,6 +220,10 @@ if (freeBad.length) {
 require(path.join(repo, 'electron', 'main.js'))
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+/** 越权删除用的"诱饵"文件:真实存在、但不在权威曲库里(见 READ_ONLY 里的 trash-songs) */
+const probeStrayFile = path.join(os.tmpdir(), '__sf_probe_not_in_library__.mp3')
+try { fs.writeFileSync(probeStrayFile, 'not audio, just bait') } catch (_) {}
+
 /** 只调用确定无副作用的只读通道(不弹对话框、不写盘、不改设置) */
 const READ_ONLY = [
   ['store-get', `window.electronAPI.storeGet('theme')`],
@@ -250,7 +255,12 @@ const READ_ONLY = [
   ['prepare-audio', `window.electronAPI.prepareAudio('E:/__nope__.mp3')`],
   // 字体删除通道:给一个字体目录**之外**的路径,主进程应当拒绝 —— 既确认通道注册上了,
   // 也顺带守住"不能拿它当任意删除入口"这条(它接受渲染端传来的 URL)
-  ['delete-font-file', `window.electronAPI.deleteFontFile('file:///E:/__nope__.ttf')`]
+  ['delete-font-file', `window.electronAPI.deleteFontFile('file:///E:/__nope__.ttf')`],
+  // 音频删除通道:给一个**真实存在、但不在权威曲库**里的文件,主进程必须拒绝**且不能真删**。
+  // 用"存在但不在库里"的文件(而不是瞎编的路径):否则"不存在"这一条也会拒绝,
+  // 断言就分辨不出"曲库校验"到底有没有生效(反向验证时会漏掉这个校验被摘掉的情况)
+  ['trash-songs', `window.electronAPI.trashSongs([${JSON.stringify(probeStrayFile)}])`,
+    (out) => /"ok":false/.test(out) && fs.existsSync(probeStrayFile)]
 ]
 
 app.whenReady().then(async () => {
@@ -263,7 +273,7 @@ app.whenReady().then(async () => {
   }
   const results = []
   console.log(`\nB. 运行时冒烟:${READ_ONLY.length} 个只读通道逐个调用`)
-  for (const [name, expr] of READ_ONLY) {
+  for (const [name, expr, mustMatch] of READ_ONLY) {
     let out
     try {
       out = String(await win.webContents.executeJavaScript(
@@ -274,8 +284,11 @@ app.whenReady().then(async () => {
     // "No handler registered" = 通道没注册;"is not a function" = 本检查里的包装名写错了
     // (preload 的键名大小写),后者同样要失败 —— 否则检查脚本自己的笔误会被读成通过
     const missing = /No handler registered/i.test(out) || /is not a function/i.test(out)
-    results.push({ name, missing })
-    console.log(`  ${missing ? '✗' : '✓'} ${name.padEnd(20)} ${out.slice(0, 80)}`)
+    // 有些通道光"能调通"不够:越权路径必须被拒 —— 传了判据就一并核对返回值
+    const rejected = !!mustMatch && !missing && !mustMatch(out)
+    results.push({ name, missing: missing || rejected })
+    if (rejected) console.log(`  ✗ ${name} 返回值不符合预期(应被拒绝): ${out.slice(0, 120)}`)
+    if (!mustMatch) console.log(`  ${missing ? '✗' : '✓'} ${name.padEnd(20)} ${out.slice(0, 80)}`)
   }
   const runBad = results.filter((r) => r.missing)
   const total = staticBad + runBad.length

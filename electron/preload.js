@@ -109,6 +109,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tidyFonts: () => ipcRenderer.invoke('tidy-fonts'),
   // 删除一个已导入的字体文件(主进程只允许删字体目录内的)
   deleteFontFile: (url) => ipcRenderer.invoke('delete-font-file', url),
+  // 把音频移入系统回收站(不是永久删除);只接受曲库里的路径,越权一律被主进程拒绝
+  trashSongs: (paths) => ipcRenderer.invoke('trash-songs', paths),
   checkFilesExist: (filePaths) => ipcRenderer.invoke('check-files-exist', filePaths),
   exportBackup: () => ipcRenderer.invoke('export-backup'),
   importBackup: () => ipcRenderer.invoke('import-backup'),

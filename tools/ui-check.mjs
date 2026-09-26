@@ -57,6 +57,32 @@ function ensureMedia () {
   return fs.readdirSync(mediaDir).filter((f) => /\.mp3$/i.test(f)).length
 }
 
+/**
+ * 查重要用到"重复歌曲":造一首与 ui1 **同标题同歌手**、但**音频内容不同**的曲目
+ * (标题/歌手决定查重分组,内容不同才会被当成另一条记录 —— 逐字节副本会因指纹相同被去重掉)。
+ * 放在 ensureMedia 之外、每次运行都确保它在:这样老夹具目录(已有 40 首 + 标记)不会被整目录重建。
+ */
+function ensureDuplicateFixture () {
+  try {
+    // **独立的一对**(不占用 ui1..ui40 那些行):删除用例会真的把其中一首移进回收站,
+    // 挂在主夹具上会连累其它断言(踩过:它删掉了 ui1.mp3,扫描回 39 首)
+    const pair = ['dup-a.mp3', 'dup-b.mp3'].map((f) => path.join(mediaDir, f))
+    if (pair.every((f) => fs.existsSync(f))) return
+    const audioTools = require(path.join(here, '..', 'electron', 'lib', 'audioTools.js'))
+    const { execFileSync } = require('node:child_process')
+    const ffmpeg = audioTools.getFfmpegPath()
+    pair.forEach((out, i) => {
+      execFileSync(ffmpeg, [
+        '-v', 'error', '-f', 'lavfi', '-i', `sine=frequency=${777 + i * 111}:duration=${9 + i}`,
+        '-c:a', 'libmp3lame', '-q:a', '5',
+        // 标题+歌手相同 → 查重会归成一组;音频内容不同 → 不会被指纹去重掉
+        '-metadata', 'title=Dup Song', '-metadata', 'artist=Test Artist 9', '-metadata', 'album=Test Album 9',
+        out, '-y'
+      ])
+    })
+  } catch (e) { console.error('造重复夹具失败:', e && e.message) }
+}
+
 require(path.join(here, '..', 'electron', 'main.js'))
 // 脚本自己出错(比如引用未声明的变量)会让整个流程静默停住、进程不退 ——
 // 外面看起来就是"卡死",只能靠外层超时才结束(这次就白等了 20 分钟)。这里让它立刻可见。
@@ -77,6 +103,7 @@ app.whenReady().then(async () => {
   const run = (code) => win.webContents.executeJavaScript(code, true)
 
   const made = ensureMedia()
+  ensureDuplicateFixture()
   if (made < 5) {
     console.error(`夹具不足(${made} 首),无法播种曲库:` + mediaDir)
     app.exit(1)
@@ -143,8 +170,12 @@ app.whenReady().then(async () => {
   //    为什么不用队尾:列表按标题排序("Track N" 全排在 "曲目N" 之前),队尾那首未必在深处,
   //    若它本来就在可视区内,滚动位置不变、断言就随机红。夹具 items[1] 是 "曲目10"(偶数首是中文),
   //    标题排序里稳稳在 20 首之后。队列要同时写 localStorage 与**主进程存储**,两边一致才确定。
+  // 当前曲目要选**确定排在列表深处**的那首:按标题排序里 "曲目*" 全在 "Track*" 之后。
+  // (以前写死 index:1 假设它是深处的;后来夹具加了一份 ui1 的重复副本,扫描序里它排第 2,
+  //  标题又是 "Track 1" → 当前行本来就在顶部,定位自然不动、断言无故变红)
+  const deepIdx = Math.max(0, items.findIndex((i) => /^曲目/.test(String(i.title || ''))))
   await run(`(async () => {
-    const state = { queue: ${JSON.stringify(items.map((i) => i.path))}, index: 1 }
+    const state = { queue: ${JSON.stringify(items.map((i) => i.path))}, index: ${deepIdx} }
     localStorage.setItem('soundflow_queue', JSON.stringify(state))
     if (window.electronAPI && window.electronAPI.storeSet) await window.electronAPI.storeSet('queue', state)
     return true
@@ -1481,6 +1512,80 @@ app.whenReady().then(async () => {
   check('列表拖动:顺序写进了 soundflow_song_order(重启后仍是这个顺序)',
     Array.isArray(stored) && stored.length === seeded.length && JSON.stringify(stored) !== JSON.stringify(seeded),
     `落库 ${Array.isArray(stored) ? stored.length : 'n/a'} 条(库 ${seeded.length} 条)/前 3:${JSON.stringify((stored || []).slice(0, 3))}`)
+
+  // 15) 查重:确认弹窗必须压在查重界面之上(用户报"确认弹窗在界面下面,得先叉掉原来的界面才能删")
+  //     根因:两个遮罩的 z-index 都是 --z-modal(300);同层级时胜负只看 DOM 顺序,而查重弹窗来自
+  //     懒加载路由、挂载更晚 → 它盖在确认卡片上并吃掉点击。判据取"点得到":
+  //     用 elementsFromPoint 看确认按钮中心最上面的是谁。
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1600)
+  await run(`(() => { const b = document.querySelector('.dup-btn'); if (b) b.click(); return !!b })()`)
+  await sleep(1500)
+  const dupState = await run(`(() => {
+    const dlg = document.querySelector('.dup-dialog')
+    const keepBtns = document.querySelectorAll('.dup-keep-btn').length
+    const delBtn = [...document.querySelectorAll('.dialog-footer .dialog-btn')].find((b) => /移除并删除文件/.test(b.textContent || ''))
+    return { hasDialog: !!dlg, keepBtns, hasDeleteWithFiles: !!delBtn }
+  })()`)
+  console.log('查重弹窗:', JSON.stringify(dupState))
+  check('查重:夹具里的重复歌曲被查出来(同标题同歌手、内容不同的一对)',
+    !!dupState && dupState.hasDialog && dupState.keepBtns > 0, JSON.stringify(dupState))
+  check('查重:删除按钮区分了"仅移除"与"移除并删除文件"',
+    !!dupState && dupState.hasDeleteWithFiles === true, JSON.stringify(dupState))
+
+  if (dupState && dupState.hasDeleteWithFiles) {
+    // 该组两个文件的路径(夹具里独立的那对:同标题同歌手、内容不同)
+    const dupPair = [path.join(mediaDir, 'dup-a.mp3'), path.join(mediaDir, 'dup-b.mp3')]
+    const existedBefore = dupPair.filter((p) => fs.existsSync(p)).length
+    // 勾选(保留一首 → 选中该组其余项),再点"移除并删除文件"
+    await run(`(() => { const b = document.querySelector('.dup-keep-btn'); if (b) b.click(); return !!b })()`)
+    await sleep(600)
+    await run(`(() => {
+      const b = [...document.querySelectorAll('.dialog-footer .dialog-btn')].find((x) => /移除并删除文件/.test(x.textContent || ''))
+      if (b) b.click()
+      return !!b
+    })()`)
+    await sleep(900)
+    // 关键断言:确认卡片必须是最上层、按钮点得到
+    const confirmTop = await run(`(() => {
+      const card = document.querySelector('.confirm-card')
+      if (!card) return { err: '没有确认弹窗' }
+      const btn = [...card.querySelectorAll('button')].find((b) => /回收站|移除|确定/.test(b.textContent || '')) || card
+      const r = btn.getBoundingClientRect()
+      const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2)
+      const at = document.elementsFromPoint(cx, cy)
+      return {
+        z: getComputedStyle(document.querySelector('.confirm-mask')).zIndex,
+        covered: !at.some((e) => card.contains(e)),
+        top: (at[0] && (at[0].className || at[0].tagName)) || null,
+        text: (btn.textContent || '').trim().slice(0, 20)
+      }
+    })()`)
+    console.log('确认弹窗层级:', JSON.stringify(confirmTop))
+    check('查重:确认弹窗在最上层、按钮点得到(不再与查重遮罩同层被压住)',
+      !!confirmTop && !confirmTop.err && confirmTop.covered === false, JSON.stringify(confirmTop))
+
+    // 点确认 → 文件进回收站 + 曲库记录移除
+    await run(`(() => {
+      const card = document.querySelector('.confirm-card')
+      const btn = [...card.querySelectorAll('button')].find((b) => /回收站|移除|确定/.test(b.textContent || ''))
+      if (btn) btn.click()
+      return !!btn
+    })()`)
+    await sleep(3000)
+    const afterDel = await run(`(() => ({
+      keepBtns: document.querySelectorAll('.dup-keep-btn').length,
+      confirmGone: !document.querySelector('.confirm-mask'),
+      dupGone: !document.querySelector('.dup-dialog')
+    }))()`)
+    const existedAfter = dupPair.filter((p) => fs.existsSync(p)).length
+    console.log('删除结果:', JSON.stringify({ existedBefore, existedAfter, afterDel }))
+    check('查重:点确认后文件真的被移入回收站(那一对只剩一个)',
+      existedBefore === 2 && existedAfter === 1, `删除前 ${existedBefore} 个 / 删除后 ${existedAfter} 个`)
+    check('查重:删完刷新了列表(这一组不再重复)、确认弹窗收起',
+      !!afterDel && afterDel.keepBtns === 0 && afterDel.confirmGone === true && afterDel.dupGone === false,
+      JSON.stringify(afterDel))
+  }
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
