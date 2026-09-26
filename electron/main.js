@@ -843,6 +843,34 @@ function createMiniWindow() {
     menu.popup({ window: miniWindow })
   })
 
+  // 小窗拖动:与桌面歌词同一套做法(绝对坐标锚点 + setBounds 锁尺寸)。
+  // 为什么不用 CSS 的 -webkit-app-region: drag:**拖拽区域不把鼠标事件交给页面**,
+  // 于是主进程的 context-menu 不会触发、右键菜单打不开(用户报的"右键没反应"就是这个)。
+  let miniDragAnchor = null
+  ipcMain.on('mini:drag-start', (event, screenX, screenY) => {
+    if (!miniWindow || miniWindow.isDestroyed()) { miniDragAnchor = null; return }
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) { miniDragAnchor = null; return }
+    try {
+      const [x, y] = miniWindow.getPosition()
+      const [width, height] = miniWindow.getSize()
+      miniDragAnchor = { screenX, screenY, winX: x, winY: y, width, height }
+    } catch (_) { miniDragAnchor = null }
+  })
+  ipcMain.on('mini:drag-move', (event, screenX, screenY) => {
+    if (!miniWindow || miniWindow.isDestroyed() || !miniDragAnchor) return
+    if (!Number.isFinite(screenX) || !Number.isFinite(screenY)) return
+    try {
+      // 与歌词窗同理:只调 setPosition 时非整数缩放(125%)下尺寸会随移动漂移,
+      // 用 setBounds 一次设全并带上拖动开始时锁定的尺寸
+      miniWindow.setBounds({
+        x: Math.round(miniDragAnchor.winX + (screenX - miniDragAnchor.screenX)),
+        y: Math.round(miniDragAnchor.winY + (screenY - miniDragAnchor.screenY)),
+        width: miniDragAnchor.width,
+        height: miniDragAnchor.height
+      })
+    } catch (_) {}
+  })
+
   miniWindow.on('closed', () => { miniWindow = null; notifyMiniState(false) })
 
   notifyMiniState(true)

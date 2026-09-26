@@ -25,6 +25,8 @@ const SEND_CHANNELS = [
   'smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore',
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
   'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
+  // 迷你小窗的拖动(与桌面歌词同一套:绝对坐标锚点,不用 app-region)
+  'mini:drag-start', 'mini:drag-move',
   // 渲染端把"小窗菜单要显示的勾选态"(播放模式/桌面歌词开关)回推给主进程
   'mini:menu-state',
   'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index',
@@ -151,6 +153,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onLyricSetting: (cb) => ipcRenderer.on('lyric-setting', (_e, key, value) => cb(key, value)),
   // 主窗口告诉主进程:窗口该不该置顶(持久化值在建窗时用)
   lyricWinConfig: (cfg) => ipcRenderer.send('lyric:win-config', cfg),
+  // 小窗拖动:按下时记锚点(指针绝对屏幕坐标),随后上报绝对坐标 —— 见 main.js 里的说明。
+  // 不用 CSS 的 -webkit-app-region: drag:**拖拽区域不把鼠标事件交给页面**,
+  // 于是主进程的 context-menu 永远不会触发 —— 右键菜单点了没反应就是这个原因。
+  miniDragStart: (screenX, screenY) => ipcRenderer.send('mini:drag-start', screenX, screenY),
+  miniDragMove: (screenX, screenY) => ipcRenderer.send('mini:drag-move', screenX, screenY),
   // 小窗右键菜单的勾选态:主进程拿不到渲染端的 store,只能由渲染端回推(照 lyric:win-config 的范式)
   sendMiniMenuState: (state) => ipcRenderer.send('mini:menu-state', state),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),

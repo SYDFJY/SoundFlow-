@@ -1169,6 +1169,42 @@ app.whenReady().then(async () => {
   } else {
     check('迷你小窗:能打开', true)
     const mRun = (code) => miniWin.webContents.executeJavaScript(code, true)
+    // 右键必须能到渲染端 —— 这是原生设置菜单能弹出来的前提。
+    // 用**真实输入事件**(sendInputEvent)而不是合成 DOM 事件:整窗铺 -webkit-app-region: drag 时
+    // 页面收不到任何鼠标事件(用户报的"右键小窗没反应"就是这个),只有真实输入才测得出来。
+    await mRun(`(() => {
+      window.__ctxCount = 0
+      document.addEventListener('contextmenu', (e) => { window.__ctxCount++; e.preventDefault() })
+      return true
+    })()`)
+    const mSize = miniWin.getSize()
+    miniWin.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
+    miniWin.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
+    await sleep(900)
+    const ctxCount = await mRun('window.__ctxCount')
+    check('小窗:真实右键能到达渲染端(菜单才会弹;此前整窗拖拽区把事件吞了)',
+      ctxCount >= 1, `收到 contextmenu ${ctxCount} 次`)
+
+    // 拖动:页面→主进程→setBounds 这条链要真的移动窗口,且尺寸不漂
+    const dragBefore = miniWin.getPosition()
+    const dragSize0 = miniWin.getSize()
+    await mRun(`(() => {
+      const fire = (type, x, y) => document.dispatchEvent(new MouseEvent(type, {
+        screenX: x, screenY: y, buttons: 1, button: 0, bubbles: true
+      }))
+      fire('mousedown', 600, 400)
+      for (let i = 1; i <= 4; i++) fire('mousemove', 600 + i * 20, 400 + i * 10)
+      fire('mouseup', 680, 440)
+      return true
+    })()`)
+    await sleep(900)
+    const dragAfter = miniWin.getPosition()
+    const dragSize1 = miniWin.getSize()
+    check('小窗:拖动真的跟着指针走,且只改位置不改尺寸(与桌面歌词同一套锚点实现)',
+      (dragAfter[0] - dragBefore[0]) === 80 && (dragAfter[1] - dragBefore[1]) === 40 &&
+      dragSize1[0] === dragSize0[0] && dragSize1[1] === dragSize0[1],
+      `位移 ${dragAfter[0] - dragBefore[0]},${dragAfter[1] - dragBefore[1]}(期望 80,40)尺寸 ${dragSize0} → ${dragSize1}`)
+
     // 悬停三个按钮:提示必须是**窗内**的一行文字,且不越出窗口矩形
     const hints = []
     for (const [label, idx] of [['上一曲', 0], ['播放 / 暂停', 1], ['下一曲', 2]]) {

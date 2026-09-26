@@ -176,6 +176,71 @@ onUnmounted(() => {
   document.body.classList.remove('mini-window')
 })
 
+// ===== 拖动(JS 实现,与桌面歌词同一套)=====
+// 坐标一律用指针的**绝对屏幕坐标**,由主进程按锚点换算窗口位置 ——
+// 不能用 movementX/Y(拖动时窗口在光标下面移动,会污染 Chromium 算出的位移,越拖越跟不上)。
+let dragState = null
+let suppressClick = false
+let _dragRaf = null
+let _pending = null
+
+document.addEventListener('mousedown', e => {
+  if (e.button !== 0) return
+  // 交互元素不参与拖动:按钮(点击)、进度条(拖动定位)
+  if (e.target.closest?.('button, .mini-progress')) return
+  dragState = { sx: e.screenX, sy: e.screenY, moved: false }
+  if (window.electronAPI?.miniDragStart) window.electronAPI.miniDragStart(e.screenX, e.screenY)
+})
+
+document.addEventListener('mousemove', e => {
+  // 鼠标在窗口外松开时收不到 mouseup:用 buttons 判断"其实已经松了"并清状态
+  if ((e.buttons & 1) === 0) {
+    if (dragState) {
+      if (_pending && window.electronAPI?.miniDragMove) window.electronAPI.miniDragMove(_pending.x, _pending.y)
+      dragState = null
+      _pending = null
+      if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = null }
+    }
+    return
+  }
+  if (!dragState) return
+  const dx = e.screenX - dragState.sx
+  const dy = e.screenY - dragState.sy
+  if (!dragState.moved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+    dragState.moved = true
+    suppressClick = true // 拖过之后不要再触发"双击恢复主窗口"
+  }
+  if (!dragState.moved) return
+  _pending = { x: e.screenX, y: e.screenY }
+  if (!_dragRaf) {
+    _dragRaf = requestAnimationFrame(() => {
+      _dragRaf = null
+      const pt = _pending
+      _pending = null
+      if (pt && window.electronAPI?.miniDragMove) window.electronAPI.miniDragMove(pt.x, pt.y)
+    })
+  }
+})
+
+document.addEventListener('mouseup', () => {
+  // 补发最后一帧:快速拖拽松手时最后一帧还没发出就被取消,位置会差一点
+  if (_pending && window.electronAPI?.miniDragMove) window.electronAPI.miniDragMove(_pending.x, _pending.y)
+  if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = null }
+  _pending = null
+  dragState = null
+})
+
+window.addEventListener('blur', () => {
+  dragState = null
+  _pending = null
+  if (_dragRaf) { cancelAnimationFrame(_dragRaf); _dragRaf = null }
+})
+
+// 拖动后消费一次 click,避免误触
+document.addEventListener('click', e => {
+  if (suppressClick) { e.stopPropagation(); suppressClick = false }
+}, true)
+
 function togglePlay() {
   if (window.electronAPI) {
     window.electronAPI.send('mini:toggle-play')
@@ -206,7 +271,9 @@ function restoreMain() {
   padding: 10px 12px;
   position: relative;
   overflow: hidden;
-  -webkit-app-region: drag;
+  /* 不设 -webkit-app-region: drag —— **拖拽区域不把鼠标事件交给页面**,于是主进程的
+     context-menu 不触发、右键菜单打不开(用户报的"右键没反应"就是这个)。
+     拖动改成与桌面歌词同一套 JS 实现(绝对坐标锚点),见下方 mousedown/mousemove。 */
 }
 
 .mini-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }

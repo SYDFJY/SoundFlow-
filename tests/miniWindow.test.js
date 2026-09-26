@@ -150,3 +150,25 @@ describe('小窗右键菜单 = 它设置的唯一入口(与桌面歌词一个思
     expect(s, '小窗置顶不是勾选项').toMatch(/label: '小窗置顶',[\s\S]{0,40}type: 'checkbox'/)
   })
 })
+
+describe('小窗右键菜单能弹出来:不能用整窗拖拽区(2026-09-26 用户报"右键没反应")', () => {
+  it('整窗不再设 -webkit-app-region: drag(拖拽区不把鼠标事件交给页面 → context-menu 不触发)', () => {
+    const s = mini()
+    // 判定要带分号:文件里那句"不设 -webkit-app-region: drag"的注释是解释,不算违规
+    expect(s, '整窗又铺了拖拽区,右键菜单会再次打不开').not.toMatch(/-webkit-app-region: drag;/)
+    expect(s, '没有说明为什么').toMatch(/拖拽区域不把鼠标事件交给页面/)
+  })
+
+  it('拖动改成 JS 实现(与桌面歌词同一套):按下上报锚点、移动上报绝对坐标', () => {
+    const s = mini()
+    expect(s, '没有拖动实现').toMatch(/miniDragStart\(e\.screenX, e\.screenY\)/)
+    expect(s, '移动时没上报绝对坐标').toMatch(/miniDragMove\(pt\.x, pt\.y\)/)
+    expect(s, '没有"鼠标其实已松开"的守卫(窗口外松手会一直拖)').toMatch(/\(e\.buttons & 1\) === 0/)
+    expect(s, '交互元素没排除(点按钮会变成拖动)').toMatch(/closest\?\.\('button, \.mini-progress'\)/)
+    const m = read('electron/main.js')
+    expect(m, '主进程没接拖动开始').toMatch(/ipcMain\.on\('mini:drag-start'/)
+    expect(m, '主进程没接拖动移动').toMatch(/ipcMain\.on\('mini:drag-move'/)
+    expect(m, '拖动没用 setBounds 锁尺寸(非整数缩放下会漂)').toMatch(/miniWindow\.setBounds\(\{/)
+    expect(read('electron/preload.js'), 'preload 没放行拖动通道').toMatch(/'mini:drag-start', 'mini:drag-move'/)
+  })
+})
