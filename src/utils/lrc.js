@@ -92,6 +92,25 @@ export function hasTimeTag(text) {
 }
 
 /**
+ * 这段文本能不能当歌词用:至少要解析出一行**有内容的**带时间戳歌词。
+ *
+ * 比 hasTimeTag 严 —— 只有 `[ar:]/[ti:]` 这类标签的"空歌词"、错误页里偶然出现的
+ * 一个 `[00:00]`、把 base64 当歌词的情况,全都过不了。
+ *
+ * 两个用处:
+ *  - 本地 .lrc:有文件但解析不出行时不算命中(否则这首歌永远空着,还标着"本地歌词",
+ *    在线回退再也不会发生);
+ *  - 在线缓存:修好之前写进去的垃圾会一直命中,而缓存没有失效机制。
+ *
+ * 注意主进程还有一份同样意图的 looksLikeLRC(electron/lib/lyricSources.js):那边是 CJS、
+ * 且要挡在**入缓存之前**,这里是 ESM 且要用真解析器。两份都改过时记得对着改。
+ */
+export function looksLikeLyrics(text) {
+  const lines = parseLRCWithMeta(text).lines
+  return lines.some((l) => l.text && l.text.trim())
+}
+
+/**
  * 把"译文轨"(与原文各占一行、时间戳相同)并成**一行双语**的 LRC。
  * 保存歌词到本地时用:这样下载下来的 .lrc 与用户手里那些双语歌词文件同格式
  * (`[00:12.34]English 中文`),下次加载由拆分逻辑还原成"主行原文 + 一行译文"。

@@ -19,6 +19,8 @@ const RECEIVE_CHANNELS = [
   'scan-progress',
   // 迷你播放器拖拽进度/音量 → 主窗口回填(App.vue 订阅),此前缺失导致拖动无效
   'player:seek', 'player:set-volume',
+  // 主进程侧的失败上报(音源连不上/返回异常/返回的不是歌词)→ 诊断面板「最近失败」
+  'failure-note',
 ]
 // 渲染进程 → 主进程 的单向发送通道白名单
 const SEND_CHANNELS = [

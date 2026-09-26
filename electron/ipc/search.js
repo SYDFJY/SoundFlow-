@@ -14,10 +14,26 @@
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
+// HD 封面缓存的文件名要按 URL 取哈希 —— 这个 require 在 main.js → ipc/search.js 拆分时丢了。
+// 后果不是报错而是**静默失效**:Electron 34 的 Node 20 里全局 `crypto` 是 WebCrypto(只有
+// subtle/getRandomValues,没有 createHash),调用处抛 TypeError,被 get-hd-cover 末尾的
+// catch 变成 { ok:false } → 每次都退回 300px 封面,日志里一个字都没有。
+const crypto = require('crypto')
 const { app, nativeImage } = require('electron')
+const log = require('../lib/failureLog')
 
 /** 网络请求超时:搜索与封面下载共用(原先定义在 main.js) */
 const NET_TIMEOUT_MS = 10000
+
+/** 音源节流用的时间戳:**必须在本模块声明**。
+ *  它们原先写在 main.js 的 setupIPC() 里(拆分后的遗留),而使用它们的 _srcThrottle()
+ *  在另一个模块 —— 读一个未声明的标识符直接抛 ReferenceError,而 _srcThrottle() 是每个
+ *  handler 的第一句,于是四个在线搜索通道**每次都在第一句炸**,异常被各自的
+ *  `catch { return [] }` 吞掉:界面上表现为"所有音源都搜不到这首歌"。
+ *  这个 bug 能活这么久,是因为 ipc-check 用空标题调这四个通道(会提前 return),
+ *  读数 `ok:[]` 分辨不出"坏了"和"本来就没结果"。真机探针见 tools/lyric-probe.mjs。 */
+let _srcLastReq = 0
+let _mbLastReq = 0
 
 /**
  * @param {{ipcMain:object, saveCover:Function, saveCustom:Function}} ctx
@@ -88,7 +104,12 @@ function register (ctx) {
         if (out.length >= 5) break
       }
       return out
-    } catch { return [] }
+    } catch (e) {
+      // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
+      // 真发生过)与"这个源没有这首歌"在界面上完全一样
+      log.failure('search.qqmusic', '搜索失败', e)
+      return []
+    }
   })
   // 网易云搜索(回退源;搜索 → song/detail 取封面/年份)
   ipcMain.handle('search-netease', async (event, song) => {
@@ -99,14 +120,32 @@ function register (ctx) {
       if (!title) return []
       const q = encodeURIComponent(title + (artist ? ' ' + artist : ''))
       const res = await fetch('https://music.163.com/api/search/get/web?s=' + q + '&type=1&limit=8&offset=0', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
-      if (!res.ok) return []
+      // 非 200 以前直接当"没有候选":对方限流/维护(429/503)与"没这首歌"在界面上完全一样
+      if (!res.ok) { log.failure('search.netease', `网易云返回 HTTP ${res.status}`, title); return [] }
       const data = await res.json()
       const songs = (data.result && data.result.songs) || []
       const out = []
       const want = _normName(artist)
-      for (const s of songs) {
+      const wantTitle = _normName(title)
+      /** 标题/歌手是否对得上:标题完全相等 > 标题包含 > 歌手命中 */
+      const scoreOf = (s) => {
+        const nName = _normName(s.name)
+        const nArtist = _normName((s.artists || []).map(x => x.name).join('/'))
+        let sc = 0
+        if (nName && nName === wantTitle) sc += 100
+        else if (nName && wantTitle && (nName.includes(wantTitle) || wantTitle.includes(nName))) sc += 50
+        if (want && nArtist.includes(want)) sc += 40
+        return sc
+      }
+      // 先把"歌手对得上"的挑出来(原意:挡掉 UGC/翻唱污染);一个都没有时**退回按分数排**,
+      // 而不是返回空 —— 网易云的搜索结果里常有整页翻唱(实测查询"晴天 周杰伦"的 8 条里
+      // 没有一条歌手名含"周杰伦",真实那条署名是 "Jay"),硬过滤会把整个音源清成空,
+      // 而界面只显示"这个源没有候选"。
+      const ranked = songs.map(s => ({ s, sc: scoreOf(s) })).sort((a, b) => b.sc - a.sc)
+      const strict = ranked.filter(x => want && _normName((x.s.artists || []).map(a => a.name).join('/')).includes(want))
+      const chosen = (strict.length ? strict : ranked).slice(0, 5)
+      for (const { s } of chosen) {
         const sArtist = (s.artists || []).map(x => x.name).join('/')
-        if (want && !_normName(sArtist).includes(want)) continue
         let coverUrl = '', year = ''
         try {
           await _srcThrottle()
@@ -119,10 +158,14 @@ function register (ctx) {
           duration: s.duration ? Math.round(s.duration / 1000) : 0,
           coverUrl, source: '网易云'
         })
-        if (out.length >= 5) break
       }
       return out
-    } catch { return [] }
+    } catch (e) {
+      // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
+      // 真发生过)与"这个源没有这首歌"在界面上完全一样
+      log.failure('search.netease', '搜索失败', e)
+      return []
+    }
   })
   // 下载封面:URL → 字节 → saveCoverFile 存本地缓存,返回本地路径
   ipcMain.handle('download-cover', async (event, coverUrl, songPath) => {
@@ -186,6 +229,9 @@ function register (ctx) {
       fs.writeFileSync(fp, img.toJPEG(92))
       return { ok: true, url: `file:///${fp.replace(/\\/g, '/')}` }
     } catch (e) {
+      // 此前这里什么都不说:高清封面失败与"这首歌没有高清版"表现一样,
+      // 而缺 require('crypto') 的 TypeError 也走了这条路(见文件头的说明)
+      log.failure('cover.hd', '高清封面获取失败', e)
       return { ok: false, url: coverUrl }
     }
   })
@@ -199,7 +245,8 @@ function register (ctx) {
       if (!title) return []
       const kw = encodeURIComponent(title + (artist ? ' ' + artist : ''))
       const res = await fetch('https://songsearch.kugou.com/song_search_v2?keyword=' + kw + '&page=1&pagesize=8', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
-      if (!res.ok) return []
+      // 非 200 以前直接当"没有候选":对方限流/维护(429/503)与"没这首歌"在界面上完全一样
+      if (!res.ok) { log.failure('search.kugou', `酷狗返回 HTTP ${res.status}`, title); return [] }
       const data = await res.json()
       const list = (data.data && data.data.lists) || []
       const wantTitle = _normName(title)
@@ -224,7 +271,12 @@ function register (ctx) {
       const uniq = out.filter(x => { const k = x.album + '|' + x.title; if (seen.has(k)) return false; seen.add(k); return true })
       uniq.sort((a, b) => a._exact - b._exact)
       return uniq.slice(0, 5).map(x => ({ title: x.title, artist: x.artist, album: x.album, year: x.year, duration: x.duration, coverUrl: x.coverUrl, source: x.source }))
-    } catch { return [] }
+    } catch (e) {
+      // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
+      // 真发生过)与"这个源没有这首歌"在界面上完全一样
+      log.failure('search.kugou', '搜索失败', e)
+      return []
+    }
   })
 
   ipcMain.handle('search-musicbrainz', async (event, song) => {
@@ -239,7 +291,8 @@ function register (ctx) {
       const q = encodeURIComponent(`recording:"${title}"${artist ? ` AND artist:"${artist}"` : ''}`)
       const url = `https://musicbrainz.org/ws/2/recording/?query=${q}&limit=5&fmt=json`
       const res = await fetch(url, { headers: { 'User-Agent': 'SoundFlowMusic/1.0 (local music player)' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) })
-      if (!res.ok) return []
+      // MusicBrainz 会返回 503("currently busy",它自己的限流),以前同样被吞成"没有候选"
+      if (!res.ok) { log.failure('search.musicbrainz', `MusicBrainz 返回 HTTP ${res.status}`, title); return [] }
       const data = await res.json()
       // 提取候选:标题/艺术家/专辑/年份(去重按专辑)
       const out = []
@@ -254,7 +307,12 @@ function register (ctx) {
         if (!out.some(x => x.album === item.album && x.artist === item.artist)) out.push(item)
       }
       return out
-    } catch { return [] }
+    } catch (e) {
+      // 此前是纯 `catch { return [] }`:通道抛异常(如节流变量不在作用域,
+      // 真发生过)与"这个源没有这首歌"在界面上完全一样
+      log.failure('search.musicbrainz', '搜索失败', e)
+      return []
+    }
   })
 
 }

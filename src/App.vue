@@ -108,6 +108,8 @@ import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, comboFromEvent, prettyCombo, loadS
 import Icon from '@/components/icons/Icon.vue'
 import { toast, toastState } from '@/composables/useToast'
 import { confirmDialog } from '@/composables/useConfirm'
+import { SECRET_KEYS } from '@/config/storageSchema'
+import { noteFailure } from '@/utils/failures'
 
 // 全局 Toast 入口:任意组件/普通 JS 均可 window.$toast(...)
 if (typeof window !== 'undefined') window.$toast = toast
@@ -261,16 +263,25 @@ onMounted(async () => {
   // 桌面歌词窗口点击歌词行 → 跳转播放进度
   if (window.electronAPI && window.electronAPI.on) {
     window.electronAPI.on('lyric:seek', (time) => { playerStore.seek(time) })
-    // 自动备份请求:收集 localStorage 全量快照回传主进程写入 backups/
+    // 自动备份请求:收集 localStorage 快照回传主进程写入 backups/
+    // **必须按 SECRET_KEYS 过滤**:备份是明写在 userData/backups/*.json 里的(保留 10 份),
+    // storageSchema 声明过 DeepSeek Key"绝不进主进程备份 JSON",但此前没有任何代码读那个声明 ——
+    // 用户把备份发给别人排障就等于把 API Key 交出去了。
     window.electronAPI.on('backup-request', () => {
       try {
         const data = {}
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i)
+          if (SECRET_KEYS.includes(k)) continue
           data[k] = localStorage.getItem(k)
         }
         if (window.electronAPI.backupData) window.electronAPI.backupData(data)
       } catch (_) {}
+    })
+    // 主进程侧的失败(音源/高清封面/写盘)→ 落进诊断面板的「最近失败」列表。
+    // 此前这些失败只有 console.error(有的连它都没有),界面上表现为"这首歌没歌词"。
+    window.electronAPI.on('failure-note', ({ scope, reason, detail } = {}) => {
+      noteFailure(scope || 'main', reason || '主进程失败', detail)
     })
     // 系统深色模式变化 → 主题跟随
     window.electronAPI.on('system-theme', (dark) => { appStore.applySystemTheme(!!dark) })

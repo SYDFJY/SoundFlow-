@@ -10,8 +10,13 @@
 const fs = require('fs')
 const path = require('path')
 const https = require('https')
+// 文件名去重用的哈希。**注意别漏这个 require**:Electron 34 的 Node 20 里全局 crypto 是
+// WebCrypto(没有 createHash),漏了不会报错、只会静默走 catch 分支 —— ipc/search.js 的
+// get-hd-cover 就是这么失效了很久(见那里的注释)。
+const crypto = require('crypto')
 const { dialog } = require('electron')
 const log = require('electron-log')
+const failLog = require('../lib/failureLog')
 const { readdir, stat, readFile, writeFile, mkdir, access, unlink } = require('fs/promises')
 // 本地歌词是 GBK/GB18030 时用 iconv 解码。这一行曾被拆 lyrics.js 时漏掉:
 // readLrc 里 iconv.decode 抛 ReferenceError,被外层 catch 吞掉 → **本地歌词永远读成空**,
@@ -190,6 +195,8 @@ function readLrc(fp) {
 const {
   LYRIC_SOURCES, LYRIC_ORDER, searchLyricBySource, searchLyricAuto
 } = require('../lib/lyricSources')
+// 歌词落盘的目标文件名选择(防同名曲互相覆盖;抽到 lib 里是为了能单测)
+const { resolveLyricTarget } = require('../lib/lyricFile')
 
   // DeepSeek 翻译:一次请求翻译整首歌词,返回与输入等长的译文数组
   /** MyMemory 的最低匹配度:低于它就认为命中的是"别的文档片段",宁可留空 */
@@ -266,14 +273,25 @@ const {
     const headers = { 'User-Agent': 'Mozilla/5.0' }
     // 并发翻译(每批 5 行并行),显著快于串行
     const CONCURRENCY = 5
+    // 副歌/重复行只请求一次:一首歌里同一句常出现 4 次以上,以前每次都发一次请求 ——
+    // MyMemory 是**按 IP 计量的免费配额**,重复请求纯属白烧
+    const uniq = new Map() // 行文本 → 索引列表
+    lines.forEach((line, i) => {
+      const key = String(line || '').trim()
+      if (!key) return
+      if (!uniq.has(key)) uniq.set(key, [])
+      uniq.get(key).push(i)
+    })
+    const jobs = [...uniq.keys()]
     let nextIdx = 0
     let quotaHit = false
     async function worker() {
       while (true) {
+        if (quotaHit) break // 配额已耗尽:停手(以前只 continue,剩下的几十行照发,
+                            // 越打越久才解封,连在线歌词搜索都会被同一个 IP 限流牵连)
         const i = nextIdx++
-        if (i >= lines.length) break
-        const line = lines[i]
-        if (!line || !line.trim()) continue
+        if (i >= jobs.length) break
+        const line = jobs[i]
         try {
           const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(line)}&langpair=${pair}`
           const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
@@ -289,14 +307,22 @@ const {
             quotaHit = true
             continue
           }
-          results[i] = text
+          for (const idx of uniq.get(line)) results[idx] = text
         } catch {
           // 单行失败留空,不影响其他行
         }
       }
     }
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, lines.length) }, worker))
-    if (results.every(r => !r)) return { error: quotaHit ? 'quota' : 'empty' }
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, worker))
+    if (results.every(r => !r)) {
+      if (quotaHit) {
+        failLog.failure('translate.mymemory', 'MyMemory 免费配额用尽', `${lines.length} 行`)
+        return { error: 'quota' }
+      }
+      // 注意这里**不一定是故障**:纯音乐/只有 [xx:xx] 空行的歌词,逐行翻译本来就没有可译内容。
+      // 渲染端据此区分"服务不可用"与"这首歌没词可翻"(以前是弹一个"翻译服务暂不可用"弹窗)。
+      return { error: 'empty' }
+    }
     return results
   })
 
@@ -374,11 +400,12 @@ const {
       const base = path.basename(audioPath, path.extname(audioPath))
       if (!isSafeBaseName(base)) return { ok: false, error: '歌曲文件名不合法' }
       fs.mkdirSync(folderPath, { recursive: true }) // 文件夹不存在时自动创建
-      const target = path.join(folderPath, base + '.lrc')
+      // 目标文件名交给 lib/lyricFile:同名不同歌时不能互相覆盖(详见那里的说明与单测)
+      const target = resolveLyricTarget(folderPath, base, audioPath, lrcText)
       fs.writeFileSync(target, lrcText, 'utf8')
-      return { ok: true, path: target }
+      return { ok: true, path: target, renamed: path.basename(target, '.lrc') !== base }
     } catch (e) {
-      console.error('[歌词] 保存到歌词文件夹失败:', e.message)
+      failLog.failure('lyric.save', '保存到歌词文件夹失败', e)
       return { ok: false, error: e.message }
     }
   })

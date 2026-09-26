@@ -35,15 +35,17 @@ function channelsRegisteredInMain () {
   const files = ['electron/main.js', ...fs.readdirSync(path.join(repo, 'electron', 'ipc')).map((f) => `electron/ipc/${f}`)]
   const handle = new Set()
   const on = new Set()
-  for (const rel of files) {
+  // 编辑器遗留的 *.tmp.* 副本不是源码,但**必须从 files 里剔掉**而不是只跳过注册扫描 ——
+  // C 段(自由标识符)是遍历 files 跑的,漏剔会让临时副本里的半成品代码参与报错判定
+  const real = files.filter((rel) => !/\.tmp\./.test(rel))
+  for (const rel of real) {
     const full = path.join(repo, rel)
     if (!fs.existsSync(full)) continue
-    if (/\.tmp\./.test(rel)) continue // 编辑器遗留的临时副本,不是源码
     const src = fs.readFileSync(full, 'utf8')
     for (const m of src.matchAll(/ipcMain\.handle\(\s*'([^']+)'/g)) handle.add(m[1])
     for (const m of src.matchAll(/ipcMain\.on\(\s*'([^']+)'/g)) on.add(m[1])
   }
-  return { handle, on, files }
+  return { handle, on, files: real }
 }
 
 const used = channelsUsedByRenderer()
@@ -89,6 +91,8 @@ const GLOBALS = new Set([
   // 属性访问的根标识符也会被检查,所以浏览器/ES 的内建全局要列全,否则误报
   'this', 'super', 'arguments', 'window', 'document', 'navigator', 'location',
   'sessionStorage', 'localStorage', 'screen', 'history', 'Image', 'Audio', 'Event',
+  // CommonJS 的模块级内建:不算"未定义标识符"
+  '__dirname', '__filename',
   'CustomEvent', 'MutationObserver', 'IntersectionObserver', 'ResizeObserver', 'DOMParser',
   'XMLHttpRequest', 'WebSocket', 'Worker', 'Blob', 'File', 'FileReader', 'FormData',
   'Headers', 'Request', 'Response', 'AbortSignal', 'Notification', 'FontFace', 'Document',
@@ -201,6 +205,16 @@ function freeCalls (rel) {
   // **全局快捷键一个都没注册上**,而日志里连"注册失败"的警告都没有(压根没走到注册那步),
   // 于是看日志还以为一切正常。
   for (const m of src.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\./g)) flag(m[2])
+  // 第三种:**裸读**一个 `_` 开头、本文件又没绑定的标识符。
+  // 前两种都看不到它(既不调用、也不是属性访问的根),而这正是真实事故的形状:
+  // `_srcLastReq` / `_mbLastReq` 声明在 main.js 的 setupIPC() 作用域里,使用它们的
+  // ipc/search.js 读不到 → 每个搜索 handler 都在第一句抛 ReferenceError →
+  // 被各自的 `catch { return [] }` 吞掉 → 四个在线音源**全部静默变成"没有候选"**,
+  // 而构建、单测、这道检查三层全绿(ipc-check 用空标题调那几个通道,读数 ok:[] 分辨不出)。
+  // 只查 `_` 前缀:这类名字是项目自己的私有约定,基本不可能是全局,误报面很小。
+  // 两个否定断言都要写全:`(?![\w$])` 防正则回溯成半个名字(`_exact:` 被截成 `_exac`),
+  // `(?!\s*:)` 排除对象字面量的属性名(`_exact: ...` 不是"读")。
+  for (const m of src.matchAll(/(^|[^.\w$])(_[A-Za-z_$][\w$]*)(?![\w$])(?!\s*:)/g)) flag(m[2])
   return [...out]
 }
 const freeBad = []

@@ -446,6 +446,14 @@ function createMainWindow() {
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
     if (level >= 2) log.info(`[render:${level}] ${message} (${sourceId || ''}:${line})`)
   })
+  // 主进程侧的失败上报 → 渲染端诊断面板的「最近失败」列表。
+  // lib 层不 require electron,由这里注入出口(与 ipc 模块用 ctx 注入 getter 同一套做法)。
+  // 音源失败此前只有一个 console.error(有的连它都没有),界面上表现为"这首歌没歌词"。
+  require('./lib/failureLog').setSink((scope, reason, detail) => {
+    try {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('failure-note', { scope, reason, detail })
+    } catch {}
+  })
   mainWindow.webContents.on('render-process-gone', (event, details) => {
     log.error('[render-gone]', details.reason, details.exitCode)
   })
@@ -1499,12 +1507,9 @@ function setupIPC() {
 
   // 响度均衡 / BPM 分析 / 重命名已拆到 electron/ipc/audio.js
 
-  // ===== MusicBrainz 自动补全标签(文本搜索,预览确认后由 write-tags 写回)=====
-  let _mbLastReq = 0
-  // ===== 自动补全多音源:QQ 音乐优先 → 网易云 → MusicBrainz =====
-  let _srcLastReq = 0
-  // 音乐搜索(QQ/网易云/酷狗/MusicBrainz)与封面下载已拆到 electron/ipc/search.js。
-  // 两个封面写入辅助函数经 ctx 注入(它们定义在上面的封面小节,主进程其他地方也在用)。
+  // ===== 自动补全标签:QQ 音乐优先 → 网易云 → 酷狗 → MusicBrainz =====
+  // (节流用的时间戳已随拆分挪进 electron/ipc/search.js —— 留在这里会让人以为
+  //  "那边声明了这边能用",而那正是四个搜索通道静默失效的原因)
   require('./ipc/search').register({
     ipcMain,
     saveCover: saveCoverFile,

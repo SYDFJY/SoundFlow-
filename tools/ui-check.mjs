@@ -1668,6 +1668,77 @@ app.whenReady().then(async () => {
     !!afterJump && afterJump.hash.includes('/folder') && afterJump.title.includes('音乐目录'),
     JSON.stringify(afterJump))
 
+  // 17) 在线歌词的"未找到"不能再冒充"网络不可用"(2026-09-26 审计修复)
+  //     构造"这首歌在线查不到"的真实场景:先把夹具的本地 .lrc 全部删掉(下一轮第 6 节会重写),
+  //     再播一首 —— 此时只能走在线,而夹具标题是「曲目NMP3」这类谁都不会收录的名字,必然查不到。
+  //     此前的行为:auto 源三家都返回 null 被当成网络故障 → 每首无歌词的歌都弹一次
+  //     「网络不可用(请检查代理/连接)」并把来源标签写成"网络不可用"。
+  //     判据:标签是「未找到」,且**没有**网络类 toast。
+  let removedLrc = 0
+  for (const it of items) {
+    const lrc = it.path.replace(/\.[^.]+$/, '') + '.lrc'
+    try { if (fs.existsSync(lrc)) { fs.unlinkSync(lrc); removedLrc++ } } catch {}
+  }
+  console.log(`清掉本地 .lrc:${removedLrc} 份(下一轮会自动重建)`)
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1800)
+  // 挂 toast 探针(应用自己的全局入口),之后所有 toast 都记下来
+  await run(`(() => {
+    window.__sfToasts = []
+    const orig = window.$toast
+    if (orig && !orig.__wrapped) {
+      const wrapped = (msg, type, dur) => { try { window.__sfToasts.push({ msg: String(msg), type: type || '' }) } catch {} ; return orig(msg, type, dur) }
+      wrapped.__wrapped = true
+      window.$toast = wrapped
+    }
+    return true
+  })()`)
+  const playRes = await run(`(() => {
+    const rows = [...document.querySelectorAll('.list-row')]
+    if (!rows.length) return { err: '列表没有行' }
+    const row = document.querySelector('.list-row.active') || rows[0]
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    return { rows: rows.length, picked: (row.textContent || '').trim().slice(0, 30) }
+  })()`)
+  await sleep(2000)
+  // 歌词来源标签在**歌词页签**里(.lyric-right 属于 .lyric-mode,封面页签没有)
+  await run(`(() => { location.hash = '#/player'; return true })()`)
+  await sleep(2200)
+  await run(`(() => {
+    const t = [...document.querySelectorAll('.tab-btn')].find((b) => /歌词/.test(b.textContent || ''))
+    if (t) t.click()
+    return !!t
+  })()`)
+  await sleep(1500)
+  const beforeState = await run(`(() => {
+    const tag = document.querySelector('.lyric-origin-tag')
+    return {
+      tag: tag ? (tag.textContent || '').trim() : null,
+      playing: (document.querySelector('.song-title-sm') || {}).textContent || null,
+      loading: !!document.querySelector('.lyric-loading-tip'),
+      empty: !!document.querySelector('.lyrics-empty')
+    }
+  })()`)
+  console.log('起播与首帧:', JSON.stringify(playRes), JSON.stringify(beforeState))
+  // 等在线查询走完(auto 源有 12 秒总预算;三家都查不到时通常几秒内返回)
+  let originTag = beforeState && beforeState.tag
+  for (let i = 0; i < 18; i++) {
+    if (originTag && /未找到|网络不可用|音源异常/.test(originTag)) break
+    await sleep(1000)
+    originTag = await run(`(() => { const el = document.querySelector('.lyric-origin-tag'); return el ? (el.textContent || '').trim() : null })()`)
+  }
+  const toastDump = await run(`(() => (window.__sfToasts || []).filter(x => /网络|歌词|删除|失败/.test(x.msg)))()`)
+  console.log('在线歌词标签:', JSON.stringify(originTag), '| 相关 toast:', JSON.stringify(toastDump))
+  check('在线歌词:查不到的歌标「未找到」(不再标「网络不可用」)',
+    !!originTag && originTag.includes('未找到'), JSON.stringify({ originTag, before: beforeState }))
+  check('在线歌词:查不到的歌不弹网络警告(以前每首无歌词的歌都弹一次)',
+    Array.isArray(toastDump) && !toastDump.some((t) => /网络不可用/.test(t.msg)), JSON.stringify(toastDump))
+  // 把本地 .lrc 写回去:本节为了造出"在线查不到"的场景把它们删了,
+  // 留着会让**下一轮**跑的时候前几节(第 6/9 节之外的检查)缺歌词 —— 自测工具不能毒害下一次运行
+  for (const it of items) {
+    try { fs.writeFileSync(it.path.replace(/\.[^.]+$/, '') + '.lrc', TIMED_LRC) } catch {}
+  }
+
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
   await sleep(400)

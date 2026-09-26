@@ -1,0 +1,254 @@
+import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
+import sources from '../electron/lib/lyricSources.js'
+import { resolveLyricTarget } from '../electron/lib/lyricFile.js'
+
+/**
+ * 在线歌词链路的守卫(2026-09-26 审计后补)。
+ *
+ * 这一轮审计实测出的两个问题,都属于"构建/单测/ipc-check 三关全绿但功能是坏的":
+ *   ① 四个在线元数据搜索通道**每次都在第一句抛 ReferenceError**、被 `catch { return [] }`
+ *      吞成"这个源没有这首歌"(节流变量声明在 main.js 的手作用域里,search.js 读不到);
+ *   ② 取词时**乱写的歌名会拿到别人的歌词**:候选评分初值 -1,0 分的候选也算命中
+ *      (实测查询"qzxwv不存在的歌名9931"时网易云给出陈奕迅《世界上不存在的歌》,
+ *      而且非空就进缓存 → 之后一直显示错的)。
+ *
+ * 所以这里同时钉两头:
+ *   - 纯函数层面:什么样的候选算"够像"(可以直接喂数据断言,不依赖网络);
+ *   - 源码层面:几处**必须存在/必须不存在**的写法(声明、校验、过滤),防止改回去。
+ */
+const read = (p) => fs.readFileSync(path.join(process.cwd(), p), 'utf8')
+
+describe('歌词文本有效性(looksLikeLRC)', () => {
+  it('正常 LRC 通过', () => {
+    expect(sources.looksLikeLRC('[00:29.36] 故事的小黃花\n[00:32.77] 從出生那年就飄著')).toBe(true)
+    expect(sources.looksLikeLRC('[00:01.5]hi')).toBe(true)
+  })
+  it('错误页 / 纯文本 / 空串 / 只有元信息标签 → 不算歌词', () => {
+    expect(sources.looksLikeLRC('<html><body>502 Bad Gateway</body></html>')).toBe(false)
+    expect(sources.looksLikeLRC('晴天 - 周杰伦\n作词:徐若瑄')).toBe(false)
+    expect(sources.looksLikeLRC('[ar:周杰伦]\n[ti:晴天]\n[by:]\n')).toBe(false)
+    expect(sources.looksLikeLRC('')).toBe(false)
+    expect(sources.looksLikeLRC(null)).toBe(false)
+  })
+  it('有时间戳但整行都是空的(纯音乐)也不算', () => {
+    expect(sources.looksLikeLRC('[00:10.00]\n[00:20.00]  \n')).toBe(false)
+  })
+})
+
+describe('候选匹配:乱写的歌名不能命中别人的歌', () => {
+  const junk = { title: 'qzxwv不存在的歌名9931', artist: 'zzz不存在', duration: 60 }
+  // 这是实测抓到的真实噪声:网易云对上述查询返回的首条
+  const noise = [{ title: '世界上不存在的歌 (2020重唱版)', artist: '陈奕迅', duration: 233 }]
+
+  it('0 分候选不算命中(此前 bestScore 初值 -1,第一个候选直接当选)', () => {
+    expect(sources.pickBestCandidate(noise, junk).candidate).toBeNull()
+    expect(sources.rankCandidates(noise, junk, 3)).toEqual([])
+  })
+
+  it('标题精确 + 歌手 + 时长 → 满分命中', () => {
+    const info = { title: '晴天', artist: '周杰伦', duration: 269 }
+    const best = sources.pickBestCandidate([{ title: '晴天', artist: '周杰伦', duration: 269 }], info)
+    expect(best.candidate).toBeTruthy()
+    expect(best.score).toBe(160)
+  })
+
+  it('繁简/别名对不上时,靠"歌手+时长"仍够门槛(60)', () => {
+    const info = { title: '晴天', artist: '周杰伦', duration: 269 }
+    const cands = [{ title: '晴天(國)', artist: '周杰倫', duration: 270 }]
+    const best = sources.pickBestCandidate(cands, info)
+    expect(best.candidate).toBeTruthy()
+    expect(best.score).toBeGreaterThanOrEqual(sources.MIN_MATCH_SCORE)
+  })
+
+  it('只命中歌手、时长也没对上 → 不够门槛(不能因为同一个歌手就拿别人的歌)', () => {
+    const info = { title: '晴天', artist: '周杰伦', duration: 269 }
+    const cands = [{ title: '完全另一首歌', artist: '周杰伦', duration: 200 }]
+    expect(sources.pickBestCandidate(cands, info).candidate).toBeNull()
+  })
+
+  it('艺术家名太短不参与匹配(避免 "K" 命中一切)', () => {
+    expect(sources.scoreCandidate({ title: 'X', artist: 'K' }, { title: 'X', artist: 'K' })).toBe(100)
+    expect(sources.scoreCandidate({ title: 'Y', artist: 'K' }, { title: 'X', artist: 'K' })).toBe(0)
+  })
+
+  it('多候选取最优:精确匹配压过包含匹配', () => {
+    const info = { title: '晴天', artist: '周杰伦', duration: 269 }
+    const ranked = sources.rankCandidates([
+      { title: '晴天 (Live)', artist: '周杰伦', duration: 269 },
+      { title: '晴天', artist: '周杰伦', duration: 269 }
+    ], info, 2)
+    expect(ranked[0].title).toBe('晴天')
+  })
+})
+
+describe('失败三态:未找到 ≠ 网络故障 ≠ 音源异常', () => {
+  it('auto 源在"三家都没有这首歌"时不得返回 network', () => {
+    const src = read('electron/lib/lyricSources.js')
+    expect(src, 'auto 源又用 network 表示"没这首歌"了(会让每首无歌词的歌都弹"网络不可用")')
+      .toMatch(/error: 'notfound'/)
+    expect(src, '"预算用完"没被算成"没这首歌"').toMatch(/sawSource = true/)
+  })
+
+  it('分类规则:用桩替掉三个源,逐个场景验', async () => {
+    const names = ['lrclib', 'qq', 'netease']
+    const original = names.map((n) => sources.LYRIC_SOURCES[n].fetch)
+    const stub = (returns) => names.forEach((n, i) => { sources.LYRIC_SOURCES[n].fetch = async () => returns[i] })
+    const info = { title: 'x', artist: 'y', duration: 1 }
+    try {
+      for (const [label, returns, want] of [
+        ['三家都干净地说没有', [null, null, null], 'notfound'],
+        // 这条是真实场景:QQ 的搜索接口经常整片 HTTP 500,而 LRCLIB/网易云都干净地回答了
+        // "我这里没有"。以前只要有一个源出错就报"音源异常",于是**每首歌**都弹一次提示。
+        ['QQ 500,另两家说没有', [null, { error: 'source' }, null], 'notfound'],
+        ['三家全网络故障', [{ error: 'network' }, { error: 'network' }, { error: 'network' }], 'network'],
+        ['能连上但三家都返回异常', [{ error: 'source' }, { error: 'source' }, { error: 'source' }], 'source'],
+        ['一家网络不通,两家干净地没有', [{ error: 'network' }, null, null], 'notfound']
+      ]) {
+        stub(returns)
+        const r = await sources.searchLyricAuto(info)
+        expect(r.error, `${label} 的归类不对`).toBe(want)
+      }
+    } finally {
+      names.forEach((n, i) => { sources.LYRIC_SOURCES[n].fetch = original[i] })
+    }
+  })
+
+  it('QQ 的超时按 TimeoutError 归类(AbortSignal.timeout 抛的不是 AbortError)', () => {
+    const src = read('electron/lib/lyricSources.js')
+    // 判据写"用共享的 isNetworkError 归类",而不是逐个字符比对 ——
+    // isNetworkError 内部本来就要同时认 TimeoutError 与 AbortError 两种
+    expect(src, '缺少超时判定(AbortSignal.timeout 抛 TimeoutError)').toMatch(/name === 'TimeoutError'/)
+    expect(src, 'QQ 的 catch 没有走共享的网络错误归类').toMatch(/const net = isNetworkError\(e\)/)
+    expect(src, '网络错误码表丢了').toMatch(/UND_ERR/)
+  })
+
+  it('LRCLIB 也必须过"像不像歌词"(三个源里只有它没有时间戳校验)', () => {
+    const src = read('electron/lib/lyricSources.js')
+    // /get 与 /search 两条路径都要校验
+    const hits = src.match(/looksLikeLRC\(/g) || []
+    expect(hits.length, `looksLikeLRC 只用了 ${hits.length} 处,LRCLIB 的两条路径都要用`).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('主进程模块作用域(真实事故:跨模块读未声明的标识符)', () => {
+  it('节流时间戳必须在 search.js 里自己声明', () => {
+    const src = read('electron/ipc/search.js')
+    for (const name of ['_srcLastReq', '_mbLastReq']) {
+      expect(src, `${name} 在 search.js 里被读却不在该文件声明 → 每次调用都抛 ReferenceError`)
+        .toMatch(new RegExp(`let\\s+${name}\\s*=`))
+    }
+    // main.js 里那份是拆分遗留,留着会让人以为"那边声明了这边就能用"
+    expect(read('electron/main.js'), 'main.js 里还留着拆分遗留的节流变量').not.toMatch(/let _srcLastReq/)
+  })
+
+  it('用到 crypto.createHash 的主进程文件必须 require("crypto")', () => {
+    for (const rel of ['electron/ipc/search.js', 'electron/ipc/lyrics.js']) {
+      const src = read(rel)
+      if (!/crypto\.createHash/.test(src)) continue
+      expect(src, `${rel} 用了 crypto.createHash 却没 require('crypto')(Node 20 的全局 crypto 是 WebCrypto,没有 createHash)`)
+        .toMatch(/require\('crypto'\)/)
+    }
+  })
+})
+
+describe('歌词缓存与提示', () => {
+  const store = () => read('src/stores/playerStore.js')
+
+  it('缓存命中也要校验,坏的自动丢弃并重取', () => {
+    const s = store()
+    expect(s, '缓存命中没有校验(修好之前写进去的垃圾会一直命中)').toMatch(/looksLikeLyrics\(onlineHit\.lyrics\)/)
+    expect(s, '没有丢弃坏缓存的动作').toMatch(/_dropCachedOnlineLyric\(/)
+    expect(s, '设置里缺少清理在线歌词缓存的入口').toMatch(/clearOnlineLyricCache/)
+  })
+
+  it('写缓存前校验 + 本地 .lrc 解析不出行时不再"永久本地优先"', () => {
+    const s = store()
+    expect(s, '在线结果没校验就当歌词用').toMatch(/if \(onlineText && !looksLikeLyrics\(onlineText\)\)/)
+    expect(s, '又变回"有本地文件就永不联网"').toMatch(/const localUsable = looksLikeLyrics\(lrcText\)/)
+    expect(s, 'auto 分支没走 localUsable').toMatch(/source === 'auto' && localUsable/)
+  })
+
+  it('"未找到"的标签写入有归属判断(否则上一首的慢响应会改掉当前歌的标签)', () => {
+    const s = store()
+    const tail = /\/\/ 在线无结果[\s\S]{0,400}?lyricOrigin\.value = \(onlineEnabled && song\.title\)/
+    expect(s, '尾部又出现没有归属判断的 lyricOrigin 写入').toMatch(
+      /\/\/ 归属判断[\s\S]{0,200}?if \(currentSong\.value !== reqSong\) return[\s\S]{0,200}?lyricOrigin\.value = \(onlineEnabled && song\.title\)/
+    )
+    expect(tail.test(s)).toBe(true)
+  })
+
+  it('失败提示按类别节流(断网/音源故障时不该每切一首弹一次)', () => {
+    const s = store()
+    expect(s, '没有节流时间戳').toMatch(/_lyricToastAt/)
+    expect(s, 'toast 没走节流').toMatch(/now - \(_lyricToastAt\[key\] \|\| 0\) > 3 \* 60 \* 1000/)
+  })
+})
+
+describe('密钥与删除:两处"说了要做但没做"的地方', () => {
+  it('自动备份必须过滤 SECRET_KEYS', () => {
+    const app = read('src/App.vue')
+    expect(app, '备份又把全量 localStorage 交出去了').toMatch(/if \(SECRET_KEYS\.includes\(k\)\) continue/)
+    const schema = read('src/config/storageSchema.js')
+    expect(schema, 'SECRET_KEYS 没有导出').toMatch(/export const SECRET_KEYS/)
+    expect(schema, 'secret 名单里的 key 丢了').toMatch(/soundflow_deepseek_key/)
+  })
+
+  it('"删除本地歌词"必须看返回值(handler 失败返回 {ok:false} 而不抛错)', () => {
+    const s = read('src/views/SettingsView.vue')
+    expect(s, '又忽略了删除结果(会在失败时提示"已删除")').toMatch(/if \(!r \|\| r\.ok === false\)/)
+  })
+
+  it('批量下载保存歌词时不让同名文件互相覆盖', () => {
+    const s = read('electron/ipc/lyrics.js')
+    expect(s, '又自己拼 basename + .lrc 了(不同专辑同名曲会互相覆盖)').toMatch(/resolveLyricTarget\(folderPath, base, audioPath, lrcText\)/)
+    expect(s, '写文件前没经过目标名解析').not.toMatch(/const target = path\.join\(folderPath, base \+ '\.lrc'\)/)
+  })
+})
+
+describe('批量下载:同名曲的 .lrc 不能互相覆盖', () => {
+  // 假文件系统:键是按 path.join 归一化后的绝对路径(Windows 上是反斜杠)
+  const F = path.join('D:', 'lyrics')
+  const at = (name) => path.join(F, name)
+  const makeIo = (files) => ({ existsSync: (p) => p in files, readFileSync: (p) => files[p] })
+
+  it('目标不存在 → 用原名', () => {
+    expect(resolveLyricTarget(F, '01 Intro', 'D:/a/01 Intro.mp3', 'AAA', makeIo({}))).toBe(at('01 Intro.lrc'))
+  })
+
+  it('同名但内容不同(不同专辑的 01 Intro)→ 换一个名字,不覆盖别人的', () => {
+    const files = { [at('01 Intro.lrc')]: 'AAA' }
+    const target = resolveLyricTarget(F, '01 Intro', 'D:/b/01 Intro.mp3', 'BBB', makeIo(files))
+    expect(target).not.toBe(at('01 Intro.lrc'))
+    expect(path.basename(target).startsWith('01 Intro - ')).toBe(true)
+  })
+
+  it('同一首重复下载 → 就地更新(不制造副本)', () => {
+    const files = { [at('01 Intro.lrc')]: 'AAA' }
+    expect(resolveLyricTarget(F, '01 Intro', 'D:/a/01 Intro.mp3', 'AAA', makeIo(files))).toBe(at('01 Intro.lrc'))
+  })
+
+  it('指纹只依赖音频路径:同一首歌反复下载始终落同一个文件', () => {
+    const files = { [at('01 Intro.lrc')]: 'AAA' }
+    const io = makeIo(files)
+    const a = resolveLyricTarget(F, '01 Intro', 'D:/b/01 Intro.mp3', 'BBB', io)
+    const b = resolveLyricTarget(F, '01 Intro', 'D:/b/01 Intro.mp3', 'CCC', io)
+    expect(a).toBe(b)
+  })
+})
+
+describe('翻译:配额与重复行', () => {
+  it('配额耗尽后停手(此前只 continue,剩下的行照发)', () => {
+    const s = read('electron/ipc/lyrics.js')
+    expect(s, 'worker 里没有配额熔断').toMatch(/if \(quotaHit\) break/)
+  })
+  it('重复行只请求一次(副歌同一句常出现 4 次以上)', () => {
+    const s = read('electron/ipc/lyrics.js')
+    expect(s, '没有按行文本去重').toMatch(/const uniq = new Map\(\)/)
+  })
+  it('"无可译内容"(纯音乐)不再误报服务不可用', () => {
+    const s = read('src/stores/playerStore.js')
+    expect(s, '又把空结果一律当服务不可用').toMatch(/const hadText = lyrics\.value\.some/)
+  })
+})

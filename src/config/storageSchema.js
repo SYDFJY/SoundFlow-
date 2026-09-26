@@ -99,6 +99,13 @@ export const LOCAL_ONLY = {
  */
 export const MAIN_MIRRORED_SETTINGS = ['soundflow_close_action', 'soundflow_theme']
 
+/**
+ * 敏感键:任何"把数据交出去"的动作(自动备份、导出)都必须按它过滤。
+ * 单独导出是因为**声明不够** —— 这个名单此前没有任何读取方,于是 DeepSeek Key
+ * 被明写进了 userData/backups/*.json(保留 10 份)。App.vue 的备份回调现在读它。
+ */
+export const SECRET_KEYS = LOCAL_ONLY.secret
+
 /** 全部已知键(用于"新键必须归类"的清单测试) */
 export function allKnownKeys() {
   const keys = new Set()

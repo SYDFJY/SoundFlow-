@@ -212,6 +212,13 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
+            <span class="label-text">在线歌词缓存</span>
+            <span class="label-desc">自动记住取回来的在线歌词，换来源或发现某首歌歌词不对时可清掉重取</span>
+          </div>
+          <button class="btn" @click="clearOnlineLyricCache">清除在线歌词缓存</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
             <span class="label-text">歌词文件夹</span>
             <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲（列表与移除去「音乐目录」页）</span>
           </div>
@@ -559,6 +566,8 @@ import { THEME_LIST as themeOptions } from '@/config/themeList'
 import Icon from '@/components/icons/Icon.vue'
 import DiagnosticsPanel from '@/components/DiagnosticsPanel.vue'
 import { confirmDialog } from '@/composables/useConfirm'
+import { noteFailure } from '@/utils/failures'
+import { looksLikeLyrics } from '@/utils/lrc'
 import { DEFAULT_SHORTCUTS, SHORTCUT_ACTIONS, comboFromEvent, prettyCombo, loadShortcuts } from '@/utils/shortcut'
 
 const appStore = useAppStore()
@@ -806,11 +815,20 @@ async function openLyricManager() {
 async function deleteMgrLyric(s) {
   if (!window.electronAPI?.deleteLyricFile) return
   try {
-    await window.electronAPI.deleteLyricFile(s.path, [...musicStore.lyricFolders])
+    const r = await window.electronAPI.deleteLyricFile(s.path, [...musicStore.lyricFolders])
+    // 主进程失败时返回 { ok:false, error },**不抛异常** —— 此前忽略返回值,
+    // 于是删除失败也会提示"已删除"、并把状态标成"无"(界面开始说谎)。
+    // 播放页那处一直是检查返回值的,两处行为现在对齐。
+    if (!r || r.ok === false) {
+      noteFailure('lyric.delete', '删除本地歌词失败', (r && r.error) || '未知原因')
+      window.$toast?.('删除失败:' + ((r && r.error) || '未知原因'), 'error')
+      return
+    }
     lyricStatus.value[s.path] = false
-    try { window.$toast?.('已删除「' + s.title + '」的本地歌词', 'success') } catch {}
-  } catch {
-    try { window.$toast?.('删除失败', 'error') } catch {}
+    window.$toast?.('已删除「' + s.title + '」的本地歌词', 'success')
+  } catch (e) {
+    noteFailure('lyric.delete', '删除本地歌词异常', e)
+    window.$toast?.('删除失败', 'error')
   }
 }
 const backupMsg = ref('')
@@ -957,6 +975,18 @@ async function clearTransCache() {
   try {
     playerStore.clearTranslationCache()
     window.$toast?.('翻译缓存已清除', 'success')
+  } catch (e) {
+    window.$toast?.('清除失败:' + (e && e.message), 'error')
+  }
+}
+
+// 清除在线歌词缓存:歌词缓存此前**没有任何清理入口**(只有翻译/封面/解析/转码有)—— 一旦某首歌
+// 存进了错的歌词(音源匹配错、错误页),它会一直命中,用户没有任何办法自救
+async function clearOnlineLyricCache() {
+  if (!(await confirmDialog({ message: '清除在线歌词缓存?', detail: '只删缓存的在线歌词,不动本地 .lrc 与曲库;下次播放会重新联网获取', confirmText: '清除' }))) return
+  try {
+    const n = await playerStore.clearOnlineLyricCache()
+    window.$toast?.(n ? `已清除 ${n} 条在线歌词缓存` : '在线歌词缓存本来就是空的', 'success')
   } catch (e) {
     window.$toast?.('清除失败:' + (e && e.message), 'error')
   }
@@ -1199,7 +1229,9 @@ async function batchDownloadLyrics() {
       const s = songs[i]
       try {
         const hasLocal = await window.electronAPI.readLyricFile(s.path, lyricFolders)
-        if (hasLocal) {
+        // "有本地文件"要按"能不能解析出歌词"算 —— 一个空的/纯文本的 .lrc 会被当成
+        // 已有歌词跳过,那首歌在播放页永远空着,而这里再也补不上了
+        if (hasLocal && looksLikeLyrics(hasLocal)) {
           skipped++
         } else {
           const res = await window.electronAPI.searchOnlineLyric({
@@ -1209,12 +1241,22 @@ async function batchDownloadLyrics() {
           if (res && res.lyrics) {
             const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
             if (saved && saved.ok) success++
-            else { saveFail++ }
+            else {
+              saveFail++
+              noteFailure('lyric.batch', '歌词写入失败', `${s.title} — ${(saved && saved.error) || '未知原因'}`)
+            }
           } else {
             matchFail++
+            if (res && res.error && res.error !== 'notfound') {
+              // 网络/音源故障要留下原因:以前一律归到"没匹配到",用户以为是自己歌冷门
+              noteFailure('lyric.batch', res.error === 'network' ? '取词失败:网络不可用' : '取词失败:音源返回异常', `${s.title} — ${res.kind || ''}`)
+            }
           }
         }
-      } catch { failed++ }
+      } catch (e) {
+        failed++
+        noteFailure('lyric.batch', '批量下载单首异常', e)
+      }
       doneCount++
       // 实时更新进度
       batchLyric.value.done = doneCount

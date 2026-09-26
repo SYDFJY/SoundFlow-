@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { DEFAULTS, getSetting } from '../config/defaults.js'
 import { ref, computed, watch, reactive } from 'vue'
-import { parseLRCWithMeta } from '@/utils/lrc'
+import { parseLRCWithMeta, looksLikeLyrics } from '@/utils/lrc'
 import { resolveLyricOffset, buildWordSegments, wordIndexAt } from '@/utils/lyricTiming'
 import { lyricSourceSignature, isCacheEntryFor } from '@/utils/lyricSource'
 import { detectSongLang, splitLyricLines, targetLangFor, originalSample } from '@/utils/lyricLang'
@@ -1308,7 +1308,58 @@ export const usePlayerStore = defineStore('player', () => {
         for (let i = 0; i < dropCount; i++) delete cache[keys[i]]
       }
       await window.electronAPI.storeSet('lyricsCache', cache)
+    } catch (e) {
+      // 写失败以前完全无声:表现为"这首歌每次都重新联网取歌词"
+      noteFailure('lyric.cache', '在线歌词缓存写入失败', e)
+    }
+  }
+
+  /** 丢掉一条缓存(内容被发现不是歌词时用) */
+  async function _dropCachedOnlineLyric(key) {
+    try {
+      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
+      if (!(key in cache)) return
+      delete cache[key]
+      await window.electronAPI.storeSet('lyricsCache', cache)
     } catch {}
+  }
+
+  /** 在线歌词的清理入口(设置页用):曲库换过来源/发现歌词不对时可清 */
+  async function clearOnlineLyricCache() {
+    try {
+      const cache = await window.electronAPI.storeGet('lyricsCache') || {}
+      const n = Object.keys(cache).length
+      await window.electronAPI.storeSet('lyricsCache', {})
+      _onlineMisses.clear()
+      return n
+    } catch (e) {
+      noteFailure('lyric.cache', '清理在线歌词缓存失败', e)
+      return 0
+    }
+  }
+
+  // 「刚查过、确实没有这首歌」的短期记忆(仅内存,重启即忘)。
+  // 没有它时,一首没有在线歌词的歌每次播放都要把整条链再跑一遍 —— 现在是 12 秒的预算,
+  // 表现为每次切到那首歌都要等十几秒才显示"未找到"。
+  const _onlineMisses = new Map()
+  const ONLINE_MISS_TTL_MS = 30 * 60 * 1000
+  const ONLINE_MISS_MAX = 500
+  /** 歌词提示的节流时间戳(按类别):断网/音源故障时别每切一首弹一次 */
+  const _lyricToastAt = { network: 0, source: 0 }
+  function _noteOnlineMiss(key) {
+    if (_onlineMisses.size >= ONLINE_MISS_MAX) _onlineMisses.clear()
+    _onlineMisses.set(key, Date.now())
+  }
+  function _isRecentOnlineMiss(key) {
+    const at = _onlineMisses.get(key)
+    if (!at) return false
+    if (Date.now() - at > ONLINE_MISS_TTL_MS) { _onlineMisses.delete(key); return false }
+    return true
+  }
+
+  /** 来源标签:源 id → 界面上显示的中文 */
+  function originLabelFor(source) {
+    return source === 'netease' ? '网易云' : (source === 'lrclib' ? 'LRCLIB' : (source === 'qq' ? 'QQ音乐' : '自动'))
   }
 
   // 当前歌词来源(供界面显示:本地 / LRCLIB / 网易云 / 自动)
@@ -1435,7 +1486,16 @@ export const usePlayerStore = defineStore('player', () => {
       }
       if (result && result.error === 'empty') {
         translations.value = []
-        translateNotice.value = 'empty'
+        // 'empty' 有两种来路:服务返回的都是低质量译文(该提示),或**这首根本没有可译的内容**
+        // (纯音乐/只有时间戳的空行)。以前一律弹"翻译服务暂不可用",把纯音乐说成服务坏了。
+        // 只有确实存在非空歌词行时,才算"服务不可用"。
+        const hadText = lyrics.value.some(l => l.text && l.text.trim())
+        if (hadText) {
+          noteFailure('translate.mymemory', '译文全为空(服务返回低质量或不可达)', song.title)
+          translateNotice.value = 'empty'
+        } else {
+          translateNotice.value = '' // 无可译内容:静默(开关仍开着,换歌自然会重试)
+        }
         return
       }
       // 请求整首发(行号必须一一对应),落地时**源自带的译文优先**、AI 只补缺的行
@@ -1500,44 +1560,83 @@ export const usePlayerStore = defineStore('player', () => {
         if (showTranslation.value) translateCurrentLyrics()
         return true
       }
+      // 本地文件"能不能用":有文件但解析不出任何一行有内容的歌词(纯文本/空文件/编码坏)
+      // 不算命中 —— 此前只看有没有文件,于是这种歌永远显示空歌词还标着"本地歌词",
+      // 在线回退再也不会发生。
+      const localUsable = looksLikeLyrics(lrcText)
 
       // auto:本地优先,命中即返回(不受"在线歌词"开关影响)
-      if (source === 'auto' && lrcText) {
+      if (source === 'auto' && localUsable) {
         showLyrics(lrcText, '本地')
         return
       }
-      // 显式源(或 auto 但无本地):尝试在线
+      // 显式源(或 auto 但本地不可用):尝试在线
       if (onlineEnabled && song.title) {
         // 键里带时长:同名同歌手的两个文件(Intro/Live/另一版本)时长几乎不会相同,
         // 不带的话它们会共用同一份歌词 —— 表现为"这首歌显示的是别人的歌词"
         const cacheKey = `${source}|${song.title}|${song.artist || ''}|${Math.round(song.duration || 0)}`
         let onlineHit = await _getCachedOnlineLyric(cacheKey)
+        // 缓存里的东西也要过"能当歌词用":修好之前写进去的垃圾(错误页/纯文本)会一直命中,
+        // 而歌词缓存没有失效机制、设置里也没有清理入口 —— 这里自愈
+        if (onlineHit && !looksLikeLyrics(onlineHit.lyrics)) {
+          noteFailure('lyric.cache', '缓存的在线歌词不是歌词,已丢弃', cacheKey)
+          _dropCachedOnlineLyric(cacheKey)
+          onlineHit = null
+        }
         let onlineText = onlineHit ? onlineHit.lyrics : null
         let onlineTrans = onlineHit ? onlineHit.translation : ''
-        let origin = cacheKey.startsWith('netease|') ? '网易云' : (cacheKey.startsWith('lrclib|') ? 'LRCLIB' : (cacheKey.startsWith('qq|') ? 'QQ音乐' : '自动'))
-        if (!onlineText) {
+        let origin = originLabelFor(source)
+        // 刚查过、确实没有这首歌 → 不再跑一遍整条链(一次最多 ~12 秒预算,每次播放都跑很浪费)
+        const skipped = !onlineText && _isRecentOnlineMiss(cacheKey)
+        if (!onlineText && !skipped) {
           const res = await window.electronAPI.fetchOnlineLyric({
             title: song.title,
             artist: song.artist || '',
             duration: song.duration || 0,
             source
           })
-          if (res && res.error === 'network') {
-            // 在线源都网络异常:明确提示网络问题
+          const err = res && res.error
+          if (err === 'network' || err === 'source') {
+            // 三类失败必须分开提示,此前一律报"网络不可用" —— 对方 500 或返回非 JSON
+            // 时会让用户去查自己的代理,而问题根本不在他那边
+            const net = err === 'network'
+            noteFailure('lyric.online', net ? '在线歌词:网络不可用' : '在线歌词:音源返回异常', `${source} / ${song.title} / ${(res && res.kind) || ''}`)
             if (currentSong.value === reqSong) {
-              lyricOrigin.value = '网络不可用'
-              try { window.$toast?.('歌词在线获取失败:网络不可用(请检查代理/连接)', 'warning') } catch {}
+              lyricOrigin.value = net ? '网络不可用' : '音源异常'
+              // 提示按类别节流:断网或某个音源挂掉时,连着切歌会每首都弹一次 ——
+              // 标签一直显示状态就够了,toast 三分钟内只提醒一次
+              const key = net ? 'network' : 'source'
+              const now = Date.now()
+              if (now - (_lyricToastAt[key] || 0) > 3 * 60 * 1000) {
+                _lyricToastAt[key] = now
+                try {
+                  window.$toast?.(net
+                    ? '歌词在线获取失败:网络不可用(请检查代理/连接)'
+                    : '歌词在线获取失败:音源返回异常(可换个来源试试)', 'warning')
+                } catch {}
+              }
             }
-            // 网络异常时回退本地(有的话),保证有歌词可看
-            if (lrcText) { showLyrics(lrcText, '本地'); return }
+            // 失败时回退本地(能用的话),保证有歌词可看
+            if (localUsable) { showLyrics(lrcText, '本地'); return }
             return
           }
           onlineText = (res && res.lyrics) || null
           // 源自带的译文轨(网易云 tlyric / QQ trans):有就一起存、一起用,不用再花钱翻译
           onlineTrans = (res && typeof res.translation === 'string') ? res.translation : ''
+          if (onlineText && !looksLikeLyrics(onlineText)) {
+            // 兜底:主进程已经校验过一遍,这里再挡一次(返回的是错误页/纯文本时宁可当没找到)
+            noteFailure('lyric.online', '在线返回的内容不是歌词,已忽略', `${source} / ${song.title}`)
+            onlineText = null
+          }
           if (onlineText) {
-            origin = res.source === 'netease' ? '网易云' : (res.source === 'lrclib' ? 'LRCLIB' : (res.source === 'qq' ? 'QQ音乐' : '自动'))
+            origin = originLabelFor(res.source)
             await _setCachedOnlineLyric(cacheKey, onlineText, onlineTrans)
+          } else {
+            // 三家都说没有(且没有网络故障):记下来,短时间内不再重跑
+            _noteOnlineMiss(cacheKey)
+            if (lrcText && !localUsable) {
+              noteFailure('lyric.local', '本地 .lrc 解析不出歌词,且在线也没有', song.path)
+            }
           }
         }
         if (onlineText) {
@@ -1545,13 +1644,15 @@ export const usePlayerStore = defineStore('player', () => {
           return
         }
       }
-      // 在线无结果:auto 显示未找到;显式源回退本地(若存在)
-      if (lrcText && source !== 'auto') {
+      // 在线无结果:显式源回退本地;auto 显示「未找到」
+      if (source !== 'auto' && localUsable) {
         showLyrics(lrcText, '本地')
-      } else {
-        lyricOrigin.value = (source === 'auto' && lrcText) ? '本地' : (onlineEnabled ? '未找到' : '')
-        if (source === 'auto' && lrcText) setLyricsFromText(lrcText)
+        return
       }
+      // 归属判断:此前这里没有,上一首的慢响应会把当前歌的标签改成"未找到"
+      // (同一函数里 showLyrics 与 catch 都有这个判断,只有这处漏了)
+      if (currentSong.value !== reqSong) return
+      lyricOrigin.value = (onlineEnabled && song.title) ? '未找到' : ''
     } catch (e) {
       // 此前完全静默:读取/解析失败的界面表现与「这首歌没有歌词」一模一样,无法区分。
       // 这里写入日志(主进程 console-message 会落盘)并在歌词来源处显示失败状态;
@@ -2613,7 +2714,7 @@ export const usePlayerStore = defineStore('player', () => {
     getAudioGraphState,
     playbackRate, showLyricPanel, isBuffering, progressHistory, transcodePct, isTranscoded,
     abStart, abEnd, abState, cycleAB, clearAB, setABRange, currentGainDb, nextUpSong, prevUpSong,
-    clearTranslationCache,
+    clearTranslationCache, clearOnlineLyricCache,
     pitch, setPitch, desktopLyricState, cycleDesktopLyric,
     replayGainEnabled, setReplayGainEnabled, loadReplayGainPref,
     showQueue, sleepTimerMinutes, sleepTimerRemaining,

@@ -1,158 +1,307 @@
 /**
  * 在线歌词源(从 main.js 拆出)。
  *
- * 这三个源只依赖 https,与窗口/存储/IPC 完全无关 —— 是最干净的一段,也是 main.js 里
+ * 这三个源只依赖 fetch,与窗口/存储/IPC 完全无关 —— 是最干净的一段,也是 main.js 里
  * 那句"插件化铺路:新增源只需在 LYRIC_SOURCES 加一项"的落点。
  * 新增源:实现同签名的 `async function fetchXxx(info)`,再加进 LYRIC_SOURCES 与
  * LYRIC_ORDER(自动回退顺序)即可。
  *
- * 返回约定:`{ lrc?, translation?, origin?, error? }`;找不到返回 null 或不带 lrc 的对象,
- * 网络异常返回 { error: 'network' }(上层据此决定要不要提示网络问题)。
+ * 返回约定(三态必须分得开 —— 混在一起会让用户看到错误的提示):
+ *   命中    `{ lyrics, translation?, source }`
+ *   没有    `null`
+ *   失败    `{ error: 'network' | 'source' | 'unknown-source', source? }`
+ *            network = 连不上/超时(该提示检查网络);source = 连上了但对方返回异常
+ *            (HTTP 4xx/5xx、非 JSON、响应超大 —— 锅在音源,别让用户去查代理)。
+ *
+ * 这里同时是"取回来的东西算不算歌词"的唯一判据所在(见 looksLikeLRC):
+ * 此前只有网易云/QQ 做时间戳校验,LRCLIB 不校验、缓存也不校验 —— 于是错误页/纯文本
+ * 会被当成歌词显示出来、写进缓存,下一次命中缓存直接返回,**本地 .lrc 的回退再也不会发生**。
  */
-const https = require('https')
+const log = require('./failureLog')
 
-async function fetchLRCLIB(info) {
-    const base = 'https://lrclib.net/api'
-    const headers = {
-      'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)',
-      'Accept': 'application/json'
-    }
-    // 标题/歌手归一化:去空格标点括号、统一大小写,用于宽松匹配
-    const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？'"'']/g, '')
-    const targetTitle = norm(info?.title)
-    const targetArtist = norm(info?.artist)
-    try {
-      // 1. 精确接口 /api/get(不带 duration,避免时长差异导致匹配失败)
-      const exactParams = new URLSearchParams({ track_name: info?.title || '', artist_name: info?.artist || '' })
-      const exactRes = await fetch(`${base}/get?${exactParams.toString()}`, { headers, signal: AbortSignal.timeout(8000) })
-      if (exactRes.ok) {
-        const d = await exactRes.json()
-        if (d && d.syncedLyrics) return { lyrics: d.syncedLyrics, source: 'lrclib' }
-      }
-      // 2. 模糊搜索 /api/search(精确匹配失败时,提高命中率)
-      const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
-      if (!q) return null
-      const res = await fetch(`${base}/search?${new URLSearchParams({ q })}`, { headers, signal: AbortSignal.timeout(8000) })
-      if (!res.ok) return null
-      const list = await res.json()
-      if (!Array.isArray(list) || list.length === 0) return null
-      // 从候选中挑选最匹配且有同步歌词的
-      const candidates = list.filter(x => x && x.syncedLyrics)
-      if (candidates.length === 0) return null
-      let best = null
-      let bestScore = -1
-      for (const x of candidates) {
-        let score = 0
-        const nTrack = norm(x.trackName)
-        const nArtist = norm(x.artistName)
-        if (nTrack === targetTitle) score += 100
-        else if (nTrack.includes(targetTitle) || targetTitle.includes(nTrack)) score += 60
-        if (targetArtist && (nArtist.includes(targetArtist) || targetArtist.includes(nArtist))) score += 40
-        if (info?.duration && x.duration && Math.abs(x.duration - info.duration) < 3) score += 20
-        if (score > bestScore) { bestScore = score; best = x }
-      }
-      if (best) return { lyrics: best.syncedLyrics, source: 'lrclib' }
-      return null
-    } catch (e) {
-      console.error('[在线歌词] LRCLIB 请求失败:', e.message)
-      return { error: 'network', source: 'lrclib' }
-    }
+/** 单次请求超时(与 search.js 的 NET_TIMEOUT_MS 是两个场景:这里是歌词,那边是元数据) */
+const REQ_TIMEOUT_MS = 8000
+/** 自动源的**总**预算:超过就返回目前的结果,不再开新的源。
+ *  此前没有总预算:三个源串行、各最多两次请求 ×8s,最坏 ~112s 才回答 —— 而渲染端
+ *  只能丢弃过期结果、无法取消,表现为"切歌后一分钟才回来一堆东西"。 */
+const AUTO_BUDGET_MS = 12000
+/** 同一域名两次请求之间的最小间隔:歌词源都是非官方接口,连发容易被风控 */
+const HOST_MIN_GAP_MS = 350
+/** 响应体上限:LRCLIB 的 /search 每条记录都带 plainLyrics+syncedLyrics,不给 limit 可能很大 */
+const MAX_BODY_BYTES = 512 * 1024
+
+// ===== 纯函数(可单测:见 tests/lyricMatch.test.js)=====
+
+/** 标题/歌手归一化:去空格标点括号、统一大小写,用于宽松匹配 */
+function normText (s) {
+  return String(s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？'"“”‘’]/g, '')
 }
 
-async function fetchNetEaseLyric(info) {
-    const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://music.163.com', 'Cookie': 'NMTID=00O7QrX000gR7RcBfEXtZQKJPt3HzEAAQ' }
-    try {
-      const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
-      if (!q) return null
-      const res = await fetch(`https://music.163.com/api/search/get?s=${encodeURIComponent(q)}&type=1&limit=10`, {
-        headers: UA, signal: AbortSignal.timeout(8000)
-      })
-      if (!res.ok) return null
-      const data = await res.json()
-      const songs = data?.result?.songs || []
-      if (!songs.length) return null
-      // 标题归一化,候选排序:完全匹配标题+歌手 > 仅标题 > 其他
-      const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？]/g, '')
-      const targetTitle = norm(info?.title)
-      const targetArtist = norm(info?.artist)
-      const scored = songs.map(s => {
-        let score = 0
-        const nName = norm(s.name)
-        const artistHit = (s.artists || []).some(a => targetArtist && (norm(a.name).includes(targetArtist) || targetArtist.includes(norm(a.name))))
-        if (nName === targetTitle) score += 100
-        else if (nName.includes(targetTitle) || targetTitle.includes(nName)) score += 50
-        if (artistHit) score += 40
-        return { song: s, score }
-      }).sort((a, b) => b.score - a.score)
-      // 逐首获取歌词,返回第一个有同步时间戳的(跳过无时间戳/翻唱)
-      for (const { song } of scored.slice(0, 5)) {
-        try {
-          const lr = await fetch(`https://music.163.com/api/song/lyric?id=${song.id}&lv=1&kv=1&tv=-1`, {
-            headers: UA, signal: AbortSignal.timeout(8000)
-          })
-          if (!lr.ok) continue
-          const ldata = await lr.json()
-          const lrc = ldata?.lrc?.lyric || ''
-          // 网易云的译文轨(tlyric,请求里的 tv=-1 就是它):此前取了却丢掉,
-          // 于是外语歌明明有官方译文也要花钱再翻一遍
-          const tlyric = ldata?.tlyric?.lyric || ''
-          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, translation: tlyric, source: 'netease' }
-        } catch {}
-      }
-      return null
-    } catch (e) {
-      console.error('[在线歌词] 网易云请求失败:', e.message)
-      return { error: 'network', source: 'netease' }
-    }
+const LRC_TIME_RE = /\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/
+
+/**
+ * 这段文本像不像歌词:至少一行带时间戳、且去掉所有 [..] 标记后还有内容。
+ * 用来挡住"HTTP 200 但内容是错误页/纯文本/base64"的情况(它们会让歌词面板空白,
+ * 而且会被缓存下来长期占位)。
+ */
+function looksLikeLRC (text) {
+  if (typeof text !== 'string' || !text.trim()) return false
+  if (!LRC_TIME_RE.test(text)) return false
+  return text.split(/\r?\n/).some((line) => LRC_TIME_RE.test(line) && line.replace(/\[[^\]]*\]/g, '').trim().length > 0)
 }
 
-async function fetchQQMusicLyric(info) {
-    const UA = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Referer': 'https://y.qq.com/' }
-    try {
-      const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
-      if (!q) return null
-      const res = await fetch(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(q)}&format=json&p=1&n=8`, {
-        headers: UA, signal: AbortSignal.timeout(8000)
-      })
-      if (!res.ok) return null
-      const data = await res.json()
-      const songs = data?.data?.song?.list || []
-      if (!songs.length) return null
-      // 标题归一化,候选排序:完全匹配标题+歌手 > 仅标题 > 其他(与网易云同款评分)
-      const norm = (s) => (s || '').toLowerCase().replace(/[\s\-_–—·.()（）【】\[\]!！?？]/g, '')
-      const targetTitle = norm(info?.title)
-      const targetArtist = norm(info?.artist)
-      const scored = songs.map(s => {
-        let score = 0
-        const nName = norm(s.songname)
-        const artistHit = (s.singer || []).some(a => targetArtist && (norm(a.name).includes(targetArtist) || targetArtist.includes(norm(a.name))))
-        if (nName === targetTitle) score += 100
-        else if (nName.includes(targetTitle) || targetTitle.includes(nName)) score += 50
-        if (artistHit) score += 40
-        return { song: s, score }
-      }).sort((a, b) => b.score - a.score)
-      // 逐首获取歌词,返回第一个有同步时间戳的
-      for (const { song } of scored.slice(0, 5)) {
-        if (!song.songmid) continue
-        try {
-          const lr = await fetch(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${song.songmid}&format=json&nobase64=1`, {
-            headers: UA, signal: AbortSignal.timeout(8000)
-          })
-          if (!lr.ok) continue
-          const ldata = await lr.json()
-          const lrc = ldata?.lyric || ''
-          // QQ 的译文轨(trans,与 lyric 各占一行、时间戳相同):同样别丢
-          const trans = ldata?.trans || ''
-          if (lrc && /\[\d{2}:\d{2}/.test(lrc)) return { lyrics: lrc, translation: trans, source: 'qq' }
-        } catch { continue }
-      }
-      return null
-    } catch (e) {
-      if (e.name === 'AbortError' || e.cause?.code === 'ECONNREFUSED' || e.cause?.code === 'ENOTFOUND' || /network|fetch failed/i.test(e.message || '')) {
-        return { error: 'network' }
-      }
+// 评分权重。注意 40(仅歌手)+20(时长)=60 恰好够线,而**单独 0 分或仅歌手命中都不算匹配** ——
+// 这是修掉"乱写的歌名也能拿到别人的歌词"的关键:此前 bestScore 初值是 -1,
+// 于是评分 0 的第一个候选也会被当成命中(实测:查询"qzxwv不存在的歌名9931"时
+// 网易云返回了陈奕迅《世界上不存在的歌》的歌词)。
+const SCORE_TITLE_EXACT = 100
+const SCORE_TITLE_PARTIAL = 60
+const SCORE_ARTIST = 40
+const SCORE_DURATION = 20
+/** 低于这个分数一律视为"没有这首歌";歌手名归一化后短于这个长度不参与匹配(避免 "K" 乱命中) */
+const MIN_MATCH_SCORE = 60
+const MIN_ARTIST_LEN = 2
+
+/** 给一个候选打分。cand: {title, artist, duration}(duration 单位秒) */
+function scoreCandidate (cand, info) {
+  const nTitle = normText(cand && cand.title)
+  const tTitle = normText(info && info.title)
+  const nArtist = normText(cand && cand.artist)
+  const tArtist = normText(info && info.artist)
+  let score = 0
+  if (nTitle && tTitle) {
+    if (nTitle === tTitle) score += SCORE_TITLE_EXACT
+    else if (nTitle.includes(tTitle) || tTitle.includes(nTitle)) score += SCORE_TITLE_PARTIAL
+  }
+  if (nArtist && tArtist && nArtist.length >= MIN_ARTIST_LEN && tArtist.length >= MIN_ARTIST_LEN &&
+      (nArtist.includes(tArtist) || tArtist.includes(nArtist))) score += SCORE_ARTIST
+  if (info && info.duration && cand && cand.duration && Math.abs(cand.duration - info.duration) <= 3) score += SCORE_DURATION
+  return score
+}
+
+/**
+ * 从候选里挑一个够格的。
+ * 繁简/别名差异这类标题对不上的情况下,靠"歌手 + 时长"仍能凑够 60 分救回来 ——
+ * 所以门槛卡在 60 而不是"标题必须命中"。
+ * @returns {{candidate: object|null, score: number}}
+ */
+function pickBestCandidate (cands, info) {
+  const ranked = rankCandidates(cands, info, 1)
+  const best = ranked[0] || null
+  return { candidate: best, score: best ? scoreCandidate(best, info) : 0 }
+}
+
+/**
+ * 按分数排序、滤掉不够像的,取前 limit 个。
+ * 给"首选那首没有同步歌词就往下试"的源用(网易云/QQ 的搜索结果里常有同名 Live/翻唱排前面)。
+ */
+function rankCandidates (cands, info, limit = 3) {
+  return (cands || [])
+    .map((c) => ({ c, score: scoreCandidate(c, info) }))
+    .filter((x) => x.score >= MIN_MATCH_SCORE)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map((x) => x.c)
+}
+
+/** 超时(AbortSignal.timeout 抛的是 TimeoutError,不是 AbortError —— 此前判错导致 QQ 的超时被当成"没找到") */
+function isTimeout (e) {
+  return !!e && (e.name === 'TimeoutError' || e.name === 'AbortError')
+}
+
+const NET_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ECONNABORTED'])
+function isNetworkError (e) {
+  if (!e) return false
+  if (isTimeout(e)) return true
+  const code = (e.cause && e.cause.code) || e.code
+  if (code && (NET_CODES.has(code) || String(code).startsWith('UND_ERR'))) return true
+  return /network|fetch failed|socket hang up/i.test(e.message || '')
+}
+
+/** 请求失败 → 三态里的"失败"(区分锅在网络还是在音源) */
+function failFor (kind, source, detail) {
+  const network = kind === 'network' || kind === 'timeout'
+  return { error: network ? 'network' : 'source', kind, source, detail: detail ? String(detail.message || detail).slice(0, 200) : '' }
+}
+
+// ===== HTTP =====
+
+const _hostLastAt = new Map()
+async function throttleHost (url) {
+  try {
+    const host = new URL(url).host
+    const wait = HOST_MIN_GAP_MS - (Date.now() - _hostLastAt.get(host) || 0)
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+    _hostLastAt.set(host, Date.now())
+  } catch {}
+}
+
+/**
+ * 带超时/节流/大小上限的 GET+JSON。返回 {ok:true,data} 或 {ok:false,kind,status?,detail?},
+ * kind ∈ network|timeout|http|parse|too-big —— 调用方据此决定"网络问题"还是"音源问题"。
+ */
+async function httpGetJson (url, headers, timeoutMs = REQ_TIMEOUT_MS) {
+  await throttleHost(url)
+  let res
+  try {
+    res = await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs) })
+  } catch (e) {
+    return { ok: false, kind: isTimeout(e) ? 'timeout' : 'network', detail: e }
+  }
+  if (!res.ok) {
+    try { res.body && res.body.cancel && res.body.cancel() } catch {}
+    return { ok: false, kind: 'http', status: res.status }
+  }
+  const declared = Number(res.headers.get('content-length') || 0)
+  if (declared > MAX_BODY_BYTES) {
+    try { res.body && res.body.cancel && res.body.cancel() } catch {}
+    return { ok: false, kind: 'too-big', status: res.status }
+  }
+  let text
+  try {
+    text = await res.text()
+  } catch (e) {
+    return { ok: false, kind: isNetworkError(e) ? 'network' : 'parse', detail: e }
+  }
+  if (text.length > MAX_BODY_BYTES) return { ok: false, kind: 'too-big', status: res.status }
+  try {
+    return { ok: true, data: JSON.parse(text) }
+  } catch (e) {
+    return { ok: false, kind: 'parse', detail: e }
+  }
+}
+
+function deadline (promise, ms) {
+  let timer
+  const expired = Symbol('deadline')
+  return Promise.race([
+    Promise.resolve(promise).catch(() => null),
+    new Promise((resolve) => { timer = setTimeout(() => resolve(expired), Math.max(0, ms)) })
+  ]).finally(() => clearTimeout(timer))
+}
+
+// ===== 各音源 =====
+
+const LRCLIB_HEADERS = {
+  'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)',
+  'Accept': 'application/json'
+}
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+
+async function fetchLRCLIB (info) {
+  const base = 'https://lrclib.net/api'
+  try {
+    // 1. 精确接口 /api/get(不带 duration,避免时长差异导致匹配失败)
+    const exactParams = new URLSearchParams({ track_name: info?.title || '', artist_name: info?.artist || '' })
+    const exact = await httpGetJson(`${base}/get?${exactParams.toString()}`, LRCLIB_HEADERS)
+    if (exact.ok && exact.data && looksLikeLRC(exact.data.syncedLyrics)) {
+      return { lyrics: exact.data.syncedLyrics, source: 'lrclib' }
+    }
+    // 2. 模糊搜索 /api/search(精确匹配失败时,提高命中率)
+    const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
+    if (!q) return null
+    const res = await httpGetJson(`${base}/search?${new URLSearchParams({ q }).toString()}`, LRCLIB_HEADERS)
+    if (!res.ok) return failFor(res.kind, 'lrclib', res.detail)
+    const list = Array.isArray(res.data) ? res.data : []
+    // 只留有同步歌词的候选(纯文本歌词不带时间戳,当作没有)
+    const cands = list.filter((x) => x && looksLikeLRC(x.syncedLyrics))
+    if (!cands.length) return null
+    const shaped = cands.map((x) => ({ title: x.trackName, artist: x.artistName, duration: x.duration, raw: x }))
+    const { candidate, score } = pickBestCandidate(shaped, info)
+    if (!candidate) {
+      log.failureOnce('lyric.lrclib.nomatch', 'lyric.lrclib', `LRCLIB 有 ${cands.length} 条候选但都不够像(最高 ${score} 分)`, `${info?.title || ''} / ${info?.artist || ''}`)
       return null
     }
+    return { lyrics: candidate.raw.syncedLyrics, source: 'lrclib' }
+  } catch (e) {
+    log.failure('lyric.lrclib', 'LRCLIB 请求异常', e)
+    return { error: 'network', source: 'lrclib', kind: 'network' }
+  }
+}
+
+const NETEASE_HEADERS = { 'User-Agent': BROWSER_UA, 'Referer': 'https://music.163.com', 'Cookie': 'NMTID=00O7QrX000gR7RcBfEXtZQKJPt3HzEAAQ' }
+
+async function fetchNetEaseLyric (info) {
+  try {
+    const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
+    if (!q) return null
+    const res = await httpGetJson(`https://music.163.com/api/search/get?s=${encodeURIComponent(q)}&type=1&limit=10`, NETEASE_HEADERS)
+    if (!res.ok) return failFor(res.kind, 'netease', res.detail)
+    const songs = (res.data && res.data.result && res.data.result.songs) || []
+    if (!songs.length) return null
+    // duration 单位是毫秒,统一成秒;时长是"繁简/别名对不上"时最靠得住的判据
+    const cands = songs.map((s) => ({
+      title: s.name,
+      artist: (s.artists || []).map((a) => a.name).join('/'),
+      duration: s.duration ? s.duration / 1000 : 0,
+      raw: s
+    }))
+    const ranked = rankCandidates(cands, info, 3)
+    if (!ranked.length) {
+      log.failureOnce('lyric.netease.nomatch', 'lyric.netease', `网易云有 ${songs.length} 条候选但都不够像`, `${info?.title || ''} / ${info?.artist || ''}`)
+      return null
+    }
+    for (const cand of ranked) {
+      const lr = await httpGetJson(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(cand.raw.id)}&lv=1&kv=1&tv=-1`, NETEASE_HEADERS)
+      if (!lr.ok) {
+        if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'netease', lr.detail)
+        continue // 这一首拿不到(下架/无权限),换下一首候选
+      }
+      // 网易云的译文轨(tlyric,请求里的 tv=-1 就是它):此前取了却丢掉,
+      // 于是外语歌明明有官方译文也要花钱再翻一遍
+      const lrc = (lr.data && lr.data.lrc && lr.data.lrc.lyric) || ''
+      const tlyric = (lr.data && lr.data.tlyric && lr.data.tlyric.lyric) || ''
+      if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: tlyric, source: 'netease' }
+    }
+    return null
+  } catch (e) {
+    log.failure('lyric.netease', '网易云请求异常', e)
+    return { error: 'network', source: 'netease', kind: 'network' }
+  }
+}
+
+async function fetchQQMusicLyric (info) {
+  const headers = { 'User-Agent': BROWSER_UA, 'Referer': 'https://y.qq.com/' }
+  try {
+    const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
+    if (!q) return null
+    const res = await httpGetJson(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(q)}&format=json&p=1&n=8`, headers)
+    if (!res.ok) return failFor(res.kind, 'qq', res.detail)
+    const songs = (res.data && res.data.data && res.data.data.song && res.data.data.song.list) || []
+    if (!songs.length) return null
+    const cands = songs.map((s) => ({
+      title: s.songname,
+      artist: (s.singer || []).map((a) => a.name).join('/'),
+      duration: s.interval || 0, // QQ 的 interval 就是秒
+      raw: s
+    }))
+    const ranked = rankCandidates(cands, info, 3)
+    if (!ranked.length) {
+      log.failureOnce('lyric.qq.nomatch', 'lyric.qq', `QQ 有 ${songs.length} 条候选但都不够像`, `${info?.title || ''} / ${info?.artist || ''}`)
+      return null
+    }
+    for (const cand of ranked) {
+      const mid = cand.raw.songmid
+      if (!mid) continue
+      const lr = await httpGetJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(mid)}&format=json&nobase64=1`, headers)
+      if (!lr.ok) {
+        if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'qq', lr.detail)
+        continue
+      }
+      const lrc = (lr.data && lr.data.lyric) || ''
+      // QQ 的译文轨(trans,与 lyric 各占一行、时间戳相同):同样别丢
+      const trans = (lr.data && lr.data.trans) || ''
+      if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: trans, source: 'qq' }
+    }
+    return null
+  } catch (e) {
+    // 归类只看 isNetworkError(此前按 AbortError 判,而 AbortSignal.timeout
+    // 抛的是 TimeoutError —— QQ 的超时因此被当成"没找到",与另两家的表现不一致)
+    const net = isNetworkError(e)
+    if (net) return { error: 'network', source: 'qq', kind: 'network' }
+    log.failure('lyric.qq', 'QQ 音乐请求异常', e)
+    return { error: 'source', source: 'qq', kind: 'parse' }
+  }
 }
 
 // ===== 歌词源接口(插件化铺路:新增源只需在 LYRIC_SOURCES 加一项)=====
@@ -162,17 +311,38 @@ const LYRIC_SOURCES = {
   netease: { label: '网易云', fetch: fetchNetEaseLyric }
 }
 const LYRIC_ORDER = ['lrclib', 'qq', 'netease'] // auto 源回退顺序
-async function searchLyricBySource(info, source) {
+
+async function searchLyricBySource (info, source) {
   const s = LYRIC_SOURCES[source]
   if (!s) return { error: 'unknown-source' }
   return await s.fetch(info)
 }
-async function searchLyricAuto(info) {
+
+async function searchLyricAuto (info) {
+  const started = Date.now()
+  let sawNetwork = false
+  let sawSource = false
+  let errored = 0
+  let clean = 0 // 干净地回答"我这里没有这首歌"的音源数
   for (const name of LYRIC_ORDER) {
-    const r = await LYRIC_SOURCES[name].fetch(info)
-    if (r && !r.error) return r
-}
-  return { error: 'network' }
+    const left = AUTO_BUDGET_MS - (Date.now() - started)
+    if (left <= 300) { sawSource = true; errored++; break } // 预算用完:算"没查完",不算"没有"
+    const r = await deadline(LYRIC_SOURCES[name].fetch(info), left)
+    if (r && r.lyrics) return r
+    if (r && r.error === 'network') { sawNetwork = true; errored++ }
+    else if (r && r.error) { sawSource = true; errored++ }
+    else clean++
+  }
+  // 三家都没这首歌 ≠ 网络故障。此前这里一律返回 network,导致**每首没有在线歌词的歌
+  // 都会弹一次"网络不可用(请检查代理/连接)",而本该显示的「未找到」永远走不到。
+  //
+  // 但也不能"有一个源出错就报异常":量贩式音源里 QQ 的搜索接口经常整片 HTTP 500,
+  // 而 LRCLIB/网易云都干净地回答了"我这里没有" —— 那种情况正确的结论仍是「未找到」,
+  // 音源的错误另行记进失败清单(诊断面板能看到),不该把它变成每首歌的提示。
+  if (clean > 0) return { error: 'notfound' }
+  if (sawNetwork) return { error: 'network' }
+  if (sawSource || errored > 0) return { error: 'source' }
+  return { error: 'notfound' }
 }
 
 module.exports = {
@@ -182,5 +352,13 @@ module.exports = {
   LYRIC_SOURCES,
   LYRIC_ORDER,
   searchLyricBySource,
-  searchLyricAuto
+  searchLyricAuto,
+  // 纯函数导出(供单测与复用)
+  normText,
+  looksLikeLRC,
+  scoreCandidate,
+  rankCandidates,
+  pickBestCandidate,
+  MIN_MATCH_SCORE,
+  AUTO_BUDGET_MS
 }

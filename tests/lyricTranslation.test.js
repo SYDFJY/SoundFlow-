@@ -100,10 +100,13 @@ describe('不与"不重复翻译"冲突:源自带译文时一次请求都不发'
 describe('在线歌词源的译文轨别再丢', () => {
   it('网易云读 tlyric、QQ 读 trans', () => {
     const src = read('electron/lib/lyricSources.js')
-    expect(src, '网易云没读译文轨 tlyric').toMatch(/ldata\?\.tlyric\?\.lyric/)
-    expect(src, 'QQ 没读译文轨 trans').toMatch(/ldata\?\.trans/)
-    expect(src, '返回里没带 translation').toMatch(/translation: tlyric/)
-    expect(src, '返回里没带 translation').toMatch(/translation: trans/)
+    // 判据按"取值路径"写而不是按局部变量名:改个变量名不该让守卫误报,
+    // 但"根本没读译文轨"必须报(这条守卫来自真实事故:取了 tlyric 却丢掉,
+    // 外语歌明明有官方译文还要花钱再翻一遍)
+    expect(src, '网易云没读译文轨 tlyric').toMatch(/\.tlyric[^;\n]*\.lyric/)
+    expect(src, 'QQ 没读译文轨 trans').toMatch(/\.trans\b/)
+    expect(src, '返回里没带 translation(tlyric)').toMatch(/translation:\s*tlyric/)
+    expect(src, '返回里没带 translation(trans)').toMatch(/translation:\s*trans/)
   })
 
   it('缓存兼容旧条目(升级前存的是纯字符串)', () => {
