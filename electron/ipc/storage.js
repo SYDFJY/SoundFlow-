@@ -2,7 +2,6 @@
  * 存储与数据备份 IPC(从 main.js 拆出,第五组)
  *
  *   - store-get / store-set / store-set-bulk / store-delete:渲染端的键值存储
- *   - export-data-file / import-data-file:面向用户的 JSON 备份(渲染端 localStorage + 主进程 store)
  *   - backup-data(send 通道):启动后自动备份到 userData/backups,保留最近 10 份
  *   - export-backup / import-backup / restart-app:整库导入导出(导入后重启方才生效)
  *
@@ -51,39 +50,9 @@ function register (ctx) {
   })
 
   // ========== 数据安全:导出 / 导入 / 自动备份 ==========
-  // 导出全部数据(渲染端 localStorage + 主进程 store)保存为用户选择的文件
-  ipcMain.handle('export-data-file', async (event, localStorageData) => {
-    try {
-      const defaultName = `soundflow-备份-${new Date().toISOString().slice(0, 10)}.json`
-      const r = await dialog.showSaveDialog(mainWindow(), {
-        title: '导出 SoundFlow 数据备份',
-        defaultPath: path.join(app.getPath('documents'), defaultName),
-        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
-      })
-      if (r.canceled || !r.filePath) return { ok: false, canceled: true }
-      const payload = {
-        app: 'soundflow', version: 1, exportedAt: new Date().toISOString(),
-        localStorage: localStorageData || {}, store: storage()
-      }
-      fs.writeFileSync(r.filePath, JSON.stringify(payload, null, 2), 'utf8')
-      return { ok: true, path: r.filePath }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
-  // 读取备份文件并返回内容(渲染端负责写入 localStorage + store)
-  ipcMain.handle('import-data-file', async () => {
-    try {
-      const r = await dialog.showOpenDialog(mainWindow(), {
-        title: '导入 SoundFlow 数据备份',
-        properties: ['openFile'],
-        filters: [{ name: 'JSON 备份', extensions: ['json'] }]
-      })
-      if (r.canceled || !r.filePaths || !r.filePaths[0]) return { ok: false, canceled: true }
-      const raw = fs.readFileSync(r.filePaths[0], 'utf8')
-      const payload = JSON.parse(raw)
-      if (!payload || payload.app !== 'soundflow') return { ok: false, error: '不是有效的 SoundFlow 备份文件' }
-      return { ok: true, localStorage: payload.localStorage || {}, store: payload.store || {} }
-    } catch (e) { return { ok: false, error: e.message } }
-  })
+  // 说明:导出/导入只有 export-backup / import-backup 这一套(整库由主进程读写,
+  // 导入后重启生效)。原先还有一对 export-data-file / import-data-file(渲染端
+  // 收集 localStorage 传过来),设置页里那两个函数早已没有任何按钮调用 —— 整条链已删。
   // 自动备份:启动后请求渲染端 localStorage 快照,合并 store 写入 backups/,保留最近 10 份
   ipcMain.on('backup-data', (event, localStorageData) => {
     try {

@@ -195,16 +195,6 @@
           ><Icon :name="lyricSidebarCollapsed ? 'back' : 'forward'" :size="14" /></button>
 
           <template v-if="!lyricSidebarCollapsed">
-            <div class="ls-group-label">来源</div>
-            <button
-              v-for="opt in lyricSourceOptions" :key="opt.value"
-              class="ls-btn" :class="{ active: lyricSource === opt.value }"
-              :aria-pressed="lyricSource === opt.value"
-              :title="'歌词来源:' + opt.label"
-              @click="switchLyricSource(opt.value)"
-            >{{ opt.label }}</button>
-
-            <div class="ls-sep" aria-hidden="true"></div>
             <div class="ls-group-label">外观</div>
             <button class="ls-btn" :class="{ active: showColorPanel }" :aria-pressed="showColorPanel" title="歌词颜色" aria-label="歌词颜色" @click="showColorPanel = !showColorPanel"><Icon name="color" :size="15" /></button>
             <button class="ls-btn" :class="{ active: playerStore.showTranslation, 'is-loading': playerStore.translating }" :aria-pressed="playerStore.showTranslation" v-tooltip:top="playerStore.translating ? '翻译中…' : '歌词翻译'"aria-label="歌词翻译" @click="playerStore.toggleTranslation()"><Icon name="translate" :size="15" /></button>
@@ -298,12 +288,20 @@
           <div class="controls-group">
             <!-- 占位块:让"模式/上一曲/播放/下一曲"这组在整行里保持居中(右侧有倍速+变调两个按钮) -->
             <div class="ctrl-sym-spacer" aria-hidden="true"></div>
-            <button class="ctrl-btn ctrl-mode" @click="playerStore.cyclePlayMode()" v-tooltip:top="t(playModeLabelKey)">
-              <Icon v-if="playerStore.playMode === 'list'" name="modeList" :size="18" />
-              <Icon v-else-if="playerStore.playMode === 'repeat'" name="modeRepeat" :size="18" />
-              <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
-              <Icon v-else name="modeShuffle" :size="18" />
-            </button>
+            <div class="mode-control">
+              <button class="ctrl-btn ctrl-mode" :aria-label="playModeLabel" :aria-expanded="showModePanel" @click="showModePanel = !showModePanel" v-tooltip:top="playModeLabel + ' — 点击选择播放模式'">
+                <Icon :name="currentModeIcon" :size="18" />
+              </button>
+              <transition name="fade">
+                <div v-if="showModePanel" class="mode-panel pop-panel" @click.stop>
+                  <button v-for="m in playerStore.PLAY_MODES" :key="m.key" class="mode-item" :class="{ active: playerStore.playMode === m.key }" :aria-pressed="playerStore.playMode === m.key" @click="pickPlayMode(m.key)">
+                    <Icon :name="m.icon" :size="16" />
+                    <span>{{ t(m.labelKey) }}</span>
+                    <Icon v-if="playerStore.playMode === m.key" class="mode-check" name="check" :size="14" />
+                  </button>
+                </div>
+              </transition>
+            </div>
             <div class="hint-wrap" @mouseenter="showPrevHint = true" @mouseleave="showPrevHint = false">
               <button class="ctrl-btn ctrl-prev" @click="playerStore.playPrev()" title="上一曲" aria-label="上一曲">
                 <Icon name="prev" :size="20" fill="currentColor" />
@@ -499,7 +497,7 @@ let _pvPanelWatch = null
 function setupPvPanelsClickOutside() {
   if (_pvPanelWatch) return
   _pvPanelWatch = watch(
-    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel, showSpecPanel],
+    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel, showSpecPanel, showModePanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onPvPanelDocClick)
       else document.removeEventListener('click', onPvPanelDocClick)
@@ -510,8 +508,8 @@ function onPvPanelDocClick(e) {
   // 音量滑杆拖动中(pointer 移出弹层)不关闭
   if (consumeVolDragging()) return
   // 面板内 / 触发按钮上点击不关闭
-  if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .format-panel, .vol-pop, .rate-panel, .pitch-panel') ||
-      e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, [data-queue-toggle], .ls-btn')) return
+  if (e.target.closest('.queue-panel, .eq-panel, .bg-panel, .color-panel, .format-panel, .vol-pop, .rate-panel, .pitch-panel, .mode-panel') ||
+      e.target.closest('.ctrl-btn--small, .vol-btn, .icon-btn, .ctrl-mode, [data-queue-toggle], .ls-btn')) return
   showQueuePanel.value = false
   showEqPanel.value = false
   showBgPanel.value = false
@@ -521,6 +519,7 @@ function onPvPanelDocClick(e) {
   showPitchPanel.value = false
   showRatePanel.value = false
   showSpecPanel.value = false
+  showModePanel.value = false
   showFormatPanel.value = false // 此前漏了它(点外部关闭里有,Esc 没有)
 }
 const activeTab = ref('cover')
@@ -705,11 +704,14 @@ function onCoverError() {
 }
 // ===== 播放页背景设置(封面 / 纯色 / 渐变,持久化) =====
 
-const playModeLabelKey = computed(() => {
-  const keys = { list: 'player.mode.list', repeat: 'player.mode.repeat', repeatOne: 'player.mode.repeatOne', random: 'player.mode.random' }
-  return keys[playerStore.playMode] || ''
+const playModeLabel = computed(() => {
+  const cur = playerStore.PLAY_MODES.find(m => m.key === playerStore.playMode)
+  return cur ? t(cur.labelKey) : ''
 })
-const playModeLabel = computed(() => t(playModeLabelKey.value))
+const currentModeIcon = computed(() => {
+  const cur = playerStore.PLAY_MODES.find(m => m.key === playerStore.playMode)
+  return cur ? cur.icon : 'modeList'
+})
 
 /**
  * 两处歌词面的滚动定位共用同一套"按容器查当前行"的写法。
@@ -810,14 +812,7 @@ async function importLocalLyric() {
   }
 }
 
-// 歌词来源切换(本地 / 网易云 / LRCLIB / QQ音乐 / 自动),右侧竖排按钮
-const lyricSourceOptions = [
-  { value: 'auto', label: '自动' },
-  { value: 'netease', label: '网易云' },
-  { value: 'lrclib', label: 'LRCLIB' },
-  { value: 'qq', label: 'QQ音乐' }
-]
-const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
+// 歌词来源的选择入口只在设置页;播放页只在"在线搜索歌词并下载"时按当前偏好带上来源
 // 工具栏是否显示:歌词页恒显示;封面页仅在分栏时显示(分栏那一屏右半边就是歌词)
 const showLyricToolbar = computed(() => activeTab.value !== 'cover' || useSplit.value)
 // 歌词右侧栏收起状态(持久化)
@@ -978,6 +973,11 @@ function onSplitResize() {
 watch(useSplit, (on) => { if (on && activeTab.value === 'cover') scrollSplitToActive(true) })
 watch(() => playerStore.lyrics, () => locateActiveLyric())
 const showRatePanel = ref(false) // 倍速面板默认收起
+const showModePanel = ref(false) // 播放模式选择菜单
+function pickPlayMode(key) {
+  playerStore.setPlayMode(key)
+  showModePanel.value = false
+}
 // 音调/速度数字输入(Enter/失焦确认)
 const pitchInput = ref(playerStore.pitch)
 const rateInput = ref(playerStore.playbackRate)
@@ -1008,6 +1008,7 @@ function onPvEsc() {
   showPitchPanel.value = false
   showRatePanel.value = false
   showSpecPanel.value = false
+  showModePanel.value = false
   showFormatPanel.value = false // 此前漏了它(点外部关闭里有,Esc 没有)
 }
 // 双击封面全屏切换;ESC 退出全屏
@@ -1140,17 +1141,9 @@ async function deleteLocalLyric() {
   }
 }
 
-function switchLyricSource(v) {  if (lyricSource.value === v) return
-  lyricSource.value = v
-  localStorage.setItem('soundflow_lyric_source', v)
-  const cur = playerStore.currentSong
-  if (cur) {
-    const label = lyricSourceOptions.find(o => o.value === v)?.label || v
-    const hint = v === 'auto' ? '本地歌词优先,无本地时自动在线' : '在线歌词优先,获取失败回退本地'
-    playerStore.loadLyrics(cur)
-    window.$toast?.('已切换到「' + label + '」(' + hint + ')', 'success')
-  }
-}
+// 说明:歌词来源的切换入口只在设置页「歌词」区(与「在线歌词」开关、翻译服务、批量下载同处)。
+// 播放页工具栏原先也有一组同样的 4 个按钮,写的是同一个 key、两份几乎相同的切换逻辑 —— 已删;
+// 这里只在"在线搜索歌词并下载"时按当前偏好带上来源。
 
 // 在线搜索并下载歌词到本地(LRCLIB → 网易云)
 const searchingLyric = ref(false)
@@ -1166,7 +1159,7 @@ async function searchLyric() {
       title: song.title,
       artist: song.artist || '',
       duration: song.duration || 0,
-      source: lyricSource === 'local' ? 'auto' : lyricSource
+      source: playerStore.lyricSourcePref()
     })
     if (res?.lyrics) {
       // 源自带译文轨时并成"一行双语"再写盘(与用户手里那些双语 .lrc 同格式);
@@ -1896,6 +1889,23 @@ async function searchLyric() {
   padding: 10px 14px; width: 280px; z-index: 60;
   color: rgba(255,255,255,0.85);
 }
+/* 播放模式选择菜单:与倍速面板同一套底色与抬升高度(宽度按内容) */
+.mode-control { position: relative; display: flex; }
+.mode-panel {
+  position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%);
+  padding: 6px; width: 168px; z-index: 60;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mode-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; border-radius: 7px; border: none; background: none; cursor: pointer;
+  font-size: var(--font-size-sm, 13px); color: var(--text-primary); text-align: left;
+  transition: background 0.15s;
+}
+.mode-item span { flex: 1; }
+.mode-item:hover { background: var(--bg-hover, rgba(255,255,255,0.1)); }
+.mode-item.active { color: var(--color-primary, #4096ff); font-weight: 600; }
+.mode-check { flex: none; }
 .rate-presets { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .rate-preset {
   flex: 1; min-width: 38px; padding: 3px 0; font-size: var(--font-size-sm, 11px);

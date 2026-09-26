@@ -12,7 +12,8 @@
       <span class="diag-badge" :class="tools.ffmpegOk ? 'ok' : 'bad'">{{ tools.ffmpegOk ? '转码可用' : '转码不可用' }}</span>
     </div>
 
-    <!-- 三类缓存:转码缓存最多能吃 2GB,以前完全不可见 -->
+    <!-- 三类缓存:转码缓存最多能吃 2GB,以前完全不可见。
+         这里只读数、不放动作按钮 —— 清理入口统一在设置页「数据」区(此前同一页两套按钮) -->
     <div class="diag-row">
       <div class="diag-label">
         <span class="diag-title">缓存占用</span>
@@ -21,11 +22,6 @@
           解析 {{ md.count }} 条<template v-if="md.rate !== null">（命中率 {{ md.rate }}%）</template> ·
           转码 {{ transcode.count }} 个 · {{ fmtBytes(transcode.size) }}<template v-if="transcode.limit">（上限 {{ fmtBytes(transcode.limit) }}）</template>
         </span>
-      </div>
-      <div class="diag-actions">
-        <button class="diag-btn" :disabled="busy" @click="clearCovers">清封面</button>
-        <button class="diag-btn" :disabled="busy" @click="clearMd">清解析</button>
-        <button class="diag-btn" :disabled="busy" @click="clearTranscode">清转码</button>
       </div>
     </div>
 
@@ -153,7 +149,6 @@ import { formatBytes, formatPercent, formatClock } from '@/utils/format'
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
 
-const busy = ref(false)
 const info = ref({})
 // 失败清单不是响应式的(它是环形缓冲数组):进入诊断时取一次快照即可
 const failures = ref([])
@@ -224,13 +219,6 @@ async function refresh() {
   } catch (_) {}
   failures.value = getFailures().slice().reverse()
 }
-async function run(fn) {
-  busy.value = true
-  try { await fn() } finally { busy.value = false; await refresh() }
-}
-const clearCovers = () => run(() => window.electronAPI?.clearCoverCache?.())
-const clearMd = () => run(() => window.electronAPI?.clearMetadataCache?.())
-const clearTranscode = () => run(() => window.electronAPI?.clearTranscodeCache?.())
 function clearFailures() {
   clearFailureRecords()
   failures.value = []

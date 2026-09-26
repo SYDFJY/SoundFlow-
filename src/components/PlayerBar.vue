@@ -27,12 +27,22 @@
     <!-- 中：控制+进度 -->
     <div class="player-center" v-show="!collapsed">
       <div class="player-controls">
-        <button class="ctrl-btn" :title="playModeLabel" @click="playerStore.cyclePlayMode()">
-          <Icon v-if="playerStore.playMode === 'list'" name="modeList" :size="18" />
-          <Icon v-else-if="playerStore.playMode === 'repeat'" name="modeRepeat" :size="18" />
-          <Icon v-else-if="playerStore.playMode === 'repeatOne'" name="modeRepeatOne" :size="18" />
-          <Icon v-else name="modeShuffle" :size="18" />
-        </button>
+        <!-- 播放模式:点开直接选(此前是点一下循环切换 —— 想选"随机"得点三次)。
+             直接选择的入口原来只在设置页与小窗右键菜单里,那两处都不是使用现场 -->
+        <div class="pb-mode-control">
+          <button class="ctrl-btn mode-btn" :title="playModeLabel + ' — 点击选择播放模式'" :aria-label="playModeLabel" :aria-expanded="showPbModePanel" @click="showPbModePanel = !showPbModePanel">
+            <Icon :name="currentModeIcon" :size="18" />
+          </button>
+          <transition name="vol-fade">
+            <div v-if="showPbModePanel" class="pb-mode-panel" @click.stop>
+              <button v-for="m in playerStore.PLAY_MODES" :key="m.key" class="pb-mode-item" :class="{ active: playerStore.playMode === m.key }" :aria-pressed="playerStore.playMode === m.key" @click="pickPlayMode(m.key)">
+                <Icon :name="m.icon" :size="16" />
+                <span>{{ t(m.labelKey) }}</span>
+                <Icon v-if="playerStore.playMode === m.key" class="pb-mode-check" name="check" :size="14" />
+              </button>
+            </div>
+          </transition>
+        </div>
         <div class="hint-wrap" @mouseenter="showPrevHint = true" @mouseleave="showPrevHint = false">
           <button class="ctrl-btn" @click="playerStore.playPrev()" :title="t('player.prev') + shortcutHint('prev')" aria-label="上一曲">
             <Icon name="prev" :size="18" fill="currentColor" />
@@ -228,6 +238,11 @@ const router = useRouter()
 const playerStore = usePlayerStore()
 const musicStore = useMusicStore()
 const showPbRatePanel = ref(false)
+const showPbModePanel = ref(false)
+function pickPlayMode(key) {
+  playerStore.setPlayMode(key)
+  showPbModePanel.value = false
+}
 // 播放栏迷你化(收起为迷你条)
 const collapsed = ref(localStorage.getItem('soundflow_pb_collapsed') === '1')
 const miniProgress = computed(() => {
@@ -240,6 +255,7 @@ function toggleCollapse() {
   // 收起时关闭所有浮层
   if (collapsed.value) {
     showPbRatePanel.value = false
+    showPbModePanel.value = false
     showEqPanel.value = false
     playerStore.showQueue = false
     showTimer.value = false
@@ -282,20 +298,21 @@ function onQueueDocClick(e) {
   // 音量滑杆拖动中(pointer 移出弹层)不关闭
   if (consumeVolDragging()) return
   // 面板内 / 触发按钮上点击不关闭
-  if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel, .pb-rate-panel') ||
-      e.target.closest('.right-btn, .rate-btn, [data-queue-toggle]')) return
+  if (e.target.closest('.queue-panel, .vol-pop, .eq-panel, .popup-panel, .pb-rate-panel, .pb-mode-panel') ||
+      e.target.closest('.right-btn, .rate-btn, .mode-btn, [data-queue-toggle]')) return
   playerStore.showQueue = false
   playerStore.volPanelOpen = false
   showEqPanel.value = false
   showTimer.value = false
   showPbRatePanel.value = false
+  showPbModePanel.value = false
 }
 // 任一面板打开时挂全局监听,全部关闭时移除
 let _pbPanelWatch = null
 function setupPbPanelsClickOutside() {
   if (_pbPanelWatch) return
   _pbPanelWatch = watch(
-    [() => playerStore.showQueue, () => playerStore.volPanelOpen, showEqPanel, showTimer, showPbRatePanel],
+    [() => playerStore.showQueue, () => playerStore.volPanelOpen, showEqPanel, showTimer, showPbRatePanel, showPbModePanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onQueueDocClick)
       else document.removeEventListener('click', onQueueDocClick)
@@ -356,11 +373,12 @@ function onCoverError() {
 }
 const isFav = computed(() => playerStore.currentSong ? musicStore.isFavorite(playerStore.currentSong.path) : false)
 const playModeLabel = computed(() => {
-  const labels = { list: '列表播放', repeat: '列表循环', repeatOne: '单曲循环', random: '随机播放' }
-  const order = ['list', 'repeat', 'repeatOne', 'random']
-  const cur = playerStore.playMode
-  const next = order[(order.indexOf(cur) + 1) % order.length]
-  return `当前：${labels[cur] || ''} → 点击切换：${labels[next] || ''}`
+  const cur = playerStore.PLAY_MODES.find(m => m.key === playerStore.playMode)
+  return cur ? t(cur.labelKey) : ''
+})
+const currentModeIcon = computed(() => {
+  const cur = playerStore.PLAY_MODES.find(m => m.key === playerStore.playMode)
+  return cur ? cur.icon : 'modeList'
 })
 
 function toggleFav() {
@@ -717,4 +735,27 @@ function setCustomTimer() {
   background: transparent; color: var(--text-primary, #fff); cursor: pointer;
 }
 .pb-rate-reset:hover { background: rgba(255,255,255,0.1); }
+/* 播放模式选择菜单:与倍速面板同一套定位与底色 */
+.pb-mode-control { position: relative; }
+.pb-mode-panel {
+  position: absolute; bottom: calc(var(--player-height, 72px) + 8px); left: 50%; transform: translateX(-50%);
+  background: var(--panel-bg, rgba(20,28,50,0.95)); border: 1px solid var(--panel-border, rgba(255,255,255,0.12));
+  border-radius: 10px; padding: 6px; width: 166px;
+  box-shadow: 0 8px 28px var(--shadow-lg, rgba(0,0,0,0.35)); z-index: 120;
+  --text-primary: var(--panel-text);
+  --text-secondary: var(--panel-text-secondary);
+  --bg-hover: var(--panel-hover);
+  --border-color: var(--panel-border);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.pb-mode-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 10px; border-radius: 7px; border: none; background: none; cursor: pointer;
+  font-size: var(--font-size-sm, 13px); color: var(--text-primary); text-align: left;
+  transition: background var(--transition-fast, .15s);
+}
+.pb-mode-item span { flex: 1; }
+.pb-mode-item:hover { background: var(--bg-hover, rgba(255,255,255,0.08)); }
+.pb-mode-item.active { color: var(--color-primary, #4096ff); font-weight: 600; }
+.pb-mode-check { flex: none; }
 </style>

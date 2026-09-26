@@ -87,8 +87,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storeGet: (key) => ipcRenderer.invoke('store-get', key),
   storeSet: (key, value) => ipcRenderer.invoke('store-set', key, value),
   storeSetBulk: (payload) => ipcRenderer.invoke('store-set-bulk', payload),
-  exportDataFile: (localStorageData) => ipcRenderer.invoke('export-data-file', localStorageData),
-  importDataFile: () => ipcRenderer.invoke('import-data-file'),
   backupData: (localStorageData) => ipcRenderer.send('backup-data', localStorageData),
   storeDelete: (key) => ipcRenderer.invoke('store-delete', key),
 

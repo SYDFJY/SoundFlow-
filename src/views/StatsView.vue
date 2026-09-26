@@ -236,16 +236,12 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { formatTimestamp as formatTime } from '@/utils/time'
 import { dayKey } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
-import { confirmDialog } from '@/composables/useConfirm'
 
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
 const router = useRouter()
 
 // 时间戳格式化已收敛到 @/utils/time(与 HistoryView 原本完全重复)
-async function clearHistory() {
-  if (await confirmDialog({ message: '确定清空播放历史？', detail: '只清空记录,曲库与收藏不受影响', confirmText: '清空', danger: true })) musicStore.clearHistory()
-}
 
 // 所有带播放计数的歌曲
 const playedSongs = computed(() => {

@@ -282,6 +282,32 @@ export const usePlayerStore = defineStore('player', () => {
     })
   }
 
+  // ===== 歌词来源偏好 =====
+  // 读取/写入只有这一份实现:此前"旧版 local 迁移成 auto + 非法值兜底"这套
+  // 归一化在 loadLyrics、设置页、播放页各写了一遍,现在统一走这两个函数。
+  const LYRIC_SOURCES = ['auto', 'netease', 'lrclib', 'qq']
+  function lyricSourcePref() {
+    try {
+      const saved = localStorage.getItem('soundflow_lyric_source')
+      const v = saved === 'local' ? 'auto' : (saved || 'auto')
+      return LYRIC_SOURCES.includes(v) ? v : 'auto'
+    } catch { return 'auto' }
+  }
+  function setLyricSourcePref(v) {
+    if (!LYRIC_SOURCES.includes(v)) return
+    try { localStorage.setItem('soundflow_lyric_source', v) } catch {}
+  }
+
+  // ===== 播放模式清单 =====
+  // 播放栏与播放页的选择菜单共用它 —— 此前中文名与图标分别写在这两个组件里
+  // (外加各自一份 4 分支 v-if),改个文案要改三处。labelKey 交给调用方 t()。
+  const PLAY_MODES = [
+    { key: 'list', labelKey: 'player.mode.list', icon: 'modeList' },
+    { key: 'repeat', labelKey: 'player.mode.repeat', icon: 'modeRepeat' },
+    { key: 'repeatOne', labelKey: 'player.mode.repeatOne', icon: 'modeRepeatOne' },
+    { key: 'random', labelKey: 'player.mode.random', icon: 'modeShuffle' }
+  ]
+
   // ===== 调音 / 音效(Web Audio:EQ + 预设 + 重低音 + 声场) =====
   const EQ_FREQS = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
   // 音效库:eq 10 段 + bass(重低音)/treble(高音)/mid(中音)/width(立体声展宽)/reverb(混响)/comp(压缩)
@@ -1463,12 +1489,7 @@ export const usePlayerStore = defineStore('player', () => {
       const lrcText = await window.electronAPI.readLyricFile(song.path, lyricFolders)
 
       // 歌词源(旧版 'local' 迁移为 auto)
-      let source = 'auto'
-      try {
-        const saved = localStorage.getItem('soundflow_lyric_source')
-        source = (saved === 'local') ? 'auto' : (saved || 'auto')
-        if (!['auto', 'netease', 'lrclib', 'qq'].includes(source)) source = 'auto'
-      } catch {}
+      const source = lyricSourcePref()
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
 
@@ -2290,8 +2311,8 @@ export const usePlayerStore = defineStore('player', () => {
   // 退到其它模式自然就是原顺序,不需要"恢复原始队列"这一步(旧实现改了队列,
   // 却仍用随机选曲,队列面板显示的顺序是假的)
   function cyclePlayMode() {
-    const modes = ['list', 'repeat', 'repeatOne', 'random']
-    setPlayMode(modes[(modes.indexOf(playMode.value) + 1) % modes.length])
+    const keys = PLAY_MODES.map(m => m.key)
+    setPlayMode(keys[(keys.indexOf(playMode.value) + 1) % keys.length])
   }
 
   // ===== 变调(变速不变调):AudioWorklet + SoundTouch(独立线程,不卡主线程) =====
@@ -2606,7 +2627,8 @@ export const usePlayerStore = defineStore('player', () => {
     recentSwitches, chainCheck,
     outputDevices, outputDeviceId, outputDeviceError, loadOutputDevices, setOutputDevice, initOutputDevices,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
-    eqSettings, EQ_PRESETS, EQ_FREQS, setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
+    eqSettings, EQ_PRESETS, EQ_FREQS, PLAY_MODES, LYRIC_SOURCES, lyricSourcePref, setLyricSourcePref,
+    setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,
     getSpectrumData,
     initMediaSession, initRelinkSync

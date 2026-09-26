@@ -8,8 +8,6 @@ export const useAppStore = defineStore('app', () => {
   const fontSize = ref(14)
   const showSidebar = ref(true)
   const sidebarWidth = ref(220)
-  const currentView = ref('home')
-  const showSettings = ref(false)
   const language = ref('zh-CN')
   const autoPlay = ref(false) // 启动自动续播(默认关,避免启动即播放卡顿;用户可在设置开启)
   const closeAction = ref('minimize') // minimize, exit
@@ -503,8 +501,8 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    theme, fontSize, showSidebar, sidebarWidth, currentView,
-    showSettings, language, autoPlay, closeAction, followSystemTheme,
+    theme, fontSize, showSidebar, sidebarWidth,
+    language, autoPlay, closeAction, followSystemTheme,
     themes, applyTheme, loadSettings, saveSettings, setFontSize,
     setFollowSystemTheme, applySystemTheme,
     exportThemeJSON, importThemeJSON,

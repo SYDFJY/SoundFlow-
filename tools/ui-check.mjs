@@ -1587,6 +1587,87 @@ app.whenReady().then(async () => {
       JSON.stringify(afterDel))
   }
 
+  // 16) 去重(用户报"设置界面有一些功能重复了,其他地方也有")
+  //     做的是"删掉重复入口、把直接选择能力搬到使用现场",所以判据分两类:
+  //     ① 删掉的东西**确实不见了**(不是只删了样式,控件还挂在那);
+  //     ② 搬过去的能力**真的能用**(点开菜单选随机 → 落库 + 按钮图标同步),否则就是净损失。
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1400)
+  const modeMenu = await run(`(async () => {
+    const btn = document.querySelector('.player-bar .mode-btn')
+    if (!btn) return { err: '播放栏没有播放模式按钮' }
+    const iconBefore = btn.querySelector('svg') ? btn.querySelector('svg').outerHTML.length : 0
+    btn.click()
+    await new Promise((r) => setTimeout(r, 400))
+    const items = [...document.querySelectorAll('.pb-mode-panel .pb-mode-item')]
+    const labels = items.map((b) => (b.textContent || '').trim())
+    const random = items.find((b) => /随机/.test(b.textContent || ''))
+    if (random) random.click()
+    await new Promise((r) => setTimeout(r, 400))
+    return {
+      labels,
+      iconBefore,
+      iconAfter: btn.querySelector('svg') ? btn.querySelector('svg').outerHTML.length : 0,
+      panelClosed: !document.querySelector('.pb-mode-panel'),
+      stored: localStorage.getItem('soundflow_play_mode'),
+      title: btn.getAttribute('title') || ''
+    }
+  })()`)
+  console.log('播放模式菜单:', JSON.stringify(modeMenu))
+  check('去重:播放栏的播放模式按钮点开是 4 选 1 菜单(原来只能点一下循环)',
+    !!modeMenu && !modeMenu.err && Array.isArray(modeMenu.labels) && modeMenu.labels.length === 4
+    && modeMenu.labels.join('/').includes('随机'),
+    JSON.stringify(modeMenu && modeMenu.labels))
+  check('去重:菜单里选「随机」立即生效并落库,按钮图标同步、面板自动收起',
+    !!modeMenu && modeMenu.stored === 'random' && modeMenu.panelClosed === true && !!modeMenu.title.includes('随机'),
+    JSON.stringify({ stored: modeMenu && modeMenu.stored, closed: modeMenu && modeMenu.panelClosed, title: modeMenu && modeMenu.title }))
+  // 恢复成列表播放,别把状态留给下一次跑
+  await run(`(() => { localStorage.setItem('soundflow_play_mode', 'list'); return true })()`)
+
+  await run(`(() => { location.hash = '#/settings'; return true })()`)
+  await sleep(1600)
+  const setState = await run(`(() => {
+    const txt = document.body.innerText
+    const probe = (pattern) => pattern.test(txt)
+    const has = (sel) => !!document.querySelector(sel)
+    const clearBtns = [...document.querySelectorAll('.btn')].map((b) => (b.textContent || '').trim())
+    return {
+      // ① 已删掉的重复入口
+      hasPlayModeText: probe(/^播放模式$/m),
+      hasSpeedText: probe(/倍速/),
+      hasDefaultVolume: probe(/默认音量/),
+      eqSliders: document.querySelectorAll('.eq-area input[type=range]').length,
+      folderRemoveBtns: document.querySelectorAll('.remove-btn').length,
+      diagActionBtns: document.querySelectorAll('.diag-actions .diag-btn').length,
+      // ② 保留/新增的
+      eqSwitch: !!document.querySelector('[aria-label="均衡器 / 音效"]'),
+      manageBtns: [...document.querySelectorAll('button')].filter((b) => /管理目录/.test(b.textContent || '')).length,
+      clearBtns
+    }
+  })()`)
+  console.log('设置页去重状态:', JSON.stringify(setState))
+  check('去重:设置页不再有 播放模式 / 倍速 / 默认音量(它们在使用现场都能改)',
+    setState.hasPlayModeText === false && setState.hasSpeedText === false && setState.hasDefaultVolume === false,
+    JSON.stringify(setState))
+  check('去重:设置页不再有 EQ 滑块面板与目录移除按钮(音效面板在播放栏、目录归音乐目录页)',
+    setState.eqSliders === 0 && setState.folderRemoveBtns === 0 && setState.eqSwitch === true,
+    JSON.stringify({ eqSliders: setState.eqSliders, folderRemoveBtns: setState.folderRemoveBtns, eqSwitch: setState.eqSwitch }))
+  check('去重:清缓存只剩一处动作组(诊断面板回归只读),且转码缓存仍可清',
+    setState.diagActionBtns === 0
+    && setState.clearBtns.some((t) => /清理封面缓存/.test(t))
+    && setState.clearBtns.some((t) => /清理解析缓存/.test(t))
+    && setState.clearBtns.some((t) => /清理转码缓存/.test(t)),
+    JSON.stringify({ diag: setState.diagActionBtns, clearBtns: setState.clearBtns }))
+  check('去重:「管理目录」跳转到音乐目录页(设置页只留添加 + 跳转)',
+    setState.manageBtns >= 2, `找到 ${setState.manageBtns} 个`)
+  await run(`(() => { const b = [...document.querySelectorAll('button')].find((x) => /管理目录/.test(x.textContent || '')); if (b) b.click(); return !!b })()`)
+  await sleep(1200)
+  const afterJump = await run(`(() => ({ hash: location.hash, title: (document.querySelector('.vh-title') || {}).textContent || '' }))()`)
+  console.log('管理目录跳转:', JSON.stringify(afterJump))
+  check('去重:点「管理目录」真的到了音乐目录页',
+    !!afterJump && afterJump.hash.includes('/folder') && afterJump.title.includes('音乐目录'),
+    JSON.stringify(afterJump))
+
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
   await sleep(400)

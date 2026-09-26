@@ -27,21 +27,21 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
-import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 import Icon from '@/components/icons/Icon.vue'
 
+const router = useRouter()
 const musicStore = useMusicStore()
-const appStore = useAppStore()
 const playerStore = usePlayerStore()
 
 const sortedFavorites = computed(() => musicStore.sortSongs(musicStore.favoriteSongs))
 
 function gotoLibrary() {
-  appStore.currentView = 'home'
+  router.push('/home')
 }
 
 function onReorder({ from, to, pos }) {

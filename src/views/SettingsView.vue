@@ -132,15 +132,6 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">默认音量</span>
-          </div>
-          <div class="setting-control">
-            <input type="range" min="0" max="1" step="0.01" :value="playerStore.volume" @input="e => playerStore.setVolume(parseFloat(e.target.value))" />
-            <span class="volume-val">{{ Math.round(playerStore.volume * 100) }}%</span>
-          </div>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
             <span class="label-text">播放结束</span>
             <span class="label-desc">一首歌播完后的行为</span>
           </div>
@@ -148,25 +139,6 @@
             <button class="chip chip--sm" :class="{ active: playerStore.endAction === 'next' }" @click="playerStore.setEndAction('next')">自动下一曲</button>
             <button class="chip chip--sm" :class="{ active: playerStore.endAction === 'stop' }" @click="playerStore.setEndAction('stop')">播完停止</button>
             <button class="chip chip--sm" :class="{ active: playerStore.endAction === 'fade' }" @click="playerStore.setEndAction('fade')">淡出后继续</button>
-          </div>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">播放模式</span>
-          </div>
-          <select :value="playerStore.playMode" @change="playerStore.setPlayMode($event.target.value)">
-            <option value="list">列表播放</option>
-            <option value="repeat">列表循环</option>
-            <option value="repeatOne">单曲循环</option>
-            <option value="random">随机播放</option>
-          </select>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">倍速播放</span>
-          </div>
-          <div class="rate-options">
-            <button v-for="r in rates" :key="r" class="chip chip--sm" :class="{ active: playerStore.playbackRate === r }" @click="playerStore.setPlaybackRate(r)">{{ r }}x</button>
           </div>
         </div>
       </div>
@@ -177,13 +149,12 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">扫描目录</span>
-            <span class="label-desc">{{ musicStore.scanFolders.length }} 个目录</span>
+            <span class="label-desc">{{ musicStore.scanFolders.length }} 个目录（单个目录的重新扫描与移除在「音乐目录」页）</span>
           </div>
-          <button class="btn" @click="addFolder">添加目录</button>
-        </div>
-        <div v-for="folder in musicStore.scanFolders" :key="folder" class="folder-item">
-          <span class="folder-path text-ellipsis">{{ folder }}</span>
-          <button class="remove-btn" @click="removeFolder(folder)">移除</button>
+          <div class="setting-control" style="display: flex; gap: 6px;">
+            <button class="btn" @click="addFolder">添加目录</button>
+            <button class="btn" @click="$router.push('/folder')">管理目录</button>
+          </div>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -242,9 +213,12 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">歌词文件夹</span>
-            <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲</span>
+            <span class="label-desc">独立存放 .lrc 文件，按文件名自动匹配歌曲（列表与移除去「音乐目录」页）</span>
           </div>
-          <button class="btn" @click="addLyricFolder">添加文件夹</button>
+          <div class="setting-control" style="display: flex; gap: 6px;">
+            <button class="btn" @click="addLyricFolder">添加文件夹</button>
+            <button class="btn" @click="$router.push('/folder')">管理目录</button>
+          </div>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -288,14 +262,6 @@
             </div>
           </transition>
         </teleport>
-        <div v-if="musicStore.lyricFolders.length === 0" class="folder-item" style="color:var(--text-tertiary);font-size: var(--font-size-sm);">
-          暂未设置歌词文件夹（歌词也可放在歌曲同目录同名 .lrc 自动识别）
-        </div>
-        <div v-for="folder in musicStore.lyricFolders" :key="folder" class="folder-item">
-          <Icon name="lyrics" :size="16" />
-          <span class="folder-path text-ellipsis">{{ folder }}</span>
-          <button class="remove-btn" @click="removeLyricFolder(folder)">移除</button>
-        </div>
       </div>
 
       <!-- 音效 -->
@@ -304,33 +270,11 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">均衡器 / 音效</span>
-            <span class="label-desc">10 段 EQ + 预设 + 重低音 + 空间声场(Web Audio 实时处理)</span>
+            <span class="label-desc">10 段 EQ + 预设 + 重低音 + 空间声场；完整调节（含频响曲线与自定义预设）在播放栏的音效面板里</span>
           </div>
           <button class="switch" role="switch" :aria-checked="playerStore.eqSettings.enabled" aria-label="均衡器 / 音效" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
             <span class="switch-track"></span>
           </button>
-        </div>
-        <div v-if="playerStore.eqSettings.enabled" class="eq-area">
-          <div class="eq-presets">
-            <button v-for="(p, key) in playerStore.EQ_PRESETS" :key="key" class="source-btn eq-preset-btn" :class="{ active: playerStore.eqSettings.preset === key }" @click="playerStore.setEqPreset(key)">{{ p.name }}</button>
-          </div>
-          <div class="eq-sliders">
-            <div v-for="(f, i) in playerStore.EQ_FREQS" :key="f" class="eq-slider-col">
-              <span class="eq-gain">{{ playerStore.eqSettings.gains[i] > 0 ? '+' : '' }}{{ playerStore.eqSettings.gains[i] }}</span>
-              <input type="range" min="-12" max="12" step="1" :value="playerStore.eqSettings.gains[i]" @input="playerStore.setEqGain(i, parseInt($event.target.value))" />
-              <span class="eq-freq">{{ f >= 1000 ? (f / 1000) + 'k' : f }}</span>
-            </div>
-          </div>
-          <div class="eq-extra">
-            <div class="eq-extra-item">
-              <span class="label-text">重低音</span>
-              <input type="range" min="-6" max="12" step="1" :value="playerStore.eqSettings.bass" @input="playerStore.setBass(parseInt($event.target.value))" />
-            </div>
-            <div class="eq-extra-item">
-              <span class="label-text">空间声场</span>
-              <input type="range" min="0" max="1" step="0.05" :value="playerStore.eqSettings.reverb" @input="playerStore.setReverb(parseFloat($event.target.value))" />
-            </div>
-          </div>
         </div>
       </div>
 
@@ -369,7 +313,7 @@
             <span class="label-text">字体大小</span>
           </div>
           <div class="font-size-row">
-            <input type="range" min="10" max="24" step="1" :value="appStore.fontSize" @input="appStore.setFontSize(parseInt($event.target.value))" />
+            <input type="range" min="10" max="20" step="1" :value="appStore.fontSize" @input="appStore.setFontSize(parseInt($event.target.value))" />
             <span class="volume-val">{{ appStore.fontSize }}px</span>
           </div>
         </div>
@@ -482,18 +426,6 @@
         <h3 class="section-title"><Icon name="warning" :size="15" />数据安全</h3>
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">自动备份</span>
-            <span class="label-desc">每次启动自动备份全部数据(收藏/歌单/设置/播放记录),保留最近 10 份,存放于用户数据目录 backups/ 文件夹</span>
-          </div>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">手动备份</span>
-            <span class="label-desc">导出/导入完整数据备份(下方「数据」区),可用于换机迁移或数据损坏后恢复</span>
-          </div>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
             <span class="label-text">标签备份(可回滚)</span>
             <span class="label-desc">修改歌曲信息(写回标签)前自动备份原文件,可一键还原;每首歌保留最近 3 份</span>
           </div>
@@ -566,6 +498,13 @@
             <span class="label-desc">{{ storageInfo.mdCacheCount || 0 }} 首的解析结果（重新扫描同一目录时直接复用，命中率会写进日志；清理后下次扫描重新解析）</span>
           </div>
           <button class="btn" :class="{ 'is-loading': mdCacheBusy }" @click="clearMdCache" :disabled="mdCacheBusy">{{ mdCacheBusy ? '清理中…' : '清理解析缓存' }}</button>
+        </div>
+        <div class="setting-item">
+          <div class="setting-label">
+            <span class="label-text">转码缓存</span>
+            <span class="label-desc">APE/WMA/AIFF/ALAC 等非原生格式转出的 FLAC：{{ storageInfo.transcodeCount || 0 }} 个 · {{ storageInfo.transcodeSize ? (storageInfo.transcodeSize / 1048576).toFixed(1) : '0.0' }} MB（清理后下次播放会重新转码）</span>
+          </div>
+          <button class="btn" :class="{ 'is-loading': transcodeBusy }" @click="clearTranscode" :disabled="transcodeBusy">{{ transcodeBusy ? '清理中…' : '清理转码缓存' }}</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -658,36 +597,6 @@ const loginItem = ref(false)
 async function loadLoginItem() {
   try { if (window.electronAPI && window.electronAPI.getLoginItem) loginItem.value = await window.electronAPI.getLoginItem() } catch {}
 }
-// 导出全部数据(收藏/歌单/设置/播放记录)到用户选择的文件
-async function exportData() {
-  if (!window.electronAPI?.exportDataFile) return
-  try {
-    const data = {}
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i)
-      data[k] = localStorage.getItem(k)
-    }
-    const r = await window.electronAPI.exportDataFile(data)
-    if (r?.ok) window.$toast?.(`✅ 数据已导出到:\n${r.path}`, 'success', 4200)
-    else if (r && !r.canceled) window.$toast?.('导出失败: ' + (r.error || '未知错误'), 'error')
-  } catch (e) { window.$toast?.('导出失败: ' + e.message, 'error') }
-}
-// 导入数据备份(写入 localStorage + store,重启生效)
-async function importData() {
-  if (!window.electronAPI?.importDataFile) return
-  try {
-    const r = await window.electronAPI.importDataFile()
-    if (!r) return
-    if (!r.ok) { if (!r.canceled) window.$toast?.(r.error || '导入失败', 'error'); return }
-    for (const [k, v] of Object.entries(r.localStorage || {})) {
-      try { localStorage.setItem(k, v) } catch {}
-    }
-    if (Object.keys(r.store || {}).length && window.electronAPI.storeSetBulk) {
-      await window.electronAPI.storeSetBulk(r.store).catch(() => {})
-    }
-    window.$toast?.('✅ 数据已导入,请重启应用生效', 'success', 4200)
-  } catch (e) { window.$toast?.('导入失败: ' + e.message, 'error') }
-}
 
 async function toggleLoginItem() {
   const v = !loginItem.value
@@ -770,7 +679,7 @@ const playerStore = usePlayerStore()
 // ===== 数据备份 / 导入 =====
 const backupBusy = ref(false)
 // 存储占用与清理
-const storageInfo = ref({ coversCount: 0, coversSize: 0, mdCacheCount: 0 })
+const storageInfo = ref({ coversCount: 0, coversSize: 0, mdCacheCount: 0, transcodeCount: 0, transcodeSize: 0 })
 const mdCacheBusy = ref(false)
 const cacheBusy = ref(false)
 async function loadStorageInfo() {
@@ -803,6 +712,22 @@ async function clearCache() {
     try { window.$toast?.('清理失败', 'error') } catch {}
   }
   cacheBusy.value = false
+  loadStorageInfo()
+}
+
+// 清理转码缓存:非原生格式(APE/WMA/AIFF/ALAC)转出的 FLAC,清掉下次播放会重新转。
+// 原先只有诊断面板里有这个按钮 —— 同一页两套清缓存入口,已合并到这里。
+const transcodeBusy = ref(false)
+async function clearTranscode() {
+  if (transcodeBusy.value) return
+  transcodeBusy.value = true
+  try {
+    const r = await window.electronAPI?.clearTranscodeCache?.()
+    try { window.$toast?.(`已清理 ${r?.removed || 0} 个转码缓存文件`, 'success') } catch {}
+  } catch {
+    try { window.$toast?.('清理失败', 'error') } catch {}
+  }
+  transcodeBusy.value = false
   loadStorageInfo()
 }
 
@@ -936,7 +861,6 @@ const closeAction = computed({
   get: () => appStore.closeAction,
   set: (val) => { appStore.closeAction = val; appStore.saveSettings() }
 })
-const rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0]
 // 标签备份管理(写回前自动备份,可回滚)
 const tagBackups = ref([])
 async function loadTagBackups() {
@@ -978,17 +902,9 @@ try {
   window.electronAPI?.getFolderWatch().then(v => { folderWatchOn.value = !!v }).catch(() => {})
 } catch {}
 
-function removeFolder(folder) {
-  musicStore.scanFolders = musicStore.scanFolders.filter(f => f !== folder)
-  musicStore.saveToStorage()
-}
-
+// 目录的列表与移除都在「音乐目录」页(那边移除前有确认框,还能单独重扫某个目录)
 async function addLyricFolder() {
   await musicStore.addLyricFolder()
-}
-
-function removeLyricFolder(folder) {
-  musicStore.removeLyricFolder(folder)
 }
 
 // 在线歌词开关(localStorage,默认开启)
@@ -999,18 +915,19 @@ function toggleOnlineLyric() {
   localStorage.setItem('soundflow_online_lyric', onlineLyric.value ? '1' : '0')
 }
 
-// 歌词来源:local(本地,不联网)/ netease / lrclib(默认)
+// 歌词来源:auto(本地优先,无本地自动在线)/ netease / lrclib / qq
+// 读写都走 store 里的单份实现(旧值 'local' 的迁移与非法值兜底在那边)
 const lyricSources = [
   { value: 'auto', label: '自动(推荐)' },
   { value: 'netease', label: '网易云' },
   { value: 'lrclib', label: 'LRCLIB' },
   { value: 'qq', label: 'QQ音乐' }
 ]
-const lyricSource = ref((localStorage.getItem('soundflow_lyric_source') === 'local' ? 'auto' : (localStorage.getItem('soundflow_lyric_source') || 'auto')))
+const lyricSource = ref(playerStore.lyricSourcePref())
 
 function setLyricSource(v) {
   lyricSource.value = v
-  localStorage.setItem('soundflow_lyric_source', v)
+  playerStore.setLyricSourcePref(v)
   // 切换来源后立即重新获取当前歌曲歌词(缓存按来源隔离,会走新来源)
   const cur = playerStore.currentSong
   if (cur) {
@@ -1287,7 +1204,7 @@ async function batchDownloadLyrics() {
         } else {
           const res = await window.electronAPI.searchOnlineLyric({
             title: s.title, artist: s.artist || '', duration: s.duration || 0,
-            source: lyricSource.value === 'local' ? 'auto' : lyricSource.value
+            source: lyricSource.value
           })
           if (res && res.lyrics) {
             const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
@@ -1505,20 +1422,7 @@ select {
 .font-size-row { display: flex; align-items: center; gap: 10px; }
 .font-size-row input[type="range"] { width: 180px; }
 
-/* 音效 */
-.eq-area { width: 100%; display: flex; flex-direction: column; gap: 14px; }
-.eq-presets { display: flex; flex-wrap: wrap; gap: 6px; }
-.eq-preset-btn { font-size: var(--font-size-xs); padding: 4px 10px; }
-.eq-sliders { display: flex; justify-content: space-between; gap: 4px; }
-.eq-slider-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
-.eq-slider-col input[type="range"] { width: 100%; writing-mode: vertical-lr; direction: rtl; height: 90px; }
-.eq-gain { font-size: 10px; color: var(--text-tertiary); }
-.eq-freq { font-size: 10px; color: var(--text-tertiary); }
-.eq-extra { display: flex; gap: 20px; }
-.eq-extra-item { display: flex; align-items: center; gap: 8px; }
-.eq-extra-item span { min-width: 48px; }
-.eq-extra-item input[type="range"] { width: 120px; }
-
+/* 音效滑块面板已删除(与播放栏的音效面板重复),这里只留总开关 */
 .batch-progress-track { width: 100%; height: 6px; background: var(--bg-hover); border-radius: 3px; overflow: hidden; }
 .batch-progress-fill { height: 100%; background: var(--color-primary); border-radius: 3px; transition: width 0.2s; }
 

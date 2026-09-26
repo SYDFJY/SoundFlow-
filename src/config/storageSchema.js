@@ -64,8 +64,7 @@ export const LOCAL_ONLY = {
     'soundflow_language', 'soundflow_lyric_sidebar', 'soundflow_online_lyric',
     'soundflow_pb_collapsed', 'soundflow_pv_split', 'soundflow_resume_progress',
     'soundflow_translate_service', 'soundflow_translation_cache',
-    'soundflow_player_bg_color', 'soundflow_player_bg_gradient',
-    'soundflow_player_bg_image', 'soundflow_player_bg_mode',
+    'soundflow_player_bg_color', 'soundflow_player_bg_image', 'soundflow_player_bg_mode',
     // 输出设备(设备 id;'default' = 系统默认)与"切歌时自动定位当前播放"开关
     'soundflow_output_device', 'soundflow_autolocate',
     'soundflow_search_history', 'soundflow_shortcuts',

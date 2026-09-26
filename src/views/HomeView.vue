@@ -190,17 +190,17 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useMusicStore } from '@/stores/musicStore'
-import { useAppStore } from '@/stores/appStore'
 import { t } from '@/i18n'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { confirmDialog } from '@/composables/useConfirm'
 
+const router = useRouter()
 const musicStore = useMusicStore()
 const playerStore = usePlayerStore()
-const appStore = useAppStore()
 const isElectron = computed(() => !!window.electronAPI)
 const batchMode = ref(false)
 const selectedSongs = ref([])
@@ -244,8 +244,7 @@ async function addFolder() {
 }
 
 function openSettings() {
-  appStore.currentView = 'settings'
-  appStore.showSettings = true
+  router.push('/settings')
 }
 
 function onDrop(e) {
