@@ -1,6 +1,8 @@
 <template>
-  <div class="mini-player" :class="{ 'mini-player--transparent': miniBgMode === 'transparent' }" :style="playerStyle" @dblclick="restoreMain" title="双击恢复主窗口">
-    <div class="mini-left">
+  <div class="mini-player" :class="{ 'mini-player--transparent': miniBgMode === 'transparent' }" :style="playerStyle" @dblclick="restoreMain">
+    <!-- 双击提示挂在左侧,不再挂在根容器上:根上的 title 会被浏览器用在**鼠标下的按钮**上,
+         OS 提示窗会盖住按钮自己的提示(用户报的"悬停文字被挡住"就是这个) -->
+    <div class="mini-left" title="双击恢复主窗口">
       <div class="mini-cover" :class="{ spinning: isPlaying }">
         <img v-if="miniCover" :src="miniCover" @error="onCoverError" alt="" />
         <div v-else class="cover-placeholder"><Icon name="music" :size="20" /></div>
@@ -12,14 +14,17 @@
       </div>
     </div>
     <div class="mini-right">
-      <button class="mini-btn" @click="prev" v-tooltip:top="'上一曲'" aria-label="上一曲">
+      <!-- 提示改成**窗内**显示:窗口只有 320×80,按钮上方剩 ~22px、下方剩 ~13px,
+           浮层气泡上下都放不下(翻转也一样),只会被窗口边缘裁掉半截(用户报的现象) -->
+      <div class="mini-hint" v-if="hoverHint">{{ hoverHint }}</div>
+      <button class="mini-btn" @click="prev" @mouseenter="hoverHint = '上一曲'" @mouseleave="hoverHint = ''" aria-label="上一曲">
         <Icon name="prev" :size="18" fill="currentColor" />
       </button>
-      <button class="mini-btn mini-btn--play" @click="togglePlay" v-tooltip:top="'播放 / 暂停'" aria-label="播放 / 暂停">
+      <button class="mini-btn mini-btn--play" @click="togglePlay" @mouseenter="hoverHint = isPlaying ? '暂停' : '播放'" @mouseleave="hoverHint = ''" aria-label="播放 / 暂停">
         <Icon v-if="isPlaying" name="pause" :size="20" fill="currentColor" />
         <Icon v-else name="play" :size="20" fill="currentColor" />
       </button>
-      <button class="mini-btn" @click="next" v-tooltip:top="'下一曲'" aria-label="下一曲">
+      <button class="mini-btn" @click="next" @mouseenter="hoverHint = '下一曲'" @mouseleave="hoverHint = ''" aria-label="下一曲">
         <Icon name="next" :size="18" fill="currentColor" />
       </button>
     </div>
@@ -78,7 +83,12 @@ function onProgressDown(e) {
 // ===== 迷你窗背景模式(深色/白色/自定义/透明),文字按背景亮度自适应 =====
 const miniBgMode = ref(localStorage.getItem('soundflow_mini_bg_mode') || 'dark')
 const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161b22')
-const miniBgAlpha = ref(parseFloat(localStorage.getItem('soundflow_mini_bg_alpha')) || 0.05)
+// 注意别写 `parseFloat(x) || 0.05`:存进去的 "0" 会被 || 当成假值 → 读回来又变 0.05,
+// 于是"完全透明"永远设不上(用户报的"还是不够透明")
+const _storedAlpha = parseFloat(localStorage.getItem('soundflow_mini_bg_alpha'))
+const miniBgAlpha = ref(Number.isFinite(_storedAlpha) ? Math.min(1, Math.max(0, _storedAlpha)) : 0.05)
+// 按钮悬停提示:显示在窗口内(浮层气泡在这个尺寸里放不下)
+const hoverHint = ref('')
 const bgIsLight = computed(() => {
   const c = miniBgColor.value.replace('#', '')
   if (c.length !== 6) return false
@@ -220,8 +230,32 @@ function restoreMain() {
   background: var(--color-primary);
   color: white !important;
 }
+/* 必须有自己的一条 hover:`.mini-btn:hover`(特异性同为 0,2,0 但写在前面)此前把播放键的
+   主色底换成了半透明黑,三个键 hover 后长得一模一样。同特异性下后写的赢,所以这条放在后面。 */
+.mini-btn--play:hover { background: var(--color-primary); filter: brightness(1.12); }
+.mini-btn:active { transform: scale(0.92); }
 /* 播放键比两侧的上一曲/下一曲略大:36px 按钮配 20px 图标才不显单薄 */
 .mini-btn--play svg { width: 20px; height: 20px; }
+
+/* 透明模式:按钮/封面占位/进度条仍要看得见、点得到,但调淡一档 ——
+   它们在此之前是"即使把背景调到最透明也还在的几块底色"(用户要的"最好看不出来") */
+.mini-player--transparent .mini-btn { background: rgba(0,0,0,0.16); }
+.mini-player--transparent .mini-btn:hover { background: rgba(0,0,0,0.30); }
+.mini-player--transparent .mini-cover,
+.mini-player--transparent .cover-placeholder { background: rgba(128,128,128,0.10); }
+
+/* 悬停提示:窗内显示,位于按钮上方那一行(窗口只有 80px 高) */
+.mini-hint {
+  position: absolute;
+  right: 12px;
+  top: 3px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--mc, #fff);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.85);
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
 
 .mini-progress {
   position: absolute;

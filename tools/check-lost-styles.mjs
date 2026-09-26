@@ -26,6 +26,8 @@ import path from 'node:path'
  *   - .vol-slider → 三处重复实现收敛到 src/styles/controls.css 的单一实现
  */
 const ALLOW = {
+  // 2026-09-26 按用户要求去掉侧边栏"我的收藏"后面的数字徽标(全项目唯一一处)
+  'src/components/Sidebar.vue': ['.menu-badge'],
   // .next-wrap → 改名 .hint-wrap(它现在同时给「上一首」和「下一首」的悬停卡片定位)
   'src/components/PlayerBar.vue': ['.mode-icon', '.eq-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.next-wrap'],
   // .song-meta:hover .cover-swap → 改成 .song-meta:hover .cover-actions .cover-swap

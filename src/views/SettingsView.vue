@@ -203,10 +203,10 @@
         <div class="setting-item" v-if="miniBgMode === 'transparent'">
           <div class="setting-label">
             <span class="label-text">背景透明度</span>
-            <span class="label-desc">底深程度 5%–80%,文字与按钮始终清晰</span>
+            <span class="label-desc">底深程度 0%–80%;0% 完全透明(只剩内容),文字与按钮始终清晰</span>
           </div>
           <div class="setting-control">
-            <input type="range" min="5" max="80" step="5" :value="Math.round(miniBgAlpha * 100)" @input="e => setMiniBgMode('transparent', null, parseInt(e.target.value) / 100)" />
+            <input type="range" min="0" max="80" step="5" :value="Math.round(miniBgAlpha * 100)" @input="e => setMiniBgMode('transparent', null, parseInt(e.target.value) / 100)" />
             <span class="volume-val">{{ Math.round(miniBgAlpha * 100) }}%</span>
           </div>
         </div>
@@ -1022,7 +1022,9 @@ function initPickr() {
   _pickr.on('save', (color) => { if (color) setMiniBgMode('custom', color.toHEXA().toString()) })
   _pickr.on('change', (color) => { if (color) setMiniBgMode('custom', color.toHEXA().toString()) })
 }
-const miniBgAlpha = ref(parseFloat(localStorage.getItem('soundflow_mini_bg_alpha')) || 0.05)
+// 别写 `parseFloat(x) || 0.05`:存进去的 "0" 是假值,读回来又变 0.05 → "完全透明"永远设不上
+const _miniAlpha = parseFloat(localStorage.getItem('soundflow_mini_bg_alpha'))
+const miniBgAlpha = ref(Number.isFinite(_miniAlpha) ? Math.min(1, Math.max(0, _miniAlpha)) : 0.05)
 function setMiniBgMode(mode, color, alpha) {
   miniBgMode.value = mode
   if (color) miniBgColor.value = color

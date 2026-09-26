@@ -1129,6 +1129,108 @@ app.whenReady().then(async () => {
 
 
 
+  // 12) 迷你小窗:透明度能到 0、悬停提示在窗内、侧边栏不再有收藏徽标
+  //     用户反馈:"背景透明选项还是不够透明,最好看不出来""悬停按钮出现的文字会被挡住"
+  //     "侧边栏我的收藏旁边不要显示收藏了多少歌"
+  const findMini = () => BrowserWindow.getAllWindows().find(
+    (w) => !w.isDestroyed() && w !== win && /#\/mini/.test(String(w.webContents.getURL())))
+  const miniAlive = () => !!findMini()
+  if (!miniAlive()) {
+    await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+    await sleep(3200)
+  }
+  const miniWin = findMini()
+  if (!miniWin) {
+    check('迷你小窗:能打开', false, '窗口不在')
+  } else {
+    check('迷你小窗:能打开', true)
+    const mRun = (code) => miniWin.webContents.executeJavaScript(code, true)
+    // 悬停三个按钮:提示必须是**窗内**的一行文字,且不越出窗口矩形
+    const hints = []
+    for (const [label, idx] of [['上一曲', 0], ['播放 / 暂停', 1], ['下一曲', 2]]) {
+      const r = await mRun(`(async () => {
+        const btns=[...document.querySelectorAll('.mini-btn')]
+        const b=btns[${idx}]
+        if(!b) return { err:'没有第 ${idx + 1} 个按钮' }
+        b.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+        // Vue 是异步更新 DOM 的:派发事件后必须等一帧再读,否则拿到的是"提示还没出现"
+        await new Promise((r) => setTimeout(r, 150))
+        const hint=document.querySelector('.mini-hint')
+        const rect=hint?hint.getBoundingClientRect():null
+        const out={
+          text: hint?hint.textContent.trim():'',
+          inWindow: rect ? (rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight + 0.5 && rect.right <= innerWidth + 0.5) : null,
+          rect: rect ? [Math.round(rect.left), Math.round(rect.top), Math.round(rect.right), Math.round(rect.bottom)] : null,
+          win: [innerWidth, innerHeight],
+          tooltipShown: !!document.querySelector('.sf-tooltip'),
+          aria: b.getAttribute('aria-label')
+        }
+        b.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }))
+        return out
+      })()`)
+      hints.push({ label, ...r })
+    }
+    console.log('小窗按钮提示:', JSON.stringify(hints))
+    check('小窗:悬停三个按钮都在窗内显示提示文字(浮层气泡在这个尺寸里放不下,会被窗口裁掉)',
+      hints.length === 3 && hints.every((h) => h.text && h.inWindow === true && h.tooltipShown === false),
+      JSON.stringify(hints))
+
+    // 透明度拉到 0:模式切到透明(会重建窗口),底色必须是完全透明
+    // 设置页写的是"localStorage + IPC"两份;只发 IPC 的话,小窗重建后从 localStorage 读到的还是旧模式
+    await run(`(() => {
+      try {
+        localStorage.setItem('soundflow_mini_bg_mode', 'transparent')
+        localStorage.setItem('soundflow_mini_bg_alpha', '0')
+        window.electronAPI.send('mini:bg-changed', { mode: 'transparent', color: '#161b22', alpha: 0 })
+      } catch (e) {}
+      return true
+    })()`)
+    await sleep(3400)
+    const mini2 = findMini()
+    if (!mini2) {
+      check('小窗:透明模式能重建窗口', false, '重建后没找到窗口')
+    } else {
+      const bg = await mini2.webContents.executeJavaScript(`(() => {
+        const el=document.querySelector('.mini-player')
+        const cs=el?getComputedStyle(el):null
+        return {
+          bg: cs?cs.backgroundColor:null,
+          bodyMini: document.body.classList.contains('mini-window'),
+          transparentClass: el?el.classList.contains('mini-player--transparent'):null
+        }
+      })()`, true)
+      console.log('小窗透明模式:', JSON.stringify(bg))
+      check('小窗:透明度 0% 时底色完全透明(不是还压着 5%),窗口本身也是透明窗',
+        !!bg && bg.bg === 'rgba(0, 0, 0, 0)' && bg.transparentClass === true && bg.bodyMini === true,
+        JSON.stringify(bg))
+    }
+    // 还原:回到默认深色 + 5%(并关掉小窗)
+    await run(`(() => {
+      try {
+        localStorage.setItem('soundflow_mini_bg_mode', 'dark')
+        localStorage.setItem('soundflow_mini_bg_alpha', '0.05')
+        window.electronAPI.send('mini:bg-changed', { mode: 'dark', color: '#161b22', alpha: 0.05 })
+      } catch (e) {}
+      return true
+    })()`)
+    await sleep(3000)
+    await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+    await sleep(800)
+  }
+
+  // 侧边栏:不再显示收藏数量徽标(导航项与计数本身都还在)
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1600)
+  const side = await run(`(() => ({
+    badges: document.querySelectorAll('.menu-badge').length,
+    favoriteItem: [...document.querySelectorAll('.menu-item')].some((el) => (el.textContent || '').includes('我的收藏')),
+    menuItems: document.querySelectorAll('.menu-item').length
+  }))()`)
+  console.log('侧边栏:', JSON.stringify(side))
+  check('侧边栏:我的收藏后面不再有数字徽标(而这一项与其它导航项都还在)',
+    !!side && side.badges === 0 && side.favoriteItem === true && side.menuItems >= 5,
+    JSON.stringify(side))
+
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
   await sleep(400)

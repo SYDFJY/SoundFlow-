@@ -10,7 +10,6 @@
         <router-link to="/favorites" class="menu-item" :class="{ active: $route.path === '/favorites' }">
           <Icon name="favorite" :size="16" />
           <span>{{ t('nav.favorites') }}</span>
-          <span v-if="musicStore.favoriteCount > 0" class="menu-badge">{{ musicStore.favoriteCount }}</span>
         </router-link>
         <router-link to="/stats" class="menu-item" :class="{ active: $route.path === '/stats' }">
           <Icon name="stats" :size="16" />
@@ -350,7 +349,6 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .menu-item.menu-ghost { opacity: 0.45; background: var(--color-primary-alpha); }
 .menu-item svg { width: 18px; height: 18px; flex-shrink: 0; }
 .menu-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--font-size-base); }
-.menu-badge { font-size: 11px; background: var(--color-primary); color: white; padding: 1px 6px; border-radius: 10px; min-width: 18px; text-align: center; }
 .menu-count { font-size: 11px; color: var(--text-tertiary); margin-left: auto; }
 .pl-cover { width: 20px; height: 20px; border-radius: 4px; object-fit: cover; flex-shrink: 0; margin-right: 2px; }
 .pl-cover-grid {

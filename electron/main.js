@@ -664,20 +664,30 @@ function createMiniWindow() {
     const presetColors = ['#161b22', '#1e90ff', '#2ecc71', '#e74c3c', '#f39c12']
     // 应用背景模式并同步渲染端
     const applyBg = (mode, color, alpha) => {
+      const prevMode = storageData.miniBgMode
       storageData.miniBgMode = mode
       if (color) storageData.miniBgColor = color
       if (typeof alpha === 'number') storageData.miniBgAlpha = alpha
       saveStorage()
-      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', { mode, color: storageData.miniBgColor, alpha: storageData.miniBgAlpha }) } catch {}
+      const cfg = { mode, color: storageData.miniBgColor, alpha: storageData.miniBgAlpha }
+      try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', cfg) } catch {}
       if (miniWindow && !miniWindow.isDestroyed()) {
-        const pos = miniWindow.getPosition()
-        miniWindow.close()
-        miniWindow = null
-        setTimeout(() => {
-          if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
-          createMiniWindow()
-        }, 250)
+        // 只有**窗口级**参数(透明 ↔ 不透明)变了才需要重建;
+        // 透明度只是 CSS 层的事 —— 此前每挪一档都关窗重建,拖动时窗口连续闪十几次
+        if (mode !== prevMode) recreateMiniWindow()
+        else { try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch {} }
       }
+    }
+    /** 重建迷你窗(窗口参数随模式变化时用;保留位置) */
+    const recreateMiniWindow = () => {
+      if (!miniWindow || miniWindow.isDestroyed()) return
+      const pos = miniWindow.getPosition()
+      miniWindow.close()
+      miniWindow = null
+      setTimeout(() => {
+        if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
+        createMiniWindow()
+      }, 250)
     }
     const menu = Menu.buildFromTemplate([
       {
@@ -699,7 +709,8 @@ function createMiniWindow() {
       },
       {
         label: '透明度 ▸',
-        submenu: [0.05, 0.2, 0.4, 0.6, 0.8].map(a => ({
+        // 0% = 完全透明(看不见底色);顺序从透明到最实
+        submenu: [0, 0.05, 0.2, 0.4, 0.6, 0.8].map(a => ({
           label: Math.round(a * 100) + '%',
           type: 'checkbox',
           checked: Math.abs((miniBg.alpha || 0.05) - a) < 0.001,
@@ -1103,14 +1114,19 @@ function setupIPC() {
     else createMiniWindow()
   })
 
-  // 迷你窗背景模式变化:持久化 + 迷你窗开着则重建(窗口参数随模式)
+  // 迷你窗背景变化:持久化。
+  // **窗口参数**(透明 ↔ 不透明)变了才重建;只改透明度就推一条 mini:bg-sync 让窗口自己改 CSS ——
+  // 设置页那个滑杆是 @input 触发的,此前每挪一档都关窗重建一次,拖一下连闪十几次。
   ipcMain.on('mini:bg-changed', (event, cfg) => {
     if (!cfg || !cfg.mode) return
+    const prevMode = storageData.miniBgMode
     storageData.miniBgMode = cfg.mode
     storageData.miniBgColor = cfg.color || storageData.miniBgColor || '#161b22'
     if (typeof cfg.alpha === 'number') storageData.miniBgAlpha = cfg.alpha
     saveStorage()
-    if (miniWindow && !miniWindow.isDestroyed()) {
+    if (!miniWindow || miniWindow.isDestroyed()) return
+    const next = { mode: cfg.mode, color: storageData.miniBgColor, alpha: storageData.miniBgAlpha }
+    if (cfg.mode !== prevMode) {
       const pos = miniWindow.getPosition()
       miniWindow.close()
       miniWindow = null
@@ -1118,6 +1134,8 @@ function setupIPC() {
         if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
         createMiniWindow()
       }, 250)
+    } else {
+      try { miniWindow.webContents.send('mini:bg-sync', next) } catch {}
     }
   })
 
