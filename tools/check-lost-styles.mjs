@@ -30,8 +30,6 @@ const ALLOW = {
   'src/components/Sidebar.vue': ['.menu-badge'],
   // .next-wrap → 改名 .hint-wrap(它现在同时给「上一首」和「下一首」的悬停卡片定位)
   'src/components/PlayerBar.vue': ['.mode-icon', '.eq-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.next-wrap'],
-  // 2026-09-26:顶栏主题下拉里的「导出/导入」按钮删除(设置页外观区已有,那里是集中配置的地方)
-  'src/components/TopBar.vue': ['.theme-dropdown-divider', '.theme-io-row'],
   // .song-meta:hover .cover-swap → 改成 .song-meta:hover .cover-actions .cover-swap
   //   (封面操作从一个按钮变成「更换封面 + 恢复原封面」一组,hover 显隐挂到容器上)
   'src/views/PlayerView.vue': ['.song-meta:hover .cover-swap', '.empty-icon', '.gradient-list', '.gradient-item', '.gradient-item.active', '.eq-*', '.queue-*', '.save-queue-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.lyric-loading-tip::before',
@@ -51,10 +49,13 @@ const ALLOW = {
   'src/views/FolderView.vue': ['.empty-icon', '.empty-text', '.empty-state', '.folder-icon', '.folder-actions .icon-btn--xs svg'],
   'src/views/HomeView.vue': ['.view-header'],
   // 2026-09-26 去重(用户报"设置界面有一些功能重复了"):设置页里那份 EQ 滑块面板
-  //   (播放栏 EqPanel 的简化副本)整段删除,只留总开关 —— 相关样式随之清掉
+  //   (播放栏 EqPanel 的简化副本)整段删除,只留总开关 —— 相关样式随之清掉;
+  //   同批删掉的还有"目录/歌词文件夹列表"与旧版 .source-btn 按钮(现在用全局 .chip)
   'src/views/SettingsView.vue': ['.eq-area', '.eq-presets', '.eq-preset-btn', '.eq-sliders', '.eq-slider-col',
     '.eq-slider-col input[type="range"]', '.eq-gain', '.eq-freq', '.eq-extra', '.eq-extra-item',
-    '.eq-extra-item span', '.eq-extra-item input[type="range"]'],
+    '.eq-extra-item span', '.eq-extra-item input[type="range"]',
+    '.source-btn', '.source-btn:hover', '.source-btn.active',
+    '.folder-item', '.folder-path', '.remove-btn', '.remove-btn:hover'],
   'src/views/MiniView.vue': ['.mini-vol', '.mini-player:hover .mini-vol', '.mini-vol-icon', '.mini-vol-slider', '.mini-vol-slider::-webkit-slider-thumb']
 }
 

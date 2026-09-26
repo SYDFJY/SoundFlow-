@@ -48,11 +48,23 @@ const short = (v, n = 160) => {
 
 // 先探一次基础连通性:离线时下面每条都会红,但那是"没网"不是"代码坏",
 // 分开报可以避免把环境问题算到代码头上。
-async function online () {
+// **必须多试几个 host**:第一版只打 lrclib.net,而它恰好是三家音源里最容易超时的那家 ——
+// LRCLIB 慢/被限流时探针会误报"网络不可达"然后跳过全部断言,看着像绿的一样(工具自己说谎)。
+async function reach (url, headers) {
   try {
-    const res = await fetch('https://lrclib.net/api/search?q=test', { signal: AbortSignal.timeout(8000) })
+    const res = await fetch(url, { headers, signal: AbortSignal.timeout(6000) })
     return res.ok
   } catch { return false }
+}
+async function probeHosts () {
+  const hosts = [
+    ['LRCLIB', 'https://lrclib.net/api/search?q=test', { 'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)' }],
+    ['网易云', 'https://music.163.com/api/search/get?s=test&type=1&limit=1', { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://music.163.com' }],
+    ['MusicBrainz', 'https://musicbrainz.org/ws/2/recording/?query=test&limit=1&fmt=json', { 'User-Agent': 'SoundFlow/1.0 (probe)' }]
+  ]
+  const out = {}
+  for (const [name, url, headers] of hosts) out[name] = await reach(url, headers)
+  return out
 }
 
 // Node/Electron 的 fetch 到底会不会把 Referer/Cookie 发出去。
@@ -86,8 +98,13 @@ app.whenReady().then(async () => {
   if (!win) { console.error('未找到应用窗口'); app.exit(1); return }
   const run = (code) => win.webContents.executeJavaScript(code, true)
 
-  const netOk = await online()
-  console.log(`网络:${netOk ? '可达' : '不可达'}`)
+  const hostState = await probeHosts()
+  const netOk = Object.values(hostState).some(Boolean)
+  console.log(`网络:${netOk ? '可达' : '不可达'} | 各音源可达性:`, JSON.stringify(hostState))
+  // 单独一家不可达不算"离线"(它正是我们想观测的现象之一),但三家全不通就没法继续断言了
+  for (const [name, ok] of Object.entries(hostState)) {
+    if (!ok) console.log(`  · ${name} 本次不可达/超时 —— 下面与它相关的断言会说明影响,不当成"没网"`)
+  }
 
   // 0) fetch 的 Referer/Cookie 行为(不依赖外网)
   const echo = await headerEcho()

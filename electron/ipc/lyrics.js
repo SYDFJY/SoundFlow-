@@ -1,7 +1,7 @@
 /**
  * 歌词相关 IPC(从 main.js 拆出):读取/保存/绑定/删除本地歌词、在线搜索与翻译。
  *
- * 为什么能干净地拆:这一段只依赖 fs/path/https/dialog 与两处主进程状态(歌词文件夹设置、
+ * 为什么能干净地拆:这一段只依赖 fs/path/dialog 与两处主进程状态(歌词文件夹设置、
  * 打开文件对话框的父窗口),不碰曲库、扫描、转码那条链。
  *
  * ctx 里的 storage/mainWindow 用**getter 函数**传入而不是值:它们在主进程里会被重新赋值
@@ -9,13 +9,13 @@
  */
 const fs = require('fs')
 const path = require('path')
-const https = require('https')
 // 文件名去重用的哈希。**注意别漏这个 require**:Electron 34 的 Node 20 里全局 crypto 是
 // WebCrypto(没有 createHash),漏了不会报错、只会静默走 catch 分支 —— ipc/search.js 的
 // get-hd-cover 就是这么失效了很久(见那里的注释)。
 const crypto = require('crypto')
 const { dialog } = require('electron')
-const log = require('electron-log')
+// 失败上报:日志 + 转给渲染端诊断面板(此模块原来 require 了 electron-log 和 https
+// 却一次都没用上 —— 拆模块时的遗留,一并清掉)
 const failLog = require('../lib/failureLog')
 const { readdir, stat, readFile, writeFile, mkdir, access, unlink } = require('fs/promises')
 // 本地歌词是 GBK/GB18030 时用 iconv 解码。这一行曾被拆 lyrics.js 时漏掉:

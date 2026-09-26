@@ -284,8 +284,15 @@ export const usePlayerStore = defineStore('player', () => {
 
   // ===== 歌词来源偏好 =====
   // 读取/写入只有这一份实现:此前"旧版 local 迁移成 auto + 非法值兜底"这套
-  // 归一化在 loadLyrics、设置页、播放页各写了一遍,现在统一走这两个函数。
+  // 归一化在 loadLyrics、设置页、播放页各写了一遍,现在统一走这几个。
   const LYRIC_SOURCES = ['auto', 'netease', 'lrclib', 'qq']
+  /** 界面用的来源清单:设置页与播放页歌词工具栏共用同一份(别再各写一套标签) */
+  const LYRIC_SOURCE_OPTIONS = [
+    { value: 'auto', label: '自动', hint: '本地优先,无本地自动在线' },
+    { value: 'netease', label: '网易云', hint: '在线优先,失败回退本地' },
+    { value: 'lrclib', label: 'LRCLIB', hint: '在线优先,失败回退本地' },
+    { value: 'qq', label: 'QQ音乐', hint: '在线优先,失败回退本地' }
+  ]
   function lyricSourcePref() {
     try {
       const saved = localStorage.getItem('soundflow_lyric_source')
@@ -293,9 +300,29 @@ export const usePlayerStore = defineStore('player', () => {
       return LYRIC_SOURCES.includes(v) ? v : 'auto'
     } catch { return 'auto' }
   }
+  /** 当前来源(响应式):多个入口都改它,界面各处才不会各自记一份过期状态 */
+  const lyricSource = ref(lyricSourcePref())
   function setLyricSourcePref(v) {
     if (!LYRIC_SOURCES.includes(v)) return
     try { localStorage.setItem('soundflow_lyric_source', v) } catch {}
+    lyricSource.value = v
+  }
+
+  /**
+   * 换歌词来源并立刻重取当前这首歌的歌词(含提示)。
+   *
+   * 两处入口共用它:设置页「歌词」区、播放页歌词工具栏的「来源」组 ——
+   * 入口可以在顺手的地方各有一个(工具栏就挨着歌词),但**逻辑只有这一份**:
+   * 以前两处各写一遍"写 key + 重载 + 弹提示",连提示文案都不一致。
+   */
+  function changeLyricSource(v) {
+    if (!LYRIC_SOURCES.includes(v)) return
+    setLyricSourcePref(v)
+    const opt = LYRIC_SOURCE_OPTIONS.find(o => o.value === v)
+    const cur = currentSong.value
+    // 点当前项也算数:等于"这首歌的歌词不对,再取一次"(此前设置页的行为就是这样)
+    if (cur) loadLyrics(cur)
+    try { window.$toast?.(`已切换到「${opt ? opt.label : v}」${opt ? '(' + opt.hint + ')' : ''}`, 'success') } catch {}
   }
 
   // ===== 播放模式清单 =====
@@ -1345,7 +1372,7 @@ export const usePlayerStore = defineStore('player', () => {
   const ONLINE_MISS_TTL_MS = 30 * 60 * 1000
   const ONLINE_MISS_MAX = 500
   /** 歌词提示的节流时间戳(按类别):断网/音源故障时别每切一首弹一次 */
-  const _lyricToastAt = { network: 0, source: 0 }
+  const _lyricToastAt = { network: 0, source: 0, timeout: 0 }
   function _noteOnlineMiss(key) {
     if (_onlineMisses.size >= ONLINE_MISS_MAX) _onlineMisses.clear()
     _onlineMisses.set(key, Date.now())
@@ -1549,7 +1576,7 @@ export const usePlayerStore = defineStore('player', () => {
       const lrcText = await window.electronAPI.readLyricFile(song.path, lyricFolders)
 
       // 歌词源(旧版 'local' 迁移为 auto)
-      const source = lyricSourcePref()
+      const source = lyricSource.value
       let onlineEnabled = true
       try { onlineEnabled = localStorage.getItem('soundflow_online_lyric') !== '0' } catch {}
 
@@ -1596,24 +1623,23 @@ export const usePlayerStore = defineStore('player', () => {
             source
           })
           const err = res && res.error
-          if (err === 'network' || err === 'source') {
+          if (err === 'network' || err === 'source' || err === 'timeout') {
             // 三类失败必须分开提示,此前一律报"网络不可用" —— 对方 500 或返回非 JSON
-            // 时会让用户去查自己的代理,而问题根本不在他那边
-            const net = err === 'network'
-            noteFailure('lyric.online', net ? '在线歌词:网络不可用' : '在线歌词:音源返回异常', `${source} / ${song.title} / ${(res && res.kind) || ''}`)
+            // 时会让用户去查自己的代理,而问题根本不在他那边。
+            // timeout 单列:那是"这次没查完,再点一次可能就有",与"网络不通"要采取的行动不同。
+            const label = err === 'timeout' ? '获取超时' : (err === 'network' ? '网络不可用' : '音源异常')
+            const tip = err === 'timeout'
+              ? '歌词获取超时(稍后重试,或到设置里换个来源)'
+              : (err === 'network' ? '歌词在线获取失败:网络不可用(请检查代理/连接)' : '歌词在线获取失败:音源返回异常(可换个来源试试)')
+            noteFailure('lyric.online', `在线歌词:${label}`, `${source} / ${song.title} / ${(res && res.kind) || ''}`)
             if (currentSong.value === reqSong) {
-              lyricOrigin.value = net ? '网络不可用' : '音源异常'
+              lyricOrigin.value = label
               // 提示按类别节流:断网或某个音源挂掉时,连着切歌会每首都弹一次 ——
               // 标签一直显示状态就够了,toast 三分钟内只提醒一次
-              const key = net ? 'network' : 'source'
               const now = Date.now()
-              if (now - (_lyricToastAt[key] || 0) > 3 * 60 * 1000) {
-                _lyricToastAt[key] = now
-                try {
-                  window.$toast?.(net
-                    ? '歌词在线获取失败:网络不可用(请检查代理/连接)'
-                    : '歌词在线获取失败:音源返回异常(可换个来源试试)', 'warning')
-                } catch {}
+              if (now - (_lyricToastAt[err] || 0) > 3 * 60 * 1000) {
+                _lyricToastAt[err] = now
+                try { window.$toast?.(tip, 'warning') } catch {}
               }
             }
             // 失败时回退本地(能用的话),保证有歌词可看
@@ -2728,7 +2754,8 @@ export const usePlayerStore = defineStore('player', () => {
     recentSwitches, chainCheck,
     outputDevices, outputDeviceId, outputDeviceError, loadOutputDevices, setOutputDevice, initOutputDevices,
     setSleepTimer, clearSleepTimer, saveCurrentProgress, saveQueueState, restoreQueue,
-    eqSettings, EQ_PRESETS, EQ_FREQS, PLAY_MODES, LYRIC_SOURCES, lyricSourcePref, setLyricSourcePref,
+    eqSettings, EQ_PRESETS, EQ_FREQS, PLAY_MODES, LYRIC_SOURCES, LYRIC_SOURCE_OPTIONS,
+    lyricSource, lyricSourcePref, setLyricSourcePref, changeLyricSource,
     setEqEnabled, setEqPreset, setEqGain, setBass, setReverb,
     customEqPresets, saveCustomEqPreset, deleteCustomEqPreset, applyCustomEqPreset,
     getSpectrumData,

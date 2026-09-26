@@ -118,10 +118,10 @@ function isNetworkError (e) {
   return /network|fetch failed|socket hang up/i.test(e.message || '')
 }
 
-/** 请求失败 → 三态里的"失败"(区分锅在网络还是在音源) */
+/** 请求失败 → 三态里的"失败"(区分锅在网络还是在音源,超时单列一类) */
 function failFor (kind, source, detail) {
-  const network = kind === 'network' || kind === 'timeout'
-  return { error: network ? 'network' : 'source', kind, source, detail: detail ? String(detail.message || detail).slice(0, 200) : '' }
+  const error = kind === 'timeout' ? 'timeout' : (kind === 'network' ? 'network' : 'source')
+  return { error, kind, source, detail: detail ? String(detail.message || detail).slice(0, 200) : '' }
 }
 
 // ===== HTTP =====
@@ -171,15 +171,6 @@ async function httpGetJson (url, headers, timeoutMs = REQ_TIMEOUT_MS) {
   }
 }
 
-function deadline (promise, ms) {
-  let timer
-  const expired = Symbol('deadline')
-  return Promise.race([
-    Promise.resolve(promise).catch(() => null),
-    new Promise((resolve) => { timer = setTimeout(() => resolve(expired), Math.max(0, ms)) })
-  ]).finally(() => clearTimeout(timer))
-}
-
 // ===== 各音源 =====
 
 const LRCLIB_HEADERS = {
@@ -197,6 +188,9 @@ async function fetchLRCLIB (info) {
     if (exact.ok && exact.data && looksLikeLRC(exact.data.syncedLyrics)) {
       return { lyrics: exact.data.syncedLyrics, source: 'lrclib' }
     }
+    // 超时就不再试第二次:这家已经明显慢/不可达,再来一发 8 秒只是把"这首歌没歌词"的
+    // 答案往后拖(而且它排在并行链的兜底预算里,会拖到整个 has-result 判定)
+    if (exact.kind === 'timeout') return failFor(exact.kind, 'lrclib', exact.detail)
     // 2. 模糊搜索 /api/search(精确匹配失败时,提高命中率)
     const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
     if (!q) return null
@@ -215,7 +209,7 @@ async function fetchLRCLIB (info) {
     return { lyrics: candidate.raw.syncedLyrics, source: 'lrclib' }
   } catch (e) {
     log.failure('lyric.lrclib', 'LRCLIB 请求异常', e)
-    return { error: 'network', source: 'lrclib', kind: 'network' }
+    return isTimeout(e) ? { error: 'timeout', source: 'lrclib', kind: 'timeout' } : { error: 'network', source: 'lrclib', kind: 'network' }
   }
 }
 
@@ -256,7 +250,7 @@ async function fetchNetEaseLyric (info) {
     return null
   } catch (e) {
     log.failure('lyric.netease', '网易云请求异常', e)
-    return { error: 'network', source: 'netease', kind: 'network' }
+    return isTimeout(e) ? { error: 'timeout', source: 'netease', kind: 'timeout' } : { error: 'network', source: 'netease', kind: 'network' }
   }
 }
 
@@ -298,7 +292,7 @@ async function fetchQQMusicLyric (info) {
     // 归类只看 isNetworkError(此前按 AbortError 判,而 AbortSignal.timeout
     // 抛的是 TimeoutError —— QQ 的超时因此被当成"没找到",与另两家的表现不一致)
     const net = isNetworkError(e)
-    if (net) return { error: 'network', source: 'qq', kind: 'network' }
+    if (net) return { error: isTimeout(e) ? 'timeout' : 'network', source: 'qq', kind: isTimeout(e) ? 'timeout' : 'network' }
     log.failure('lyric.qq', 'QQ 音乐请求异常', e)
     return { error: 'source', source: 'qq', kind: 'parse' }
   }
@@ -318,30 +312,77 @@ async function searchLyricBySource (info, source) {
   return await s.fetch(info)
 }
 
-async function searchLyricAuto (info) {
-  const started = Date.now()
+/**
+ * 自动取词:**三个源并行**。
+ *
+ * 上一版是串行 + 总预算,看起来省事,但在真机上有个很难看的后果 ——
+ * 实测用户库里的常见歌(红豆/特别的人/危险派对/单人券/我用什么把你留住):
+ * LRCLIB 超时要耗 8 秒(它占掉大半预算),QQ 直接 500,排在最后的网易云**根本没轮到**
+ * 就被判成"没查完";三家都不干净 ⇒ 归类成"音源异常",而网易云明明一秒就能给出歌词。
+ * 并行之后总耗时 ≈ 最快的那个源,谁先答上就用谁,别人还在跑就让它跑完(各自 8s 超时兜底)。
+ *
+ * 归类见 classify():只要**有一家**干净地回答"我这里没有",结论就是 notfound(没这首歌);
+ * 全都说不出话时,再按 超时 > 网络 > 音源异常 的顺序报一个用户能采取行动的结论。
+ */
+function searchLyricAuto (info) {
+  return new Promise((resolve) => {
+    const results = []
+    let pending = LYRIC_ORDER.length
+    let finished = false
+    const finish = (value) => {
+      if (finished) return
+      finished = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+    // 兜底:并行之后正常 1~3 秒就有结果;个别源可能要连着请求几次(网易云是"搜索 + 逐首取词"),
+    // 不该把整体拖过这个数
+    const timer = setTimeout(() => finish(classify(results, pending)), AUTO_BUDGET_MS)
+    for (const name of LYRIC_ORDER) {
+      LYRIC_SOURCES[name].fetch(info).then(
+        (r) => {
+          results.push(r)
+          pending--
+          if (r && r.lyrics) return finish(r) // 先到的命中:等最慢的源没有意义
+          if (!pending) finish(classify(results, 0))
+        },
+        (e) => {
+          results.push({ error: isTimeout(e) ? 'timeout' : 'network', source: name, kind: 'network', detail: e })
+          pending--
+          if (!pending) finish(classify(results, 0))
+        }
+      )
+    }
+  })
+}
+
+/**
+ * 结果归类:见 searchLyricAuto 的说明。
+ * @param {Array} results 已到达的结果(null = 连上了、确实没有这首歌)
+ * @param {number} pending 预算到点时仍未返回的源数(算"没查完",不算"没有")
+ */
+function classify (results, pending = 0) {
+  let clean = 0
+  let sawTimeout = false
   let sawNetwork = false
   let sawSource = false
-  let errored = 0
-  let clean = 0 // 干净地回答"我这里没有这首歌"的音源数
-  for (const name of LYRIC_ORDER) {
-    const left = AUTO_BUDGET_MS - (Date.now() - started)
-    if (left <= 300) { sawSource = true; errored++; break } // 预算用完:算"没查完",不算"没有"
-    const r = await deadline(LYRIC_SOURCES[name].fetch(info), left)
-    if (r && r.lyrics) return r
-    if (r && r.error === 'network') { sawNetwork = true; errored++ }
-    else if (r && r.error) { sawSource = true; errored++ }
+  for (const r of results) {
+    if (!r) { clean++; continue } // 连上了、也确实没有这首歌
+    if (r.error === 'timeout') sawTimeout = true
+    else if (r.error === 'network') sawNetwork = true
+    else if (r.error) sawSource = true
     else clean++
   }
   // 三家都没这首歌 ≠ 网络故障。此前这里一律返回 network,导致**每首没有在线歌词的歌
   // 都会弹一次"网络不可用(请检查代理/连接)",而本该显示的「未找到」永远走不到。
   //
-  // 但也不能"有一个源出错就报异常":量贩式音源里 QQ 的搜索接口经常整片 HTTP 500,
-  // 而 LRCLIB/网易云都干净地回答了"我这里没有" —— 那种情况正确的结论仍是「未找到」,
-  // 音源的错误另行记进失败清单(诊断面板能看到),不该把它变成每首歌的提示。
+  // 优先级按"用户能采取什么行动"排:网络不通(查连接)> 没查完/超时(再试一次)>
+  // 音源返回异常(换来源)。**"还有源在跑"要排在"音源异常"前面** —— 那说明我们并没有
+  // 得到全部的答案,说成"音源异常"是把"没查完"当成"对方坏了"。
   if (clean > 0) return { error: 'notfound' }
   if (sawNetwork) return { error: 'network' }
-  if (sawSource || errored > 0) return { error: 'source' }
+  if (sawTimeout || pending > 0) return { error: 'timeout' }
+  if (sawSource) return { error: 'source' }
   return { error: 'notfound' }
 }
 

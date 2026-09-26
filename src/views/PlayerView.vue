@@ -127,8 +127,8 @@
         </div>
         <div class="lyric-right">
           <div class="lyrics-scroll" ref="lyricsPanel">
-            <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag">
-              {{ playerStore.lyricOrigin }}歌词
+            <div v-if="playerStore.lyricOrigin" class="lyric-origin-tag" :class="{ 'is-problem': lyricOriginIsProblem }">
+              {{ lyricOriginText }}
               <button v-if="playerStore.lyricOrigin === '本地'" class="ls-del-btn" title="删除本地歌词" @click="deleteLocalLyric"><Icon name="remove" :size="13" /></button>
             </div>
             <div v-if="playerStore.lyrics.length === 0" class="lyrics-empty">
@@ -195,6 +195,16 @@
           ><Icon :name="lyricSidebarCollapsed ? 'back' : 'forward'" :size="14" /></button>
 
           <template v-if="!lyricSidebarCollapsed">
+            <div class="ls-group-label">来源</div>
+            <button
+              v-for="opt in playerStore.LYRIC_SOURCE_OPTIONS" :key="opt.value"
+              class="ls-btn" :class="{ active: playerStore.lyricSource === opt.value }"
+              :aria-pressed="playerStore.lyricSource === opt.value"
+              :title="'歌词来源:' + opt.label"
+              @click="playerStore.changeLyricSource(opt.value)"
+            >{{ opt.label }}</button>
+
+            <div class="ls-sep" aria-hidden="true"></div>
             <div class="ls-group-label">外观</div>
             <button class="ls-btn" :class="{ active: showColorPanel }" :aria-pressed="showColorPanel" title="歌词颜色" aria-label="歌词颜色" @click="showColorPanel = !showColorPanel"><Icon name="color" :size="15" /></button>
             <button class="ls-btn" :class="{ active: playerStore.showTranslation, 'is-loading': playerStore.translating }" :aria-pressed="playerStore.showTranslation" v-tooltip:top="playerStore.translating ? '翻译中…' : '歌词翻译'"aria-label="歌词翻译" @click="playerStore.toggleTranslation()"><Icon name="translate" :size="15" /></button>
@@ -713,6 +723,23 @@ const currentModeIcon = computed(() => {
   return cur ? cur.icon : 'modeList'
 })
 
+// 歌词来源标签的文案:来源名(本地 / LRCLIB / 网易云 / 自动)后面接"歌词"读得通,
+// 但状态类那几个本身就是一句话 —— 直接拼会变成"音源异常歌词""网络不可用歌词"。
+// 三态分类(未找到 / 网络不可用 / 音源异常)是 2026-09-26 加上的,这里配上读得通的文案与配色。
+const LYRIC_ORIGIN_TEXT = {
+  未找到: '未找到歌词',
+  获取超时: '获取超时,歌词没取到',
+  网络不可用: '网络不可用,歌词没取到',
+  音源异常: '音源异常,歌词没取到',
+  加载失败: '歌词加载失败'
+}
+const lyricOriginText = computed(() => {
+  const o = playerStore.lyricOrigin
+  if (!o) return ''
+  return LYRIC_ORIGIN_TEXT[o] || `${o}歌词`
+})
+const lyricOriginIsProblem = computed(() => Object.prototype.hasOwnProperty.call(LYRIC_ORIGIN_TEXT, playerStore.lyricOrigin))
+
 /**
  * 两处歌词面的滚动定位共用同一套"按容器查当前行"的写法。
  * 此前各用一份 ref 回调(`activeLyricEl` / `splitActiveEl`)由模板赋值,两份实现还长得不一样,
@@ -1173,7 +1200,13 @@ async function searchLyric() {
         searchLyricMsg.value = '⚠️ 获取成功但保存失败'
       }
     } else {
-      searchLyricMsg.value = '未找到歌词,可切换歌词来源(LRCLIB/QQ音乐/网易云)或稍后重试'
+      // 手动搜索也要说清"为什么没有":超时/网络不通/音源异常各自该做的事不一样,
+      // 笼统一句"未找到"会让人以为是自己这首歌太冷门
+      const why = res && res.error
+      searchLyricMsg.value = why === 'timeout' ? '⏱ 获取超时,稍后重试或切换歌词来源'
+        : why === 'network' ? '⚠️ 网络不可用,请检查连接'
+          : why === 'source' ? '⚠️ 音源返回异常,切换歌词来源试试'
+            : '未找到歌词,可切换歌词来源(LRCLIB/QQ音乐/网易云)或稍后重试'
     }
   } catch (e) {
     searchLyricMsg.value = '搜索失败,请检查网络'
@@ -1539,6 +1572,11 @@ async function searchLyric() {
   background: rgba(255,255,255,0.08);
   padding: 2px 8px;
   border-radius: 10px;
+}
+/* 状态类标签(未找到 / 网络不可用 / 音源异常):这是一句提示,不是"来源",给一点警示色 */
+.lyric-origin-tag.is-problem {
+  color: var(--color-warning, #e8b339);
+  background: rgba(232, 179, 57, 0.12);
 }
 /* 工具栏挂载层:必须脱离 flex 流(.player-overlay 是 flex column,
    作为普通 flex 项参与布局会挤动封面/歌词区)——整层绝对定位只做定位容器,

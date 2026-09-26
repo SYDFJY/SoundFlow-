@@ -37,6 +37,13 @@
               <span>{{ t.label }}</span>
               <Icon v-if="appStore.theme === t.value" class="check-icon" name="check" :size="16" />
             </button>
+            <div class="theme-dropdown-divider"></div>
+            <!-- 导出/导入主题:实现只有一份(appStore.exportThemeToFile/importThemeFromFile),
+                 设置页外观区有同一对按钮 —— 入口两处是便利,实现两处才是要避免的 -->
+            <div class="theme-io-row">
+              <button class="chip chip--sm" @click="exportTheme">导出</button>
+              <button class="chip chip--sm" @click="importTheme">导入</button>
+            </div>
           </div>
         </transition>
       </div>
@@ -91,6 +98,14 @@ watch(showThemeDropdown, (v) => {
 function selectTheme(value) {
   appStore.applyTheme(value)
   showThemeDropdown.value = false
+}
+
+// 导出/导入主题:落盘与提示都在 store 里(设置页外观区是同一个实现)
+function exportTheme() {
+  appStore.exportThemeToFile().finally(() => { showThemeDropdown.value = false })
+}
+function importTheme() {
+  appStore.importThemeFromFile().finally(() => { showThemeDropdown.value = false })
 }
 
 function closeDropdown() {
@@ -219,7 +234,9 @@ onUnmounted(() => {
   text-align: left;
 }
 .theme-option:hover { background: var(--bg-hover); }
-/* 主题导入/导出已从下拉里移除(设置页外观区有,那里是集中配置的地方) */
+/* 主题下拉底部的导入/导出行 */
+.theme-dropdown-divider { height: 1px; background: var(--border-color); margin: 4px 0; }
+.theme-io-row { display: flex; gap: 6px; padding: 0 4px; }
 .theme-io-btn {
   flex: 1; padding: 6px 0; font-size: var(--font-size-xs);
   color: var(--text-secondary); background: var(--bg-hover);

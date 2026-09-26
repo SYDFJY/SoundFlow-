@@ -78,11 +78,21 @@ describe('歌词来源:读写只有一份', () => {
     }
   })
 
-  it('选择入口只在设置页(与「在线歌词」「翻译服务」「批量下载」同处)', () => {
+  it('两个入口共用 store 的一份实现(入口可以在顺手的地方各有一个,实现只能一份)', () => {
+    // 这一条改写过一次:最初钉的是"播放页不许有来源切换" —— 那是把"重复的实现"和
+    // "多个入口"混为一谈了。结果把工具栏里最顺手的切换点删掉了,用户直接来问"我的来源选项呢"。
+    // 现在钉的是真正该守的线:两处都必须调 store 的 changeLyricSource,谁都不许自建一套。
     const pv = read('src/views/PlayerView.vue')
-    expect(pv, '播放页工具栏又出现来源切换了').not.toMatch(/switchLyricSource/)
+    expect(pv, '播放页工具栏的来源切换没走 store 的统一实现').toMatch(/playerStore\.changeLyricSource\(/)
     expect(pv, '播放页又自建了一份来源选项表').not.toMatch(/lyricSourceOptions/)
-    expect(settings(), '设置页的来源选择没了').toMatch(/setLyricSourcePref\(/)
+    expect(pv, '播放页又自写了一遍来源切换逻辑').not.toMatch(/function switchLyricSource/)
+    expect(settings(), '设置页的来源选择没走 store 的统一实现').toMatch(/playerStore\.changeLyricSource\(/)
+    // 两处都从 store 读清单与当前值:各自记一份 ref 的话,这边切了那边还显示旧的
+    for (const f of ['src/views/PlayerView.vue', 'src/views/SettingsView.vue']) {
+      expect(read(f), `${f}: 没有用 store 的来源清单`).toMatch(/LYRIC_SOURCE_OPTIONS|lyricSources/)
+      expect(read(f), `${f}: 自己记了一份当前来源(ref 快照),会与另一个界面不同步`).not.toMatch(/ref\(playerStore\.lyricSourcePref\(\)\)/)
+    }
+    expect(read('src/stores/playerStore.js'), 'store 里没有响应式的当前来源').toMatch(/const lyricSource = ref\(/)
   })
 })
 
@@ -103,11 +113,18 @@ describe('清缓存的动作只有一处', () => {
   })
 })
 
-describe('主题导入导出只有一处', () => {
-  it('顶栏下拉回归纯切换,导入/导出留在设置页外观区', () => {
+describe('主题导入导出:两个入口、一份实现', () => {
+  it('顶栏下拉与设置页外观区共用 appStore 的落盘实现', () => {
+    // 这条也改写过:最初钉的是"顶栏不许有导入/导出"(我把入口删了),但入口不是重复 ——
+    // 重复的是那 20 行落盘 + 提示逻辑。现在钉"两处都调 store,谁都不许自己接 IPC"。
     const tb = read('src/components/TopBar.vue')
-    expect(tb, '顶栏又出现主题导入/导出了 —— 设置页外观区已有').not.toMatch(/saveThemeFile|openThemeFile|exportThemeJSON|importThemeJSON/)
-    expect(settings(), '设置页的主题导入/导出没了').toMatch(/exportThemeJSON/)
+    expect(tb, '顶栏的主题导入/导出没走 store 的统一实现').toMatch(/appStore\.(exportThemeToFile|importThemeFromFile)\(/)
+    expect(tb, '顶栏又自己接 saveThemeFile/openThemeFile 了').not.toMatch(/saveThemeFile|openThemeFile/)
+    expect(settings(), '设置页的主题导入/导出没走 store 的统一实现').toMatch(/appStore\.(exportThemeToFile|importThemeFromFile)\(/)
+    expect(settings(), '设置页又自己接 saveThemeFile/openThemeFile 了').not.toMatch(/saveThemeFile|openThemeFile/)
+    const store = read('src/stores/appStore.js')
+    expect(store, 'store 里没有主题落盘的统一实现').toMatch(/function exportThemeToFile\(/)
+    expect(store, 'store 里没有主题导入的统一实现').toMatch(/function importThemeFromFile\(/)
   })
 })
 

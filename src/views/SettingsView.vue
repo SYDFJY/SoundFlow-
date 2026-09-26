@@ -185,7 +185,7 @@
             <span class="label-desc">LRCLIB 免费开放；QQ 音乐中文覆盖广；网易云中文较全；自动 = LRCLIB 优先，失败再 QQ 音乐 → 网易云</span>
           </div>
           <div class="lyric-source-group">
-            <button v-for="opt in lyricSources" :key="opt.value" class="chip" :class="{ active: lyricSource === opt.value }" @click="setLyricSource(opt.value)">{{ opt.label }}</button>
+            <button v-for="opt in lyricSources" :key="opt.value" class="chip" :class="{ active: playerStore.lyricSource === opt.value }" @click="playerStore.changeLyricSource(opt.value)">{{ opt.label }}</button>
           </div>
         </div>
         <div class="setting-item">
@@ -583,25 +583,9 @@ function toggleReplayGain() {
     window.$toast?.('响度均衡已关闭', 'info')
   }
 }
-async function exportTheme() {
-  try {
-    const json = appStore.exportThemeJSON()
-    if (window.electronAPI && window.electronAPI.saveThemeFile) {
-      const ok = await window.electronAPI.saveThemeFile(json)
-      window.$toast?.(ok ? '主题已导出 ✓' : '已取消导出', ok ? 'success' : 'info')
-    }
-  } catch { window.$toast?.('导出失败', 'error') }
-}
-async function importTheme() {
-  try {
-    if (window.electronAPI && window.electronAPI.openThemeFile) {
-      const content = await window.electronAPI.openThemeFile()
-      if (!content) return
-      const ok = appStore.importThemeJSON(content)
-      window.$toast?.(ok ? '主题已导入并应用 ✓' : '主题文件格式无效', ok ? 'success' : 'warning')
-    }
-  } catch { window.$toast?.('导入失败', 'error') }
-}
+// 主题导入/导出:落盘与提示都在 appStore 里(顶栏主题下拉有同一对按钮,两处共用一份实现)
+const exportTheme = () => appStore.exportThemeToFile()
+const importTheme = () => appStore.importThemeFromFile()
 const loginItem = ref(false)
 async function loadLoginItem() {
   try { if (window.electronAPI && window.electronAPI.getLoginItem) loginItem.value = await window.electronAPI.getLoginItem() } catch {}
@@ -934,26 +918,9 @@ function toggleOnlineLyric() {
 }
 
 // 歌词来源:auto(本地优先,无本地自动在线)/ netease / lrclib / qq
-// 读写都走 store 里的单份实现(旧值 'local' 的迁移与非法值兜底在那边)
-const lyricSources = [
-  { value: 'auto', label: '自动(推荐)' },
-  { value: 'netease', label: '网易云' },
-  { value: 'lrclib', label: 'LRCLIB' },
-  { value: 'qq', label: 'QQ音乐' }
-]
-const lyricSource = ref(playerStore.lyricSourcePref())
-
-function setLyricSource(v) {
-  lyricSource.value = v
-  playerStore.setLyricSourcePref(v)
-  // 切换来源后立即重新获取当前歌曲歌词(缓存按来源隔离,会走新来源)
-  const cur = playerStore.currentSong
-  if (cur) {
-    const hint = v === 'auto' ? '本地优先,无本地自动在线' : '在线优先,失败回退本地'
-    playerStore.loadLyrics(cur)
-    window.$toast?.('已切换到「' + v + '」(' + hint + ')', 'success')
-  }
-}
+// 清单、当前值与"切换+重载+提示"全在 store 里(播放页歌词工具栏有同一个入口,
+// 两处共用一份实现 —— 界面各自记一份 ref 就会出现"这边切了那边还显示旧的")
+const lyricSources = playerStore.LYRIC_SOURCE_OPTIONS
 
 // 歌词翻译服务(MyMemory 免费 / DeepSeek 需 key)
 const translateService = ref(localStorage.getItem('soundflow_translate_service') || 'mymemory')
@@ -1236,7 +1203,7 @@ async function batchDownloadLyrics() {
         } else {
           const res = await window.electronAPI.searchOnlineLyric({
             title: s.title, artist: s.artist || '', duration: s.duration || 0,
-            source: lyricSource.value
+            source: playerStore.lyricSource
           })
           if (res && res.lyrics) {
             const saved = await window.electronAPI.saveLyricToFolder(s.path, res.lyrics, folder)
@@ -1248,8 +1215,9 @@ async function batchDownloadLyrics() {
           } else {
             matchFail++
             if (res && res.error && res.error !== 'notfound') {
-              // 网络/音源故障要留下原因:以前一律归到"没匹配到",用户以为是自己歌冷门
-              noteFailure('lyric.batch', res.error === 'network' ? '取词失败:网络不可用' : '取词失败:音源返回异常', `${s.title} — ${res.kind || ''}`)
+              // 网络/超时/音源故障要留下原因:以前一律归到"没匹配到",用户以为是自己歌冷门
+              const why = res.error === 'timeout' ? '取词超时' : (res.error === 'network' ? '取词失败:网络不可用' : '取词失败:音源返回异常')
+              noteFailure('lyric.batch', why, `${s.title} — ${res.kind || ''}`)
             }
           }
         }
@@ -1419,17 +1387,6 @@ select {
 .sec-btn.on { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 .sec-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .lyric-source-group { display: flex; gap: 6px; }
-.source-btn {
-  padding: 6px 14px;
-  background: var(--bg-hover);
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  border-radius: var(--radius-md);
-  font-size: var(--font-size-sm);
-  transition: all var(--transition-fast);
-}
-.source-btn:hover { color: var(--text-primary); }
-.source-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: white; }
 .deepseek-key-input { width: 100%; margin-top: 8px; }
 .deepseek-key-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; position: relative; }
 .deepseek-key-row .deepseek-key-input { flex: 1; margin-top: 0; }
@@ -1489,18 +1446,6 @@ select {
 .done-btns { display: flex; justify-content: center; gap: 10px; }
 .done-close { padding: 6px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); font-size: var(--font-size-sm); }
 .done-close:hover { background: var(--bg-hover); color: var(--text-primary); }
-
-.folder-item {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 16px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  margin-bottom: 4px;
-}
-.folder-path { flex: 1; font-size: var(--font-size-sm); color: var(--text-secondary); font-family: 'Cascadia Code', 'Consolas', monospace; }
-.remove-btn { font-size: var(--font-size-xs); color: var(--color-danger); padding: 4px 8px; border-radius: var(--radius-sm); }
-.remove-btn:hover { background: var(--color-danger-alpha); }
 
 .about-card {
   display: flex; align-items: center; gap: 16px;

@@ -1733,6 +1733,47 @@ app.whenReady().then(async () => {
     !!originTag && originTag.includes('未找到'), JSON.stringify({ originTag, before: beforeState }))
   check('在线歌词:查不到的歌不弹网络警告(以前每首无歌词的歌都弹一次)',
     Array.isArray(toastDump) && !toastDump.some((t) => /网络不可用/.test(t.msg)), JSON.stringify(toastDump))
+
+  // 17b) 歌词工具栏的「来源」组:曾被"去重"误删(入口不是重复,重复的是实现),
+  //      用户直接来问"为啥侧边栏的歌词来源选项没了"。这里钉住它真的在、真的能切。
+  await run(`(() => {
+    // 工具栏可能处于收起状态(.lyric-source-switch.collapsed):先展开
+    const box = document.querySelector('.lyric-source-switch')
+    const btn = document.querySelector('.ls-collapse')
+    if (box && box.classList.contains('collapsed') && btn) btn.click()
+    return true
+  })()`)
+  await sleep(600)
+  const srcGroup = await run(`(() => {
+    const labels = [...document.querySelectorAll('.ls-group-label')].map((e) => (e.textContent || '').trim())
+    const btns = [...document.querySelectorAll('.ls-btn')].filter((b) => /^(自动|网易云|LRCLIB|QQ音乐)$/.test((b.textContent || '').trim()))
+    return { labels, sources: btns.map((b) => (b.textContent || '').trim()), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()), stored: localStorage.getItem('soundflow_lyric_source') }
+  })()`)
+  console.log('歌词工具栏分组:', JSON.stringify(srcGroup))
+  check('歌词工具栏:「来源」组回来了(4 个按钮 + 当前项高亮)',
+    !!srcGroup && srcGroup.labels.includes('来源') && srcGroup.sources.length === 4 && srcGroup.active.length === 1,
+    JSON.stringify(srcGroup))
+  await run(`(() => {
+    const b = [...document.querySelectorAll('.ls-btn')].find((x) => (x.textContent || '').trim() === '网易云')
+    if (b) b.click()
+    return !!b
+  })()`)
+  await sleep(1600)
+  const afterSwitch = await run(`(() => {
+    const btns = [...document.querySelectorAll('.ls-btn')].filter((b) => /^(自动|网易云|LRCLIB|QQ音乐)$/.test((b.textContent || '').trim()))
+    return { stored: localStorage.getItem('soundflow_lyric_source'), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()) }
+  })()`)
+  console.log('切来源后:', JSON.stringify(afterSwitch))
+  check('歌词工具栏:点「网易云」立刻生效(落盘 + 高亮跟着切)',
+    !!afterSwitch && afterSwitch.stored === 'netease' && afterSwitch.active.includes('网易云'),
+    JSON.stringify(afterSwitch))
+  // 恢复 auto:别把来源状态留给下一轮
+  await run(`(() => {
+    const b = [...document.querySelectorAll('.ls-btn')].find((x) => (x.textContent || '').trim() === '自动')
+    if (b) b.click()
+    return true
+  })()`)
+  await sleep(800)
   // 把本地 .lrc 写回去:本节为了造出"在线查不到"的场景把它们删了,
   // 留着会让**下一轮**跑的时候前几节(第 6/9 节之外的检查)缺歌词 —— 自测工具不能毒害下一次运行
   for (const it of items) {

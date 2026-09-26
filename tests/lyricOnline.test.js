@@ -100,16 +100,45 @@ describe('失败三态:未找到 ≠ 网络故障 ≠ 音源异常', () => {
       for (const [label, returns, want] of [
         ['三家都干净地说没有', [null, null, null], 'notfound'],
         // 这条是真实场景:QQ 的搜索接口经常整片 HTTP 500,而 LRCLIB/网易云都干净地回答了
-        // "我这里没有"。以前只要有一个源出错就报"音源异常",于是**每首歌**都弹一次提示。
+        // "我这里没有"。以前只要有一个源出错就报"源异常",于是**每首歌**都弹一次提示。
         ['QQ 500,另两家说没有', [null, { error: 'source' }, null], 'notfound'],
         ['三家全网络故障', [{ error: 'network' }, { error: 'network' }, { error: 'network' }], 'network'],
         ['能连上但三家都返回异常', [{ error: 'source' }, { error: 'source' }, { error: 'source' }], 'source'],
-        ['一家网络不通,两家干净地没有', [{ error: 'network' }, null, null], 'notfound']
+        ['一家网络不通,两家干净地没有', [{ error: 'network' }, null, null], 'notfound'],
+        // 超时单列:这是"这次没查完,再试一次可能就好",与"网络不通"要用户采取的行动不同。
+        // 实测事故:LRCLIB 超时 8 秒 + QQ 500,串行时排在最后的网易云没轮到就被判"没查完",
+        // 于是歌词明明能拿到却显示"音源异常"(并行改造就是被这件事逼出来的)。
+        ['一家超时、两家异常', [{ error: 'timeout' }, { error: 'source' }, { error: 'source' }], 'timeout'],
+        ['一家超时 + 一家干净地没有', [{ error: 'timeout' }, null, { error: 'source' }], 'notfound'],
+        // 网络不通优先于别的归类:那是用户唯一能自己处理的一种
+        ['网络不通 + 另外两家异常', [{ error: 'network' }, { error: 'source' }, { error: 'source' }], 'network']
       ]) {
         stub(returns)
         const r = await sources.searchLyricAuto(info)
         expect(r.error, `${label} 的归类不对`).toBe(want)
       }
+    } finally {
+      names.forEach((n, i) => { sources.LYRIC_SOURCES[n].fetch = original[i] })
+    }
+  })
+
+  it('三个源是并行发起的(串行会让慢源吃掉预算,快的源轮不到)', async () => {
+    const names = ['lrclib', 'qq', 'netease']
+    const original = names.map((n) => sources.LYRIC_SOURCES[n].fetch)
+    const started = []
+    try {
+      const slow = (ms, ret) => () => new Promise((r) => { started.push(Date.now()); setTimeout(() => r(ret), ms) })
+      // 第一家在 800ms 才答(且没命中),第二家 50ms 报错,第三家 100ms 命中 ——
+      // 串行实现下第三家要等第一家跑完才开始,并行实现下它 100ms 就返回了
+      sources.LYRIC_SOURCES.lrclib.fetch = slow(800, null)
+      sources.LYRIC_SOURCES.qq.fetch = slow(50, { error: 'source' })
+      sources.LYRIC_SOURCES.netease.fetch = slow(100, { lyrics: '[00:01.00]hi', source: 'netease' })
+      const t0 = Date.now()
+      const r = await sources.searchLyricAuto({ title: 'x', artist: 'y', duration: 1 })
+      const cost = Date.now() - t0
+      expect(r.source, '没有采用先到的那个结果').toBe('netease')
+      expect(cost, `耗时 ${cost}ms:像是串行(并行应当 ≈100ms,不用等 800ms 那家)`).toBeLessThan(500)
+      expect(started.length, '不是三个源同时发起').toBe(3)
     } finally {
       names.forEach((n, i) => { sources.LYRIC_SOURCES[n].fetch = original[i] })
     }
@@ -182,7 +211,7 @@ describe('歌词缓存与提示', () => {
   it('失败提示按类别节流(断网/音源故障时不该每切一首弹一次)', () => {
     const s = store()
     expect(s, '没有节流时间戳').toMatch(/_lyricToastAt/)
-    expect(s, 'toast 没走节流').toMatch(/now - \(_lyricToastAt\[key\] \|\| 0\) > 3 \* 60 \* 1000/)
+    expect(s, 'toast 没走节流').toMatch(/now - \(_lyricToastAt\[err\] \|\| 0\) > 3 \* 60 \* 1000/)
   })
 })
 

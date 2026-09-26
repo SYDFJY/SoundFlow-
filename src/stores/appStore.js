@@ -440,6 +440,35 @@ export const useAppStore = defineStore('app', () => {
     } catch { return false }
   }
 
+  // 主题导入/导出的**落盘部分**(弹保存/打开对话框 + 读写文件)也收在这里:
+  // 顶栏主题下拉与设置页外观区都提供这对按钮(入口多一个是便利),但实现只能有一份 ——
+  // 此前两处各写一遍同样的 20 行,连提示文案都不一样。
+  async function exportThemeToFile() {
+    try {
+      if (!window.electronAPI || !window.electronAPI.saveThemeFile) return null
+      const ok = await window.electronAPI.saveThemeFile(exportThemeJSON())
+      window.$toast?.(ok ? '主题已导出 ✓' : '已取消导出', ok ? 'success' : 'info')
+      return ok
+    } catch {
+      window.$toast?.('导出失败', 'error')
+      return false
+    }
+  }
+
+  async function importThemeFromFile() {
+    try {
+      if (!window.electronAPI || !window.electronAPI.openThemeFile) return false
+      const content = await window.electronAPI.openThemeFile()
+      if (!content) return false
+      const ok = importThemeJSON(content)
+      window.$toast?.(ok ? '主题已导入并应用 ✓' : '主题文件格式无效', ok ? 'success' : 'warning')
+      return ok
+    } catch {
+      window.$toast?.('导入失败', 'error')
+      return false
+    }
+  }
+
   function loadSettings() {
     try {
       loadCustomThemes()
@@ -505,7 +534,7 @@ export const useAppStore = defineStore('app', () => {
     language, autoPlay, closeAction, followSystemTheme,
     themes, applyTheme, loadSettings, saveSettings, setFontSize,
     setFollowSystemTheme, applySystemTheme,
-    exportThemeJSON, importThemeJSON,
+    exportThemeJSON, importThemeJSON, exportThemeToFile, importThemeFromFile,
     setPrimaryColor, resetPrimaryColor, customPrimary
   }
 })
