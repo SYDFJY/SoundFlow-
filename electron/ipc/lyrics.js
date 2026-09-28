@@ -85,15 +85,19 @@ function register (ctx) {
       const trash = async (target) => { await shell.trashItem(target); return { ok: true, deleted: target, trashed: true } }
       const ext = path.extname(audioPath)
       const base = path.basename(audioPath, ext)
-      // 1. 同目录同名
-      const sameDir = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
-      if (fs.existsSync(sameDir)) return await trash(sameDir)
-      // 2. 歌词文件夹完全同名(仅精确匹配,不模糊;且只认主进程记录的目录)
+      // 1. 同目录(原名 / 指纹名)
+      for (const n of lyricNameCandidates(base, audioPath)) {
+        const p = path.join(path.dirname(audioPath), n)
+        if (fs.existsSync(p)) return await trash(p)
+      }
+      // 2. 歌词文件夹(同样按候选名精确匹配,不模糊;且只认主进程记录的目录)
       const trusted = (lyricFolders || []).filter(isTrustedLyricFolder)
       if (trusted.length) {
         for (const folder of trusted) {
-          const exact = path.join(folder, base + '.lrc')
-          if (fs.existsSync(exact)) return await trash(exact)
+          for (const n of lyricNameCandidates(base, audioPath)) {
+            const exact = path.join(folder, n)
+            if (fs.existsSync(exact)) return await trash(exact)
+          }
         }
       }
       return { ok: false, error: '未找到该歌曲的本地歌词文件' }
@@ -118,11 +122,16 @@ function readLrc(fp) {
   async function findLyricFile(audioPath, lyricFolders) {
     const ext = path.extname(audioPath)
     const base = path.basename(audioPath, ext)
-    // 1. 同目录同名
-    const sameDirLrc = audioPath.substring(0, audioPath.length - ext.length) + '.lrc'
-    try {
-      if (fs.existsSync(sameDirLrc)) return readLrc(sameDirLrc)
-    } catch {}
+    // 候选文件名:原名 + 带指纹的名字(批量下载遇到同名冲突时写的就是后者)。
+    // 必须与写入侧(lib/lyricFile)用同一套命名,否则"下载成功但读不到"。
+    const names = [...lyricNameCandidates(base, audioPath)]
+    // 1. 同目录(原名 / 指纹名)
+    for (const n of names) {
+      try {
+        const p = path.join(path.dirname(audioPath), n)
+        if (fs.existsSync(p)) return readLrc(p)
+      } catch {}
+    }
     // 2. 歌词文件夹中按文件名匹配
     if (lyricFolders && lyricFolders.length > 0) {
       const songTitle = extractTitle(base)
@@ -131,9 +140,11 @@ function readLrc(fp) {
 
       for (const folder of lyricFolders) {
         try {
-          // 精确匹配
-          const exact = path.join(folder, base + '.lrc')
-          if (fs.existsSync(exact)) return readLrc(exact)
+          // 精确匹配(原名 / 指纹名)
+          for (const n of names) {
+            const exact = path.join(folder, n)
+            if (fs.existsSync(exact)) return readLrc(exact)
+          }
 
           const files = getLrcFiles(folder)
           // 可靠匹配:基于"完整文件名规范化"比对,不猜测"哪半是标题/歌手"(文件名格式不统一,
@@ -186,9 +197,13 @@ function readLrc(fp) {
         try {
           const ext = path.extname(s.path)
           const base = path.basename(s.path, ext)
-          const sameDir = s.path.substring(0, s.path.length - ext.length) + '.lrc'
+          const names2 = lyricNameCandidates(base, s.path)
           let has = false
-          try { await access(sameDir); has = true } catch (_) { has = lrcNames.has(normalizeName(base)) }
+          for (const n of names2) {
+            try { await access(path.join(path.dirname(s.path), n)); has = true } catch (_) {}
+            if (has) break
+          }
+          if (!has) has = names2.some((n) => lrcNames.has(normalizeName(path.basename(n, '.lrc'))))
           result[s.path] = has
         } catch { result[s.path] = false }
       }))
@@ -206,7 +221,7 @@ const {
   LYRIC_SOURCES, LYRIC_ORDER, searchLyricBySource, searchLyricAuto
 } = require('../lib/lyricSources')
 // 歌词落盘的目标文件名选择(防同名曲互相覆盖;抽到 lib 里是为了能单测)
-const { resolveLyricTarget } = require('../lib/lyricFile')
+const { resolveLyricTarget, lyricNameCandidates } = require('../lib/lyricFile')
 
   // DeepSeek 翻译:一次请求翻译整首歌词,返回与输入等长的译文数组
   /** MyMemory 的最低匹配度:低于它就认为命中的是"别的文档片段",宁可留空 */

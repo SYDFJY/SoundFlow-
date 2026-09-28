@@ -259,9 +259,22 @@
                 <h3>歌词下载完成</h3>
                 <div class="done-row">成功下载 <b>{{ batchLyric.success }}</b> 首 &nbsp;·&nbsp; 已有 <b>{{ batchLyric.skipped }}</b> 首</div>
                 <div class="done-row" v-if="batchLyric.matchFail || batchLyric.saveFail || batchLyric.failed">未匹配 <b>{{ batchLyric.matchFail }}</b> 首 · 写入失败 <b>{{ batchLyric.saveFail }}</b> 首 · 其他失败 <b>{{ batchLyric.failed }}</b> 首</div>
+                <!-- 未匹配的原因分开写:超时重试往往就能成,而"确实没有"不必再试 -->
+                <div class="done-row muted" v-if="batchLyric.matchFail">
+                  <template v-if="batchLyric.whyTimeout">获取超时 {{ batchLyric.whyTimeout }} · </template>
+                  <template v-if="batchLyric.whyNetwork">网络不可用 {{ batchLyric.whyNetwork }} · </template>
+                  <template v-if="batchLyric.whySource">音源返回异常 {{ batchLyric.whySource }} · </template>
+                  <template v-if="batchLyric.whyNone">确实没有这首歌 {{ batchLyric.whyNone }}</template>
+                </div>
                 <div class="done-row muted">用时 {{ batchLyric.elapsed }} · 完成时间 {{ batchLyric.finishedAt }}</div>
                 <div class="done-folder" :title="batchLyric.folder">下载到：{{ batchLyric.folder }}</div>
                 <div class="done-btns">
+                  <button
+                    v-if="batchLyric.whyTimeout || batchLyric.whyNetwork || batchLyric.whySource"
+                    class="btn"
+                    :disabled="batchLyric.running"
+                    @click="retryUnmatchedLyrics"
+                  ><Icon name="refresh" :size="15" />重试未匹配的 {{ (batchLyric.unmatched || []).length }} 首</button>
                   <button class="btn" @click="openLyricFolder"><Icon name="opendir" :size="15" />打开歌词文件夹</button>
                   <button class="btn--ghost btn--sm" @click="batchLyric.showResult = false">关闭</button>
                 </div>
@@ -947,6 +960,15 @@ async function clearTransCache() {
   }
 }
 
+// 只重试上一轮"未匹配"的那些:超时/网络抖动是主因,原样再跑一遍通常就成;
+// 真正的"确实没有"那批也会再查一次,代价可接受(用户自己点的)
+async function retryUnmatchedLyrics() {
+  const list = Array.isArray(batchLyric.value.unmatched) ? batchLyric.value.unmatched.slice() : []
+  if (!list.length) return
+  batchLyric.value.showResult = false
+  await batchDownloadLyrics(list)
+}
+
 // 清除在线歌词缓存:歌词缓存此前**没有任何清理入口**(只有翻译/封面/解析/转码有)—— 一旦某首歌
 // 存进了错的歌词(音源匹配错、错误页),它会一直命中,用户没有任何办法自救
 async function clearOnlineLyricCache() {
@@ -1167,9 +1189,9 @@ function openLyricFolder() {
   }
 }
 
-async function batchDownloadLyrics() {
+async function batchDownloadLyrics(only = null) {
   if (batchLyric.value.running || !window.electronAPI) return
-  const songs = musicStore.songs
+  const songs = Array.isArray(only) && only.length ? only : musicStore.songs
   if (songs.length === 0) { batchLyric.value.msg = '曲库为空,请先导入歌曲'; return }
   const folder = musicStore.lyricFolders[0]
   if (!folder) {
@@ -1180,7 +1202,11 @@ async function batchDownloadLyrics() {
   batchLyric.value = {
     running: true, total: songs.length, done: 0, success: 0, skipped: 0, failed: 0,
     saveFail: 0, matchFail: 0,
-    msg: '正在下载…', showResult: false, elapsed: '', finishedAt: '', folder
+    // 未匹配按原因分桶:超时/网络/音源异常/确实没有 —— 以前混成一个"未匹配",
+    // 用户以为是自己歌冷门,其实多半是超时(重试就能成)
+    whyTimeout: 0, whyNetwork: 0, whySource: 0, whyNone: 0,
+    msg: '正在下载…', showResult: false, elapsed: '', finishedAt: '', folder,
+    unmatched: []
   }
 
   // 并发 3:歌词源都是非官方接口,而且 auto 源内部已经是三个源并行取词 ——
@@ -1190,6 +1216,8 @@ async function batchDownloadLyrics() {
   let idx = 0
   let doneCount = 0
   let success = 0, skipped = 0, failed = 0, saveFail = 0, matchFail = 0
+  let whyTimeout = 0, whyNetwork = 0, whySource = 0, whyNone = 0
+  const unmatched = []
 
   async function worker() {
     while (true) {
@@ -1216,9 +1244,15 @@ async function batchDownloadLyrics() {
             }
           } else {
             matchFail++
-            if (res && res.error && res.error !== 'notfound') {
+            unmatched.push(s)
+            const err = res && res.error
+            if (err === 'timeout') whyTimeout++
+            else if (err === 'network') whyNetwork++
+            else if (err === 'source') whySource++
+            else whyNone++
+            if (err && err !== 'notfound') {
               // 网络/超时/音源故障要留下原因:以前一律归到"没匹配到",用户以为是自己歌冷门
-              const why = res.error === 'timeout' ? '取词超时' : (res.error === 'network' ? '取词失败:网络不可用' : '取词失败:音源返回异常')
+              const why = err === 'timeout' ? '取词超时' : (err === 'network' ? '取词失败:网络不可用' : '取词失败:音源返回异常')
               noteFailure('lyric.batch', why, `${s.title} — ${res.kind || ''}`)
             }
           }
@@ -1235,6 +1269,10 @@ async function batchDownloadLyrics() {
       batchLyric.value.failed = failed
       batchLyric.value.saveFail = saveFail
       batchLyric.value.matchFail = matchFail
+      batchLyric.value.whyTimeout = whyTimeout
+      batchLyric.value.whyNetwork = whyNetwork
+      batchLyric.value.whySource = whySource
+      batchLyric.value.whyNone = whyNone
     }
   }
 
@@ -1245,6 +1283,7 @@ async function batchDownloadLyrics() {
     batchLyric.value.elapsed = fmtElapsed(elapsedMs)
     batchLyric.value.finishedAt = now.toLocaleString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     batchLyric.value.msg = ''
+    batchLyric.value.unmatched = unmatched
     batchLyric.value.showResult = true
   } finally {
     batchLyric.value.running = false

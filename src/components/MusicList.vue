@@ -131,7 +131,7 @@
     <div v-if="batchOn" class="batch-bar">
       <span class="batch-count">已选 {{ selectedSet.size }} 首</span>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openBatchEdit">编辑标签</button>
-      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAutoTag"><Icon name="effect" :size="13" />自动补全</button>
+      <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAutoTag()"><Icon name="effect" :size="13" />自动补全</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openRename">重命名</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="openAddToPlaylist">加入歌单</button>
       <button class="batch-btn" :disabled="selectedSet.size === 0" @click="confirmRemoveSelected">删除</button>
@@ -161,6 +161,7 @@
                     <span class="autotag-opt-text">{{ c.album }}{{ c.year ? '(' + c.year + ')' : '' }} <em class="autotag-src">{{ c.source || '' }}</em></span>
                   </label>
                 </span>
+                <span v-else-if="r.skipped" class="autotag-none">信息已完整,无需补全</span>
                 <span v-else class="autotag-none">未找到匹配</span>
               </div>
               <button class="modal-btn cancel autotag-skip" @click="r.checked = -1">跳过</button>
@@ -687,12 +688,16 @@ const playlists = computed(() => musicStore.playlists)
 
 // 懒补封面:曲库中 coverUrl 为空(历史数据)时,可见行按需从主进程获取封面文件
 const pendingCovers = new Set()
+// 「查过、确实没有封面」也要记住:之前只挡"在途请求",于是每次滚动停住都会对同一批
+// 没封面的歌各发一次 IPC(停在列表中部时每停一次约 30 次往返),纯属白干
+const noCoverPaths = new Set()
 async function ensureCover(song) {
-  if (!song || song.coverUrl || pendingCovers.has(song.path) || !window.electronAPI) return
+  if (!song || song.coverUrl || pendingCovers.has(song.path) || noCoverPaths.has(song.path) || !window.electronAPI) return
   pendingCovers.add(song.path)
   try {
     const url = await window.electronAPI.getCover(song.path)
     if (url) song.coverUrl = url
+    else noCoverPaths.add(song.path)
   } catch {} finally {
     pendingCovers.delete(song.path)
   }
@@ -870,6 +875,10 @@ async function searchForSong(s, source) {
 async function openAutoTag(source) {
   const paths = [...selectedSet.value]
   if (!paths.length) return
+  // 兜底:模板若写成 @click="openAutoTag"(裸引用),Vue 会把 MouseEvent 当 source 传进来,
+  // 于是 source === 'qq' 之类全部不成立、候选恒为空 —— 这里只接受已知的源名
+  const valid = ['auto', 'qq', 'netease', 'kugou', 'musicbrainz']
+  if (!valid.includes(source)) source = ''
   autoTagModal.value = { show: true, results: [], source: source || autoTagModal.value.source || 'auto', searching: true }
   const songs = paths.map(p => props.songs.find(s => s.path === p)).filter(Boolean)
   const results = []
@@ -882,7 +891,8 @@ async function openAutoTag(source) {
       const cands = await searchForSong(s, autoTagModal.value.source)
       results.push({ path: s.path, title: s.title, artist: s.artist, candidates: cands, checked: -1 })
     } else {
-      results.push({ path: s.path, title: s.title, artist: s.artist, candidates: [], checked: -1 })
+      // 标记"没搜":弹窗里显示"信息已完整",而不是让它看起来像"没找到匹配"
+      results.push({ path: s.path, title: s.title, artist: s.artist, candidates: [], checked: -1, skipped: true })
     }
     // 每首之间限流 1s(服务端 1 req/s)
     if (need && i < songs.length - 1) await new Promise(r => setTimeout(r, 1000))
@@ -937,7 +947,13 @@ async function saveAutoTag() {
     }
   }
   if (failMsg) window.$toast?.('写回失败: ' + failMsg, 'error')
-  window.$toast?.(`已补全 ${ok} 首歌曲标签`, ok ? 'success' : 'info')
+  // 成功 0 首时把原因说清楚:以前只说"已补全 0 首"(info),看着像功能没生效
+  const skippedN = autoTagModal.value.results.filter(r => r.skipped).length
+  const noneN = autoTagModal.value.results.filter(r => !r.skipped && !r.candidates.length).length
+  if (ok) window.$toast?.(`已补全 ${ok} 首歌曲标签`, 'success')
+  else if (skippedN && !noneN) window.$toast?.('这些歌的专辑/年份都已有,没有需要补的字段', 'info')
+  else if (noneN) window.$toast?.(`没有选中任何候选(${noneN} 首未找到匹配)`, 'info')
+  else window.$toast?.('没有需要写入的字段', 'info')
   autoTagModal.value.show = false
 }
 

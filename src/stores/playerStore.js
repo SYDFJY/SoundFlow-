@@ -1619,18 +1619,20 @@ export const usePlayerStore = defineStore('player', () => {
               ? '歌词获取超时(稍后重试,或到设置里换个来源)'
               : (err === 'network' ? '歌词在线获取失败:网络不可用(请检查代理/连接)' : '歌词在线获取失败:音源返回异常(可换个来源试试)')
             noteFailure('lyric.online', `在线歌词:${label}`, `${source} / ${song.title} / ${(res && res.kind) || ''}`)
-            if (currentSong.value === reqSong) {
-              lyricOrigin.value = label
-              // 提示按类别节流:断网或某个音源挂掉时,连着切歌会每首都弹一次 ——
-              // 标签一直显示状态就够了,toast 三分钟内只提醒一次
-              const now = Date.now()
-              if (now - (_lyricToastAt[err] || 0) > 3 * 60 * 1000) {
-                _lyricToastAt[err] = now
-                try { window.$toast?.(tip, 'warning') } catch {}
-              }
-            }
-            // 失败时回退本地(能用的话),保证有歌词可看
+            // 归属判断必须带 seq:换来源/重取时旧请求还可能在途(auto 源有 12 秒预算),
+            // 它失败后**不能**覆盖新请求已经写好的标签与提示 —— 用户报的"显示失败但歌词
+            // 明明显示了"就是这个:新来源早就成功了,旧的 auto 请求超时才回来。
+            if (currentSong.value !== reqSong || seq !== _lyricReqSeq) return // 过期:静默丢弃
+            // 本地有可用歌词 → 结果是"有歌词可看",不该弹"获取失败"
             if (localUsable) { showLyrics(lrcText, '本地'); return }
+            lyricOrigin.value = label
+            // 提示按类别节流:断网或某个音源挂掉时,连着切歌会每首都弹一次 ——
+            // 标签一直显示状态就够了,toast 三分钟内只提醒一次
+            const now = Date.now()
+            if (now - (_lyricToastAt[err] || 0) > 3 * 60 * 1000) {
+              _lyricToastAt[err] = now
+              try { window.$toast?.(tip, 'warning') } catch {}
+            }
             return
           }
           onlineText = (res && res.lyrics) || null
@@ -1662,16 +1664,16 @@ export const usePlayerStore = defineStore('player', () => {
         showLyrics(lrcText, '本地')
         return
       }
-      // 归属判断:此前这里没有,上一首的慢响应会把当前歌的标签改成"未找到"
-      // (同一函数里 showLyrics 与 catch 都有这个判断,只有这处漏了)
-      if (currentSong.value !== reqSong) return
+      // 归属判断要同时看"还是这首歌"与"还是最新那次请求":换来源后旧请求才回来时,
+      // 它不该把新结果改写成「未找到」(同一函数里 showLyrics 与 catch 早有歌曲判断)
+      if (currentSong.value !== reqSong || seq !== _lyricReqSeq) return
       lyricOrigin.value = (onlineEnabled && song.title) ? '未找到' : ''
     } catch (e) {
       // 此前完全静默:读取/解析失败的界面表现与「这首歌没有歌词」一模一样,无法区分。
       // 这里写入日志(主进程 console-message 会落盘)并在歌词来源处显示失败状态;
       // 不用 toast 是因为网络异常时每切一首都会弹,反而打扰。
       console.error('[歌词] 加载失败:', e)
-      if (currentSong.value === reqSong) lyricOrigin.value = '加载失败'
+      if (currentSong.value === reqSong && seq === _lyricReqSeq) lyricOrigin.value = '加载失败'
     } finally {
       if (seq === _lyricReqSeq) lyricLoading.value = false
     }

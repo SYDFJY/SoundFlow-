@@ -1780,6 +1780,165 @@ app.whenReady().then(async () => {
     try { fs.writeFileSync(it.path.replace(/\.[^.]+$/, '') + '.lrc', TIMED_LRC) } catch {}
   }
 
+  // 18) 一次报的六个问题里,能在离线夹具上验的两条(2026-09-27)
+  //     (a) 自动补全:模板写成 @click="openAutoTag" 时 Vue 把 MouseEvent 当 source 传进去,
+  //         四个源全不匹配、候选恒为空。真机上最准的判据是**数据源 chip 有没有高亮** ——
+  //         source 是事件对象时 `autoTagModal.source === 'auto'` 永远不成立。
+  //     (b) 歌单新建/改名:以前用 window.prompt(Electron 不支持,同步返回 null)→ 点了毫无反应。
+  //         这两步顺便把共享的 promptDialog(带输入框的确认弹窗)整条走一遍。
+  await run(`(() => { location.hash = '#/home'; return true })()`)
+  await sleep(1500)
+  await run(`(() => {
+    const on = [...document.querySelectorAll('.toolbar-btn')].find((b) => /批量/.test(b.textContent || ''))
+    if (on && !document.querySelector('.batch-bar')) on.click()
+    return true
+  })()`)
+  await sleep(800)
+  const batchEntered = await run(`(() => {
+    if (!document.querySelector('.batch-bar')) return { err: '没进入批量模式' }
+    // 行点击不选中:勾选要落在真正的 checkbox 上(.col-check 上的点击是 .stop)
+    const box = document.querySelector('.list-row .col-check input[type=checkbox]')
+    if (box) box.click()
+    return { rows: document.querySelectorAll('.list-row').length, selected: (document.querySelector('.batch-count') || {}).textContent || '' }
+  })()`)
+  await sleep(600)
+  const tagOpen = await run(`(() => {
+    const b = [...document.querySelectorAll('.batch-btn')].find((x) => /自动补全/.test(x.textContent || ''))
+    if (b) b.click()
+    return !!b
+  })()`)
+  // 等搜索跑完(每首之间限流 1 秒,加上在线取词本身最多 ~8 秒 → 轮询到 20 秒)
+  const readTagState = () => run(`(() => {
+    const modal = document.querySelector('.autotag-modal')
+    if (!modal) return { err: '弹窗没开' }
+    const chips = [...modal.querySelectorAll('.autotag-sources .chip')]
+    return {
+      chips: chips.map((c) => ({ t: (c.textContent || '').trim(), active: c.classList.contains('active') })),
+      searching: !!modal.querySelector('.autotag-searching'),
+      none: modal.querySelectorAll('.autotag-none').length,
+      opts: modal.querySelectorAll('.autotag-opt').length,
+      texts: [...modal.querySelectorAll('.autotag-none')].map((e) => (e.textContent || '').trim())
+    }
+  })()`)
+  let tagState = await readTagState()
+  for (let i = 0; i < 20 && tagState && tagState.searching; i++) {
+    await sleep(1000)
+    tagState = await readTagState()
+  }
+  console.log('自动补全:', JSON.stringify({ batchEntered, tagOpen, tagState }))
+  check('自动补全:数据源 chip 有高亮(source 没被事件对象顶掉)',
+    !!tagState && !tagState.err && tagState.chips.some((c) => c.active),
+    JSON.stringify(tagState && tagState.chips))
+  check('自动补全:搜索跑完并给出结果行(夹具标题查不到 → 明确写"未找到匹配",而不是恒空)',
+    !!tagState && !tagState.err && tagState.searching === false && (tagState.none + tagState.opts) > 0,
+    JSON.stringify(tagState))
+  await run(`(() => { const b = [...document.querySelectorAll('.autotag-modal .modal-btn')].find((x) => /取消/.test(x.textContent || '')); if (b) b.click(); return true })()`)
+  await sleep(500)
+
+  await run(`(() => { const b = document.querySelector('.add-playlist-btn'); if (b) b.click(); return !!b })()`)
+  await sleep(700)
+  const createDlg = await run(`(() => {
+    const input = document.querySelector('.confirm-card .modal-input')
+    if (!input) return { err: '新建歌单没有弹出输入框(Electron 不支持 window.prompt)' }
+    input.value = 'UI检查歌单'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return { ok: true }
+  })()`)
+  // 拆两步:值填完要等一拍,确认键才会从 disabled 变可点(disabled 的按钮点了不触发)
+  await sleep(400)
+  const createOk = await run(`(() => {
+    const ok = [...document.querySelectorAll('.confirm-card .modal-btn')].find((b) => !/取消/.test(b.textContent || ''))
+    if (!ok || ok.disabled) return { err: '确认键仍不可点', disabled: !!(ok && ok.disabled) }
+    ok.click()
+    return { clicked: true }
+  })()`)
+  await sleep(1000)
+  const afterCreate = await run(`(() => {
+    const items = [...document.querySelectorAll('.menu-item[data-playlist-id]')]
+    const link = items.find((a) => /UI检查歌单/.test(a.textContent || ''))
+    if (link) link.click()
+    return {
+      found: !!link,
+      hash: location.hash,
+      menuTexts: items.map((a) => (a.textContent || '').trim()).slice(0, 5)
+    }
+  })()`)
+  await sleep(1800)
+  const renameOpen = await run(`(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => (x.getAttribute('title') || '') === '重命名歌单')
+    if (b) b.click()
+    return !!b
+  })()`)
+  await sleep(700)
+  const renameFill = await run(`(() => {
+    const input = document.querySelector('.confirm-card .modal-input')
+    if (!input) return { err: '重命名没有弹出输入框' }
+    input.value = 'UI检查歌单改名'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    return { ok: true }
+  })()`)
+  await sleep(400)
+  const renameRes = await run(`(() => {
+    const ok = [...document.querySelectorAll('.confirm-card .modal-btn')].find((b) => !/取消/.test(b.textContent || ''))
+    if (!ok || ok.disabled) return { err: '确认键仍不可点' }
+    ok.click()
+    return { ok: true }
+  })()`)
+  // 落盘有 2 秒防抖(musicStore.saveToStorage):等它刷完再读 localStorage,
+  // 同时读页面标题(store 是响应式的,标题会立刻变)
+  await sleep(3000)
+  const renamed = await run(`(() => {
+    let names = []
+    try { names = (JSON.parse(localStorage.getItem('soundflow_playlists') || '[]') || []).map((p) => p.name) } catch {}
+    return { names, title: (document.querySelector('.vh-title') || {}).textContent || '' }
+  })()`)
+  console.log('歌单新建/改名:', JSON.stringify({ createDlg, createOk, afterCreate, renameOpen, renameFill, renameRes, renamed }))
+  check('歌单:新建走自绘输入弹窗(Electron 不支持 window.prompt)',
+    !!createDlg && createDlg.ok === true && !!createOk && createOk.clicked === true && !!afterCreate && afterCreate.found === true,
+    JSON.stringify({ createDlg, createOk, afterCreate }))
+  check('歌单:重命名真的落盘(以前 prompt 返回 null → 点了没反应)',
+    !!renameRes && renameRes.ok === true && !!renamed && renamed.names.includes('UI检查歌单改名'),
+    JSON.stringify({ renameRes, renamed }))
+  // 清理:把测试歌单删掉,别留给下一轮(直接写 localStorage 没用 —— 商店 2 秒防抖会把
+  // 内存里的列表再写回去,前几轮就是这么攒下好几条的)。走 UI:侧栏右键 → 删除 → 确认。
+  // 循环删干净(历史轮次可能留了多条同名)。
+  let delRounds = 0
+  for (let i = 0; i < 6; i++) {
+    const found = await run(`(() => {
+      const item = [...document.querySelectorAll('.menu-item[data-playlist-id]')].find((a) => /^UI检查歌单/.test((a.textContent || '').trim()))
+      if (!item) return false
+      item.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 100, clientY: 200 }))
+      return true
+    })()`)
+    if (!found) break
+    await sleep(500)
+    await run(`(() => {
+      const b = [...document.querySelectorAll('.context-menu button')].find((x) => /删除/.test(x.textContent || ''))
+      if (b) b.click()
+      return !!b
+    })()`)
+    await sleep(600)
+    const clicked = await run(`(() => {
+      const ok = document.querySelector('.confirm-card .modal-btn.danger') || [...document.querySelectorAll('.confirm-card .modal-btn')].find((b) => !/取消/.test(b.textContent || ''))
+      if (!ok) return false
+      ok.click()
+      return true
+    })()`)
+    if (!clicked) break
+    delRounds++
+    await sleep(900)
+  }
+  await sleep(2600) // 等落盘防抖
+  const afterDelete = await run(`(() => {
+    let names = []
+    try { names = (JSON.parse(localStorage.getItem('soundflow_playlists') || '[]') || []).map((p) => p.name) } catch {}
+    return { names, stillInSidebar: [...document.querySelectorAll('.menu-item[data-playlist-id]')].some((a) => /^UI检查歌单/.test((a.textContent || '').trim())) }
+  })()`)
+  console.log('歌单清理:', JSON.stringify({ delRounds, afterDelete }))
+  check('歌单:删除走确认弹窗,删完侧栏与落盘都没有残留(不给下一轮留垃圾)',
+    delRounds >= 1 && !!afterDelete && !afterDelete.stillInSidebar && !(afterDelete.names || []).some((n) => /^UI检查歌单/.test(n)),
+    JSON.stringify({ delRounds, afterDelete }))
+
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')
   await sleep(400)

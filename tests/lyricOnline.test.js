@@ -201,11 +201,13 @@ describe('歌词缓存与提示', () => {
 
   it('"未找到"的标签写入有归属判断(否则上一首的慢响应会改掉当前歌的标签)', () => {
     const s = store()
-    const tail = /\/\/ 在线无结果[\s\S]{0,400}?lyricOrigin\.value = \(onlineEnabled && song\.title\)/
+    // 归属判断必须同时看"还是这首歌"与"还是最新那次请求":换来源后旧请求超时才回来时,
+    // 它不得把新结果改写成「未找到」(用户报的"显示失败但歌词明明显示了")
     expect(s, '尾部又出现没有归属判断的 lyricOrigin 写入').toMatch(
-      /\/\/ 归属判断[\s\S]{0,200}?if \(currentSong\.value !== reqSong\) return[\s\S]{0,200}?lyricOrigin\.value = \(onlineEnabled && song\.title\)/
+      /if \(currentSong\.value !== reqSong \|\| seq !== _lyricReqSeq\) return[\s\S]{0,200}?lyricOrigin\.value = \(onlineEnabled && song\.title\)/
     )
-    expect(tail.test(s)).toBe(true)
+    // 旧写法(只看歌曲、不看请求序号)不许回来
+    expect(s, '归属判断又只比歌曲、没带请求序号').not.toMatch(/if \(currentSong\.value !== reqSong\) return\r?\n      lyricOrigin\.value/)
   })
 
   it('失败提示按类别节流(断网/音源故障时不该每切一首弹一次)', () => {

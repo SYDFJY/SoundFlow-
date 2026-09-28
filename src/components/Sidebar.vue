@@ -86,27 +86,9 @@
       </div>
     </transition>
 
-    <!-- 新建/重命名歌单模态框 -->
-    <transition name="fade">
-      <div v-if="modal.show" class="modal-overlay" @click.self="modal.show = false">
-        <div class="modal-card">
-          <h3 class="modal-title">{{ modal.title }}</h3>
-          <input
-            ref="modalInput"
-            v-model="modal.value"
-            type="text"
-            class="modal-input"
-            :placeholder="modal.placeholder"
-            @keydown.enter="confirmModal"
-            @keydown.escape="modal.show = false"
-          />
-          <div class="modal-actions">
-            <button class="modal-btn cancel" @click="modal.show = false">{{ t('common.cancel') }}</button>
-            <button class="modal-btn confirm" @click="confirmModal" :disabled="!modal.value.trim()">{{ t('common.confirm') }}</button>
-          </div>
-        </div>
-      </div>
-    </transition>
+    <!-- 新建/重命名歌单改走全局的 promptDialog(components/ConfirmDialog.vue):
+         此前这里是自绘弹窗、歌单页那处是 window.prompt(Electron 不支持 → 静默失效),
+         同一个动作两套实现、还坏了一套 —— 现在两处共用同一个带输入框的确认弹窗 -->
     <!-- 迷你统计 -->
     <router-link to="/stats" class="mini-stats">
       <div class="ms-title">我的听歌</div>
@@ -120,13 +102,13 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import Sortable from 'sortablejs'
 import Icon from '@/components/icons/Icon.vue'
 import { useMusicStore } from '@/stores/musicStore'
 import { dragSongPath, clearDragSong } from '@/composables/useDragSong'
 import { t } from '@/i18n'
-import { confirmDialog } from '@/composables/useConfirm'
+import { confirmDialog, promptDialog } from '@/composables/useConfirm'
 
 const musicStore = useMusicStore()
 // 拖歌入歌单(JS 拖拽:全局 dragSongPath + document mouseup 检测歌单项)
@@ -171,8 +153,6 @@ onUnmounted(() => {
 const todayPlays = computed(() => musicStore.todayPlays)
 const totalPlayCount = computed(() => musicStore.allTimePlays)
 const contextMenu = ref({ show: false, x: 0, y: 0, playlist: null })
-const modal = ref({ show: false, title: '', value: '', placeholder: '', mode: '', playlistId: null })
-const modalInput = ref(null)
 const playlistListEl = ref(null)
 let playlistSortable = null
 // 歌单拖拽排序(Sortable 直接绑定,挂载后创建;结束回调持久化顺序)
@@ -196,9 +176,9 @@ async function addFolder() {
   await musicStore.addFolder()
 }
 
-function openCreateModal() {
-  modal.value = { show: true, title: t('pl.create'), value: '', placeholder: t('pl.name'), mode: 'create', playlistId: null }
-  nextTick(() => modalInput.value?.focus())
+async function openCreateModal() {
+  const name = await promptDialog({ title: t('pl.create'), placeholder: t('pl.name'), confirmText: '创建' })
+  if (name) musicStore.createPlaylist(name)
 }
 
 function showPlaylistMenu(e, pl) {
@@ -281,12 +261,13 @@ function movePlaylist(idx, dir) {
   musicStore.saveToStorage()
 }
 
-function renamePlaylist() {
+async function renamePlaylist() {
   if (!contextMenu.value.playlist) return
   const pl = contextMenu.value.playlist
-  modal.value = { show: true, title: '重命名歌单', value: pl.name, placeholder: '请输入新名称', mode: 'rename', playlistId: pl.id }
   contextMenu.value.show = false
-  nextTick(() => { if (modalInput.value) { modalInput.value.focus(); modalInput.value.select() } })
+  const name = await promptDialog({ title: '重命名歌单', value: pl.name, placeholder: '请输入新名称', confirmText: '重命名' })
+  if (!name || name === String(pl.name).trim()) return
+  musicStore.renamePlaylist(pl.id, name)
 }
 
 async function deletePlaylist() {
@@ -295,17 +276,6 @@ async function deletePlaylist() {
     musicStore.deletePlaylist(contextMenu.value.playlist.id)
   }
   contextMenu.value.show = false
-}
-
-function confirmModal() {
-  const name = modal.value.value.trim()
-  if (!name) return
-  if (modal.value.mode === 'create') {
-    musicStore.createPlaylist(name)
-  } else if (modal.value.mode === 'rename') {
-    musicStore.renamePlaylist(modal.value.playlistId, name)
-  }
-  modal.value.show = false
 }
 
 function closeMenus() {
@@ -373,18 +343,6 @@ onUnmounted(() => document.removeEventListener('click', closeMenus))
 .context-menu button.danger { color: var(--color-danger); }
 .context-menu button.danger:hover { background: var(--color-danger-alpha); }
 
-.modal-overlay { position: fixed; inset: 0; background: var(--overlay-mask, rgba(0,0,0,0.4)); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 300; }
-.modal-card { background: var(--bg-secondary); border-radius: var(--radius-xl); padding: 24px; width: 360px; box-shadow: var(--shadow-lg); }
-.modal-title { font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 16px; }
-.modal-input { width: 100%; padding: 10px 14px; background: var(--bg-hover); border: 1px solid var(--border-color); border-radius: var(--radius-md); font-size: var(--font-size-base); color: var(--text-primary); outline: none; transition: border-color var(--transition-fast); }
-.modal-input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-alpha); }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
-.modal-btn { padding: 8px 20px; border-radius: var(--radius-md); font-size: var(--font-size-base); font-weight: 500; transition: all var(--transition-fast); }
-.modal-btn.cancel { background: var(--bg-hover); color: var(--text-secondary); }
-.modal-btn.cancel:hover { background: var(--border-color); }
-.modal-btn.confirm { background: var(--color-primary); color: white; }
-.modal-btn.confirm:hover { background: var(--color-primary-light); }
-.modal-btn.confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 /* 迷你统计卡 */
 .mini-stats {
   margin: 8px 12px; padding: 10px 12px;

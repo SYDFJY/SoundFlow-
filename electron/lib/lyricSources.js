@@ -58,6 +58,9 @@ const SCORE_TITLE_EXACT = 100
 const SCORE_TITLE_PARTIAL = 60
 const SCORE_ARTIST = 40
 const SCORE_DURATION = 20
+/** 时长容差(秒):±5 而不是 ±3 —— 它只用于"歌手命中、标题对不上"时把候选救回来
+ *  (繁简/别名),放宽一点能多救回一些,而不会把不相干的歌拉进来(那需要歌手也命中) */
+const DURATION_TOLERANCE_S = 5
 /** 低于这个分数一律视为"没有这首歌";歌手名归一化后短于这个长度不参与匹配(避免 "K" 乱命中) */
 const MIN_MATCH_SCORE = 60
 const MIN_ARTIST_LEN = 2
@@ -75,7 +78,7 @@ function scoreCandidate (cand, info) {
   }
   if (nArtist && tArtist && nArtist.length >= MIN_ARTIST_LEN && tArtist.length >= MIN_ARTIST_LEN &&
       (nArtist.includes(tArtist) || tArtist.includes(nArtist))) score += SCORE_ARTIST
-  if (info && info.duration && cand && cand.duration && Math.abs(cand.duration - info.duration) <= 3) score += SCORE_DURATION
+  if (info && info.duration && cand && cand.duration && Math.abs(cand.duration - info.duration) <= DURATION_TOLERANCE_S) score += SCORE_DURATION
   return score
 }
 

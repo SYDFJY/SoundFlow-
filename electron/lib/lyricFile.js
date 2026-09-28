@@ -39,4 +39,16 @@ function resolveLyricTarget (folderPath, base, audioPath, lrcText, io) {
   return path.join(folderPath, `${base} - ${audioFingerprint(audioPath)}.lrc`)
 }
 
-module.exports = { resolveLyricTarget, audioFingerprint }
+/**
+ * 一首歌**可能**用的文件名(按优先级),读取侧按这个列表去探测。
+ *
+ * 这是"写入侧换了名字、读取侧不认"那个 bug 的修法:指纹就是 md5(音频路径),
+ * 读取侧能算出同一个值 —— 读取必须与 resolveLyricTarget 用同一套命名,否则
+ * 批量下载报"成功"、播放页却永远读不到(短标题还会因为模糊匹配要求 ≥4 字而彻底失联,
+ * 连删都删不掉,因为 delete-lyric-file 也只认原名)。
+ */
+function lyricNameCandidates (base, audioPath) {
+  return [`${base}.lrc`, `${base} - ${audioFingerprint(audioPath)}.lrc`]
+}
+
+module.exports = { resolveLyricTarget, lyricNameCandidates, audioFingerprint }

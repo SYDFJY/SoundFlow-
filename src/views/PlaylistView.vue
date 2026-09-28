@@ -100,7 +100,7 @@ import { useMusicStore } from '@/stores/musicStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import MusicList from '@/components/MusicList.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { confirmDialog } from '@/composables/useConfirm'
+import { confirmDialog, promptDialog } from '@/composables/useConfirm'
 
 const route = useRoute()
 const router = useRouter()
@@ -132,12 +132,14 @@ function onContextAction(action, song) {
   }
 }
 
-function renamePlaylist() {
-  const name = prompt('重命名歌单', playlist.value?.name || '')
-  if (name && name.trim() && name.trim() !== playlist.value?.name) {
-    musicStore.renamePlaylist(route.params.id, name.trim())
-    window.$toast?.('歌单已重命名', 'success')
-  }
+// 重命名:必须用自绘弹窗 —— Electron **不实现 window.prompt**(同步返回 null),
+// 这里以前就是 `prompt('重命名歌单', …)`,于是点"重命名"毫无反应:没弹窗、没提示、不落盘
+async function renamePlaylist() {
+  const cur = playlist.value?.name || ''
+  const name = await promptDialog({ title: '重命名歌单', value: cur, placeholder: '请输入新名称', confirmText: '重命名' })
+  if (!name || name === cur.trim()) return
+  musicStore.renamePlaylist(route.params.id, name)
+  window.$toast?.('歌单已重命名', 'success')
 }
 
 async function deletePlaylist() {

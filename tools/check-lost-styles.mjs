@@ -26,8 +26,7 @@ import path from 'node:path'
  *   - .vol-slider → 三处重复实现收敛到 src/styles/controls.css 的单一实现
  */
 const ALLOW = {
-  // 2026-09-26 按用户要求去掉侧边栏"我的收藏"后面的数字徽标(全项目唯一一处)
-  'src/components/Sidebar.vue': ['.menu-badge'],
+  // 2026-09-26 去掉侧边栏"我的收藏"后面的数字徽标(全项目唯一一处) → 合并到下面那条
   // .next-wrap → 改名 .hint-wrap(它现在同时给「上一首」和「下一首」的悬停卡片定位)
   'src/components/PlayerBar.vue': ['.mode-icon', '.eq-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.next-wrap'],
   // .song-meta:hover .cover-swap → 改成 .song-meta:hover .cover-actions .cover-swap
@@ -48,6 +47,12 @@ const ALLOW = {
   'src/views/HistoryView.vue': ['.empty-icon', '.empty-text', '.empty-state'],
   'src/views/FolderView.vue': ['.empty-icon', '.empty-text', '.empty-state', '.folder-icon', '.folder-actions .icon-btn--xs svg'],
   'src/views/HomeView.vue': ['.view-header'],
+  // 2026-09-27:侧栏那套自绘"新建/重命名歌单"弹窗整段删除 —— 它和歌单页的 window.prompt
+  // (Electron 不支持,静默失效)是同一个动作的两套实现,现在两处都走全局 promptDialog
+  // (components/ConfirmDialog.vue),样式也在那边
+  'src/components/Sidebar.vue': ['.menu-badge', '.modal-overlay', '.modal-card', '.modal-title', '.modal-input',
+    '.modal-input:focus', '.modal-actions', '.modal-btn', '.modal-btn.cancel', '.modal-btn.cancel:hover',
+    '.modal-btn.confirm', '.modal-btn.confirm:hover', '.modal-btn.confirm:disabled'],
   // 2026-09-26 去重(用户报"设置界面有一些功能重复了"):设置页里那份 EQ 滑块面板
   //   (播放栏 EqPanel 的简化副本)整段删除,只留总开关 —— 相关样式随之清掉;
   //   同批删掉的还有"目录/歌词文件夹列表"与旧版 .source-btn 按钮(现在用全局 .chip)

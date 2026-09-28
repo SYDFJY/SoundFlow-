@@ -28,6 +28,8 @@ export const TOOLTIP_DELAY = 350
 
 let _showTimer = null
 let _hideTimer = null
+/** 当前提示属于哪个元素(用于"只关自己那个"的判断) */
+let _currentEl = null
 
 /** 计算气泡坐标与方向:优先用请求方向,空间不足则翻转,最后夹紧到视口内 */
 export function computePosition(rect, text, want = 'top', viewport = { w: window.innerWidth, h: window.innerHeight }) {
@@ -73,17 +75,25 @@ export function showTooltip(el, text, want, delay = TOOLTIP_DELAY) {
     tooltipState.y = p.y
     tooltipState.pos = p.pos
     tooltipState.visible = true
+    _currentEl = el
   }
   // 悬停有延迟,避免划过时满屏提示;键盘聚焦立即显示
   if (delay > 0) _showTimer = setTimeout(place, delay)
   else place()
 }
 
-export function hideTooltip(immediate = true) {
+/**
+ * 收起提示。
+ * @param {boolean} immediate 立即收起(否则 80ms 后收)
+ * @param {Element} [el] 只关"属于这个元素"的提示 —— 虚拟列表回收行时会批量 unbind,
+ *   传 el 才不会把用户正悬停在别处的那条一起关掉(不传则无条件关,保持原语义)
+ */
+export function hideTooltip(immediate = true, el = null) {
+  if (el && _currentEl && _currentEl !== el) return
   clearTimeout(_showTimer)
   clearTimeout(_hideTimer)
-  if (immediate) tooltipState.visible = false
-  else _hideTimer = setTimeout(() => { tooltipState.visible = false }, 80)
+  if (immediate) { tooltipState.visible = false; _currentEl = null }
+  else _hideTimer = setTimeout(() => { tooltipState.visible = false; _currentEl = null }, 80)
 }
 
 /** 滚动/缩放时气泡必须跟着走,否则会"飘"在错误位置 */

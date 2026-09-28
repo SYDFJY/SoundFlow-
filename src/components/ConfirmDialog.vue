@@ -18,13 +18,25 @@
           @keydown.esc.prevent="cancel"
         >
           <h3 v-if="confirmState.title" class="modal-title">{{ confirmState.title }}</h3>
-          <div class="confirm-msg">{{ confirmState.message }}</div>
+          <div v-if="confirmState.message" class="confirm-msg">{{ confirmState.message }}</div>
           <div v-if="confirmState.detail" class="confirm-detail">{{ confirmState.detail }}</div>
+          <!-- 带输入框的弹窗(改名/新建):键盘 Enter 由输入框自己处理,别让它冒到卡片上重复提交 -->
+          <input
+            v-if="confirmState.input"
+            ref="inputEl"
+            v-model="confirmState.input.value"
+            type="text"
+            class="modal-input"
+            :placeholder="confirmState.input.placeholder"
+            @keydown.enter.prevent="ok"
+            @keydown.esc.prevent="cancel"
+          />
           <div class="modal-actions">
             <button ref="cancelEl" class="modal-btn cancel" @click="cancel">{{ confirmState.cancelText }}</button>
             <button
               class="modal-btn"
               :class="confirmState.danger ? 'danger' : 'confirm'"
+              :disabled="!!confirmState.input && !String(confirmState.input.value || '').trim()"
               @click="ok"
             >{{ confirmState.confirmText }}</button>
           </div>
@@ -40,14 +52,16 @@ import { confirmState, resolveConfirm } from '@/composables/useConfirm'
 
 const cardEl = ref(null)
 const cancelEl = ref(null)
+const inputEl = ref(null)
 let _prevFocus = null
 
-// 打开时记录来源焦点并把焦点移到取消键;关闭后归还
+// 打开时记录来源焦点并把焦点移到输入框(有的话)或取消键;关闭后归还
 watch(() => confirmState.show, async (open) => {
   if (open) {
     _prevFocus = document.activeElement
     await nextTick()
-    cancelEl.value?.focus()
+    if (inputEl.value) { inputEl.value.focus(); inputEl.value.select() }
+    else cancelEl.value?.focus()
   } else {
     try { _prevFocus?.focus?.() } catch (_) {}
     _prevFocus = null
@@ -91,4 +105,6 @@ onUnmounted(() => document.removeEventListener('keydown', onDocKey, true))
   line-height: 1.5;
 }
 .confirm-card .modal-actions { margin-top: 18px; }
+/* 输入框复用全局 .modal-input 的外观(与侧栏那套自绘弹窗一致) */
+.confirm-card .modal-input { margin-top: 14px; }
 </style>
