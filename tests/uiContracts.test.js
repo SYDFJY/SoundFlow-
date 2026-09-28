@@ -121,6 +121,42 @@ describe('歌词请求的归属:旧请求不得覆盖新结果', () => {
   })
 })
 
+describe('歌词下载完成卡片:按钮不许顶出卡片', () => {
+  // 用户报"歌词下载完成界面按钮超过界面区域":卡片固定 360px、按钮行是不换行的 flex,
+  // 加进第三个按钮就排不下了。真机几何断言在 ui-check 第 19 节(量 scrollWidth/按钮矩形),
+  // 这里钉住那三条让它不可能再退化的样式规则。
+  it('按钮行可换行 + 主操作独占一行 + 卡片宽度带 max-width 兜底', () => {
+    const css = read('src/views/SettingsView.vue')
+    expect(css, '.done-btns 又变回不换行的 flex').toMatch(/\.done-btns \{[^}]*flex-wrap: wrap/)
+    expect(css, '主操作(重试)没有独占一行').toMatch(/\.done-btns \.done-retry \{[^}]*flex: 1 1 100%/)
+    expect(css, '卡片固定宽度没有 max-width 兜底(窄窗会溢出)').toMatch(/\.batch-done-card \{[\s\S]{0,160}?max-width: min\(92vw, 400px\)/)
+  })
+})
+
+describe('模板结构:div 必须配平', () => {
+  it('每个视图/组件的 <template> 里 <div> 与 </div> 数量一致(改模板时最容易留下悬空片段)', () => {
+    const bad = []
+    const walk = (d) => {
+      for (const f of fs.readdirSync(d)) {
+        const p = path.join(d, f)
+        if (fs.statSync(p).isDirectory()) { walk(p); continue }
+        if (!/\.vue$/.test(p)) continue
+        const src = fs.readFileSync(p, 'utf8')
+        const i = src.indexOf('<template>')
+        const j = src.lastIndexOf('</template>')
+        if (i < 0 || j < 0) continue
+        const tpl = src.slice(i, j)
+        // 用前瞻而不是词边界:后者在跨层转写时极易被吃成看不见的字符(这次就踩了)
+        const open = (tpl.match(/<div(?=[\s>])/g) || []).length
+        const close = (tpl.match(/<\/div>/g) || []).length
+        if (open !== close) bad.push(`${path.relative(process.cwd(), p)}: <div> ${open} 个 / </div> ${close} 个`)
+      }
+    }
+    walk('src')
+    expect(bad, '标签不配平 —— 构建会报 "Invalid end tag",而单测/样式守卫都看不见').toEqual([])
+  })
+})
+
 describe('列表滚动不许随会话变慢', () => {
   it('v-tooltip 的绑定是幂等的(updated 只刷新取值器)', () => {
     const s = read('src/directives/tooltip.js')

@@ -1630,7 +1630,7 @@ app.whenReady().then(async () => {
     const txt = document.body.innerText
     const probe = (pattern) => pattern.test(txt)
     const has = (sel) => !!document.querySelector(sel)
-    const clearBtns = [...document.querySelectorAll('.btn')].map((b) => (b.textContent || '').trim())
+    const clearBtns = [...document.querySelectorAll('.btn, .btn--ghost')].map((b) => ((b.textContent || '') + ' ' + (b.getAttribute('title') || '')).trim())
     return {
       // ① 已删掉的重复入口
       hasPlayModeText: probe(/^播放模式$/m),
@@ -1654,9 +1654,10 @@ app.whenReady().then(async () => {
     JSON.stringify({ eqSliders: setState.eqSliders, folderRemoveBtns: setState.folderRemoveBtns, eqSwitch: setState.eqSwitch }))
   check('去重:清缓存只剩一处动作组(诊断面板回归只读),且转码缓存仍可清',
     setState.diagActionBtns === 0
-    && setState.clearBtns.some((t) => /清理封面缓存/.test(t))
-    && setState.clearBtns.some((t) => /清理解析缓存/.test(t))
-    && setState.clearBtns.some((t) => /清理转码缓存/.test(t)),
+    // 三个清理入口合并成一行小按钮后,长名字移到了 title 上 —— 判据同时看文本与 title
+    && setState.clearBtns.some((t) => /清封面|清理封面缓存/.test(t))
+    && setState.clearBtns.some((t) => /清解析|清理解析缓存/.test(t))
+    && setState.clearBtns.some((t) => /清转码|清理转码缓存/.test(t)),
     JSON.stringify({ diag: setState.diagActionBtns, clearBtns: setState.clearBtns }))
   check('去重:「管理目录」跳转到音乐目录页(设置页只留添加 + 跳转)',
     setState.manageBtns >= 2, `找到 ${setState.manageBtns} 个`)
@@ -1938,6 +1939,107 @@ app.whenReady().then(async () => {
   check('歌单:删除走确认弹窗,删完侧栏与落盘都没有残留(不给下一轮留垃圾)',
     delRounds >= 1 && !!afterDelete && !afterDelete.stillInSidebar && !(afterDelete.names || []).some((n) => /^UI检查歌单/.test(n)),
     JSON.stringify({ delRounds, afterDelete }))
+
+
+  // 19) 布局几何(2026-09-27 用户报"歌词下载完成界面按钮超过界面区域"+"设置界面排版可以再优化")
+  //     排版问题肉眼可见但很难用文本断言,所以这里量几何:
+  //     ① 设置页每条 setting-item 的右控件不出卡片、说明与控件不重叠(说明此前是行内跟随标签的,
+  //        长说明会把控件顶走);三档窗口宽都量一遍。
+  //     ② 批量下载完成卡片:卡片不横向溢出、每个按钮的矩形都在卡片内。
+  const settingsGeo = async (w, h) => {
+    win.setSize(w, h)
+    await sleep(1200)
+    await run(`(() => { location.hash = '#/settings'; return true })()`)
+    await sleep(1800)
+    return await run(`(() => {
+      const content = document.querySelector('.settings-content')
+      const out = { win: [innerWidth, innerHeight], hOverflow: content ? content.scrollWidth - content.clientWidth : null, bad: [] }
+      for (const sec of document.querySelectorAll('.settings-section')) {
+        const sr = sec.getBoundingClientRect()
+        for (const item of sec.querySelectorAll('.setting-item')) {
+          const ir = item.getBoundingClientRect()
+          const label = item.querySelector('.setting-label')
+          // 取条目里所有**可见**的控件:隐藏元素(v-show=false 的折叠区)矩形恒为 0,
+          // 量出来的"越界"是假的。注意别写成逐个"往下找兄弟"的循环 —— 那会取到同一个元素而死循环
+          // (真机卡死过一次,主进程弹了"窗口无响应")
+          const ctrls = [...item.querySelectorAll('.setting-control, button, select, .switch, .chip, .btn, .btn--ghost, input')]
+            .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
+          const ctrl = ctrls[0]
+          const lr = label && label.getBoundingClientRect()
+          const cr = ctrl && ctrl.getBoundingClientRect()
+          if (cr && cr.right > sr.right + 1) out.bad.push({ why: '控件出卡片', text: (ctrl.textContent || ctrl.className || '').trim().slice(0, 18), over: Math.round(cr.right - sr.right) })
+          if (cr && cr.left < ir.left - 1) out.bad.push({ why: '控件出条目', text: (ctrl.textContent || '').trim().slice(0, 18) })
+          // 说明与控件横向重叠 = 说明挤到控件下面去了(说明在标签下方时不该与控件重叠)
+          const desc = item.querySelector('.label-desc')
+          const dr = desc && desc.getBoundingClientRect()
+          if (dr && cr && dr.right > cr.left + 1 && dr.top < cr.bottom - 1 && dr.bottom > cr.top + 1) {
+            out.bad.push({ why: '说明压到控件', text: (desc.textContent || '').trim().slice(0, 24) })
+          }
+          if (!lr || !cr) continue
+        }
+      }
+      out.bad = out.bad.slice(0, 6)
+      return out
+    })()`)
+  }
+  const geos = []
+  for (const [w, h] of [[1280, 800], [1024, 640], [960, 600]]) geos.push(await settingsGeo(w, h))
+  console.log('设置页几何:', JSON.stringify(geos))
+  check('设置页排版:三档窗口下控件都在卡片内、说明不与控件重叠、无横向溢出',
+    geos.every((g) => g && g.hOverflow !== null && g.hOverflow <= 1 && g.bad.length === 0),
+    JSON.stringify(geos.map((g) => ({ win: g.win, hOverflow: g.hOverflow, bad: g.bad }))))
+
+  // ② 完成卡片:需要真跑一次批量下载。先给沙箱配一个歌词文件夹(渲染端 + 主进程两侧都要有:
+  //    主进程的 save-lyric-to-folder 只认 storage().lyricFolders 里记过的目录)
+  const lyricDir = path.join(app.getPath('temp'), 'sf-ui-lyrics')
+  try { fs.mkdirSync(lyricDir, { recursive: true }) } catch {}
+  const lyricDirPosix = lyricDir.split(path.sep).join('/')
+  await run(`(async () => {
+    localStorage.setItem('soundflow_lyric_folders', JSON.stringify(${JSON.stringify([lyricDirPosix])}))
+    try { await window.electronAPI.storeSet('lyricFolders', ${JSON.stringify([lyricDirPosix])}) } catch (e) {}
+    return true
+  })()`)
+  await win.webContents.reload()
+  await sleep(4000)
+  await run(`(() => { location.hash = '#/settings'; return true })()`)
+  await sleep(2000)
+  const batchStarted = await run(`(() => {
+    const b = [...document.querySelectorAll('button')].find((x) => /开始批量下载|下载中/.test(x.textContent || ''))
+    if (b) b.click()
+    return !!b
+  })()`)
+  let cardGeo = null
+  for (let i = 0; i < 90 && !cardGeo; i++) {
+    await sleep(1000)
+    cardGeo = await run(`(() => {
+      const card = document.querySelector('.batch-done-card')
+      if (!card) return null
+      const cr = card.getBoundingClientRect()
+      const btns = [...card.querySelectorAll('.done-btns button')]
+      return {
+        cardOverflow: card.scrollWidth - card.clientWidth,
+        cardW: Math.round(cr.width),
+        btns: btns.map((b) => {
+          const r = b.getBoundingClientRect()
+          return { t: (b.textContent || '').trim().slice(0, 14), inside: r.left >= cr.left - 1 && r.right <= cr.right + 1, w: Math.round(r.width) }
+        })
+      }
+    })()`)
+  }
+  console.log('完成卡片几何:', JSON.stringify(cardGeo))
+  check('歌词下载完成卡片:不横向溢出,且每个按钮都在卡片内(用户报"按钮超过界面区域")',
+    !!cardGeo && cardGeo.cardOverflow <= 1 && cardGeo.btns.length > 0 && cardGeo.btns.every((b) => b.inside),
+    JSON.stringify({ started: batchStarted, cardGeo }))
+  // 留一张截图供人工核对(临时目录,不进仓库)
+  try {
+    const img = await win.webContents.capturePage()
+    const shot = path.join(app.getPath('temp'), 'sf-batch-done.png')
+    fs.writeFileSync(shot, img.toPNG())
+    console.log('完成卡片截图:', shot)
+  } catch {}
+  await run(`(() => { const b = [...document.querySelectorAll('.batch-done-card button')].find((x) => /关闭/.test(x.textContent || '')); if (b) b.click(); return true })()`)
+  win.setSize(1200, 750)
+  await sleep(600)
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

@@ -153,7 +153,7 @@
           </div>
           <div class="setting-control" style="display: flex; gap: 6px;">
             <button class="btn" @click="addFolder">添加目录</button>
-            <button class="btn" @click="$router.push('/folder')">管理目录</button>
+            <button class="btn--ghost" @click="$router.push('/folder')">管理目录</button>
           </div>
         </div>
         <div class="setting-item">
@@ -203,19 +203,16 @@
             <span v-if="deepseekKey" class="key-configured">已配置<Icon name="check" :size="12" /></span>
           </div>
         </div>
+        <!-- 两个缓存合成一条(都是"手动兜底"性质,原来各占一条把歌词区拉得很长) -->
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">翻译缓存</span>
-            <span class="label-desc">译文按原文逐行校验，歌词换过之后旧译文会自动作废；这里只是手动兜底</span>
+            <span class="label-text">歌词缓存</span>
+            <span class="label-desc">歌词与译文都会自动校验作废(歌词换过旧译文即失效);发现某首歌歌词不对时可手动清掉重取</span>
           </div>
-          <button class="btn" @click="clearTransCache">清除翻译缓存</button>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">在线歌词缓存</span>
-            <span class="label-desc">自动记住取回来的在线歌词，换来源或发现某首歌歌词不对时可清掉重取</span>
+          <div class="setting-control btn-row">
+            <button class="btn btn--sm" @click="clearTransCache" title="只删译文,不动歌词与曲库">清翻译</button>
+            <button class="btn btn--sm" @click="clearOnlineLyricCache" title="只删缓存的在线歌词,不动本地 .lrc">清在线歌词</button>
           </div>
-          <button class="btn" @click="clearOnlineLyricCache">清除在线歌词缓存</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -224,13 +221,13 @@
           </div>
           <div class="setting-control" style="display: flex; gap: 6px;">
             <button class="btn" @click="addLyricFolder">添加文件夹</button>
-            <button class="btn" @click="$router.push('/folder')">管理目录</button>
+            <button class="btn--ghost" @click="$router.push('/folder')">管理目录</button>
           </div>
         </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">批量下载歌词</span>
-            <span class="label-desc">遍历曲库所有歌曲，将没有本地 .lrc 的歌从在线来源（LRCLIB / QQ 音乐 / 网易云）下载到歌词文件夹</span>
+            <span class="label-desc" title="遍历曲库所有歌曲,把没有本地 .lrc 的歌从在线来源(LRCLIB / QQ 音乐 / 网易云)下载到歌词文件夹">把没有本地歌词的歌从在线来源批量下到歌词文件夹</span>
           </div>
           <button class="btn" :disabled="batchLyric.running" @click="batchDownloadLyrics">
             {{ batchLyric.running ? `下载中 ${batchLyric.done}/${batchLyric.total}` : '开始批量下载' }}
@@ -269,14 +266,15 @@
                 <div class="done-row muted">用时 {{ batchLyric.elapsed }} · 完成时间 {{ batchLyric.finishedAt }}</div>
                 <div class="done-folder" :title="batchLyric.folder">下载到：{{ batchLyric.folder }}</div>
                 <div class="done-btns">
+                  <!-- 主操作独占一行:三个按钮挤一行会顶出卡片(卡片只有 400px 宽) -->
                   <button
                     v-if="batchLyric.whyTimeout || batchLyric.whyNetwork || batchLyric.whySource"
-                    class="btn"
+                    class="btn done-retry"
                     :disabled="batchLyric.running"
                     @click="retryUnmatchedLyrics"
                   ><Icon name="refresh" :size="15" />重试未匹配的 {{ (batchLyric.unmatched || []).length }} 首</button>
-                  <button class="btn" @click="openLyricFolder"><Icon name="opendir" :size="15" />打开歌词文件夹</button>
-                  <button class="btn--ghost btn--sm" @click="batchLyric.showResult = false">关闭</button>
+                  <button class="btn btn--ghost" @click="openLyricFolder"><Icon name="opendir" :size="15" />打开歌词文件夹</button>
+                  <button class="btn--ghost" @click="batchLyric.showResult = false">关闭</button>
                 </div>
               </div>
             </div>
@@ -290,7 +288,7 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">均衡器 / 音效</span>
-            <span class="label-desc">10 段 EQ + 预设 + 重低音 + 空间声场；完整调节（含频响曲线与自定义预设）在播放栏的音效面板里</span>
+            <span class="label-desc" title="10 段 EQ + 预设 + 重低音 + 空间声场;完整调节(含频响曲线与自定义预设)在播放栏的音效面板里">完整调节在播放栏的音效面板里</span>
           </div>
           <button class="switch" role="switch" :aria-checked="playerStore.eqSettings.enabled" aria-label="均衡器 / 音效" :class="{ on: playerStore.eqSettings.enabled }" @click="playerStore.setEqEnabled(!playerStore.eqSettings.enabled)">
             <span class="switch-track"></span>
@@ -441,28 +439,6 @@
         </div>
       </div>
 
-      <!-- 数据安全 -->
-      <div class="settings-section">
-        <h3 class="section-title"><Icon name="warning" :size="15" />数据安全</h3>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">标签备份(可回滚)</span>
-            <span class="label-desc">修改歌曲信息(写回标签)前自动备份原文件,可一键还原;每首歌保留最近 3 份</span>
-          </div>
-          <div v-if="tagBackups.length" class="tag-backup-list">
-            <div v-for="b in tagBackups.slice(0, 20)" :key="b.id" class="tag-backup-row">
-              <span class="tag-backup-name" :title="b.filePath">{{ b.name }}</span>
-              <span class="tag-backup-time">{{ new Date(b.time).toLocaleString().slice(5, 16) }}</span>
-              <button class="sec-btn" @click="restoreTag(b)">还原</button>
-            </div>
-            <div class="tag-backup-actions">
-              <button class="sec-btn" @click="clearTagBackups">清空全部备份</button>
-            </div>
-          </div>
-          <span v-else class="label-desc">暂无标签备份(修改歌曲信息后自动生成)</span>
-        </div>
-      </div>
-
       <!-- 关于 -->
       <div class="settings-section">
         <h3 class="section-title">{{ t('settings.about') }}</h3>
@@ -491,40 +467,37 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">备份数据</span>
-            <span class="label-desc">导出曲库、歌单、收藏、播放历史与设置到 JSON 文件，重装/换机不丢数据</span>
+            <span class="label-desc">曲库、歌单、收藏、播放历史与设置导出为 JSON(换机/重装不丢数据)</span>
           </div>
           <button class="btn" :disabled="backupBusy" @click="exportBackup">{{ backupBusy ? '处理中…' : '导出备份' }}</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">导入备份</span>
-            <span class="label-desc">从备份 JSON 恢复全部数据（将覆盖当前数据，导入后自动重启应用）</span>
+            <span class="label-desc">从备份 JSON 恢复全部数据(覆盖当前数据,导入后自动重启)</span>
           </div>
           <button class="btn" :disabled="backupBusy" @click="importBackup">{{ backupBusy ? '处理中…' : '导入备份' }}</button>
         </div>
         <div v-if="backupMsg" class="setting-item">
           <span class="label-text" :style="{ color: backupOk ? 'var(--color-primary)' : 'var(--color-danger)' }">{{ backupMsg }}</span>
         </div>
+        <!-- 三类缓存合并成一条:此前是三个几乎同形的条目各带一句长说明,占掉整段版面。
+             清理入口仍是三个(各自独立),只是排成一行按钮;数字写在说明里 -->
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">存储占用</span>
-            <span class="label-desc">封面缓存:{{ storageInfo.coversCount || 0 }} 张 · {{ storageInfo.coversSize ? (storageInfo.coversSize / 1048576).toFixed(1) : '0.0' }} MB（清理后播放歌曲时自动重新生成）</span>
+            <span class="label-text">缓存占用</span>
+            <span class="label-desc">
+              封面 {{ storageInfo.coversCount || 0 }} 张 · {{ storageInfo.coversSize ? (storageInfo.coversSize / 1048576).toFixed(1) : '0.0' }} MB;
+              解析 {{ storageInfo.mdCacheCount || 0 }} 首;
+              转码 {{ storageInfo.transcodeCount || 0 }} 个 · {{ storageInfo.transcodeSize ? (storageInfo.transcodeSize / 1048576).toFixed(1) : '0.0' }} MB
+              <br />清理后按需重建:封面在下次播放时重新生成、解析在下一次扫描时重做、转码在下次播放时重转
+            </span>
           </div>
-          <button class="btn" :class="{ 'is-loading': cacheBusy }" @click="clearCache" :disabled="cacheBusy">{{ cacheBusy ? '清理中…' : '清理封面缓存' }}</button>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">元数据解析缓存</span>
-            <span class="label-desc">{{ storageInfo.mdCacheCount || 0 }} 首的解析结果（重新扫描同一目录时直接复用，命中率会写进日志；清理后下次扫描重新解析）</span>
+          <div class="setting-control btn-row">
+            <button class="btn btn--sm" :class="{ 'is-loading': cacheBusy }" @click="clearCache" :disabled="cacheBusy" title="清理封面缓存">{{ cacheBusy ? '清理中…' : '清封面' }}</button>
+            <button class="btn btn--sm" :class="{ 'is-loading': mdCacheBusy }" @click="clearMdCache" :disabled="mdCacheBusy" title="清理解析缓存">{{ mdCacheBusy ? '清理中…' : '清解析' }}</button>
+            <button class="btn btn--sm" :class="{ 'is-loading': transcodeBusy }" @click="clearTranscode" :disabled="transcodeBusy" title="清理转码缓存">{{ transcodeBusy ? '清理中…' : '清转码' }}</button>
           </div>
-          <button class="btn" :class="{ 'is-loading': mdCacheBusy }" @click="clearMdCache" :disabled="mdCacheBusy">{{ mdCacheBusy ? '清理中…' : '清理解析缓存' }}</button>
-        </div>
-        <div class="setting-item">
-          <div class="setting-label">
-            <span class="label-text">转码缓存</span>
-            <span class="label-desc">APE/WMA/AIFF/ALAC 等非原生格式转出的 FLAC：{{ storageInfo.transcodeCount || 0 }} 个 · {{ storageInfo.transcodeSize ? (storageInfo.transcodeSize / 1048576).toFixed(1) : '0.0' }} MB（清理后下次播放会重新转码）</span>
-          </div>
-          <button class="btn" :class="{ 'is-loading': transcodeBusy }" @click="clearTranscode" :disabled="transcodeBusy">{{ transcodeBusy ? '清理中…' : '清理转码缓存' }}</button>
         </div>
         <div class="setting-item">
           <div class="setting-label">
@@ -532,6 +505,25 @@
             <span class="label-desc">查看歌曲本地歌词状态,删除不需要的歌词文件</span>
           </div>
           <button class="btn" @click="openLyricManager">打开管理</button>
+        </div>
+        <!-- 标签备份:原来自己占一个"数据安全"区(整个区只有这一条,很空),并进数据区。
+             备份列表是"成块的列表",所以这一条用 --stack 变体:标题在上、列表占满整行 -->
+        <div class="setting-item setting-item--stack">
+          <div class="setting-label">
+            <span class="label-text">标签备份(可回滚)</span>
+            <span class="label-desc">修改歌曲信息(写回标签)前自动备份原文件,可一键还原;每首歌保留最近 3 份</span>
+          </div>
+          <div v-if="tagBackups.length" class="tag-backup-list">
+            <div v-for="b in tagBackups.slice(0, 20)" :key="b.id" class="tag-backup-row">
+              <span class="tag-backup-name" :title="b.filePath">{{ b.name }}</span>
+              <span class="tag-backup-time">{{ new Date(b.time).toLocaleString().slice(5, 16) }}</span>
+              <button class="sec-btn" @click="restoreTag(b)">还原</button>
+            </div>
+            <div class="tag-backup-actions">
+              <button class="sec-btn" @click="clearTagBackups">清空全部备份</button>
+            </div>
+          </div>
+          <span v-else class="label-desc">暂无标签备份(修改歌曲信息后自动生成)</span>
         </div>
       </div>
 
@@ -1344,7 +1336,7 @@ async function batchDownloadLyrics(only = null) {
   font-family: inherit; font-size: 11px; color: var(--text-primary);
 }
 .setting-item {
-  display: flex; align-items: center; justify-content: space-between;  padding: 13px 10px;
+  display: flex; align-items: center; justify-content: space-between;  padding: 11px 10px;
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border-color);
@@ -1354,10 +1346,20 @@ async function batchDownloadLyrics(only = null) {
 }
 .setting-item:hover { background: var(--bg-hover); }
 .setting-item:last-child { border-bottom: none; }
+/* 纵向条目:内容是一整块(如备份列表)时,标题在上、正文占满整行,不再与右侧抢宽度 */
+.setting-item--stack { flex-direction: column; align-items: stretch; gap: 8px; }
+/* 一行按钮组(缓存清理这类):贴右对齐,窄窗自动换行 */
+.btn-row { flex-wrap: wrap; justify-content: flex-end; }
 
-.setting-label { flex: 1; }
+/* 标签与说明**各占一行**:说明此前是行内跟随(margin-left:8px),长说明会和标签挤在一行、
+   把右侧控件顶走并在同一行折成两截 —— 这个页面里大半条目都带说明,右半边的对齐全乱在这。
+   改成纵向后右侧控件永远贴右对齐;窄窗断点下也不用再特判方向 */
+.setting-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .label-text { font-size: var(--font-size-base); color: var(--text-primary); font-weight: 500; }
-.label-desc { font-size: var(--font-size-xs); color: var(--text-tertiary); margin-left: 8px; }
+.label-desc { font-size: var(--font-size-xs); color: var(--text-tertiary); line-height: 1.6; }
+/* 行内的小说明(如"1 个目录"这种跟在标题后面的补充)仍按行内排 */
+.label-desc.inline { margin-left: 8px; }
+.setting-item > .label-desc { flex: 1; }
 /* 快捷键作用范围说明:默认只在应用内生效,录制的组合才注册到系统级 —— 必须让用户看见 */
 .shortcut-scope-hint {
   font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.7;
@@ -1471,7 +1473,8 @@ select {
   display: flex; align-items: center; justify-content: center; z-index: var(--z-modal);
 }
 .batch-done-card {
-  width: 360px; max-width: 90vw; padding: 24px;
+  /* 400 而不是 360:里面要放"重试未匹配的 N 首"这种长按钮;max-width 兜住窄窗 */
+  width: 400px; max-width: min(92vw, 400px); padding: 24px;
   background: var(--bg-secondary); border-radius: var(--radius-xl);
   box-shadow: var(--shadow-lg); text-align: center;
 }
@@ -1484,7 +1487,10 @@ select {
   background: var(--bg-hover); font-size: var(--font-size-xs); color: var(--text-secondary);
   word-break: break-all; text-align: left;
 }
-.done-btns { display: flex; justify-content: center; gap: 10px; }
+/* 换行 + 主操作独占一行:此前是不换行的 flex,三个按钮在 360px 卡片里排不下会顶出卡片 */
+.done-btns { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+.done-btns .done-retry { flex: 1 1 100%; justify-content: center; }
+.done-btns > .btn { min-width: 0; white-space: nowrap; }
 .done-close { padding: 6px 16px; border: 1px solid var(--border-color); border-radius: var(--radius-md); color: var(--text-secondary); font-size: var(--font-size-sm); }
 .done-close:hover { background: var(--bg-hover); color: var(--text-primary); }
 
