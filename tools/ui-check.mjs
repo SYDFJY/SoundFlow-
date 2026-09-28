@@ -1946,6 +1946,27 @@ app.whenReady().then(async () => {
   //     ① 设置页每条 setting-item 的右控件不出卡片、说明与控件不重叠(说明此前是行内跟随标签的,
   //        长说明会把控件顶走);三档窗口宽都量一遍。
   //     ② 批量下载完成卡片:卡片不横向溢出、每个按钮的矩形都在卡片内。
+  // 字体区"有自定义字体才渲染":先注入几个(含超长名)再量,否则那几条根本不在 DOM 里
+  // (用户报的"按钮遮住字"就发生在这几行)
+  await run(`(() => {
+    localStorage.setItem('soundflow_custom_fonts', JSON.stringify([
+      { name: '思源黑体 ExtraLight 超长名字测试一二三四五六七八九十一二三四五', url: 'file:///nope/1.ttf' },
+      { name: 'FiraCode-Retina-Nerd-Font-Complete-Super-Long-Name-For-Testing', url: 'file:///nope/3.ttf' },
+      { name: '站酷庆科黄油体', url: 'file:///nope/2.ttf' }
+    ]))
+    return true
+  })()`)
+  await win.webContents.reload()
+  await sleep(4000)
+  await run(`(() => { location.hash = '#/settings'; return true })()`)
+  await sleep(2000)
+  for (let i = 0; i < 6; i++) {
+    const vis = await run(`(() => { const r = document.querySelector('.custom-font-row'); return !!(r && r.getBoundingClientRect().height > 0) })()`)
+    if (vis) break
+    await run(`(() => { const c = document.querySelector('.font-collapse'); if (c) c.click(); return !!c })()`)
+    await sleep(600)
+  }
+
   const settingsGeo = async (w, h) => {
     win.setSize(w, h)
     await sleep(1200)
@@ -1962,6 +1983,30 @@ app.whenReady().then(async () => {
           // 取条目里所有**可见**的控件:隐藏元素(v-show=false 的折叠区)矩形恒为 0,
           // 量出来的"越界"是假的。注意别写成逐个"往下找兄弟"的循环 —— 那会取到同一个元素而死循环
           // (真机卡死过一次,主进程弹了"窗口无响应")
+          // 标签被压扁(文字溢出自己的盒子)= 看起来像被右边按钮盖住;纵向条目里 flex-basis
+          // 变成高度时标签会凭空高 200px+(真机踩过:一条折叠行 243px)
+          if (label) {
+            const lcs = getComputedStyle(label)
+            const lr0 = label.getBoundingClientRect()
+            if (lcs.overflow === 'visible' && label.scrollWidth > label.clientWidth + 1) {
+              out.bad.push({ why: '标签文字溢出(会被右侧控件盖住)', text: (label.textContent || '').trim().slice(0, 16) })
+            }
+            if (lr0.height > 90) out.bad.push({ why: '标签过高(疑似 flex-basis 作用在纵向主轴)', h: Math.round(lr0.height), text: (label.textContent || '').trim().slice(0, 14) })
+          }
+          const arrow = item.querySelector('.collapse-arrow')
+          if (arrow && label) {
+            const ar = arrow.getBoundingClientRect()
+            if (ar.width > 0 && Math.abs(ar.right - label.getBoundingClientRect().right) > 24) {
+              out.bad.push({ why: '折叠箭头没贴右(被 setting-label 的 column 带跑了)' })
+            }
+          }
+          const name = item.querySelector('.font-name')
+          if (name) {
+            const ncs = getComputedStyle(name)
+            if (ncs.overflow === 'visible' && name.scrollWidth > name.clientWidth + 1) {
+              out.bad.push({ why: '字体名溢出(会压住删除按钮)', text: (name.textContent || '').slice(0, 20) })
+            }
+          }
           const ctrls = [...item.querySelectorAll('.setting-control, button, select, .switch, .chip, .btn, .btn--ghost, input')]
             .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 })
           const ctrl = ctrls[0]

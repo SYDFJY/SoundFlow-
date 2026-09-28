@@ -133,6 +133,35 @@ describe('歌词下载完成卡片:按钮不许顶出卡片', () => {
   })
 })
 
+describe('设置页条目:不许把标签压扁、长字不许溢出', () => {
+  // 用户报"设置页面有一些按钮遮住了字,整理字体文件按钮,一些按钮会遮住最左侧的字体"。
+  // 根因是条目行"不换行 + 标签可被压到 0 宽",控件只要勉强放得下就不换行 → 标签文字被挤成
+  // 竖排两行甚至压没,看起来就像被按钮盖住。这几条规则是那次修复的骨架。
+  const css = () => read('src/views/SettingsView.vue')
+
+  it('条目允许换行 + 标签有硬下限(否则会被压到 0 宽)', () => {
+    const s = css()
+    expect(s, '条目又变回不换行').toMatch(/\.setting-item \{[^}]*flex-wrap: wrap/)
+    expect(s, '标签的 min-width 又变成 0(可以被压没)').toMatch(/\.setting-label \{ flex: 1; min-width: 180px/)
+    expect(s, '条目又往两边外扩(-6px),溢出时更早越过分区边框').not.toMatch(/\.setting-item \{[^}]*margin: 0 -6px/)
+  })
+
+  it('纵向条目里重置标签的 flex-basis(basis 在 column 上是"高度")', () => {
+    const s = css()
+    expect(s, '缺少 .setting-item--stack .setting-label 的重置 —— 标签会凭空高 220px').toMatch(/\.setting-item--stack \.setting-label \{ flex: 0 0 auto; \}/)
+  })
+
+  it('折叠标题显式写成 row(它同时带 .setting-label,会被 column 带跑)', () => {
+    expect(css(), '折叠箭头会掉到标题下面并居中').toMatch(/\.font-collapse \{[^}]*flex-direction: row/)
+  })
+
+  it('长文本一律截断而不是溢出', () => {
+    const s = css()
+    expect(s, '长字体名没做省略号(会压到「删除」按钮上)').toMatch(/\.font-name \{[^}]*text-overflow: ellipsis/)
+    expect(s, '字体下拉没有 min-width:0(长字体名会撑爆整行)').toMatch(/\.font-select \{[^}]*min-width: 0/)
+  })
+})
+
 describe('模板结构:div 必须配平', () => {
   it('每个视图/组件的 <template> 里 <div> 与 </div> 数量一致(改模板时最容易留下悬空片段)', () => {
     const bad = []

@@ -335,7 +335,7 @@
             <span class="volume-val">{{ appStore.fontSize }}px</span>
           </div>
         </div>
-        <div class="setting-item" v-if="customFonts.length">
+        <div class="setting-item setting-item--stack" v-if="customFonts.length">
           <div class="setting-label"><span class="label-text">字体文件夹字体(点击应用)</span></div>
           <div class="font-pick-grid">
             <button
@@ -348,7 +348,7 @@
             >{{ f.name }}</button>
           </div>
         </div>
-        <div class="setting-item">
+        <div class="setting-item setting-item--stack">
           <div class="setting-label font-collapse" @click="fontExpanded = !fontExpanded">
             <span class="label-text">已导入字体({{ customFonts.length }})</span>
             <span class="collapse-arrow">{{ fontExpanded ? '▾' : '▸' }}</span>
@@ -360,7 +360,7 @@
             </div>
           </div>
         </div>
-        <div class="setting-item" v-if="customFonts.length">
+        <div class="setting-item setting-item--stack" v-if="customFonts.length">
           <div class="setting-label"><span class="label-text">字体文件占用</span></div>
           <div class="font-tidy-row">
             <button class="btn" :disabled="fontTidy.busy" @click="tidyFonts">
@@ -1297,6 +1297,8 @@ async function batchDownloadLyrics(only = null) {
 @media (max-width: 1100px) {
   /* 窄窗:标签与控件改为纵向排列,长中文标签不再被挤成两行 */
   .setting-item { flex-direction: column; align-items: flex-start; gap: 8px; }
+  /* 切 column 后主轴是垂直方向:标签不许纵向 grow(否则会撑出一块空白) */
+  .setting-item > .setting-label { flex: 0 0 auto; }
 }
 
 .settings-section {
@@ -1336,25 +1338,38 @@ async function batchDownloadLyrics(only = null) {
   font-family: inherit; font-size: 11px; color: var(--text-primary);
 }
 .setting-item {
-  display: flex; align-items: center; justify-content: space-between;  padding: 11px 10px;
+  display: flex; align-items: center; justify-content: space-between;  padding: 11px 12px;
+  /* 允许换行 + 给标签一个硬下限:放不下时控件落到下一行,而不是把标签压扁到文字溢出
+     (用户报"按钮遮住了字":整理字体文件那行、已导入字体那行) */
+  flex-wrap: wrap; row-gap: 8px;
+  /* 允许换行 + 给标签一个最小份额:放不下时标签自己占满一行、控件落到下一行 ——
+     此前是不换行的 flex + 标签 flex:1;min-width:0,容器一挤就把标签压成 0 宽,
+     它的文字溢出画到右侧控件上(用户报"按钮遮住了字":整理字体文件那行、字体卡片网格那行) */
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  margin: 0 -6px;
+  /* 不要再往两边外扩(-6px):那会让溢出的子元素更早越过分区边框 */
+  margin: 0;
   transition: background var(--transition-fast);
 }
 .setting-item:hover { background: var(--bg-hover); }
 .setting-item:last-child { border-bottom: none; }
 /* 纵向条目:内容是一整块(如备份列表)时,标题在上、正文占满整行,不再与右侧抢宽度 */
 .setting-item--stack { flex-direction: column; align-items: stretch; gap: 8px; }
+/* 纵向条目里必须把标签的 flex-basis 重置掉:flex 的 basis 作用在**主轴**上,而这里主轴是垂直方向,
+   于是 `.setting-label` 的 `flex: 1 1 220px` 会变成"标签高 220px" —— 条目里凭空多出一大块空白、
+   折叠箭头也跑到中间去了(真机量高度才看出来:一条折叠行 243px) */
+.setting-item--stack .setting-label { flex: 0 0 auto; }
 /* 一行按钮组(缓存清理这类):贴右对齐,窄窗自动换行 */
 .btn-row { flex-wrap: wrap; justify-content: flex-end; }
 
 /* 标签与说明**各占一行**:说明此前是行内跟随(margin-left:8px),长说明会和标签挤在一行、
    把右侧控件顶走并在同一行折成两截 —— 这个页面里大半条目都带说明,右半边的对齐全乱在这。
    改成纵向后右侧控件永远贴右对齐;窄窗断点下也不用再特判方向 */
-.setting-label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* 只用 min-width 做下限,不用 flex-basis:横向容器里 basis 是宽度没问题,但窄窗媒体查询与
+   .setting-item--stack 会把容器切成 column —— 那时 basis 变成**高度**,标签会凭空高 220px */
+.setting-label { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 3px; }
 .label-text { font-size: var(--font-size-base); color: var(--text-primary); font-weight: 500; }
 .label-desc { font-size: var(--font-size-xs); color: var(--text-tertiary); line-height: 1.6; }
 /* 行内的小说明(如"1 个目录"这种跟在标题后面的补充)仍按行内排 */
@@ -1438,27 +1453,33 @@ select {
 .key-configured { flex-shrink: 0; font-size: 11px; color: var(--color-success, #42c988); font-weight: 500; }
 .font-row { display: flex; align-items: center; gap: 10px; }
 .font-select {
-  flex: 1; padding: 7px 10px; font-size: var(--font-size-sm);
+  /* min-width:0:选中项是很长的字体名时,select 的最小内容宽度会撑爆整行 */
+  flex: 1; min-width: 0; padding: 7px 10px; font-size: var(--font-size-sm);
   background: var(--bg-card); color: var(--text-primary);
   border: 1px solid var(--border-color); border-radius: var(--radius-md);
 }
-.custom-font-row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; }
-.font-name { font-size: var(--font-size-sm); color: var(--text-primary); }
+.custom-font-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; }
+/* 长字体名截断成省略号:此前没有 min-width:0,文字会溢出并压到右侧「删除」按钮上 */
+.font-name { flex: 1; min-width: 0; font-size: var(--font-size-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .font-remove { padding: 3px 10px; font-size: var(--font-size-xs); }
 /* 整理字体文件:按钮 + 说明(说明走 token 色,浅色主题下也要能读) */
 .font-tidy-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.font-tidy-row .setting-hint { flex: 1; min-width: 220px; font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.5; }
+.font-tidy-row .setting-hint { flex: 1 1 260px; min-width: 0; font-size: var(--font-size-xs); color: var(--text-secondary); line-height: 1.5; }
 /* 字体文件夹字体选择网格 */
 .font-pick-grid { display: flex; flex-wrap: wrap; gap: 8px; max-height: 180px; overflow-y: auto; padding: 4px 2px; }
 .font-pick-card {
   padding: 8px 14px; font-size: 14px; color: var(--text-primary);
+  /* 超长字体名在卡片内换行,不迫使卡片超宽 */
+  overflow-wrap: anywhere;
   background: var(--bg-card, rgba(255,255,255,0.06)); border: 1px solid var(--border-color);
   border-radius: 8px; cursor: pointer; transition: all 0.15s; max-width: 100%;
 }
 .font-pick-card:hover { border-color: var(--color-primary); }
 .font-pick-card.active { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 /* 已导入字体展开区(可滑动) */
-.font-collapse { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; }
+/* 这一条同时带 setting-label:必须显式写成 row —— 否则会继承 .setting-label 的
+   flex-direction: column,标题与折叠箭头就变成上下排列、箭头还被居中(实测箭头跑到 x=741) */
+.font-collapse { display: flex; flex-direction: row; align-items: center; justify-content: space-between; cursor: pointer; padding: 4px 0; }
 .collapse-arrow { color: var(--text-secondary); font-size: var(--font-size-sm); transition: transform 0.2s; }
 .font-expand-list { max-height: 200px; overflow-y: auto; border-top: 1px dashed var(--border-color); margin-top: 6px; padding: 2px 4px; }
 .font-size-row { display: flex; align-items: center; gap: 10px; }
