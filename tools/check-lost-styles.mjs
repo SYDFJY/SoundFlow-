@@ -66,7 +66,10 @@ const ALLOW = {
     //   高度改由 .mini-panel(200)+ 指示点区(24)+ 间隙分解(见 tests/miniIsland.test.js 的契约守卫)
     '.mini-player--expanded',
     // .mini-now-time → 媒体页时间改成一行两段(左已播 / 右"-剩余"),更名为 .mini-now-times
-    '.mini-now-time']
+    '.mini-now-time',
+    // .mini-player--capsule .mini-capsule-track → 该条 `transition:none` 是上一版的占位;
+    //   现在换行动效挂在外层 .mini-capsule-anim 上,marquee 的 transform 与它分层,不需要这条
+    '.mini-player--capsule .mini-capsule-track']
 }
 
 const selectors = (css) =>

@@ -61,25 +61,90 @@ const APP_NAME = 'SoundFlow 声流音乐'
 const localDist = path.join(__dirname, '..', 'dist')
 const isDev = !app.isPackaged && !fs.existsSync(localDist)
 
-// ===== 迷你窗/两态岛尺寸契约 =====
-// 与 src/views/MiniView.vue 的 CSS 常量、tests/miniIsland.test.js 的期望值三处一致(有守卫测试)。
+// ===== 迷你窗/两态岛:尺寸契约与岛设置 =====
+// 下面是 scale=1 的**基线值**(与 MiniView 的 CSS 变量、tests/miniIsland.test.js 三处一致);
+// 用户可在岛设置面里改缩放/基准/上限等,派生见 miniCapsuleGeo()/miniExpandedSize()。
 const MINI_COMPACT_W = 320 // 卡片形态(经典迷你播放器)
 const MINI_COMPACT_H = 80
-const MINI_CAPSULE_H = 36 // 胶囊形态:顶端居中的细胶囊(封面 + 一句歌词)
-const MINI_CAPSULE_MIN_W = 184 // 取 8 的倍数:这样"x 与宽都落在物理像素网格"和"水平中心也对齐网格"能同时成立
-const MINI_CAPSULE_MAX_W = 416 // (125% 缩放下 x/宽必须是 4 的倍数,中心才可能精确对齐;8 的倍数更稳)
-const MINI_EXPANDED_W = 360 // 展开面板(照 WinIsland 参考图:面板 360×200 + 面板下方的指示点区)
-const MINI_EXPANDED_H = 232
+const MINI_CAPSULE_H = 36 // 胶囊形态:顶端居中的细胶囊(封面 + 一句歌词[+ 频谱])
+const MINI_CAPSULE_MIN_W = 184 // 宽度随文本伸缩,钳位区间(取 8 的倍数:x/宽/中心才能都落在物理像素网格)
+const MINI_CAPSULE_MAX_W = 416
+const MINI_EXPANDED_W = 360 // 展开面板(照 WinIsland 参考图:面板 + 面板下方的指示点区)
 const MINI_PANEL_H = 200
+const MINI_PAGER_GAP = 8
 const MINI_PAGER_H = 24
 const MINI_TOP_OFFSET = 10 // 首次出现的默认位置距工作区顶部(对齐 WinIsland 的 TOP_OFFSET=10)
 const MINI_SNAP_EDGE = 20 // 拖动结束后距顶边小于该值则吸附贴顶
-function miniCompactForm() {
-  return storageData.miniCompactForm === 'card' ? 'card' : 'capsule'
+
+// 岛设置:键 → 存储键/类型/范围(单一事实源;写回通道按它校验,范围与 WinIsland 的同类项对齐)
+const MINI_SETTING_SPEC = {
+  form: { store: 'miniCompactForm', values: ['capsule', 'card'], def: 'capsule' },
+  capsuleScale: { store: 'miniCapsuleScale', min: 0.6, max: 2.0, def: 1 }, // ~compact_scale
+  capsuleBaseH: { store: 'miniCapsuleBaseH', min: 24, max: 72, def: MINI_CAPSULE_H }, // ~base_height
+  capsuleMinW: { store: 'miniCapsuleMinW', min: 140, max: 320, def: MINI_CAPSULE_MIN_W }, // ~base_width
+  capsuleMaxW: { store: 'miniCapsuleMaxW', min: 240, max: 700, def: MINI_CAPSULE_MAX_W }, // ~MAX_LYRIC_WIDTH
+  capsuleFont: { store: 'miniCapsuleFont', min: 10, max: 20, def: 13 }, // ~font_size
+  lyricGap: { store: 'miniLyricGap', min: 0, max: 32, def: 6 }, // ~lyrics_side_gap
+  showLyrics: { store: 'miniShowLyrics', bool: true, def: true }, // ~show_lyrics(关=胶囊显示歌名·歌手)
+  coverShape: { store: 'miniCoverShape', values: ['square', 'circle'], def: 'square' }, // ~mini_cover_shape
+  expandedCoverShape: { store: 'miniExpandedCoverShape', values: ['square', 'circle'], def: 'square' }, // ~expanded_cover_shape
+  coverRotate: { store: 'miniCoverRotate', bool: true, def: true }, // ~cover_rotate
+  lyricsScroll: { store: 'miniLyricsScroll', bool: true, def: false }, // ~lyrics_scroll(固定宽+滚动 / 加宽)
+  lyricTransition: { store: 'miniLyricTransition', values: ['fade', 'random', 'blur', 'slide'], def: 'fade' }, // ~lyrics_transition_animation
+  panelW: { store: 'miniPanelW', min: 280, max: 520, def: MINI_EXPANDED_W }, // ~expanded_width
+  panelH: { store: 'miniPanelH', min: 150, max: 320, def: MINI_PANEL_H }, // ~expanded_height
+  panelScale: { store: 'miniPanelScale', min: 0.85, max: 1.15, def: 1 }, // ~expanded_scale(页内元素整体缩放)
+  motionBlur: { store: 'miniMotionBlur', bool: true, def: false }, // ~motion_blur(展开/收起过渡里的内容模糊)
+  idleFadeSeconds: { store: 'miniIdleFadeSeconds', min: 5, max: 120, def: 30 } // ~auto_hide_delay
 }
-function miniCapsuleWidth(w) {
-  const v = Number.isFinite(w) ? w : MINI_CAPSULE_MIN_W
-  return Math.min(MINI_CAPSULE_MAX_W, Math.max(MINI_CAPSULE_MIN_W, Math.ceil(v / 8) * 8))
+function round8(v) { return Math.round(v / 8) * 8 }
+function miniSetting(key) {
+  const spec = MINI_SETTING_SPEC[key]
+  if (!spec) return undefined
+  const raw = storageData[spec.store]
+  if (spec.min !== undefined) {
+    const v = Number(raw)
+    return Number.isFinite(v) ? Math.min(spec.max, Math.max(spec.min, v)) : spec.def
+  }
+  if (spec.bool) return typeof raw === 'boolean' ? raw : spec.def
+  return spec.values.includes(raw) ? raw : spec.def
+}
+function miniCompactForm() {
+  return miniSetting('form') === 'card' ? 'card' : 'capsule'
+}
+// 胶囊派生几何:高 = round(基准高×缩放),且 **高 ≥ 字号 + 12**(否则字被裁);
+// 宽度钳位 = [round8(最小宽×缩放), round8(上限×缩放)]
+function miniCapsuleGeo() {
+  const s = miniSetting('capsuleScale')
+  const font = miniSetting('capsuleFont')
+  const h = Math.max(Math.round(miniSetting('capsuleBaseH') * s), Math.round(font) + 12)
+  const minW = round8(miniSetting('capsuleMinW') * s)
+  const maxW = Math.max(minW, round8(miniSetting('capsuleMaxW') * s))
+  return { h, minW, maxW, font, scale: s }
+}
+function miniCapsuleWidth(v) {
+  const g = miniCapsuleGeo()
+  const w = Number.isFinite(v) ? v : g.minW
+  return Math.min(g.maxW, Math.max(g.minW, round8(w)))
+}
+function miniPanelSize() {
+  return { w: round8(miniSetting('panelW')), h: Math.round(miniSetting('panelH')) }
+}
+function miniExpandedSize() {
+  const p = miniPanelSize()
+  return { w: p.w, h: p.h + MINI_PAGER_GAP + MINI_PAGER_H }
+}
+// 全量岛配置(下发/回放用)。**不含 idle 两项**:它们走既有的 mini:idle-sync 单独回推,避免双源。
+function miniIslandConfig() {
+  const cfg = { form: miniCompactForm() }
+  for (const key of Object.keys(MINI_SETTING_SPEC)) {
+    if (key === 'form' || key === 'idleFadeSeconds') continue
+    cfg[key] = miniSetting(key)
+  }
+  return cfg
+}
+function sendMiniIslandConfig() {
+  try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:island-config', miniIslandConfig()) } catch (_) {}
 }
 // 由"水平中心 + 宽高"算窗口框:中心对齐物理像素网格,宽取 8 的倍数 → x 自动落在网格上。
 // 直接对 x 取整会把中心推偏(实测每次 ±2、多次累积),所以一律以中心为锚。
@@ -112,10 +177,9 @@ let lastMiniUpdate = null
 // 两态岛展开页的数据缓存(与 lastMiniUpdate 同构):迷你窗可能在之后才创建,建窗时回放
 let lastMiniLyrics = null
 let lastMiniQueue = null
-// 空闲淡出阈值:固定 30s(后续要可配置再加设置项,登记在计划里)
-const MINI_IDLE_FADE_SECONDS = 30
+// 空闲淡出:启用开关在原生菜单(quick toggle),延迟在岛设置面里 —— 两项都走这条通道下发(单一来源)
 function miniIdleSyncPayload() {
-  return { enabled: !!storageData.miniIdleFade, seconds: MINI_IDLE_FADE_SECONDS }
+  return { enabled: !!storageData.miniIdleFade, seconds: miniSetting('idleFadeSeconds') }
 }
 // 迷你窗「可显示」回调:由渲染端 mini:ready 或兜底定时器触发,只会生效一次
 let _showMiniOnce = null
@@ -128,14 +192,15 @@ let miniExpanded = false
 let miniExpandAnchor = null // 展开前的紧凑帧 {x,y};收起时精确回到这里
 let miniExpandShiftY = 0 // 展开时为"底部贴边"整体上移的量(≤0);紧凑帧换算用
 let miniPendingExpand = false // 窗口还在加载时的"打开即展开",加载完应用
+let miniPendingSettings = false // 收起/未开窗时点了「岛设置…」:展开后自动开设置面(渲染端也会兜一层)
 let miniIslandLockUntil = 0 // 220ms 防抖:连点按钮不重复触发
 let miniSizeTimer = null // 紧凑态尺寸动画(胶囊随歌词伸缩/形态切换)的定时器
 // 胶囊的"意图水平中心":宽度伸缩**始终围绕它**换算,不按"当前已对齐的边界"反推 ——
 // 后者会在每次 alignToPhysicalGrid 取整时把中心带偏(实测报告两三次后偏 4px)。
 // 拖动/展开锚定/新建时会更新它。
 let miniCenterX = null
-// 迷你窗右键菜单的展示函数:由 createMiniWindow 赋值(菜单体要用它内部的局部设置帮手);
-// 右键触发 + 展开面板的「•••」按钮经 IPC(mini:open-menu)走同一条 —— 不新增第二份菜单
+// 迷你窗右键菜单的展示函数:由 createMiniWindow 赋值(菜单体要用它内部的局部设置帮手)。
+// 右键触发;展开面板的「•••」按钮不弹它,而是直接打开岛设置面(WinIsland 的 ••• 语义)。
 let showMiniContextMenu = null
 
 // 把窗口框夹进"它所在显示器"的工作区(建窗/展开/收起都用它)
@@ -196,6 +261,7 @@ function resetMiniIslandState() {
   miniExpandAnchor = null
   miniExpandShiftY = 0
   miniPendingExpand = false
+  miniPendingSettings = false
   miniIslandLockUntil = 0
 }
 
@@ -207,11 +273,17 @@ function expandMiniIsland() {
   miniExpandAnchor = { x: cur.x, y: cur.y, width: cur.width, height: cur.height }
   // **围绕水平中心**展开(胶囊/卡片宽度不同,保持"顶端居中"的生长感);越界由夹取兜底
   const centerX = Number.isFinite(miniCenterX) ? miniCenterX : cur.x + cur.width / 2
-  const target = clampToWorkArea(boundsFromCenter(centerX, cur.y, MINI_EXPANDED_W, MINI_EXPANDED_H))
+  const exp = miniExpandedSize()
+  const target = clampToWorkArea(boundsFromCenter(centerX, cur.y, exp.w, exp.h))
   miniExpandShiftY = target.y - cur.y
   try { miniWindow.setBounds(target) } catch (_) {}
   miniExpanded = true
   broadcastMiniExpanded(true) // 渲染端收到后播入场动画(窗口已就位,不会裁内容)
+  // 「岛设置…」在收起态点的:展开就位后把设置面打开
+  if (miniPendingSettings) {
+    miniPendingSettings = false
+    try { miniWindow.webContents.send('mini:open-settings') } catch (_) {}
+  }
 }
 
 function collapseMiniIsland() {
@@ -257,7 +329,9 @@ function replayMiniStateToMiniWindow() {
   if (lastMiniQueue) send('mini:queue', lastMiniQueue)
   send('mini:idle-sync', miniIdleSyncPayload())
   send('mini:expanded', miniExpanded)
-  send('mini:form-sync', miniCompactForm())
+  send('mini:island-config', miniIslandConfig())
+  // 「岛设置…」在窗口刚建好时点的:回放阶段补发一次(此时渲染端已挂好监听)
+  if (miniPendingSettings) { miniPendingSettings = false; send('mini:open-settings') }
 }
 
 // 悬浮播放器窗口显隐(迷你窗开/关);Ctrl+Alt+I 在 globalShortcut 回调里直调
@@ -266,13 +340,50 @@ function toggleMiniWindowFromMain() {
   else createMiniWindow()
 }
 
-// 紧凑形态切换(胶囊/卡片):只落盘 + 告知渲染端;几何由渲染端按新形态上报尺寸后统一伸缩
+// 紧凑形态切换(胶囊/卡片):只落盘 + 全量配置下发;几何由渲染端按新形态上报尺寸后统一伸缩
 // (展开态不立刻改几何 —— 面板与形态无关,收起时自然会按新形态上报)
 function setMiniCompactForm(form) {
-  const next = form === 'card' ? 'card' : 'capsule'
-  storageData.miniCompactForm = next
+  storageData.miniCompactForm = form === 'card' ? 'card' : 'capsule'
   saveStorage()
-  try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:form-sync', next) } catch (_) {}
+  sendMiniIslandConfig()
+}
+
+// 点「岛设置…」:未开窗→开窗+展开+开面;收起→展开+开面;已展开→直接开面。
+// 展开到位后由 expandMiniIsland / 回放补发 mini:open-settings(渲染端也有挂起兜底)。
+function openMiniIslandSettings() {
+  if (!miniWindow || miniWindow.isDestroyed()) {
+    miniPendingSettings = true
+    miniPendingExpand = true
+    createMiniWindow()
+    return
+  }
+  if (!miniExpanded) {
+    miniPendingSettings = true
+    expandMiniIsland()
+    return
+  }
+  try { miniWindow.webContents.send('mini:open-settings') } catch (_) {}
+}
+
+// 岛设置改完后,窗口几何的即时重设:收起态改胶囊(高/宽钳位),展开态改面板档位。
+// 宽度仍由渲染端按新字号重新量后上报(这里先按当前宽度套上新钳位,避免闪一下旧尺寸)。
+function applyMiniConfigGeometry(changedKey) {
+  if (!miniWindow || miniWindow.isDestroyed()) return
+  try {
+    const cur = miniWindow.getBounds()
+    const cx = Number.isFinite(miniCenterX) ? miniCenterX : cur.x + cur.width / 2
+    if (miniExpanded) {
+      if (changedKey === 'panelW' || changedKey === 'panelH') {
+        const exp = miniExpandedSize()
+        animateMiniCompactSize(clampToWorkArea(boundsFromCenter(cx, cur.y, exp.w, exp.h)))
+      }
+      return
+    }
+    if (miniCompactForm() === 'capsule') {
+      const g = miniCapsuleGeo()
+      animateMiniCompactSize(clampToWorkArea(boundsFromCenter(cx, cur.y, miniCapsuleWidth(cur.width), g.h)))
+    }
+  } catch (_) {}
 }
 
 // 紧凑态尺寸变化用 ~180ms 缓动分步(setTimeout 近似 rAF;每步对齐物理像素网格)。
@@ -821,7 +932,7 @@ function createMiniWindow() {
   // 开窗即用同一宽度,避免"先窄后宽"把水平中心带偏
   const initForm = miniCompactForm()
   const initW = initForm === 'card' ? MINI_COMPACT_W : miniCapsuleWidth(storageData.miniCompactW)
-  const initH = initForm === 'card' ? MINI_COMPACT_H : MINI_CAPSULE_H
+  const initH = initForm === 'card' ? MINI_COMPACT_H : miniCapsuleGeo().h
   miniCenterX = null // 新建窗口:中心随初始位置重建
   // 初始位置:有记忆就夹进所在工作区(显示器拔插后不留在屏外);没有就放主显示器顶部居中
   // (岛的心智;此前不设坐标时 Electron 默认把窗口居中在屏幕中央,不像"岛")
@@ -992,6 +1103,8 @@ function createMiniWindow() {
       }))
     })
     const menu = Menu.buildFromTemplate([
+      { label: '岛设置…', click: () => openMiniIslandSettings() },
+      { type: 'separator' },
       { label: '上一曲', click: () => sendCmd('prev') },
       { label: '播放 / 暂停', click: () => sendCmd('toggle-play') },
       { label: '下一曲', click: () => sendCmd('next') },
@@ -1572,7 +1685,7 @@ function setupIPC() {
     if (!size || !Number.isFinite(size.width)) return
     const capsule = miniCompactForm() === 'capsule'
     const w = capsule ? miniCapsuleWidth(size.width) : MINI_COMPACT_W
-    const h = capsule ? MINI_CAPSULE_H : MINI_COMPACT_H
+    const h = capsule ? miniCapsuleGeo().h : MINI_COMPACT_H
     if (capsule) { storageData.miniCompactW = w; saveStorage() }
     try {
       const cur = miniWindow.getBounds()
@@ -1763,11 +1876,39 @@ function setupIPC() {
     }
   })
 
-  // 展开面板的「•••」按钮 → 弹出同一条小窗右键菜单(菜单是唯一设置入口,不新增第二份)
-  ipcMain.on('mini:open-menu', (event) => {
+  // 岛上的频谱:主窗 → 迷你窗(只转发不缓存 —— 这是一条 20fps 的流;校验发送方)
+  ipcMain.on('mini:spectrum', (event, vals) => {
+    if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) return
+    if (!miniWindow || miniWindow.isDestroyed()) return
+    try { miniWindow.webContents.send('mini:spectrum', Array.isArray(vals) ? vals : []) } catch (_) {}
+  })
+
+  // 岛设置写回:键白名单 + 范围钳制 + 发送方校验(不信渲染端)→ 落盘 → 几何即时重设
+  ipcMain.on('mini:island-setting', (event, payload) => {
     if (!miniWindow || miniWindow.isDestroyed()) return
     if (event.sender !== miniWindow.webContents) return
-    if (showMiniContextMenu) showMiniContextMenu()
+    if (!payload || typeof payload.key !== 'string') return
+    const spec = MINI_SETTING_SPEC[payload.key]
+    if (!spec) return // 未知键直接忽略(白名单)
+    const v = payload.value
+    let ok = false
+    if (spec.min !== undefined) ok = Number.isFinite(v) && v >= spec.min && v <= spec.max
+    else if (spec.bool) ok = typeof v === 'boolean'
+    else ok = spec.values.includes(v)
+    if (!ok) return
+    storageData[spec.store] = v
+    saveStorage()
+    if (payload.key === 'idleFadeSeconds') {
+      // 空闲延迟走既有的 mini:idle-sync 回推(不塞进 island-config,避免同一值双源)
+      try { miniWindow.webContents.send('mini:idle-sync', miniIdleSyncPayload()) } catch (_) {}
+      return
+    }
+    if (payload.key === 'form') {
+      sendMiniIslandConfig()
+      return // 形态的几何由渲染端按新形态上报尺寸后统一伸缩(既有流程)
+    }
+    sendMiniIslandConfig()
+    applyMiniConfigGeometry(payload.key)
   })
 
   // 拖动结束(渲染端只在"真的拖动过"之后才发):顶边吸附 + 主动落盘 ——

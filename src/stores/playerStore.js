@@ -2018,6 +2018,44 @@ export const usePlayerStore = defineStore('player', () => {
       try { window.electronAPI.sendMiniQueue(buildMiniQueuePayload()) } catch {}
     }, 300)
   }
+
+  // ===== 岛上的频谱(胶囊右侧的小条 + 展开媒体页的宽条):降采样后推给迷你窗 =====
+  // 20fps、只在迷你窗开着时推;与主窗频谱同一套取值手法(低频 ~40% + pow(0.75) 提亮 +
+  // 追高快/回落慢)。暂停时目标全零、柱子自然落平,不用单独发暂停消息。
+  const MINI_SPEC_BARS = 10
+  const MINI_SPEC_INTERVAL = 50
+  let _miniSpecTimer = null
+  let _miniSpecVals = new Array(MINI_SPEC_BARS).fill(0)
+  function pushMiniSpectrum() {
+    if (!window.electronAPI || !window.electronAPI.sendMiniSpectrum) return
+    if (!miniOpen.value) return
+    const data = getSpectrumData()
+    const playing = isPlaying.value
+    for (let i = 0; i < MINI_SPEC_BARS; i++) {
+      let target = 0
+      if (data && data.length && playing) {
+        const usable = Math.max(MINI_SPEC_BARS, Math.floor(data.length * 0.4))
+        const step = Math.max(1, Math.floor(usable / MINI_SPEC_BARS))
+        let v = 0
+        for (let j = 0; j < step; j++) v += data[i * step + j] || 0
+        v = v / step / 255
+        target = Math.pow(v, 0.75) * 255
+      }
+      const diff = target - _miniSpecVals[i]
+      _miniSpecVals[i] += diff * (diff > 0 ? 0.5 : 0.25)
+    }
+    try { window.electronAPI.sendMiniSpectrum(_miniSpecVals.map((v) => Math.round(v))) } catch {}
+  }
+  watch(miniOpen, (open) => {
+    if (open) {
+      if (!_miniSpecTimer) _miniSpecTimer = setInterval(pushMiniSpectrum, MINI_SPEC_INTERVAL)
+      pushMiniSpectrum()
+    } else if (_miniSpecTimer) {
+      clearInterval(_miniSpecTimer)
+      _miniSpecTimer = null
+      _miniSpecVals = new Array(MINI_SPEC_BARS).fill(0)
+    }
+  })
   // 队列是数组 ref:**原地增删/重排不会触发浅 watch**,必须 deep(否则岛队列页永远不动)
   watch(playQueue, () => sendMiniQueue(), { deep: true })
   watch(currentIndex, () => sendMiniQueue())

@@ -30,36 +30,41 @@ const line = () => read('src/components/LyricLine.vue')
 const shortcut = () => read('src/utils/shortcut.js')
 
 describe('尺寸契约:三处一致', () => {
-  it('main.js 顶层常量:卡片 320×80 / 胶囊 36×(180–420) / 展开 360×232', () => {
+  it('main.js 基线常量:卡片 320×80 / 胶囊 36×(184–416) / 面板 360×(200 + 间隙 8 + 指示点 24)', () => {
     const m = main()
     expect(m, '缺少 MINI_COMPACT_W = 320').toMatch(/const MINI_COMPACT_W = 320/)
     expect(m, '缺少 MINI_COMPACT_H = 80').toMatch(/const MINI_COMPACT_H = 80/)
-    expect(m, '缺少 MINI_CAPSULE_H = 36').toMatch(/const MINI_CAPSULE_H = 36/)
-    expect(m, '缺少 MINI_CAPSULE_MIN_W = 184(8 的倍数,中心才能落在物理像素网格上)').toMatch(/const MINI_CAPSULE_MIN_W = 184/)
-    expect(m, '缺少 MINI_CAPSULE_MAX_W = 416(同上是 8 的倍数)').toMatch(/const MINI_CAPSULE_MAX_W = 416/)
-    expect(m, '缺少 MINI_EXPANDED_W = 360').toMatch(/const MINI_EXPANDED_W = 360/)
-    expect(m, '缺少 MINI_EXPANDED_H = 232').toMatch(/const MINI_EXPANDED_H = 232/)
+    expect(m, '缺少 MINI_CAPSULE_H = 36(基线高)').toMatch(/const MINI_CAPSULE_H = 36/)
+    expect(m, '缺少 MINI_CAPSULE_MIN_W = 184(基线最小宽,8 的倍数)').toMatch(/const MINI_CAPSULE_MIN_W = 184/)
+    expect(m, '缺少 MINI_CAPSULE_MAX_W = 416(基线最大宽,8 的倍数)').toMatch(/const MINI_CAPSULE_MAX_W = 416/)
+    expect(m, '缺少 MINI_EXPANDED_W = 360(基线面板宽)').toMatch(/const MINI_EXPANDED_W = 360/)
+    expect(m, '缺少 MINI_PANEL_H = 200(基线面板高)').toMatch(/const MINI_PANEL_H = 200/)
+    expect(m, '缺少 MINI_PAGER_GAP = 8').toMatch(/const MINI_PAGER_GAP = 8/)
+    expect(m, '缺少 MINI_PAGER_H = 24').toMatch(/const MINI_PAGER_H = 24/)
   })
-  it('MiniView 的 CSS 变量与 main.js 一致(卡片 320/80、胶囊 36、展开 360 / 面板 200 + 指示点 24)', () => {
+  it('MiniView 的 CSS 变量与基线一致(卡片 320/80、胶囊 36、展开 360 / 面板 200 + 指示点 24)', () => {
     const s = mini()
     expect(s, 'CSS 缺 --mini-compact-w: 320px').toMatch(/--mini-compact-w: 320px;/)
     expect(s, 'CSS 缺 --mini-compact-h: 80px').toMatch(/--mini-compact-h: 80px;/)
-    expect(s, 'CSS 缺 --mini-capsule-h: 36px').toMatch(/--mini-capsule-h: 36px;/)
+    expect(s, 'CSS 缺 --mini-capsule-h: 36px(基线回退)').toMatch(/--mini-capsule-h: 36px;/)
     expect(s, 'CSS 缺 --mini-expanded-w: 360px').toMatch(/--mini-expanded-w: 360px;/)
     expect(s, 'CSS 缺 --mini-panel-h: 200px').toMatch(/--mini-panel-h: 200px;/)
     expect(s, 'CSS 缺 --mini-pager-h: 24px').toMatch(/--mini-pager-h: 24px;/)
   })
-  it('展开高度分解对得上:面板 200 + 间隙 8 + 指示点区 24 = 232', () => {
+  it('展开尺寸由派生函数算(面板高 + 间隙 + 指示点区;设置改档也走它)', () => {
     const m = main(), s = mini()
-    expect(m, 'MINI_EXPANDED_H 不是 232(200+24+8)').toMatch(/const MINI_EXPANDED_H = 232/)
+    expect(m, '缺 miniExpandedSize').toMatch(/function miniExpandedSize\(\)/)
+    expect(m, '分解公式不对').toMatch(/h: p\.h \+ MINI_PAGER_GAP \+ MINI_PAGER_H/)
     expect(s, '面板没按变量定尺寸').toMatch(/\.mini-panel \{ flex: 0 0 auto; width: var\(--mini-expanded-w\); height: var\(--mini-panel-h\);/)
     expect(s, '指示点区没按变量定尺寸').toMatch(/\.mini-pager \{ flex: 0 0 auto; height: var\(--mini-pager-h\);/)
   })
-  it('胶囊内边距合计与脚本测量常量一致(10 左 + 24 封面 + 8 间距 + 14 右 = 56)', () => {
+  it('胶囊横向基线与测量同源(CAPSULE_BASE 一份:CSS 走变量+基线回退,insets 由同一对象算)', () => {
     const s = mini()
-    expect(s, '脚本里没有 CAPSULE_INSETS = 56').toMatch(/const CAPSULE_INSETS = 56/)
-    expect(s, '封面尺寸变了(24 是内边距合计的一部分)').toMatch(/\.mini-capsule-cover \{\s+width: 24px; height: 24px;/)
-    expect(s, '胶囊内边距/间距变了(量宽会与窗口对不上)').toMatch(/gap: 8px;\s+padding: 0 14px 0 10px;/)
+    expect(s, '脚本里没有 CAPSULE_BASE 基线对象').toMatch(/const CAPSULE_BASE = \{ h: 36, cover: 24, padL: 10, gapL: 8, gapR: 6, padR: 8, viz: 30, vizH: 18, font: 13 \}/)
+    expect(s, 'insets 不是由基线算的').toMatch(/const insets = px\(CAPSULE_BASE\.padL\) \+ px\(CAPSULE_BASE\.cover\)/)
+    expect(s, '封面尺寸没走变量(带基线回退)').toMatch(/width: var\(--cap-cover, 24px\); height: var\(--cap-cover, 24px\);/)
+    expect(s, '胶囊高度没走变量').toMatch(/height: var\(--mini-capsule-h\);/)
+    expect(s, '两种宽度模式没区分(加宽 vs 固定宽滚动)').toMatch(/width = islandCfg\.lyricsScroll \? capsuleGeo\.value\.minW : measured/)
   })
   it('展开/收起/切页统一用弹簧近似曲线(常量只写一处)', () => {
     expect(mini(), '弹簧曲线不是统一常量').toMatch(/--mini-spring: cubic-bezier\(0\.34, 1\.56, 0\.64, 1\)/)
@@ -80,7 +85,7 @@ describe('放置与吸附', () => {
     expect(m, '缺少对齐函数').toMatch(/function alignToPhysicalGrid\(v\)/)
     expect(m, '默认位置没对齐').toMatch(/initY = alignToPhysicalGrid\(wa\.y \+ MINI_TOP_OFFSET\)/)
     expect(m, '恢复位置没对齐').toMatch(/initY = alignToPhysicalGrid\(p\.y\)/)
-    expect(m, '展开目标没按中心对齐(宽高都会落在半像素上)').toMatch(/boundsFromCenter\(centerX, cur\.y, MINI_EXPANDED_W, MINI_EXPANDED_H\)/)
+    expect(m, '展开目标没按中心对齐(宽高都会落在半像素上)').toMatch(/boundsFromCenter\(centerX, cur\.y, exp\.w, exp\.h\)/)
     expect(m, '收起目标没对齐').toMatch(/y: alignToPhysicalGrid\(a\.y\)/)
   })
   it('吸附阈值 20px,判定发生在 mini:drag-end', () => {
@@ -215,12 +220,13 @@ describe('展开页数据管道', () => {
 })
 
 describe('空闲淡出', () => {
-  it('默认关;菜单项存在;阈值固定 30s', () => {
+  it('默认关;菜单项存在;延迟可配(默认 30s,岛设置面里改)', () => {
     const m = main(), s = mini()
     expect(m, '右键菜单没有「空闲时淡出」').toMatch(/label: '空闲时淡出'/)
     expect(m, '开关没存 storageData.miniIdleFade').toMatch(/storageData\.miniIdleFade = !storageData\.miniIdleFade/)
     expect(m, '配置下发没读回 storageData.miniIdleFade').toMatch(/enabled: !!storageData\.miniIdleFade/)
-    expect(m, '阈值不是固定 30s 常量').toMatch(/const MINI_IDLE_FADE_SECONDS = 30/)
+    expect(m, '延迟不是设置项(默认 30s / 5–120)').toMatch(/idleFadeSeconds: \{ store: 'miniIdleFadeSeconds', min: 5, max: 120, def: 30 \}/)
+    expect(m, 'idle-sync 没走设置值').toMatch(/seconds: miniSetting\('idleFadeSeconds'\)/)
     expect(s, '渲染端默认不应开启淡出').toMatch(/const idleFadeEnabled = ref\(false\)/)
   })
   it('透明模式下限 .3(避免"窗口凭空消失")', () => {
@@ -293,23 +299,48 @@ describe('快捷键第 7 项(toggleMini)', () => {
 })
 
 describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
-  it('默认胶囊;菜单两项 radio;切换走 setMiniCompactForm(落盘 + 告知渲染端)', () => {
+  it('默认胶囊;菜单两项 radio;切换走 setMiniCompactForm(落盘 + 全量配置下发)', () => {
     const m = main()
-    expect(m, '默认不是胶囊').toMatch(/return storageData\.miniCompactForm === 'card' \? 'card' : 'capsule'/)
+    expect(m, '默认不是胶囊').toMatch(/miniSetting\('form'\) === 'card' \? 'card' : 'capsule'/)
     expect(m, '菜单缺「紧凑形态:胶囊」').toMatch(/label: '紧凑形态:胶囊', type: 'radio'/)
     expect(m, '菜单缺「紧凑形态:卡片」').toMatch(/label: '紧凑形态:卡片', type: 'radio'/)
-    expect(m, '切换没落盘').toMatch(/storageData\.miniCompactForm = next/)
-    expect(m, '切换没告知渲染端').toMatch(/miniWindow\.webContents\.send\('mini:form-sync', next\)/)
+    expect(m, '切换没落盘').toMatch(/storageData\.miniCompactForm = form === 'card' \? 'card' : 'capsule'/)
+    expect(m, '切换没下发全量配置').toMatch(/function setMiniCompactForm\(form\) \{[\s\S]{0,200}sendMiniIslandConfig\(\)/)
   })
-  it('mini:form-sync / mini:compact-size 三处同步(preload + 主进程 + 渲染端)', () => {
+  it('mini:island-config / mini:island-setting 三处同步(preload + 主进程 + 渲染端)', () => {
     const p = pre(), m = main(), s = mini()
-    expect(p, 'preload 没收 mini:form-sync').toContain("'mini:form-sync'")
-    expect(p, 'preload 没放行 mini:compact-size').toContain("'mini:compact-size'")
-    expect(m, '主进程没接 mini:compact-size').toMatch(/ipcMain\.on\('mini:compact-size'/)
-    expect(m, '整体回放里没有形态').toMatch(/send\('mini:form-sync', miniCompactForm\(\)\)/)
+    expect(p, 'preload 没收 mini:island-config').toContain("'mini:island-config'")
+    expect(p, 'preload 没放行 mini:island-setting').toContain("'mini:island-setting'")
+    expect(p, 'preload 没收 mini:open-settings').toContain("'mini:open-settings'")
+    expect(m, '主进程没接 mini:island-setting').toMatch(/ipcMain\.on\('mini:island-setting'/)
+    expect(m, '整体回放里没有全量配置').toMatch(/send\('mini:island-config', miniIslandConfig\(\)\)/)
     expect(m, '胶囊宽度没记住(重启会先窄后宽把中心带偏)').toMatch(/storageData\.miniCompactW = w/)
+    expect(m, '宽度上限改小后没再钳已存宽度').toMatch(/miniCapsuleWidth\(storageData\.miniCompactW\)/)
     expect(s, '渲染端没上报尺寸').toMatch(/window\.electronAPI\.sendMiniCompactSize\(\{ width \}\)/)
-    expect(s, '渲染端没接形态下发').toMatch(/onApi\('mini:form-sync', \(form\) => \{/)
+    expect(s, '渲染端没接全量配置').toMatch(/onApi\('mini:island-config', \(cfg\) => applyIslandConfig\(cfg\)\)/)
+    expect(s, '渲染端没写回设置').toMatch(/sendMiniIslandSetting\?\.\(\{ key, value \}\)/)
+    // 改名/下线后旧通道不该再出现(ipc-check 也会兜底)
+    expect(p, 'preload 里还留着旧的 mini:form-sync').not.toContain("'mini:form-sync'")
+    expect(m, '主进程里还留着 mini:open-menu').not.toMatch(/ipcMain\.on\('mini:open-menu'/)
+  })
+  it('设置写回:键白名单 + 范围钳制 + 发送方校验(不信渲染端)', () => {
+    const m = main()
+    const fn = /ipcMain\.on\('mini:island-setting'[\s\S]*?\n  \}\)/.exec(m)
+    expect(fn, '找不到 mini:island-setting').toBeTruthy()
+    expect(fn[0], '没有键白名单').toMatch(/const spec = MINI_SETTING_SPEC\[payload\.key\]\s*\n\s*if \(!spec\) return/)
+    expect(fn[0], '没校验发送方').toMatch(/event\.sender !== miniWindow\.webContents/)
+    expect(fn[0], '没有范围钳制').toMatch(/ok = Number\.isFinite\(v\) && v >= spec\.min && v <= spec\.max/)
+    expect(fn[0], '空闲延迟没走 idle-sync 回推').toMatch(/miniWindow\.webContents\.send\('mini:idle-sync', miniIdleSyncPayload\(\)\)/)
+    expect(m, '改设置后没即时重设窗口几何').toMatch(/function applyMiniConfigGeometry\(changedKey\)/)
+    expect(m, '高 < 字号时没抬高度(字会被裁)').toMatch(/Math\.max\(Math\.round\(miniSetting\('capsuleBaseH'\) \* s\), Math\.round\(font\) \+ 12\)/)
+  })
+  it('「岛设置…」:收起/未开窗时先展开再开面(挂起意图,不靠 sleep)', () => {
+    const m = main(), s = mini()
+    expect(m, '菜单缺「岛设置…」且不在首位').toMatch(/const menu = Menu\.buildFromTemplate\(\[\s*\n\s*\{ label: '岛设置…', click: \(\) => openMiniIslandSettings\(\) \}/)
+    expect(m, '收起态没挂起').toMatch(/function openMiniIslandSettings\(\)[\s\S]{0,300}miniPendingSettings = true/)
+    expect(m, '展开后没补发 open-settings').toMatch(/if \(miniPendingSettings\) \{[\s\S]{0,120}send\('mini:open-settings'\)/)
+    expect(s, '渲染端没有挂起兜底').toMatch(/if \(expanded\.value\) openSettings\(\)\s*\n\s*else pendingSettings\.value = true/)
+    expect(s, '••• 没指向设置面').toMatch(/class="mini-more" @click="openSettings"/)
   })
   it('胶囊:单击展开带 260ms 消歧、双击恢复保留(定时器卸载时清)', () => {
     const s = mini()
@@ -333,13 +364,41 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     expect(s, '缺收起按钮').toMatch(/class="mini-collapse" @click="requestCollapse"/)
     expect(s, '活动页不是长条胶囊').toMatch(/\.mini-dot\.active \{ width: 18px; border-radius: 3px; background: #fff; \}/)
   })
-  it('媒体页(照参考图):大封面 + ••• / 进度条右端是"-剩余" / 大传输键 / 展开态拖拽区', () => {
+  it('媒体页(照参考图):大封面 + ••• / 进度条右端是"-剩余" / 大传输键 / 频谱 / 展开态拖拽区', () => {
     const s = mini()
-    expect(s, '缺 •••(更多)按钮').toMatch(/class="mini-more" @click="openMiniMenu"/)
-    expect(s, '••• 没走小窗现有菜单(不该新增第二份)').toMatch(/window\.electronAPI\.openMiniMenu\(\)/)
+    expect(s, '缺 •••(更多)按钮').toMatch(/class="mini-more" @click="openSettings"/)
     expect(s, '缺剩余时间显示').toMatch(/'-' \+ formatTime\(Math\.max\(0, duration - currentTime\)\)/)
     expect(s, '缺大播放键').toMatch(/class="mini-ctl mini-ctl--play"/)
     expect(s, '展开态拖拽区标记丢了(展开态整块不可拖)').toMatch(/\.mini-drag-area/)
+    // 布局常量照 WinIsland 的 music_view.rs:传输键间距 72、进度条 hover 增高 3.5(4→7)
+    expect(s, '传输键间距没照参考常量(72)').toMatch(/\.mini-now-controls \{ display: flex; align-items: center; justify-content: center; gap: calc\(72px \* var\(--mini-ui-scale, 1\)\); \}/)
+    expect(s, '进度条没有 hover 增高').toMatch(/\.mini-now-progress:hover \.mini-bar \{ height: 7px; \}/)
+    expect(s, '展开媒体页缺频谱').toMatch(/<canvas class="mini-now-viz" ref="panelVizEl"/)
+    expect(s, '胶囊缺右侧频谱').toMatch(/<canvas class="mini-capsule-viz" ref="capsuleVizEl"/)
+  })
+  it('岛上频谱:三处同步 + 推送器参数(50ms / 10 柱 / 仅 miniOpen / 0.75 提亮)+ 发送方校验', () => {
+    const p = pre(), m = main(), st = store()
+    expect(p, 'preload 没收 mini:spectrum').toContain("'mini:spectrum'")
+    expect(p, 'preload 没放行 mini:spectrum').toMatch(/sendMiniSpectrum: \(vals\) => ipcRenderer\.send\('mini:spectrum', vals\)/)
+    const pf = /ipcMain\.on\('mini:spectrum'[\s\S]*?\n  \}\)/.exec(m)
+    expect(pf, '主进程没接 mini:spectrum').toBeTruthy()
+    expect(pf[0], '没校验发送方为主窗').toMatch(/event\.sender !== mainWindow\.webContents/)
+    expect(st, '缺推送节流常量').toMatch(/const MINI_SPEC_INTERVAL = 50/)
+    expect(st, '缺柱数常量').toMatch(/const MINI_SPEC_BARS = 10/)
+    expect(st, '没做低能量提亮(与主窗频谱同法)').toMatch(/Math\.pow\(v, 0\.75\) \* 255/)
+    expect(st, '没按 miniOpen 起停推送').toMatch(/if \(open\) \{[\s\S]{0,120}_miniSpecTimer = setInterval\(pushMiniSpectrum, MINI_SPEC_INTERVAL\)/)
+    expect(st, '窗口没开时也在推(白耗)').toMatch(/function pushMiniSpectrum\(\) \{\s*\n\s*if \(!window\.electronAPI[\s\S]{0,120}if \(!miniOpen\.value\) return/)
+  })
+  it('岛设置面:全部分组/字段/范围与「恢复默认」范围(不动形态)', () => {
+    const s = mini()
+    for (const label of ['胶囊缩放', '胶囊高度', '胶囊最小宽', '宽度上限', '歌词字号', '歌词左右留白', '面板宽度', '面板高度', '面板缩放', '胶囊显示歌词', '超长时固定宽滚动', '歌词切换', '胶囊封面', '面板封面', '播放时封面旋转', '展开/收起模糊', '空闲淡出延迟']) {
+      expect(s, `设置面缺少「${label}」`).toContain(`label: '${label}'`)
+    }
+    expect(s, '缺「恢复默认」').toMatch(/@click="resetSettings"[^>]*>恢复默认/)
+    expect(s, '恢复默认把形态也重置了(形态是另一个入口)').toMatch(/if \(k === 'form'\) continue/)
+    expect(s, '四种切换动效的 class 不全').toMatch(/\.mini-capsule-anim\.anim-blur \{ animation: mini-lyric-blur/)
+    expect(s, '动效模糊 class 没接上').toMatch(/\.mini-player--blur \.mini-panel-inner \{ filter: blur\(5px\); \}/)
+    expect(s, '封面形状没分支').toMatch(/\.mini-capsule-cover\.shape-circle \{ border-radius: 50%; \}/)
   })
 })
 

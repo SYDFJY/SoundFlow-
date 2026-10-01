@@ -6,9 +6,10 @@
       'mini-player--expanded': expanded,
       'mini-player--exiting': panelExiting,
       'mini-player--idle': idleFaded,
-      'mini-player--capsule': !expanded && compactForm === 'capsule'
+      'mini-player--capsule': !expanded && compactForm === 'capsule',
+      'mini-player--blur': panelBlur
     }"
-    :style="playerStyle"
+    :style="[playerStyle, islandVars]"
     @mouseenter="onRootEnter"
     @mouseleave="onRootLeave"
   >
@@ -19,7 +20,7 @@
         <!-- 双击提示挂在左侧,不再挂在根容器上:根上的 title 会被浏览器用在**鼠标下的按钮**上,
              OS 提示窗会盖住按钮自己的提示(用户报的"悬停文字被挡住"就是这个) -->
         <div class="mini-left" title="双击恢复主窗口">
-          <div class="mini-cover" :class="{ spinning: isPlaying }">
+          <div class="mini-cover" :class="{ spinning: isPlaying && islandCfg.coverRotate }">
             <img v-if="miniCover" :src="miniCover" @error="onCoverError" alt="" />
             <div v-else class="cover-placeholder"><Icon name="music" :size="20" /></div>
           </div>
@@ -60,7 +61,7 @@
       </div>
     </div>
 
-    <!-- ===== 紧凑·胶囊形态(默认;照 WinIsland:封面 + 一句歌词,宽度随文本伸缩) ===== -->
+    <!-- ===== 紧凑·胶囊形态(默认;照 WinIsland:封面 + 一句歌词 + 右侧迷你频谱) ===== -->
     <div
       class="mini-capsule"
       v-else-if="!expanded"
@@ -68,24 +69,73 @@
       @click="onCapsuleClick"
       @dblclick="onCapsuleDblClick"
     >
-      <div class="mini-capsule-cover">
+      <div class="mini-capsule-cover" :class="'shape-' + islandCfg.coverShape + (isPlaying && islandCfg.coverRotate ? ' spinning' : '')">
         <img v-if="miniCover" :src="miniCover" @error="onCoverError" alt="" />
         <div v-else class="cover-placeholder"><Icon name="music" :size="14" /></div>
       </div>
       <div class="mini-capsule-text">
-        <div class="mini-capsule-track" ref="capsuleTrackEl">{{ capsuleText }}</div>
+        <!-- 换行时按设置播切换动效:keyed 换元素即触发各自的入场动画(与 marquee 的 transform 分层,互不打架) -->
+        <div class="mini-capsule-anim" :key="capsuleText" :class="'anim-' + lyricAnim">
+          <div class="mini-capsule-track" ref="capsuleTrackEl">{{ capsuleText }}</div>
+        </div>
       </div>
+      <canvas class="mini-capsule-viz" ref="capsuleVizEl" aria-hidden="true"></canvas>
     </div>
 
-    <!-- ===== 展开态(照参考图:面板 360×200;分页指示点与收起按钮在面板下方外侧) ===== -->
+    <!-- ===== 展开态(照参考图:面板;分页指示点与收起按钮在面板下方外侧) ===== -->
     <template v-else>
       <div class="mini-panel" :style="surfaceStyle" @wheel="onPanelWheel">
         <div class="mini-panel-inner">
-          <!-- 正在播放页:封面+歌名/歌手+••• / 进度条(左已播、右剩余)/ 大传输键 / 音量 -->
+          <!-- 岛设置面(覆盖层;••• 或右键菜单「岛设置…」进入) -->
+          <div class="mini-settings" v-if="settingsOpen" @click.stop>
+            <div class="mini-settings-head">
+              <button class="mini-settings-back" @click="closeSettings" aria-label="返回">‹</button>
+              <span class="mini-settings-title">岛设置</span>
+              <button class="mini-settings-reset" @click="resetSettings">恢复默认</button>
+            </div>
+            <div class="mini-settings-body mini-scroll">
+              <div class="mini-settings-group" v-for="g in SETTING_GROUPS" :key="g.title">
+                <div class="mini-settings-gtitle">{{ g.title }}</div>
+                <div class="mini-settings-row" v-for="row in g.rows" :key="row.key">
+                  <span class="mini-settings-label">{{ row.label }}</span>
+                  <span class="mini-settings-ctl">
+                    <button
+                      v-if="row.type === 'toggle'"
+                      class="mini-switch" :class="{ on: !!islandCfg[row.key] }"
+                      @click="applySetting(row.key, !islandCfg[row.key])"
+                      :aria-label="row.label" role="switch" :aria-checked="!!islandCfg[row.key]"
+                    ><span class="mini-switch-dot"></span></button>
+                    <template v-else-if="row.type === 'range'">
+                      <input
+                        class="mini-range" type="range" :min="row.min" :max="row.max" :step="row.step"
+                        :value="islandCfg[row.key]" @input="applySetting(row.key, Number($event.target.value))"
+                        :aria-label="row.label"
+                      />
+                      <span class="mini-settings-value">{{ row.fmt(islandCfg[row.key]) }}</span>
+                    </template>
+                    <template v-else-if="row.type === 'step'">
+                      <button class="mini-step" @click="applySetting(row.key, islandCfg[row.key] - row.step)" :aria-label="row.label + ' 减小'">−</button>
+                      <span class="mini-settings-value">{{ row.fmt(islandCfg[row.key]) }}</span>
+                      <button class="mini-step" @click="applySetting(row.key, islandCfg[row.key] + row.step)" :aria-label="row.label + ' 增大'">+</button>
+                    </template>
+                    <template v-else-if="row.type === 'choice'">
+                      <button
+                        v-for="opt in row.options" :key="opt[0]"
+                        class="mini-choice" :class="{ on: islandCfg[row.key] === opt[0] }"
+                        @click="applySetting(row.key, opt[0])"
+                      >{{ opt[1] }}</button>
+                    </template>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 频谱 / 音量) -->
           <div class="mini-page" v-if="page === 'now'">
             <div class="mini-now">
               <div class="mini-now-top mini-drag-area">
-                <div class="mini-now-cover">
+                <div class="mini-now-cover" :class="'shape-' + islandCfg.expandedCoverShape">
                   <img v-if="miniCover" :src="miniCover" alt="" />
                   <Icon v-else name="music" :size="26" />
                 </div>
@@ -93,7 +143,7 @@
                   <div class="mini-now-title text-ellipsis" :title="title || 'SoundFlow'">{{ title || 'SoundFlow' }}</div>
                   <div class="mini-now-artist text-ellipsis">{{ artist || '声流音乐' }}</div>
                 </div>
-                <button class="mini-more" @click="openMiniMenu" aria-label="更多设置(与小窗右键菜单一致)" title="更多设置">
+                <button class="mini-more" @click="openSettings" aria-label="岛设置" title="岛设置">
                   <Icon name="more" :size="16" />
                 </button>
               </div>
@@ -107,13 +157,14 @@
                 </div>
               </div>
               <div class="mini-now-controls">
-                <button class="mini-ctl" @click="prev" aria-label="上一曲"><Icon name="prev" :size="20" fill="currentColor" /></button>
+                <button class="mini-ctl" @click="prev" aria-label="上一曲"><Icon name="prev" :size="uiPx(20)" fill="currentColor" /></button>
                 <button class="mini-ctl mini-ctl--play" @click="togglePlay" :aria-label="isPlaying ? '暂停' : '播放'">
-                  <Icon v-if="isPlaying" name="pause" :size="28" fill="currentColor" />
-                  <Icon v-else name="play" :size="28" fill="currentColor" />
+                  <Icon v-if="isPlaying" name="pause" :size="uiPx(28)" fill="currentColor" />
+                  <Icon v-else name="play" :size="uiPx(28)" fill="currentColor" />
                 </button>
-                <button class="mini-ctl" @click="next" aria-label="下一曲"><Icon name="next" :size="20" fill="currentColor" /></button>
+                <button class="mini-ctl" @click="next" aria-label="下一曲"><Icon name="next" :size="uiPx(20)" fill="currentColor" /></button>
               </div>
+              <canvas class="mini-now-viz" ref="panelVizEl" aria-hidden="true"></canvas>
               <div class="mini-volume" :class="{ 'is-muted': isMuted }">
                 <Icon :name="isMuted || volume <= 0 ? 'mute' : 'volume'" :size="13" />
                 <div class="mini-volume-track" ref="volumeEl" @mousedown="onVolumeDown" title="拖动调整音量">
@@ -177,8 +228,8 @@
           v-for="p in PAGES"
           :key="p.key"
           class="mini-dot"
-          :class="{ active: page === p.key }"
-          @click="setPage(p.key)"
+          :class="{ active: page === p.key && !settingsOpen }"
+          @click="onDotClick(p.key)"
           :aria-label="p.label"
           :title="p.label"
         ></button>
@@ -191,16 +242,15 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { formatDuration as formatTime } from '@/utils/time'
 import Icon from '@/components/icons/Icon.vue'
 import LyricLine from '@/components/LyricLine.vue'
 import { useMarquee } from '@/utils/useMarquee'
 
-// 尺寸契约(与 electron/main.js 的 MINI_* 常量、tests/miniIsland.test.js 三处一致):
-// 卡片 320×80 / 胶囊 高 36(宽随文本伸缩,184–416,8 的倍数)/ 展开 = 面板 360×200 + 间隙 + 指示点区 24。
-// CAPSULE_INSETS 必须与 CSS 的胶囊内边距合计一致(10 左 + 24 封面 + 8 间距 + 14 右 = 56)。
-const CAPSULE_INSETS = 56
+// ===== 基线(scale=1 时的契约;与 electron/main.js 的 MINI_* 基线、CSS 回退值三处一致)=====
+// 胶囊横向 = [padL][封面][gapL][留白][文字][留白][gapR][频谱][padR];测量 insets 由同一对象派生
+const CAPSULE_BASE = { h: 36, cover: 24, padL: 10, gapL: 8, gapR: 6, padR: 8, viz: 30, vizH: 18, font: 13 }
 const PAGES = [
   { key: 'now', label: '播放控制' },
   { key: 'lyrics', label: '歌词' },
@@ -210,7 +260,45 @@ const SLICE_BEFORE = 3
 const SLICE_LEN = 7
 const VOLUME_THROTTLE_MS = 60
 const CAPSULE_CLICK_DELAY = 260 // 单击展开/双击恢复的消歧窗口
+const SPEC_BARS = 10 // 频谱柱数(与主窗推送器一致)
 
+// 岛设置的默认值(与 electron/main.js 的 MINI_SETTING_SPEC.def 一致;「恢复默认」用它)
+const ISLAND_DEFAULTS = {
+  form: 'capsule', capsuleScale: 1, capsuleBaseH: 36, capsuleMinW: 184, capsuleMaxW: 416,
+  capsuleFont: 13, lyricGap: 6, showLyrics: true, coverShape: 'square', expandedCoverShape: 'square',
+  coverRotate: true, lyricsScroll: false, lyricTransition: 'fade', panelW: 360, panelH: 200,
+  panelScale: 1, motionBlur: false, idleFadeSeconds: 30
+}
+const islandCfg = reactive(Object.assign({}, ISLAND_DEFAULTS))
+
+// 设置面的分组(数据驱动渲染;范围与 main.js 的白名单一致)
+const SETTING_GROUPS = [
+  { title: '尺寸', rows: [
+    { key: 'capsuleScale', label: '胶囊缩放', type: 'range', min: 0.6, max: 2, step: 0.05, fmt: (v) => Math.round(v * 100) + '%' },
+    { key: 'capsuleBaseH', label: '胶囊高度', type: 'step', min: 24, max: 72, step: 2, fmt: (v) => v + 'px' },
+    { key: 'capsuleMinW', label: '胶囊最小宽', type: 'step', min: 140, max: 320, step: 8, fmt: (v) => v + 'px' },
+    { key: 'capsuleMaxW', label: '宽度上限', type: 'step', min: 240, max: 700, step: 8, fmt: (v) => v + 'px' },
+    { key: 'capsuleFont', label: '歌词字号', type: 'range', min: 10, max: 20, step: 1, fmt: (v) => v + 'px' },
+    { key: 'lyricGap', label: '歌词左右留白', type: 'range', min: 0, max: 32, step: 2, fmt: (v) => v + 'px' },
+    { key: 'panelW', label: '面板宽度', type: 'step', min: 280, max: 520, step: 8, fmt: (v) => v + 'px' },
+    { key: 'panelH', label: '面板高度', type: 'step', min: 150, max: 320, step: 8, fmt: (v) => v + 'px' },
+    { key: 'panelScale', label: '面板缩放', type: 'range', min: 0.85, max: 1.15, step: 0.01, fmt: (v) => Math.round(v * 100) + '%' }
+  ] },
+  { title: '显示', rows: [
+    { key: 'showLyrics', label: '胶囊显示歌词', type: 'toggle' },
+    { key: 'lyricsScroll', label: '超长时固定宽滚动', type: 'toggle' },
+    { key: 'lyricTransition', label: '歌词切换', type: 'choice', options: [['fade', '淡入'], ['slide', '滑动'], ['blur', '模糊'], ['random', '随机']] },
+    { key: 'coverShape', label: '胶囊封面', type: 'choice', options: [['square', '方形'], ['circle', '圆形']] },
+    { key: 'expandedCoverShape', label: '面板封面', type: 'choice', options: [['square', '方形'], ['circle', '圆形']] },
+    { key: 'coverRotate', label: '播放时封面旋转', type: 'toggle' }
+  ] },
+  { title: '动效与空闲', rows: [
+    { key: 'motionBlur', label: '展开/收起模糊', type: 'toggle' },
+    { key: 'idleFadeSeconds', label: '空闲淡出延迟', type: 'range', min: 5, max: 120, step: 5, fmt: (v) => v + 's' }
+  ] }
+]
+
+// ===== 播放状态 =====
 const title = ref('')
 const artist = ref('')
 const coverUrl = ref(null)
@@ -342,6 +430,37 @@ const playerStyle = computed(() => ({
 }))
 const surfaceStyle = computed(() => ({ background: playerBg.value }))
 
+// ===== 岛设置的派生几何与 CSS 变量(基线对象是唯一事实源:样式与测量都从它算)=====
+const uiPx = (v) => Math.max(1, Math.round(v * islandCfg.panelScale)) // 面板内元素整体缩放
+const capsuleGeo = computed(() => {
+  const s = islandCfg.capsuleScale
+  const px = (v) => Math.round(v * s)
+  const font = Math.max(1, Math.round(islandCfg.capsuleFont * s))
+  const h = Math.max(Math.round(islandCfg.capsuleBaseH * s), font + 12) // 高 ≥ 字号 + 12,否则字被裁
+  const insets = px(CAPSULE_BASE.padL) + px(CAPSULE_BASE.cover) + px(CAPSULE_BASE.gapL) +
+    2 * islandCfg.lyricGap + px(CAPSULE_BASE.gapR) + px(CAPSULE_BASE.viz) + px(CAPSULE_BASE.padR)
+  const minW = Math.max(8, Math.round(islandCfg.capsuleMinW * s / 8) * 8)
+  const maxW = Math.max(minW, Math.round(islandCfg.capsuleMaxW * s / 8) * 8)
+  return { h, font, insets, minW, maxW }
+})
+const islandVars = computed(() => {
+  const s = islandCfg.capsuleScale
+  const px = (v) => Math.round(v * s)
+  return {
+    '--mini-capsule-h': capsuleGeo.value.h + 'px',
+    '--mini-capsule-font': capsuleGeo.value.font + 'px',
+    '--cap-cover': px(CAPSULE_BASE.cover) + 'px',
+    '--cap-padl': px(CAPSULE_BASE.padL) + 'px',
+    '--cap-padr': px(CAPSULE_BASE.padR) + 'px',
+    '--cap-gapl': px(CAPSULE_BASE.gapL) + 'px',
+    '--cap-gapr': px(CAPSULE_BASE.gapR) + 'px',
+    '--cap-lyricgap': islandCfg.lyricGap + 'px',
+    '--cap-viz': px(CAPSULE_BASE.viz) + 'px',
+    '--cap-viz-h': px(CAPSULE_BASE.vizH) + 'px',
+    '--mini-ui-scale': String(islandCfg.panelScale)
+  }
+})
+
 // 时长格式化已改为从 @/utils/time 引入(同名别名 formatTime,模板无需改动)
 
 // 封面容灾
@@ -349,12 +468,36 @@ function onCoverError() {
   // 迷你窗无法访问歌曲路径,忽略(由主窗口重建)
 }
 
-// ===== 紧凑形态(胶囊/卡片;主进程权威,经 mini:form-sync 下发)=====
+// ===== 紧凑形态与岛设置(主进程权威,经 mini:island-config 下发)=====
 const compactForm = ref('capsule')
+function applyIslandConfig(cfg) {
+  if (!cfg || typeof cfg !== 'object') return
+  for (const k of Object.keys(ISLAND_DEFAULTS)) {
+    if (k in cfg) islandCfg[k] = cfg[k]
+  }
+  compactForm.value = islandCfg.form === 'card' ? 'card' : 'capsule'
+  nextTick(() => { reportCompactSize(); drawVisibleSpectrum() })
+}
+// 设置面把改动写回主进程(主进程做白名单+钳制+落盘;渲染端先本地生效保证滑杆跟手)
+function applySetting(key, value) {
+  if (!(key in ISLAND_DEFAULTS)) return
+  islandCfg[key] = value
+  try { window.electronAPI?.sendMiniIslandSetting?.({ key, value }) } catch (_) {}
+  nextTick(() => { reportCompactSize(); drawVisibleSpectrum() })
+}
+function resetSettings() {
+  for (const k of Object.keys(ISLAND_DEFAULTS)) {
+    if (k === 'form') continue // 形态是另一个入口(右键菜单),「恢复默认」不动它
+    applySetting(k, ISLAND_DEFAULTS[k])
+  }
+}
 
 // ===== 两态岛:展开状态只信主进程事件(权威在 main.js)=====
 const expanded = ref(false)
 const panelExiting = ref(false)
+const settingsOpen = ref(false)
+const pendingSettings = ref(false) // 未展开时点了「岛设置…」:展开到位后自动开面
+const panelBlur = ref(false) // 展开/收起过渡中的内容模糊(设置开启时才用)
 const page = ref('now')
 
 function setPage(key) {
@@ -374,11 +517,25 @@ function toggleIsland() {
 // 收起:先播 140ms 出场动画,再让主进程收窗口(否则内容被窗口边缘裁掉)
 function requestCollapse() {
   if (panelExiting.value) return
+  if (settingsOpen.value) { closeSettings(); return } // Esc/收起按钮:先关设置面
   panelExiting.value = true
+  if (islandCfg.motionBlur) panelBlur.value = true
   setTimeout(() => {
     panelExiting.value = false
+    if (islandCfg.motionBlur) setTimeout(() => { panelBlur.value = false }, 180)
     try { window.electronAPI?.toggleMiniIsland && window.electronAPI.toggleMiniIsland() } catch (_) {}
   }, 140)
+}
+function openSettings() {
+  settingsOpen.value = true
+}
+function closeSettings() {
+  settingsOpen.value = false
+}
+// 点分页圆点:设置面开着时先关面再切页(圆点始终可用)
+function onDotClick(key) {
+  if (settingsOpen.value) closeSettings()
+  setPage(key)
 }
 // 卡片形态:双击恢复主窗口在 header 上(排除交互元素);展开态没有 header,不受影响
 function onHeaderDblClick(e) {
@@ -399,17 +556,16 @@ function onCapsuleDblClick() {
   if (capsuleClickTimer) { clearTimeout(capsuleClickTimer); capsuleClickTimer = null }
   restoreMain()
 }
-// Esc 收起(与 App.vue 的 soundflow:esc 广播并存,不拦截)
+// Esc:先关设置面(若有),再收起岛(与 App.vue 的 soundflow:esc 广播并存,不拦截)
 function onKeydown(e) {
-  if (e.code === 'Escape' && expanded.value) requestCollapse()
+  if (e.code !== 'Escape') return
+  if (settingsOpen.value) { closeSettings(); return }
+  if (expanded.value) requestCollapse()
 }
-// 展开面板「•••」→ 主进程弹同一条小窗右键菜单(设置唯一入口)
-function openMiniMenu() {
-  try { window.electronAPI?.openMiniMenu && window.electronAPI.openMiniMenu() } catch (_) {}
-}
-// 滚轮:可滚动页先滚内容、到边界才切页(150ms 锁)
+// 滚轮:可滚动页先滚内容、到边界才切页(150ms 锁);设置面开着时不切页
 let wheelLockUntil = 0
 function onPanelWheel(e) {
+  if (settingsOpen.value) return
   const scroller = e.target && e.target.closest ? e.target.closest('.mini-scroll') : null
   if (scroller) {
     const atTop = scroller.scrollTop <= 0
@@ -442,25 +598,37 @@ function onLyricSeek(line) {
   try { if (window.electronAPI?.send) window.electronAPI.send('mini:seek', line.time) } catch {}
 }
 
-// 胶囊文案:当前句 → 无歌词/前奏时"歌名 · 歌手"兜底 → 完全没有歌时 SoundFlow
+// 胶囊文案:当前句(可关)→ 无歌词/前奏时"歌名 · 歌手"兜底 → 完全没有歌时 SoundFlow
 const capsuleText = computed(() => {
-  const lines = lyricLines.value
-  const idx = lyricCurrentIdx.value
-  if (lines.length && idx >= 0 && lines[idx]) {
-    const t = String(lines[idx].text || '').trim()
-    if (t) return t
+  if (islandCfg.showLyrics) {
+    const lines = lyricLines.value
+    const idx = lyricCurrentIdx.value
+    if (lines.length && idx >= 0 && lines[idx]) {
+      const t = String(lines[idx].text || '').trim()
+      if (t) return t
+    }
   }
   const t = (title.value || '').trim()
   const a = (artist.value || '').trim()
   if (!t && !a) return 'SoundFlow'
   return a ? `${t} · ${a}` : t
 })
-// 胶囊超长句:宽度到上限后当前句内滚动(与歌词页共用 useMarquee 一份实现)
+// 歌词切换动效:按设置;'随机'每次换行都重抽一个(与 WinIsland 的 random 档一致)
+const lyricAnim = ref('fade')
+const LAST_ANIMS = ['fade', 'slide', 'blur']
+watch(capsuleText, () => {
+  const mode = islandCfg.lyricTransition
+  lyricAnim.value = mode === 'random' ? LAST_ANIMS[Math.floor(Math.random() * LAST_ANIMS.length)] : mode
+}, { immediate: true })
+watch(() => islandCfg.lyricTransition, (mode) => {
+  lyricAnim.value = mode === 'random' ? LAST_ANIMS[Math.floor(Math.random() * LAST_ANIMS.length)] : mode
+})
+// 胶囊超长句的滚动:加宽模式到上限后滚动;固定宽滚动模式则一直在最小宽里滚
 const capsuleTrackEl = ref(null)
 const { marqueeOn: capsuleMarquee } = useMarquee({
   isOn: () => compactForm.value === 'capsule' && !expanded.value,
   isPlaying: () => isPlaying.value,
-  deps: [capsuleText, compactForm, expanded]
+  deps: [capsuleText, compactForm, expanded, () => islandCfg.capsuleFont, () => islandCfg.capsuleScale, () => islandCfg.lyricGap]
 })
 
 const queueRows = ref([])
@@ -482,28 +650,53 @@ async function scrollQueueToActive() {
 }
 watch(page, (p) => { if (p === 'queue') scrollQueueToActive() })
 
-// ===== 紧凑尺寸上报:卡片 320×80;胶囊 = 量出的文本宽 + 内边距(主进程钳位/对齐/围绕中心伸缩)=====
-let _lastCompactReport = ''
-function reportCompactSize() {
-  if (!window.electronAPI?.sendMiniCompactSize) return
-  if (expanded.value) return // 展开态不受紧凑尺寸影响(收起时会再报一次)
-  let width
-  if (compactForm.value === 'card') {
-    width = 320
-  } else {
-    const el = capsuleTrackEl.value
-    // 还没挂载(刚切形态)时先按最小值报,挂载后再量准
-    width = el ? Math.ceil(el.scrollWidth) + CAPSULE_INSETS : 0
+// ===== 频谱:主窗每 50ms 推一组降采样柱值;胶囊右侧与展开媒体页共用同一份绘制 =====
+const specVals = ref(new Array(SPEC_BARS).fill(0))
+const capsuleVizEl = ref(null)
+const panelVizEl = ref(null)
+let _vizColor = ''
+function vizColor() {
+  if (!_vizColor) {
+    try { _vizColor = getComputedStyle(document.documentElement).getPropertyValue('--color-primary').trim() || '#4096ff' } catch (_) { _vizColor = '#4096ff' }
   }
-  const key = `${compactForm.value}:${width}`
-  if (key === _lastCompactReport) return
-  _lastCompactReport = key
-  try { window.electronAPI.sendMiniCompactSize({ width }) } catch (_) {}
+  return _vizColor
 }
-watch(capsuleText, () => { if (!expanded.value) nextTick(reportCompactSize) })
-watch([compactForm, expanded], () => { nextTick(reportCompactSize) })
+// 同一绘制函数:10 根柱、底对齐、圆角;静音(全零)时留 1px 平线
+function drawSpectrum(canvas, vals) {
+  if (!canvas || !canvas.isConnected) return
+  const dpr = window.devicePixelRatio || 1
+  const cssW = canvas.clientWidth || 30
+  const cssH = canvas.clientHeight || 18
+  const W = Math.max(1, Math.round(cssW * dpr))
+  const H = Math.max(1, Math.round(cssH * dpr))
+  if (canvas.width !== W || canvas.height !== H) { canvas.width = W; canvas.height = H }
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, cssW, cssH)
+  const n = SPEC_BARS
+  const gap = Math.max(1, Math.round(cssW / 22))
+  const barW = Math.max(1, (cssW - (n - 1) * gap) / n)
+  const r = Math.min(barW / 2, 1.5)
+  ctx.fillStyle = vizColor()
+  for (let i = 0; i < n; i++) {
+    const v = Math.max(0, Math.min(255, vals[i] || 0)) / 255
+    const h = Math.max(1, v * cssH)
+    const x = i * (barW + gap)
+    ctx.beginPath()
+    if (ctx.roundRect) ctx.roundRect(x, cssH - h, barW, h, r)
+    else ctx.rect(x, cssH - h, barW, h)
+    ctx.fill()
+  }
+}
+// 只画当前可见的那块(两块 canvas 状态互斥:至多一块在画)
+function drawVisibleSpectrum() {
+  if (expanded.value) drawSpectrum(panelVizEl.value, specVals.value)
+  else if (compactForm.value === 'capsule') drawSpectrum(capsuleVizEl.value, specVals.value)
+}
+watch([expanded, compactForm], () => { nextTick(drawVisibleSpectrum) })
 
-// ===== 空闲淡出(默认关;开启后未播放+未悬停 30s 淡出,透明模式下限 .3)=====
+// ===== 空闲淡出(默认关;开启后未播放+未悬停 N 秒淡出,透明模式下限 .3)=====
 const idleFadeEnabled = ref(false)
 const idleFadeSeconds = ref(30)
 const idleFaded = ref(false)
@@ -526,6 +719,32 @@ function onRootEnter() { hovering.value = true; wakeFromIdle() }
 function onRootLeave() { hovering.value = false; scheduleIdle() }
 watch(isPlaying, (playing) => { if (playing) wakeFromIdle(); else scheduleIdle() })
 watch(expanded, (on) => { if (on) wakeFromIdle(); else scheduleIdle() })
+
+// ===== 紧凑尺寸上报:卡片 320×80;胶囊 = 量出的文本宽 + 内边距(主进程钳位/对齐/围绕中心伸缩)=====
+let _lastCompactReport = ''
+function reportCompactSize() {
+  if (!window.electronAPI?.sendMiniCompactSize) return
+  if (expanded.value) return // 展开态不受紧凑尺寸影响(收起时会再报一次)
+  let width
+  if (compactForm.value === 'card') {
+    width = 320
+  } else {
+    const el = capsuleTrackEl.value
+    const measured = el ? Math.ceil(el.scrollWidth) + capsuleGeo.value.insets : 0
+    // 固定宽滚动模式:窗口恒为最小宽(超长部分由 marquee 滚),不随文本加宽
+    width = islandCfg.lyricsScroll ? capsuleGeo.value.minW : measured
+  }
+  const key = `${compactForm.value}:${width}:${islandCfg.lyricsScroll}`
+  if (key === _lastCompactReport) return
+  _lastCompactReport = key
+  try { window.electronAPI.sendMiniCompactSize({ width }) } catch (_) {}
+}
+watch(capsuleText, () => { if (!expanded.value) nextTick(reportCompactSize) })
+watch([compactForm, expanded], () => { nextTick(reportCompactSize) })
+watch(
+  [() => islandCfg.capsuleScale, () => islandCfg.capsuleFont, () => islandCfg.lyricGap, () => islandCfg.lyricsScroll, () => islandCfg.capsuleMinW, () => islandCfg.capsuleMaxW, () => islandCfg.capsuleBaseH],
+  () => { if (!expanded.value) nextTick(reportCompactSize) }
+)
 
 const _apiUnsubs = []
 // 统一收集订阅的卸载函数(onUnmounted 里全部释放;这是"新增监听必须有卸载路径"的守卫要求)
@@ -571,11 +790,29 @@ onMounted(() => {
     })
     onApi('mini:expanded', (val) => {
       expanded.value = !!val
-      if (!val) panelExiting.value = false
+      if (!val) {
+        panelExiting.value = false
+        panelBlur.value = false
+        settingsOpen.value = false
+        _lastCompactReport = '' // 收起后会按当前文本/设置重报一次
+      } else if (islandCfg.motionBlur) {
+        panelBlur.value = true
+        setTimeout(() => { panelBlur.value = false }, 200)
+      }
+      // 未展开时点的「岛设置…」:展开到位后自动开面(主进程也会补发,这里兜底)
+      if (val && pendingSettings.value) {
+        pendingSettings.value = false
+        settingsOpen.value = true
+      }
     })
-    onApi('mini:form-sync', (form) => {
-      compactForm.value = form === 'card' ? 'card' : 'capsule'
-      nextTick(reportCompactSize)
+    onApi('mini:island-config', (cfg) => applyIslandConfig(cfg))
+    onApi('mini:open-settings', () => {
+      if (expanded.value) openSettings()
+      else pendingSettings.value = true
+    })
+    onApi('mini:spectrum', (vals) => {
+      specVals.value = Array.isArray(vals) ? vals : []
+      drawVisibleSpectrum()
     })
     onApi('mini:lyrics', (data) => {
       lyricLines.value = data && Array.isArray(data.lines) ? data.lines : []
@@ -606,9 +843,9 @@ onMounted(() => {
     // 兜底:主进程若没有可回放的状态(例如刚启动还没播过歌),这里也必须放行,
     // 否则窗口会一直不显示,只能等主进程 600ms 的兜底 —— 那一下会显得很迟钝。
     setTimeout(signalReady, 300)
-    // 首帧把紧凑尺寸报一次(形态经 mini:form-sync 回放;字体就绪后再量准一次)
+    // 首帧把紧凑尺寸报一次(形态/设置经 mini:island-config 回放;字体就绪后再量准一次)
     setTimeout(reportCompactSize, 400)
-    try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => nextTick(reportCompactSize)).catch(() => {}) } catch (_) {}
+    try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => nextTick(() => { reportCompactSize(); drawVisibleSpectrum() })).catch(() => {}) } catch (_) {}
   }
 })
 onUnmounted(() => {
@@ -722,7 +959,8 @@ function restoreMain() {
 
 <style scoped>
 .mini-player {
-  /* 尺寸契约(与 electron/main.js 的 MINI_* 常量、tests/miniIsland.test.js 三处一致) */
+  /* 尺寸契约的**基线值**(scale=1;与 electron/main.js 的 MINI_* 基线一致);
+     运行期由 islandVars 以内联变量覆盖 */
   --mini-compact-w: 320px;
   --mini-compact-h: 80px;
   --mini-capsule-h: 36px;
@@ -747,6 +985,9 @@ function restoreMain() {
 /* 空闲淡出(菜单可开关;透明模式下背景下限调高,避免"窗口凭空消失")*/
 .mini-player--idle { opacity: 0.15; }
 .mini-player--idle.mini-player--transparent { opacity: 0.3; }
+/* 展开/收起过渡的内容模糊(设置开启时才挂;面板内元素短暂虚化) */
+.mini-player--blur .mini-panel-inner { filter: blur(5px); }
+.mini-panel-inner { transition: filter 0.18s ease; }
 
 /* ===== 紧凑·卡片(经典迷你播放器;尺寸 = 窗口本身,320×80)===== */
 .mini-card {
@@ -843,38 +1084,56 @@ function restoreMain() {
   transition: width 0.2s linear;
 }
 
-/* ===== 紧凑·胶囊(默认形态;封面 + 一句歌词,宽度=窗口宽度由主进程按文本伸缩)=====
-   内边距合计必须与脚本里的 CAPSULE_INSETS 一致:10 + 24 + 8 + 14 = 56 */
+/* ===== 紧凑·胶囊(默认形态;封面 + 一句歌词 + 右侧迷你频谱)=====
+   横向 = [padL][封面][gapL][留白][文字][留白][gapR][频谱][padR];
+   这些尺寸全部来自 islandVars(基线 CAPSULE_BASE × 缩放/设置),测量 insets 同一来源 */
 .mini-capsule {
   width: 100%;
   height: var(--mini-capsule-h);
   border-radius: 999px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 14px 0 10px;
+  padding-left: var(--cap-padl, 10px);
+  padding-right: var(--cap-padr, 8px);
   overflow: hidden;
   cursor: pointer;
 }
 .mini-capsule-cover {
-  width: 24px; height: 24px; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+  width: var(--cap-cover, 24px); height: var(--cap-cover, 24px);
+  overflow: hidden; flex-shrink: 0; margin-right: var(--cap-gapl, 8px);
   background: rgba(128,128,128,0.15);
   display: flex; align-items: center; justify-content: center;
 }
+.mini-capsule-cover.shape-square { border-radius: calc(var(--cap-cover, 24px) / 4); }
+.mini-capsule-cover.shape-circle { border-radius: 50%; }
 .mini-capsule-cover img { width: 100%; height: 100%; object-fit: cover; }
+.mini-capsule-cover.spinning img { animation: mini-spin 12s linear infinite; }
 .mini-capsule-cover .cover-placeholder { font-size: 14px; }
-.mini-capsule-text { flex: 1; min-width: 0; overflow: hidden; }
+.mini-capsule-text { flex: 1; min-width: 0; overflow: hidden; margin: 0 var(--cap-lyricgap, 6px); }
+.mini-capsule-anim { display: block; }
 .mini-capsule-track {
   white-space: nowrap;
-  font-size: 13px;
+  font-size: var(--mini-capsule-font, 13px);
   color: var(--mc, #fff);
   will-change: transform;
 }
 .mini-player--transparent .mini-capsule-track { text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
-/* 胶囊里长句的滚动(useMarquee 由脚本驱动 transform) */
-.mini-player--capsule .mini-capsule-track { transition: none; }
+/* 换行切换动效(四选一;'随机'由脚本每次换行抽一个)—— 作用在外层 anim 上,与 marquee 的
+   transform(内层 track)分层,互不打架 */
+@keyframes mini-lyric-fade { from { opacity: 0 } to { opacity: 1 } }
+@keyframes mini-lyric-slide { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+@keyframes mini-lyric-blur { from { opacity: 0; filter: blur(6px) } to { opacity: 1; filter: none } }
+.mini-capsule-anim.anim-fade { animation: mini-lyric-fade 0.22s ease }
+.mini-capsule-anim.anim-slide { animation: mini-lyric-slide 0.22s ease }
+.mini-capsule-anim.anim-blur { animation: mini-lyric-blur 0.26s ease }
+/* 胶囊右侧迷你频谱(10 根柱;绘制在脚本里,底对齐) */
+.mini-capsule-viz {
+  width: var(--cap-viz, 30px); height: var(--cap-viz-h, 18px);
+  flex-shrink: 0; margin-left: var(--cap-gapr, 6px);
+  display: block;
+}
 
-/* ===== 展开态:面板 360×200 + 面板下方外侧的指示点区 ===== */
+/* ===== 展开态:面板 + 面板下方外侧的指示点区 ===== */
 .mini-panel { flex: 0 0 auto; width: var(--mini-expanded-w); height: var(--mini-panel-h); border-radius: 20px; position: relative; overflow: hidden; }
 /* 入场/出场:面板与指示点区一起淡入位移(逐条单选择器写法 —— check-lost-styles 只解析这种形状) */
 .mini-panel-inner {
@@ -898,19 +1157,22 @@ function restoreMain() {
 
 .mini-empty { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--mc3, rgba(255,255,255,0.35)); }
 
-/* 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 音量) */
-.mini-now { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 12px 16px; }
-.mini-now-top { display: flex; align-items: center; gap: 10px; }
+/* 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 频谱 / 音量) */
+.mini-now { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: calc(8px * var(--mini-ui-scale, 1)); padding: calc(12px * var(--mini-ui-scale, 1)) calc(16px * var(--mini-ui-scale, 1)); }
+.mini-now-top { display: flex; align-items: center; gap: calc(10px * var(--mini-ui-scale, 1)); }
 .mini-now-cover {
-  width: 64px; height: 64px; border-radius: 12px; overflow: hidden; flex-shrink: 0;
+  width: calc(64px * var(--mini-ui-scale, 1)); height: calc(64px * var(--mini-ui-scale, 1));
+  overflow: hidden; flex-shrink: 0;
   background: rgba(128,128,128,0.15);
   display: flex; align-items: center; justify-content: center;
   color: var(--mc3, rgba(255,255,255,0.35));
 }
+.mini-now-cover.shape-square { border-radius: calc(12px * var(--mini-ui-scale, 1)); }
+.mini-now-cover.shape-circle { border-radius: 50%; }
 .mini-now-cover img { width: 100%; height: 100%; object-fit: cover; }
 .mini-now-meta { flex: 1; min-width: 0; }
-.mini-now-title { font-size: 15px; font-weight: 600; color: var(--mc, #fff); }
-.mini-now-artist { font-size: 12px; color: var(--mc2, rgba(255,255,255,0.55)); margin-top: 2px; }
+.mini-now-title { font-size: calc(15px * var(--mini-ui-scale, 1)); font-weight: 600; color: var(--mc, #fff); }
+.mini-now-artist { font-size: calc(12px * var(--mini-ui-scale, 1)); color: var(--mc2, rgba(255,255,255,0.55)); margin-top: 2px; }
 .mini-more {
   width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
@@ -921,8 +1183,9 @@ function restoreMain() {
 .mini-more:hover { color: var(--mc-btn, #fff); background: rgba(255,255,255,0.10); }
 
 .mini-now-progress { display: flex; flex-direction: column; gap: 4px; }
-.mini-bar { position: relative; height: 4px; border-radius: 2px; background: var(--mc-track, rgba(255,255,255,0.12)); cursor: pointer; }
-/* 4px 视觉高度太低:透明伪元素把命中区扩到 14px */
+.mini-bar { position: relative; height: 4px; border-radius: 2px; background: var(--mc-track, rgba(255,255,255,0.12)); cursor: pointer; transition: height 0.15s ease; }
+/* 悬停增高(照 WinIsland 的 6.5 → +3.5):命中区跟着变大,更好拖 */
+.mini-now-progress:hover .mini-bar { height: 7px; }
 .mini-bar::before { content: ''; position: absolute; left: 0; right: 0; top: -5px; height: 14px; }
 .mini-bar-fill { position: relative; height: 100%; border-radius: 2px; background: var(--color-primary); }
 .mini-bar-fill::after {
@@ -931,7 +1194,8 @@ function restoreMain() {
 }
 .mini-now-times { display: flex; justify-content: space-between; font-size: 10px; color: var(--mc3, rgba(255,255,255,0.35)); font-variant-numeric: tabular-nums; }
 
-.mini-now-controls { display: flex; align-items: center; justify-content: center; gap: 26px; }
+/* 传输键:间距照 WinIsland 的 SKIP_BUTTON_GAP(75 → 取 72),截图那种散开的手感 */
+.mini-now-controls { display: flex; align-items: center; justify-content: center; gap: calc(72px * var(--mini-ui-scale, 1)); }
 .mini-ctl {
   display: flex; align-items: center; justify-content: center;
   background: transparent; border: 0; cursor: pointer;
@@ -941,6 +1205,9 @@ function restoreMain() {
 .mini-ctl:hover { opacity: 0.85; }
 .mini-ctl:active { transform: scale(0.92); }
 .mini-ctl--play { color: var(--mc-btn, #fff); }
+
+/* 展开媒体页的宽频谱(与胶囊共用同一条流/同一个绘制函数) */
+.mini-now-viz { width: 100%; height: calc(22px * var(--mini-ui-scale, 1)); display: block; opacity: 0.85; }
 
 .mini-volume { display: flex; align-items: center; gap: 8px; color: var(--mc2, rgba(255,255,255,0.55)); }
 .mini-volume.is-muted { opacity: 0.55; }
@@ -953,14 +1220,14 @@ function restoreMain() {
   margin-top: -5px; border-radius: 50%; background: var(--color-primary);
 }
 
-/* 歌词页(200 高内 ±3 切片,超出滚动;长行当前行内滚动) */
+/* 歌词页(面板高内 ±3 切片,超出滚动;长行当前行内滚动) */
 .mini-lyrics { height: 100%; overflow-y: auto; padding: 8px 16px; display: flex; align-items: center; }
 .mini-lyric-slice { width: 100%; animation: mini-lyric-in 0.12s ease; }
 @keyframes mini-lyric-in { from { opacity: 0.3; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .mini-lyric-row { min-height: 34px; display: flex; align-items: center; overflow: hidden; }
 .mini-lyric-row :deep(.lyric-line) { width: 100%; }
 
-/* 队列页(200 高:约 3 行 + 内部滚动) */
+/* 队列页(面板高内约 3 行 + 内部滚动) */
 .mini-queue { height: 100%; display: flex; flex-direction: column; padding: 8px 0 0; }
 .mini-queue-head { flex: 0 0 auto; font-size: 11px; color: var(--mc3, rgba(255,255,255,0.35)); padding: 0 16px 6px; }
 .mini-queue-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
@@ -974,6 +1241,54 @@ function restoreMain() {
 .mini-queue-row.active { color: var(--color-primary); background: rgba(255,255,255,0.06); }
 .mini-queue-title { flex: 1; min-width: 0; font-size: 13px; }
 .mini-queue-artist { max-width: 40%; font-size: 11px; opacity: 0.8; }
+
+/* ===== 岛设置面(覆盖层;分组 + 滑杆/步进/勾选/二选)===== */
+.mini-settings { position: absolute; inset: 0; display: flex; flex-direction: column; background: inherit; animation: mini-settings-in 0.16s var(--mini-spring); z-index: 3; }
+@keyframes mini-settings-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.mini-settings-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px 6px; }
+.mini-settings-back {
+  width: 22px; height: 22px; border-radius: 6px; border: 0; cursor: pointer;
+  background: rgba(255,255,255,0.12); color: var(--mc-btn, #fff);
+  font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
+.mini-settings-back:hover { background: rgba(255,255,255,0.22); }
+.mini-settings-title { flex: 1; font-size: 12px; font-weight: 600; color: var(--mc, #fff); }
+.mini-settings-reset {
+  border: 0; cursor: pointer; border-radius: 6px; padding: 3px 8px; font-size: 11px;
+  background: rgba(255,255,255,0.10); color: var(--mc2, rgba(255,255,255,0.6));
+}
+.mini-settings-reset:hover { background: rgba(255,255,255,0.20); color: var(--mc-btn, #fff); }
+.mini-settings-body { flex: 1; overflow-y: auto; padding: 0 12px 10px; }
+.mini-settings-group { margin-bottom: 6px; }
+.mini-settings-gtitle { font-size: 10px; color: var(--mc3, rgba(255,255,255,0.35)); padding: 6px 2px 2px; }
+.mini-settings-row { display: flex; align-items: center; gap: 8px; min-height: 24px; padding: 1px 2px; }
+.mini-settings-label { flex: 1; min-width: 0; font-size: 11px; color: var(--mc2, rgba(255,255,255,0.72)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-settings-ctl { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.mini-settings-value { min-width: 34px; text-align: right; font-size: 10px; color: var(--mc3, rgba(255,255,255,0.45)); font-variant-numeric: tabular-nums; }
+.mini-range { -webkit-appearance: none; appearance: none; width: 92px; height: 14px; background: transparent; cursor: pointer; }
+.mini-range::-webkit-slider-runnable-track { height: 3px; border-radius: 2px; background: var(--mc-track, rgba(255,255,255,0.18)); }
+.mini-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 10px; height: 10px; margin-top: -3.5px; border-radius: 50%; background: var(--color-primary); }
+.mini-step {
+  width: 18px; height: 18px; border-radius: 5px; border: 0; cursor: pointer;
+  background: rgba(255,255,255,0.12); color: var(--mc-btn, #fff); font-size: 12px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+}
+.mini-step:hover { background: rgba(255,255,255,0.22); }
+.mini-switch {
+  position: relative; width: 30px; height: 16px; border-radius: 8px; border: 0; cursor: pointer;
+  background: var(--mc-track, rgba(255,255,255,0.18)); transition: background 0.15s ease;
+}
+.mini-switch.on { background: var(--color-primary); }
+.mini-switch-dot {
+  position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
+  background: #fff; transition: transform 0.15s var(--mini-spring);
+}
+.mini-switch.on .mini-switch-dot { transform: translateX(14px); }
+.mini-choice {
+  border: 0; cursor: pointer; border-radius: 6px; padding: 2px 7px; font-size: 10px;
+  background: rgba(255,255,255,0.10); color: var(--mc2, rgba(255,255,255,0.6));
+}
+.mini-choice.on { background: var(--color-primary); color: #fff; }
 
 /* 面板下方外侧:分页指示点(活动页为长条胶囊)+ 收起按钮 —— 底部这条区域是透明的窗口区 */
 .mini-pager { flex: 0 0 auto; height: var(--mini-pager-h); display: flex; align-items: center; justify-content: center; gap: 6px; }

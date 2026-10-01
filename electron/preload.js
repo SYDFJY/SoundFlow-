@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 // 主进程 → 渲染进程 的事件通道白名单(渲染端通过 on() 订阅)
 const RECEIVE_CHANNELS = [
   'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'lyric:drag-start',
-  'mini:update', 'mini:state', 'mini:bg-sync', 'mini:expanded', 'mini:form-sync', 'mini:lyrics', 'mini:lyric-index', 'mini:queue', 'mini:idle-sync', 'window-state',
+  'mini:update', 'mini:state', 'mini:bg-sync', 'mini:expanded', 'mini:island-config', 'mini:open-settings', 'mini:lyrics', 'mini:lyric-index', 'mini:queue', 'mini:spectrum', 'mini:idle-sync', 'window-state',
   'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
   // 桌面歌词窗改了设置(字号/对齐/特效/逐字/翻译/背景/锁定/置顶/显示歌名)→ 主窗口落盘并回推
   'lyric-setting',
@@ -30,13 +30,17 @@ const SEND_CHANNELS = [
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
   // 两态岛:展开/收起(小窗按钮/播放栏按钮统一命令;托盘在主进程内直调)
   'mini:toggle-island',
-  // 展开面板的「•••」按钮 → 弹出小窗右键菜单(与右键同一条)
-  'mini:open-menu',
+  // 岛设置面:右键菜单「岛设置…」→ 主进程让(必要时先展开)渲染端开面
+  'mini:open-settings',
+  // 岛设置面把改动写回(主进程做键白名单 + 范围钳制 + 落盘 + 几何即时重设)
+  'mini:island-setting',
   // 两态岛的展开页数据(与 mini:update 同构:主窗发送 → 主进程缓存转发 → 迷你窗)
   // mini:lyrics 低频全量;mini:lyric-index 高频轻量(节流由渲染端做);mini:queue 截断推送
   'mini:lyrics', 'mini:lyric-index', 'mini:queue',
-  // 紧凑态尺寸上报(卡片 320×80;胶囊 = 量出的文本宽 × 36)—— 主进程钳位/对齐/围绕中心伸缩
+  // 紧凑态尺寸上报(卡片 320×80;胶囊 = 量出的文本宽 × 基准高)—— 主进程钳位/对齐/围绕中心伸缩
   'mini:compact-size',
+  // 岛上的频谱(主窗侧降采样后的柱值数组;20fps 流,主进程只转发)
+  'mini:spectrum',
   // 队列页点击跳播(绝对索引)→ 主窗口 playIndex
   'mini:play-index',
   'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
@@ -156,16 +160,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('mini:expanded', h)
     return () => ipcRenderer.removeListener('mini:expanded', h)
   },
-  // 紧凑形态(胶囊/卡片;主进程权威,菜单切换后下发)
-  onMiniFormSync: (cb) => {
-    const h = (_e, form) => cb(form)
-    ipcRenderer.on('mini:form-sync', h)
-    return () => ipcRenderer.removeListener('mini:form-sync', h)
+  // 紧凑形态与岛设置的统一下发(形态 + 全部尺寸/显示设置一次带上)
+  onMiniIslandConfig: (cb) => {
+    const h = (_e, cfg) => cb(cfg)
+    ipcRenderer.on('mini:island-config', h)
+    return () => ipcRenderer.removeListener('mini:island-config', h)
+  },
+  // 岛设置面写回(主进程校验后落盘并即时重设窗口几何)
+  sendMiniIslandSetting: (payload) => ipcRenderer.send('mini:island-setting', payload),
+  // 岛设置面(展开面板「•••」/ 右键菜单「岛设置…」入口的渲染端订阅)
+  onMiniOpenSettings: (cb) => {
+    const h = () => cb()
+    ipcRenderer.on('mini:open-settings', h)
+    return () => ipcRenderer.removeListener('mini:open-settings', h)
   },
   // 紧凑态尺寸上报(渲染端量好后告诉主进程;主进程钳位/对齐/围绕水平中心伸缩)
   sendMiniCompactSize: (size) => ipcRenderer.send('mini:compact-size', size),
-  // 展开面板「•••」→ 小窗右键菜单(设置唯一入口,不新增第二份)
-  openMiniMenu: () => ipcRenderer.send('mini:open-menu'),
+  // 岛上的频谱(主窗侧降采样后的柱值数组;20fps 流)
+  sendMiniSpectrum: (vals) => ipcRenderer.send('mini:spectrum', vals),
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
   onMiniState: (cb) => {
     const h = (_e, open) => cb(open)

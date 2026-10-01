@@ -1370,12 +1370,24 @@ app.whenReady().then(async () => {
         return { text, scroll: el ? el.scrollWidth : 0 }
       })()`)
       if (widthCheck && widthCheck.text) {
-        const want = Math.min(416, Math.max(184, Math.ceil((Math.ceil(widthCheck.scroll) + 56) / 8) * 8))
+        // insets(基线 scale=1、留白 6)= padL 10 + 封面 24 + gapL 8 + 留白×2 12 + gapR 6 + 频谱 30 + padR 8 = 98
+        const want = Math.min(416, Math.max(184, Math.ceil((Math.ceil(widthCheck.scroll) + 98) / 8) * 8))
         check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)',
           near(b0.width, want, 3), `窗口=${b0.width} 期望=${want}(文本 ${JSON.stringify(widthCheck.text).slice(0, 40)} scroll=${widthCheck.scroll})`)
       } else {
         check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)', false, `没有胶囊文本: ${JSON.stringify(widthCheck)}`)
       }
+
+      // 频谱:右侧有 canvas,且数据真的在流(迷你窗计数;窗口开着就会推,暂停时推零值)
+      check('两态岛:胶囊右侧有频谱 canvas', (await mrun(`(() => !!document.querySelector('.mini-capsule-viz'))()`)) === true)
+      const specCount = await mrun(`(async () => {
+        window.__specCount = 0
+        const un = window.electronAPI.on('mini:spectrum', () => { window.__specCount++ })
+        await new Promise((r) => setTimeout(r, 1200))
+        try { un && un() } catch (e) {}
+        return window.__specCount
+      })()`)
+      check('两态岛:岛上的频谱真的在流(1.2s 收到 > 5 组)', typeof specCount === 'number' && specCount > 5, `收到 ${specCount} 组`)
 
       // ② 单击胶囊 → 260ms 消歧后展开;收起按钮回胶囊
       const clickCapsule = () => mrun(`(() => { const el=document.querySelector('.mini-capsule'); if(!el) return false; el.click(); return true })()`)
@@ -1549,21 +1561,95 @@ app.whenReady().then(async () => {
         check('两态岛:小窗右键菜单有「空闲时淡出」(默认不勾)',
           !!idleItem && idleItem.type === 'checkbox' && idleItem.checked === false,
           idleItem ? `type=${idleItem.type} checked=${idleItem.checked}` : '菜单里没有')
-        // 菜单里切换紧凑形态 → 卡片(radio 两项;收起后应变成 320×80 的经典卡片)
+        // 菜单里切换紧凑形态 → 卡片(radio 两项;收起后应变成 320×80 的经典卡片)—— 点击放到本段末尾,
+        // 因为接下来的岛设置面要验胶囊尺寸,先保持胶囊形态
         const formItem = capturedMenu ? capturedMenu.items.find((i) => i.label === '紧凑形态:卡片') : null
         check('两态岛:右键菜单有「紧凑形态:胶囊/卡片」两项(radio)',
           !!capturedMenu && capturedMenu.items.some((i) => i.label === '紧凑形态:胶囊' && i.type === 'radio') && !!formItem && formItem.type === 'radio',
           capturedMenu ? `卡片项=${formItem ? formItem.type : '无'}` : '菜单里没有')
-        try { if (formItem) formItem.click(formItem) } catch (e) {}
-        await sleep(400)
         try { if (capturedMenu) capturedMenu.closePopup(mw4) } catch (e) {}
 
-        // 双击作用域:展开态内容区双击不恢复主窗;收起后(卡片形态)双击 header 恢复
+        // 岛设置面:「•••」打开 → 改「胶囊缩放」→ 收起后高度随之变 → 再「恢复默认」回到基线;
+        // 展开态改「面板宽度」窗口即时变宽(设置写回主进程后几何即时重设)
+        const settingsFlow = await mrun4(`(async () => {
+          const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+          // 「•••」在"正在播放"页上:先切回去(前面的切页测试停在歌词页)
+          const nowDot = [...document.querySelectorAll('.mini-dot')].find((d) => d.getAttribute('aria-label') === '播放控制')
+          if (nowDot) { nowDot.click(); await wait(300) }
+          const more = document.querySelector('.mini-more')
+          if (!more) return { err: '没有 ••• 按钮' }
+          more.click(); await wait(350)
+          const opened = !!document.querySelector('.mini-settings')
+          const rows = document.querySelectorAll('.mini-settings-row').length
+          const rowOf = (label) => [...document.querySelectorAll('.mini-settings-row')].find((r) => (r.querySelector('.mini-settings-label') || {}).textContent === label)
+          const scaleRow = rowOf('胶囊缩放')
+          const range = scaleRow && scaleRow.querySelector('input[type=range]')
+          if (range) { range.value = '1.4'; range.dispatchEvent(new Event('input', { bubbles: true })) }
+          await wait(250)
+          // 面板宽度 +8(展开态应立即改窗口)
+          const pwRow = rowOf('面板宽度')
+          const plus = pwRow && [...pwRow.querySelectorAll('.mini-step')].pop()
+          const pwBefore = pwRow ? (pwRow.querySelector('.mini-settings-value') || {}).textContent : null
+          if (plus) plus.click()
+          await wait(600)
+          const pwAfter = pwRow ? (pwRow.querySelector('.mini-settings-value') || {}).textContent : null
+          // 关面(返回)留给外面收起来断言高度
+          const back = document.querySelector('.mini-settings-back')
+          if (back) back.click()
+          await wait(250)
+          return { opened, rows, pwBefore, pwAfter, closed: !document.querySelector('.mini-settings') }
+        })()`)
+        check('两态岛:「•••」打开岛设置面(分组/字段齐全,返回可关)',
+          !!settingsFlow && settingsFlow.opened === true && settingsFlow.rows >= 15 && settingsFlow.closed === true,
+          JSON.stringify(settingsFlow))
+        check('两态岛:展开态改「面板宽度」→ 数值变化且窗口即时重设',
+          !!settingsFlow && settingsFlow.pwBefore && settingsFlow.pwAfter && settingsFlow.pwBefore !== settingsFlow.pwAfter,
+          JSON.stringify({ before: settingsFlow && settingsFlow.pwBefore, after: settingsFlow && settingsFlow.pwAfter }))
+        const bWide = findMini() ? findMini().getBounds() : null
+        check('两态岛:面板宽度 +8 后展开窗口确实变宽了', !!bWide && bWide.width >= 368, bWide ? JSON.stringify(bWide) : '窗口不在')
+
+        // 收起:按 1.4 缩放的高度应 ≈ 50(36×1.4);随后「恢复默认」回到 36
+        await mrun4(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)
+        await sleep(900)
+        const bScaled = findMini() ? findMini().getBounds() : null
+        check('两态岛:改「胶囊缩放」后收起,胶囊高度随之变(1.4 → ≈50)',
+          !!bScaled && near(bScaled.height, Math.round(36 * 1.4), 2), bScaled ? JSON.stringify(bScaled) : '窗口不在')
+        if (bScaled) {
+          // 重新展开 → ••• → 恢复默认 → 收起,应回到基线 36
+          await mrun4(`(() => { const el=document.querySelector('.mini-capsule'); if(!el) return false; el.click(); return true })()`)
+          await sleep(800)
+          const mwR = findMini()
+          if (mwR) {
+            await mwR.webContents.executeJavaScript(`(async () => {
+              const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+              const more = document.querySelector('.mini-more'); if (more) more.click()
+              await wait(350)
+              const reset = document.querySelector('.mini-settings-reset'); if (reset) reset.click()
+              await wait(400)
+              const back = document.querySelector('.mini-settings-back'); if (back) back.click()
+              await wait(200)
+              const col = document.querySelector('.mini-collapse'); if (col) col.click()
+              return true
+            })()`, true)
+            await sleep(1100)
+            const bReset = findMini() ? findMini().getBounds() : null
+            check('两态岛:「恢复默认」后胶囊回到基线(高 36、宽 184–416)',
+              !!bReset && near(bReset.height, 36, 2) && bReset.width >= 184 && bReset.width <= 416,
+              bReset ? JSON.stringify(bReset) : '窗口不在')
+          }
+        }
+
+        // 双击作用域:上一步已收起(胶囊)→ 再展开;展开态内容区双击不恢复主窗;收起后(卡片形态)双击 header 恢复
+        await mrun4(`(() => { const el=document.querySelector('.mini-capsule'); if(!el) return false; el.click(); return true })()`)
+        await sleep(900)
         const dblPanel = await mrun4(`(() => { const el=document.querySelector('.mini-panel'); if(!el) return false; el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true })()`)
         await sleep(600)
         const stillOpen = !!findMini()
         check('两态岛:展开态内容区双击不恢复主窗(回归修复;此前 dblclick 挂在根元素上)',
           dblPanel === true && stillOpen === true, `dispatched=${dblPanel} stillOpen=${stillOpen}`)
+        // 现在把形态切到卡片(菜单项对象仍可用)→ 收起回来应是 320×80 的经典卡片
+        try { if (formItem) formItem.click(formItem) } catch (e) {}
+        await sleep(400)
         await mrun4(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)
         await sleep(900)
         const mw5 = findMini()
