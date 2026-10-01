@@ -1362,21 +1362,43 @@ app.whenReady().then(async () => {
         near(b0.height, 36) && b0.width >= 184 && b0.width <= 416 && b0.width % 8 === 0 && near(centerX0, expectX) && b0.y >= wa.y && b0.y <= wa.y + 12,
         `实际 ${JSON.stringify(b0)} 中心=${Math.round(centerX0)} 期望中心≈${expectX} 高=36`)
 
-      // ① 宽度随文本:窗口宽 ≈ 文本 scrollWidth + 内边距(钳位区间内)
+      // ① 宽度随文本:窗口宽 ≈ **文本内容宽** + 内边距(钳位区间内)
       const widthCheck = await mrun(`(async () => {
         const el = document.querySelector('.mini-capsule-track')
         const text = el ? el.textContent.trim() : ''
+        let textW = 0
+        if (el) {
+          try { const r = document.createRange(); r.selectNodeContents(el); textW = Math.ceil(r.getBoundingClientRect().width) } catch (e) { textW = el.scrollWidth }
+        }
         await new Promise((r) => setTimeout(r, 250))
-        return { text, scroll: el ? el.scrollWidth : 0 }
+        return { text, textW }
       })()`)
       if (widthCheck && widthCheck.text) {
         // insets(基线 scale=1、留白 6)= padL 10 + 封面 24 + gapL 8 + 留白×2 12 + gapR 6 + 频谱 30 + padR 8 = 98
-        const want = Math.min(416, Math.max(184, Math.ceil((Math.ceil(widthCheck.scroll) + 98) / 8) * 8))
+        const want = Math.min(416, Math.max(184, Math.ceil((widthCheck.textW + 98) / 8) * 8))
         check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)',
-          near(b0.width, want, 3), `窗口=${b0.width} 期望=${want}(文本 ${JSON.stringify(widthCheck.text).slice(0, 40)} scroll=${widthCheck.scroll})`)
+          near(b0.width, want, 3), `窗口=${b0.width} 期望=${want}(文本 ${JSON.stringify(widthCheck.text).slice(0, 40)} 文字宽=${widthCheck.textW})`)
       } else {
         check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)', false, `没有胶囊文本: ${JSON.stringify(widthCheck)}`)
       }
+
+      // ①b 宽度**随每句歌词伸缩**:注入长句 → 变宽;换短句 → 缩回(用户报的"只涨不缩")
+      // 注意要注**整串同一句**:播放中主窗会不断推 mini:lyric-index,只给 1 行的话索引一变就
+      // 越界退回"歌名·歌手"兜底,量到的就不是我们要的那句了
+      const longLine = '这是一句特别长的歌词用来把胶囊撑到宽度上限确认会跟着变宽'
+      const fill = (text) => ({ lines: Array.from({ length: 80 }, () => ({ text })), currentIdx: 0 })
+      mw.webContents.send('mini:lyrics', fill(longLine))
+      await sleep(1000)
+      const bWide = findMini() ? findMini().getBounds() : null
+      const wideText = await mrun(`(() => { const el = document.querySelector('.mini-capsule-track'); return el ? el.textContent.trim() : '' })()`)
+      mw.webContents.send('mini:lyrics', fill('短句'))
+      await sleep(1200)
+      const bNarrow = findMini() ? findMini().getBounds() : null
+      const narrowText = await mrun(`(() => { const el = document.querySelector('.mini-capsule-track'); return el ? el.textContent.trim() : '' })()`)
+      check('两态岛:胶囊宽度随每句歌词伸缩(长句变宽、换短句缩回,不再只涨不缩)',
+        !!bWide && !!bNarrow && String(wideText).startsWith('这是一句') && narrowText === '短句' &&
+        bWide.width >= 240 && bNarrow.width < bWide.width && near(bNarrow.width, 184, 8),
+        JSON.stringify({ wide: bWide && bWide.width, narrow: bNarrow && bNarrow.width, wideText: String(wideText).slice(0, 12), narrowText }))
 
       // 频谱:右侧有 canvas,且数据真的在流(迷你窗计数;窗口开着就会推,暂停时推零值)
       check('两态岛:胶囊右侧有频谱 canvas', (await mrun(`(() => !!document.querySelector('.mini-capsule-viz'))()`)) === true)
@@ -1397,13 +1419,13 @@ app.whenReady().then(async () => {
         cls: document.querySelector('.mini-player').classList.contains('mini-player--expanded'),
         panel: !!document.querySelector('.mini-panel'),
         pager: !!document.querySelector('.mini-pager'),
-        dots: document.querySelectorAll('.mini-dot').length,
+        dots: document.querySelectorAll('.mini-tab').length,
         collapse: !!document.querySelector('.mini-collapse'),
         bar: !!document.querySelector('.mini-bar'),
         play: !!document.querySelector('.mini-ctl--play'),
         more: !!document.querySelector('.mini-more')
       }))()`)
-      check('两态岛:单击胶囊展开到 360×232(面板 + 面板外指示点区 + 收起按钮 + 媒体页三件套)',
+      check('两态岛:单击胶囊展开到 360×232(面板 + 面板外页签区 + 收起按钮 + 媒体页三件套)',
         near(b1.width, 360) && near(b1.height, 232) && dom1.cls === true && dom1.panel === true && dom1.pager === true &&
         dom1.dots === 3 && dom1.collapse === true && dom1.bar && dom1.play && dom1.more,
         `bounds ${JSON.stringify(b1)} dom ${JSON.stringify(dom1)}`)
@@ -1501,10 +1523,10 @@ app.whenReady().then(async () => {
         const firstTitle = String((items[0] && items[0].title) || '')
         const seq = await mrun4(`(async () => {
           const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-          const dotOf = (label) => [...document.querySelectorAll('.mini-dot')].find((d) => d.getAttribute('aria-label') === label)
+          const dotOf = (label) => [...document.querySelectorAll('.mini-tab')].find((d) => d.getAttribute('aria-label') === label)
           const out = {}
           const qdot = dotOf('队列')
-          if (!qdot) return { err: '没有队列圆点' }
+          if (!qdot) return { err: '没有队列页签' }
           qdot.click(); await wait(450)
           let rows = [...document.querySelectorAll('.mini-queue-row')]
           out.rows = rows.length
@@ -1533,14 +1555,14 @@ app.whenReady().then(async () => {
           out.marquee = lines.filter((l) => l.classList.contains('marquee')).length
           out.text = lines.map((l) => l.textContent).join('|').slice(0, 120)
           out.activeLine = !!document.querySelector('.lyric-line.active')
-          out.activeDot = (document.querySelector('.mini-dot.active') || {}).getAttribute
-            ? document.querySelector('.mini-dot.active').getAttribute('aria-label') : null
+          out.activeDot = (document.querySelector('.mini-tab.active') || {}).getAttribute
+            ? document.querySelector('.mini-tab.active').getAttribute('aria-label') : null
           return out
         })()`)
         check('两态岛:队列页有行与"共 N 首",点两行跳播后小窗标题都跟着换(绝对索引)',
           !!seq && seq.rows > 0 && /共 \d+ 首/.test(String(seq.head)) && seq.after5 === seq.target5 && seq.after0 === firstTitle,
           JSON.stringify({ rows: seq && seq.rows, head: seq && seq.head, target5: seq && seq.target5, after5: seq && seq.after5, after0: seq && seq.after0 }))
-        check('两态岛:歌词页永远不是空白(有行渲染行,无行显示空态文案),圆点状态跟随',
+        check('两态岛:歌词页永远不是空白(有行渲染行,无行显示空态文案),页签状态跟随',
           !!seq && seq.activeDot === '歌词' && (seq.lines > 0 || String(seq.emptyText).includes('暂无歌词')),
           JSON.stringify({ lines: seq && seq.lines, emptyText: seq && seq.emptyText, emptyLines: seq && seq.emptyLines, dot: seq && seq.activeDot }))
         check('两态岛:带本地歌词的歌 → 歌词页渲染共用组件(单行裁剪、短行不滚)',
@@ -1574,7 +1596,7 @@ app.whenReady().then(async () => {
         const settingsFlow = await mrun4(`(async () => {
           const wait = (ms) => new Promise((r) => setTimeout(r, ms))
           // 「•••」在"正在播放"页上:先切回去(前面的切页测试停在歌词页)
-          const nowDot = [...document.querySelectorAll('.mini-dot')].find((d) => d.getAttribute('aria-label') === '播放控制')
+          const nowDot = [...document.querySelectorAll('.mini-tab')].find((d) => d.getAttribute('aria-label') === '播放控制')
           if (nowDot) { nowDot.click(); await wait(300) }
           const more = document.querySelector('.mini-more')
           if (!more) return { err: '没有 ••• 按钮' }
@@ -1607,11 +1629,18 @@ app.whenReady().then(async () => {
           if (plus) plus.click()
           await wait(600)
           const pwAfter = pwRow ? (pwRow.querySelector('.mini-settings-value') || {}).textContent : null
+          // 实况胶囊预览:存在、在设置面里,且尺寸跟着设置走(刚把缩放调到 1.4 → 高约 52)
+          const prevEl = document.querySelector('.mini-settings-preview .mini-capsule')
+          const prevRect = prevEl ? prevEl.getBoundingClientRect() : null
+          const preview = prevRect ? { w: Math.round(prevRect.width), h: Math.round(prevRect.height), inside: !!(stEl && stEl.contains(prevEl)), viz: !!prevEl.querySelector('.mini-capsule-viz') } : null
+          // 页签带文字(播放控制/歌词/队列),不再是圆点
+          const tabs = [...document.querySelectorAll('.mini-tab')].map((t) => t.textContent.trim())
+          const resizeHandle = !!document.querySelector('.mini-resize--c')
           // 关面(返回)留给外面收起来断言高度
           const back = document.querySelector('.mini-settings-back')
           if (back) back.click()
           await wait(250)
-          return { opened, rows, opaque, covered, bgc, bgImg, panelVizGone, pwBefore, pwAfter, closed: !document.querySelector('.mini-settings') }
+          return { opened, rows, opaque, covered, bgc, bgImg, panelVizGone, pwBefore, pwAfter, preview, tabs, resizeHandle, closed: !document.querySelector('.mini-settings') }
         })()`)
         check('两态岛:「•••」打开岛设置面(分组/字段齐全,返回可关)',
           !!settingsFlow && settingsFlow.opened === true && settingsFlow.rows >= 15 && settingsFlow.closed === true,
@@ -1626,6 +1655,46 @@ app.whenReady().then(async () => {
           JSON.stringify({ before: settingsFlow && settingsFlow.pwBefore, after: settingsFlow && settingsFlow.pwAfter }))
         const bWide = findMini() ? findMini().getBounds() : null
         check('两态岛:面板宽度 +8 后展开窗口确实变宽了', !!bWide && bWide.width >= 368, bWide ? JSON.stringify(bWide) : '窗口不在')
+        check('两态岛:设置面顶部有实况胶囊预览(高随缩放变、含频谱、确实在设置面里)',
+          !!settingsFlow && !!settingsFlow.preview && settingsFlow.preview.inside === true && settingsFlow.preview.viz === true &&
+          near(settingsFlow.preview.h, 52, 3) && settingsFlow.preview.w >= 240,
+          JSON.stringify(settingsFlow && settingsFlow.preview))
+        check('两态岛:页签是带文字的三个(播放控制/歌词/队列),不再是圆点',
+          !!settingsFlow && Array.isArray(settingsFlow.tabs) && settingsFlow.tabs.length === 3 &&
+          settingsFlow.tabs.join('|') === '播放控制|歌词|队列',
+          JSON.stringify(settingsFlow && settingsFlow.tabs))
+        const bDragged0 = findMini() ? findMini().getBounds() : null
+        // ④ 拖右下角改大小:合成 MouseEvent 带屏幕坐标(面板保持居中 → 宽按 2×Δx、高按 Δy);
+        //    拖完数值要写回设置面(再开一次面读「面板宽度/高度」的值)
+        const dragRes = await mrun4(`(async () => {
+          const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+          const corner = document.querySelector('.mini-resize--c')
+          if (!corner) return { err: '没有右下角手柄' }
+          const cr = corner.getBoundingClientRect()
+          const sx = Math.round(cr.left + cr.width / 2)
+          const sy = Math.round(cr.top + cr.height / 2)
+          const base = { bubbles: true, cancelable: true, button: 0 }
+          corner.dispatchEvent(new MouseEvent('mousedown', Object.assign({}, base, { buttons: 1, screenX: sx, screenY: sy })))
+          for (let i = 1; i <= 8; i++) {
+            document.dispatchEvent(new MouseEvent('mousemove', Object.assign({}, base, { buttons: 1, screenX: sx + i * 5, screenY: sy + i * 3 })))
+            await wait(40)
+          }
+          document.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, base, { buttons: 0, screenX: sx + 40, screenY: sy + 24 })))
+          await wait(500)
+          const more = document.querySelector('.mini-more'); if (more) more.click()
+          await wait(400)
+          const rowOf = (label) => [...document.querySelectorAll('.mini-settings-row')].find((r) => (r.querySelector('.mini-settings-label') || {}).textContent === label)
+          const val = (label) => { const r = rowOf(label); return r ? ((r.querySelector('.mini-settings-value') || {}).textContent || null) : null }
+          const out = { wVal: val('面板宽度'), hVal: val('面板高度') }
+          const back = document.querySelector('.mini-settings-back'); if (back) back.click()
+          await wait(200)
+          return out
+        })()`)
+        const bDragged = findMini() ? findMini().getBounds() : null
+        check('两态岛:拖右下角改大小(窗口宽高都变,并写回设置面数值)',
+          !!dragRes && !dragRes.err && !!bDragged0 && !!bDragged &&
+          bDragged.width > bDragged0.width + 20 && bDragged.height > bDragged0.height + 8 && !!dragRes.wVal && !!dragRes.hVal,
+          JSON.stringify({ before: bDragged0 && [bDragged0.width, bDragged0.height], after: bDragged && [bDragged.width, bDragged.height], vals: dragRes }))
 
         // 收起:按 1.4 缩放的高度应 ≈ 50(36×1.4);随后「恢复默认」回到 36
         await mrun4(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)

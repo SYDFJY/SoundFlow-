@@ -84,15 +84,29 @@
 
     <!-- ===== 展开态(照参考图:面板;分页指示点与收起按钮在面板下方外侧) ===== -->
     <template v-else>
-      <div class="mini-panel" :style="surfaceStyle" @wheel="onPanelWheel">
+      <div class="mini-panel" :style="surfaceStyle">
         <div class="mini-panel-inner">
           <!-- 岛设置面(覆盖层;••• 或右键菜单「岛设置…」进入) -->
           <div class="mini-settings" v-if="settingsOpen" :style="settingsSurfaceStyle" @click.stop>
-            <div class="mini-settings-head">
-              <button class="mini-settings-back" @click="closeSettings" aria-label="返回">‹</button>
-              <span class="mini-settings-title">岛设置</span>
-              <button class="mini-settings-reset" @click="resetSettings">恢复默认</button>
+          <div class="mini-settings-head">
+            <button class="mini-settings-back" @click="closeSettings" aria-label="返回">‹</button>
+            <span class="mini-settings-title">岛设置</span>
+            <button class="mini-settings-reset" @click="resetSettings">恢复默认</button>
+          </div>
+          <!-- 实况胶囊预览:与真胶囊同一套类与变量(封面/文字/频谱),按真实窗口宽渲染 ——
+               设置面会盖住收起态那条胶囊,这里就是"调参数时能一直看着的那条" -->
+          <div class="mini-settings-preview" v-if="compactForm === 'capsule'">
+            <div class="mini-capsule mini-capsule--preview" :style="[surfaceStyle, previewStyle]">
+              <div class="mini-capsule-cover" :class="'shape-' + islandCfg.coverShape + (isPlaying && islandCfg.coverRotate ? ' spinning' : '')">
+                <img v-if="miniCover" :src="miniCover" alt="" />
+                <div v-else class="cover-placeholder"><Icon name="music" :size="14" /></div>
+              </div>
+              <div class="mini-capsule-text">
+                <div class="mini-capsule-track">{{ capsuleText }}</div>
+              </div>
+              <canvas class="mini-capsule-viz" ref="previewVizEl" aria-hidden="true"></canvas>
             </div>
+          </div>
             <div class="mini-settings-body mini-scroll">
               <div class="mini-settings-group" v-for="g in SETTING_GROUPS" :key="g.title">
                 <div class="mini-settings-gtitle">{{ g.title }}</div>
@@ -221,17 +235,24 @@
             <div class="mini-empty" v-else>队列为空</div>
           </div>
         </div>
+        <!-- 面板边缘拖拽改大小:右=宽、下=高、右下角=两者(滚动条已内缩 8px,不抢命中) -->
+        <div class="mini-resize mini-resize--r" @mousedown="onResizeDown($event, 'w')" title="拖动改变宽度"></div>
+        <div class="mini-resize mini-resize--b" @mousedown="onResizeDown($event, 'h')" title="拖动改变高度"></div>
+        <div class="mini-resize mini-resize--c" @mousedown="onResizeDown($event, 'both')" title="拖动改变大小"></div>
       </div>
       <div class="mini-pager">
-        <button
-          v-for="p in PAGES"
-          :key="p.key"
-          class="mini-dot"
-          :class="{ active: page === p.key && !settingsOpen }"
-          @click="onDotClick(p.key)"
-          :aria-label="p.label"
-          :title="p.label"
-        ></button>
+        <!-- 页签带文字(播放控制/歌词/队列):圆点看不出每页是什么;滚轮切页容易误触,已取消 -->
+        <div class="mini-tabs">
+          <button
+            v-for="p in PAGES"
+            :key="p.key"
+            class="mini-tab"
+            :class="{ active: page === p.key && !settingsOpen }"
+            @click="onDotClick(p.key)"
+            :aria-label="p.label"
+            :title="p.label"
+          >{{ p.label }}</button>
+        </div>
         <button class="mini-collapse" @click="requestCollapse" aria-label="收起" title="收起">
           <Icon name="islandCollapse" :size="14" />
         </button>
@@ -520,11 +541,6 @@ const page = ref('now')
 function setPage(key) {
   if (PAGES.some((p) => p.key === key)) page.value = key
 }
-function cyclePage(step) {
-  const i = PAGES.findIndex((p) => p.key === page.value)
-  const next = (i + step + PAGES.length) % PAGES.length
-  page.value = PAGES[next].key
-}
 function toggleIsland() {
   if (!window.electronAPI?.toggleMiniIsland) return
   if (expanded.value) { requestCollapse(); return }
@@ -578,20 +594,6 @@ function onKeydown(e) {
   if (e.code !== 'Escape') return
   if (settingsOpen.value) { closeSettings(); return }
   if (expanded.value) requestCollapse()
-}
-// 滚轮:可滚动页先滚内容、到边界才切页(150ms 锁);设置面开着时不切页
-let wheelLockUntil = 0
-function onPanelWheel(e) {
-  if (settingsOpen.value) return
-  const scroller = e.target && e.target.closest ? e.target.closest('.mini-scroll') : null
-  if (scroller) {
-    const atTop = scroller.scrollTop <= 0
-    const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1
-    if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) return
-  }
-  if (Date.now() < wheelLockUntil) return
-  wheelLockUntil = Date.now() + 150
-  cyclePage(e.deltaY > 0 ? 1 : -1)
 }
 
 // ===== 展开页数据(全部经 IPC;迷你窗是独立 SPA,不能 import pinia store)=====
@@ -667,9 +669,18 @@ async function scrollQueueToActive() {
 }
 watch(page, (p) => { if (p === 'queue') scrollQueueToActive() })
 
-// ===== 频谱:主窗每 50ms 推一组降采样柱值;只有胶囊右侧那一块画 =====
+// ===== 频谱:主窗每 50ms 推一组降采样柱值;画在**可见的那块**上(胶囊右侧;设置面开着时画预览那条) =====
 const specVals = ref(new Array(SPEC_BARS).fill(0))
 const capsuleVizEl = ref(null)
+const previewVizEl = ref(null) // 岛设置面顶部的实况预览条里的那块
+// 预览宽度让它**自己按内容撑**(max-content = 内边距 + 文字宽,与真胶囊同一套变量)——
+// 改字号/缩放/留白时不用再量一次,预览天然跟着变;超出面板可用宽则截断
+const previewStyle = computed(() => {
+  const g = capsuleGeo.value
+  const avail = Math.max(120, islandCfg.panelW - 24)
+  if (islandCfg.lyricsScroll) return { width: Math.min(g.minW, avail) + 'px', height: g.h + 'px' }
+  return { width: 'max-content', minWidth: Math.min(g.minW, avail) + 'px', maxWidth: avail + 'px', height: g.h + 'px' }
+})
 let _vizColor = ''
 function vizColor() {
   if (!_vizColor) {
@@ -705,11 +716,12 @@ function drawSpectrum(canvas, vals) {
     ctx.fill()
   }
 }
-// 只画当前可见的那块(面板上不再有频谱,只剩胶囊右侧;展开态无需绘制)
+// 只画当前可见的那块(展开面板上不再有频谱;设置面开着时画顶部的实况预览)
 function drawVisibleSpectrum() {
+  if (settingsOpen.value) drawSpectrum(previewVizEl.value, specVals.value)
   if (!expanded.value && compactForm.value === 'capsule') drawSpectrum(capsuleVizEl.value, specVals.value)
 }
-watch([expanded, compactForm], () => { nextTick(drawVisibleSpectrum) })
+watch([expanded, compactForm, settingsOpen], () => { nextTick(drawVisibleSpectrum) })
 
 // ===== 空闲淡出(默认关;开启后未播放+未悬停 N 秒淡出,透明模式下限 .3)=====
 const idleFadeEnabled = ref(false)
@@ -735,7 +747,7 @@ function onRootLeave() { hovering.value = false; scheduleIdle() }
 watch(isPlaying, (playing) => { if (playing) wakeFromIdle(); else scheduleIdle() })
 watch(expanded, (on) => { if (on) wakeFromIdle(); else scheduleIdle() })
 
-// ===== 紧凑尺寸上报:卡片 320×80;胶囊 = 量出的文本宽 + 内边距(主进程钳位/对齐/围绕中心伸缩)=====
+// ===== 紧凑尺寸上报:卡片 320×80;胶囊 = **当前文本宽** + 内边距(主进程钳位/对齐/围绕中心伸缩)=====
 let _lastCompactReport = ''
 function reportCompactSize() {
   if (!window.electronAPI?.sendMiniCompactSize) return
@@ -744,8 +756,20 @@ function reportCompactSize() {
   if (compactForm.value === 'card') {
     width = 320
   } else {
+    // 量**文本内容**的宽度。不能用 track 的 scrollWidth:它所在的盒子是 flex:1 + overflow:hidden,
+    // 窗口一变宽,盒子的 clientWidth 就跟着变大,而内容更短时 scrollWidth 返回的是**盒宽** ——
+    // 结果"量出来"永远不小于当前窗口,胶囊只涨不缩(用户报的"歌词短了不会跟着缩")。
+    // Range 量的是文字本身,与盒子无关;换行时 watch(capsuleText) 会重量,涨缩都跟着文本走。
     const el = capsuleTrackEl.value
-    const measured = el ? Math.ceil(el.scrollWidth) + capsuleGeo.value.insets : 0
+    let textW = 0
+    if (el) {
+      try {
+        const r = document.createRange()
+        r.selectNodeContents(el)
+        textW = Math.ceil(r.getBoundingClientRect().width)
+      } catch (_) { textW = Math.ceil(el.scrollWidth) }
+    }
+    const measured = textW + capsuleGeo.value.insets
     // 固定宽滚动模式:窗口恒为最小宽(超长部分由 marquee 滚),不随文本加宽
     width = islandCfg.lyricsScroll ? capsuleGeo.value.minW : measured
   }
@@ -882,8 +906,8 @@ let _pending = null
 
 document.addEventListener('mousedown', e => {
   if (e.button !== 0) return
-  // 交互元素不参与拖动:按钮(点击)、进度条(拖动定位)
-  if (e.target.closest?.('button, .mini-progress')) return
+  // 交互元素不参与拖动:按钮(点击)、进度条(拖动定位)、边缘改大小的手柄
+  if (e.target.closest?.('button, .mini-progress, .mini-resize')) return
   // 展开态没有 header:只有媒体页顶部的拖拽区(封面/标题那行)可拖;
   // 紧凑态(卡片/胶囊)整块可拖,行为与之前一致
   if (expanded.value && !e.target.closest?.('.mini-drag-area')) return
@@ -936,6 +960,76 @@ document.addEventListener('mouseup', () => {
     try { window.electronAPI?.sendMiniDragEnd && window.electronAPI.sendMiniDragEnd() } catch (_) {}
   }
 })
+
+// ===== 展开面板:边缘拖拽改大小(右=宽 / 下=高 / 右下角=两者)=====
+// 坐标纪律与"拖窗移动"一致:用指针的**绝对屏幕坐标**。面板保持水平居中(与「面板宽度」滑杆同一套
+// 中心锚定),所以宽度按 2×Δx 换算,被拖的那条边才 1:1 跟手;高度是顶边固定,按 Δy 即可。
+// 写回复用 mini:island-setting(带 live:true —— 主进程跳过 180ms 缓动直接 setBounds,
+// 否则每帧一次新请求会把缓动反复打断,窗口跟不上手)。
+let resizeState = null
+let _resizeRaf = null
+let _resizePend = null
+function panelRowSpec(key) {
+  for (const g of SETTING_GROUPS) {
+    const row = g.rows.find((r) => r.key === key)
+    if (row) return row
+  }
+  return null
+}
+function applyResize(px, py) {
+  const st = resizeState
+  if (!st) return
+  const patch = {}
+  if (st.mode !== 'h') {
+    const spec = panelRowSpec('panelW')
+    const raw = st.w + 2 * (px - st.sx)
+    patch.panelW = Math.min(spec.max, Math.max(spec.min, Math.round(raw / spec.step) * spec.step))
+  }
+  if (st.mode !== 'w') {
+    const spec = panelRowSpec('panelH')
+    const raw = st.h + (py - st.sy)
+    patch.panelH = Math.min(spec.max, Math.max(spec.min, alignPx(Math.round(raw))))
+  }
+  for (const k of Object.keys(patch)) {
+    if (patch[k] === islandCfg[k]) continue
+    islandCfg[k] = patch[k] // 本地先落(预览/样式即时),主进程回推的 island-config 会再对齐一次
+    try { window.electronAPI?.sendMiniIslandSetting?.({ key: k, value: patch[k], live: true }) } catch (_) {}
+  }
+}
+function onResizeDown(e, mode) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  e.stopPropagation() // 不再触发"拖窗移动"的文档级 mousedown
+  resizeState = { mode, sx: e.screenX, sy: e.screenY, w: islandCfg.panelW, h: islandCfg.panelH }
+  document.body.classList.add('mini-resizing', 'mini-resizing--' + mode)
+}
+function onResizeMove(e) {
+  if (!resizeState) return
+  // 鼠标在窗口外松开时收不到 mouseup:用 buttons 判断"其实已经松了"(与拖窗同一套兜底)
+  if ((e.buttons & 1) === 0) { endResize(); return }
+  _resizePend = { x: e.screenX, y: e.screenY }
+  if (_resizeRaf) return
+  _resizeRaf = requestAnimationFrame(() => {
+    _resizeRaf = null
+    const p = _resizePend
+    _resizePend = null
+    if (p) applyResize(p.x, p.y)
+  })
+}
+function onResizeUp() {
+  if (!resizeState) return
+  // 补最后一帧:快速拖拽松手时最后一帧还没发出就被取消,尺寸会差一点
+  if (_resizePend) applyResize(_resizePend.x, _resizePend.y)
+  endResize()
+}
+function endResize() {
+  resizeState = null
+  _resizePend = null
+  if (_resizeRaf) { cancelAnimationFrame(_resizeRaf); _resizeRaf = null }
+  document.body.classList.remove('mini-resizing', 'mini-resizing--w', 'mini-resizing--h', 'mini-resizing--both')
+}
+document.addEventListener('mousemove', onResizeMove)
+document.addEventListener('mouseup', onResizeUp)
 
 window.addEventListener('blur', () => {
   const wasMoved = !!(dragState && dragState.moved)
@@ -1150,6 +1244,16 @@ function restoreMain() {
 
 /* ===== 展开态:面板 + 面板下方外侧的指示点区 ===== */
 .mini-panel { flex: 0 0 auto; width: var(--mini-expanded-w); height: var(--mini-panel-h); border-radius: 20px; position: relative; overflow: hidden; }
+/* 面板边缘拖拽改大小:手柄在面板内缘 8px(滚动条已按同样宽度右缩进,互不抢命中) */
+.mini-resize { position: absolute; z-index: 4; -webkit-app-region: no-drag; }
+.mini-resize--r { top: 0; right: 0; width: 8px; height: 100%; cursor: ew-resize; }
+.mini-resize--b { left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; }
+.mini-resize--c { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+/* 拖动中:光标锁在窗口上(指针跑出手柄也不变),并禁掉选中 */
+body.mini-resizing { user-select: none; }
+body.mini-resizing--w { cursor: ew-resize; }
+body.mini-resizing--h { cursor: ns-resize; }
+body.mini-resizing--both { cursor: nwse-resize; }
 /* 入场/出场:面板与指示点区一起淡入位移(逐条单选择器写法 —— check-lost-styles 只解析这种形状) */
 .mini-panel-inner {
   opacity: 0;
@@ -1235,7 +1339,7 @@ function restoreMain() {
 }
 
 /* 歌词页(面板高内 ±3 切片,超出滚动;长行当前行内滚动) */
-.mini-lyrics { height: 100%; overflow-y: auto; padding: 8px 16px; display: flex; align-items: center; }
+.mini-lyrics { height: 100%; overflow-y: auto; padding: 8px 16px; display: flex; align-items: center; margin-right: 8px; }
 .mini-lyric-slice { width: 100%; animation: mini-lyric-in 0.12s ease; }
 @keyframes mini-lyric-in { from { opacity: 0.3; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .mini-lyric-row { min-height: 34px; display: flex; align-items: center; overflow: hidden; }
@@ -1244,7 +1348,7 @@ function restoreMain() {
 /* 队列页(面板高内约 3 行 + 内部滚动) */
 .mini-queue { height: 100%; display: flex; flex-direction: column; padding: 8px 0 0; }
 .mini-queue-head { flex: 0 0 auto; font-size: 11px; color: var(--mc3, rgba(255,255,255,0.35)); padding: 0 16px 6px; }
-.mini-queue-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
+.mini-queue-list { flex: 1; overflow-y: auto; overflow-x: hidden; margin-right: 8px; }
 .mini-queue-row {
   display: flex; align-items: baseline; gap: 8px;
   width: 100%; height: 58px; padding: 0 16px;
@@ -1274,7 +1378,7 @@ function restoreMain() {
   background: rgba(255,255,255,0.10); color: var(--mc2, rgba(255,255,255,0.6));
 }
 .mini-settings-reset:hover { background: rgba(255,255,255,0.20); color: var(--mc-btn, #fff); }
-.mini-settings-body { flex: 1; overflow-y: auto; padding: 0 12px 10px; }
+.mini-settings-body { flex: 1; overflow-y: auto; padding: 0 12px 10px; margin-right: 8px; }
 .mini-settings-group { margin-bottom: 6px; }
 .mini-settings-gtitle { font-size: 10px; color: var(--mc3, rgba(255,255,255,0.35)); padding: 6px 2px 2px; }
 .mini-settings-row { display: flex; align-items: center; gap: 8px; min-height: 24px; padding: 1px 2px; }
@@ -1305,24 +1409,32 @@ function restoreMain() {
   background: rgba(255,255,255,0.10); color: var(--mc2, rgba(255,255,255,0.6));
 }
 .mini-choice.on { background: var(--color-primary); color: #fff; }
+/* 设置面顶部的实况胶囊预览:与真胶囊同一套类与变量,尺寸走 previewStyle 内联(宽=真实窗口宽) */
+.mini-settings-preview { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; padding: 2px 12px 8px; }
+/* 一圈中性描边:白色/透明背景模式下胶囊与设置面同色,没有它就量不出"现在到底多大" */
+.mini-capsule--preview { flex: 0 0 auto; box-shadow: 0 0 0 1px rgba(128,128,128,0.35); }
 
 /* 面板下方外侧:分页指示点(活动页为长条胶囊)+ 收起按钮 —— 底部这条区域是透明的窗口区 */
 .mini-pager { flex: 0 0 auto; height: var(--mini-pager-h); display: flex; align-items: center; justify-content: center; gap: 6px; }
-.mini-dot {
-  position: relative; width: 6px; height: 6px; border-radius: 50%;
-  background: rgba(255,255,255,0.28);
-  transition: width 0.15s ease, background 0.15s ease;
+/* 页签(带文字):在透明窗口区,任何壁纸上都要读得清 —— 装在半透明深色胶囊里 */
+.mini-tabs { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(0,0,0,0.38); backdrop-filter: blur(6px); }
+.mini-tab {
+  border: 0; cursor: pointer; border-radius: 6px;
+  padding: 2px 8px; font-size: 11px; line-height: 15px;
+  background: transparent; color: rgba(255,255,255,0.72);
+  transition: background 0.15s ease, color 0.15s ease;
 }
-.mini-dot::before { content: ''; position: absolute; left: -3px; right: -3px; top: -3px; bottom: -3px; }
-.mini-dot.active { width: 18px; border-radius: 3px; background: #fff; }
+.mini-tab:hover { color: #fff; background: rgba(255,255,255,0.12); }
+.mini-tab.active { background: rgba(255,255,255,0.22); color: #fff; font-weight: 600; }
 .mini-collapse {
   width: 22px; height: 22px; margin-left: 12px; border-radius: 6px;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.14); border: 0; cursor: pointer;
+  /* 与页签同款深色胶囊底:收起按钮原先用白 14%,浅色桌面上等于看不见 */
+  background: rgba(0,0,0,0.38); backdrop-filter: blur(6px); border: 0; cursor: pointer;
   color: #fff;
   transition: background 0.15s ease;
 }
-.mini-collapse:hover { background: rgba(255,255,255,0.24); }
+.mini-collapse:hover { background: rgba(0,0,0,0.55); }
 </style>
 
 <style>

@@ -166,7 +166,7 @@ describe('小窗右键菜单能弹出来:不能用整窗拖拽区(2026-09-26 用
     expect(s, '没有拖动实现').toMatch(/miniDragStart\(e\.screenX, e\.screenY\)/)
     expect(s, '移动时没上报绝对坐标').toMatch(/miniDragMove\(pt\.x, pt\.y\)/)
     expect(s, '没有"鼠标其实已松开"的守卫(窗口外松手会一直拖)').toMatch(/\(e\.buttons & 1\) === 0/)
-    expect(s, '交互元素没排除(点按钮会变成拖动)').toMatch(/closest\?\.\('button, \.mini-progress'\)/)
+    expect(s, '交互元素没排除(点按钮会变成拖动)').toMatch(/closest\?\.\('button, \.mini-progress, \.mini-resize'\)/)
     const m = read('electron/main.js')
     expect(m, '主进程没接拖动开始').toMatch(/ipcMain\.on\('mini:drag-start'/)
     expect(m, '主进程没接拖动移动').toMatch(/ipcMain\.on\('mini:drag-move'/)

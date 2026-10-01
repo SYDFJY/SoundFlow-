@@ -72,7 +72,10 @@ const ALLOW = {
     '.mini-player--capsule .mini-capsule-track',
     // .mini-now-viz → 展开面板的宽频谱整块删除(2026-10-01 用户要求:与胶囊右侧那块重复);
     //   画布共用函数 drawSpectrum 仍在,只服务胶囊
-    '.mini-now-viz']
+    '.mini-now-viz',
+    // .mini-dot/.mini-dot::before/.mini-dot.active → 分页圆点换成带文字的页签 .mini-tab
+    //   (圆点看不出每页是什么;aria-label 仍保留,ui-check 靠它定位)
+    '.mini-dot', '.mini-dot::before', '.mini-dot.active']
 }
 
 const selectors = (css) =>

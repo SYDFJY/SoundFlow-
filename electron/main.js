@@ -369,7 +369,7 @@ function openMiniIslandSettings() {
 
 // 岛设置改完后,窗口几何的即时重设:收起态改胶囊(高/宽钳位),展开态改面板档位。
 // 宽度仍由渲染端按新字号重新量后上报(这里先按当前宽度套上新钳位,避免闪一下旧尺寸)。
-function applyMiniConfigGeometry(changedKey) {
+function applyMiniConfigGeometry(changedKey, live) {
   if (!miniWindow || miniWindow.isDestroyed()) return
   try {
     const cur = miniWindow.getBounds()
@@ -377,7 +377,10 @@ function applyMiniConfigGeometry(changedKey) {
     if (miniExpanded) {
       if (changedKey === 'panelW' || changedKey === 'panelH') {
         const exp = miniExpandedSize()
-        animateMiniCompactSize(clampToWorkArea(boundsFromCenter(cx, cur.y, exp.w, exp.h)))
+        const next = clampToWorkArea(boundsFromCenter(cx, cur.y, exp.w, exp.h))
+        // 拖动中(live):直接落位 —— 缓动会被每帧一次的新请求反复打断,窗口跟不上手
+        if (live) { try { miniWindow.setBounds(next) } catch (_) {} }
+        else animateMiniCompactSize(next)
       }
       return
     }
@@ -1910,7 +1913,8 @@ function setupIPC() {
       return // 形态的几何由渲染端按新形态上报尺寸后统一伸缩(既有流程)
     }
     sendMiniIslandConfig()
-    applyMiniConfigGeometry(payload.key)
+    // live = 渲染端正在拖面板边缘改大小:几何直接落位,不等缓动(白名单仍只认 key/value,live 只影响这一处手感)
+    applyMiniConfigGeometry(payload.key, payload.live === true)
   })
 
   // 拖动结束(渲染端只在"真的拖动过"之后才发):顶边吸附 + 主动落盘 ——
