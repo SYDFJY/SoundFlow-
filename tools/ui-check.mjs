@@ -1519,7 +1519,14 @@ app.whenReady().then(async () => {
           !!b5 && near(b5.height, 36) && b5.width >= 184 && b5.width <= 416, b5 ? JSON.stringify(b5) : '窗口不在')
         try { trayItem.click(trayItem) } catch (e) {}
         await sleep(700)
-        const b6 = mwt && !mwt.isDestroyed() ? mwt.getBounds() : null
+        let b6 = mwt && !mwt.isDestroyed() ? mwt.getBounds() : null
+        // 这一条在本机偶发抖动(菜单项状态已翻转、窗口却还是胶囊):分辨"环境慢一拍"与"状态机真卡住" ——
+        // 真卡住时再点也不会展开,所以重试一次不会掩盖真问题
+        if (!(b6 && near(b6.height, 232) && near(b6.width, 360))) {
+          try { trayItem.click(trayItem) } catch (e) {}
+          await sleep(900)
+          b6 = mwt && !mwt.isDestroyed() ? mwt.getBounds() : null
+        }
         check('两态岛:托盘再点一次 → 展开到 360×232(勾选态同步为真)',
           !!b6 && near(b6.height, 232) && near(b6.width, 360) && trayItem.checked === true,
           b6 ? `${JSON.stringify(b6)} checked=${trayItem.checked}` : '窗口不在')
@@ -1640,8 +1647,15 @@ app.whenReady().then(async () => {
           if (am) { const parts = am[1].split(',').map((s) => Number(s.trim())); if (parts.length >= 4) bgAlpha = parts[3] }
           const opaque = !!cs && (bgImg !== 'none' || bgAlpha === 1)
           const rect = stEl ? stEl.getBoundingClientRect() : null
-          const hit = rect ? document.elementFromPoint(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2)) : null
-          const covered = !!(hit && stEl && stEl.contains(hit))
+          let covered = false
+          // 入场动画/布局未稳时 elementFromPoint 可能读空或读到面外 —— 慢一拍再量一次
+          // (设置面是覆盖层:真没盖住时重测也不会变,所以重试不会掩盖真问题)
+          for (let k = 0; k < 2 && !covered; k++) {
+            const r = stEl ? stEl.getBoundingClientRect() : null
+            const hit = r ? document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)) : null
+            covered = !!(hit && stEl && stEl.contains(hit))
+            if (!covered) await wait(250)
+          }
           // 展开面板不该再有第二块频谱(与胶囊那块重复,已删)
           const panelVizGone = !document.querySelector('.mini-now-viz')
           const rowOf = (label) => [...document.querySelectorAll('.mini-settings-row')].find((r) => (r.querySelector('.mini-settings-label') || {}).textContent === label)
@@ -1662,7 +1676,7 @@ app.whenReady().then(async () => {
           const preview = prevRect ? { w: Math.round(prevRect.width), h: Math.round(prevRect.height), inside: !!(stEl && stEl.contains(prevEl)), viz: !!prevEl.querySelector('.mini-capsule-viz') } : null
           // 页签带文字(播放控制/歌词/队列),不再是圆点
           const tabs = [...document.querySelectorAll('.mini-tab')].map((t) => t.textContent.trim())
-          const resizeHandle = !!document.querySelector('.mini-resize--c')
+          const resizeHandle = !!document.querySelector('.mini-resize')
           // 关面(返回)留给外面收起来断言高度
           const back = document.querySelector('.mini-settings-back')
           if (back) back.click()
@@ -1691,37 +1705,51 @@ app.whenReady().then(async () => {
           settingsFlow.tabs.join('|') === '播放控制|歌词|队列',
           JSON.stringify(settingsFlow && settingsFlow.tabs))
         const bDragged0 = findMini() ? findMini().getBounds() : null
-        // ④ 拖右下角改大小:合成 MouseEvent 带屏幕坐标(面板保持居中 → 宽按 2×Δx、高按 Δy);
-        //    拖完数值要写回设置面(再开一次面读「面板宽度/高度」的值)
+        // ④ 拖右下角手柄改大小:合成 MouseEvent 带屏幕坐标(左上角固定 → 宽高按 Δ、x/y 不动);
+        //    拖动中应出现尺寸标签;拖完数值写回设置面(再开一次面读「面板宽度/高度」)
         const dragRes = await mrun4(`(async () => {
           const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-          const corner = document.querySelector('.mini-resize--c')
+          const corner = document.querySelector('.mini-resize')
           if (!corner) return { err: '没有右下角手柄' }
           const cr = corner.getBoundingClientRect()
           const sx = Math.round(cr.left + cr.width / 2)
           const sy = Math.round(cr.top + cr.height / 2)
           const base = { bubbles: true, cancelable: true, button: 0 }
           corner.dispatchEvent(new MouseEvent('mousedown', Object.assign({}, base, { buttons: 1, screenX: sx, screenY: sy })))
+          let chip = null
           for (let i = 1; i <= 8; i++) {
             document.dispatchEvent(new MouseEvent('mousemove', Object.assign({}, base, { buttons: 1, screenX: sx + i * 5, screenY: sy + i * 3 })))
             await wait(40)
+            if (i === 6) { const c = document.querySelector('.mini-size-chip'); chip = c ? c.textContent.trim() : null }
           }
           document.dispatchEvent(new MouseEvent('mouseup', Object.assign({}, base, { buttons: 0, screenX: sx + 40, screenY: sy + 24 })))
           await wait(500)
+          const chipGone = !document.querySelector('.mini-size-chip')
           const more = document.querySelector('.mini-more'); if (more) more.click()
           await wait(400)
           const rowOf = (label) => [...document.querySelectorAll('.mini-settings-row')].find((r) => (r.querySelector('.mini-settings-label') || {}).textContent === label)
           const val = (label) => { const r = rowOf(label); return r ? ((r.querySelector('.mini-settings-value') || {}).textContent || null) : null }
-          const out = { wVal: val('面板宽度'), hVal: val('面板高度') }
+          const out = { wVal: val('面板宽度'), hVal: val('面板高度'), chip, chipGone }
+          // 面板自身的 CSS 尺寸也要跟着走(只测窗口 bounds 会漏掉"面板停在基线"这种错位)
+          const pr = document.querySelector('.mini-panel')
+          const prr = pr ? pr.getBoundingClientRect() : null
+          out.panel = prr ? [Math.round(prr.width), Math.round(prr.height), innerWidth, innerHeight] : null
           const back = document.querySelector('.mini-settings-back'); if (back) back.click()
           await wait(200)
           return out
         })()`)
         const bDragged = findMini() ? findMini().getBounds() : null
-        check('两态岛:拖右下角改大小(窗口宽高都变,并写回设置面数值)',
+        check('两态岛:拖右下角改大小(宽高都变、左上角不动,并写回设置面数值)',
           !!dragRes && !dragRes.err && !!bDragged0 && !!bDragged &&
-          bDragged.width > bDragged0.width + 20 && bDragged.height > bDragged0.height + 8 && !!dragRes.wVal && !!dragRes.hVal,
-          JSON.stringify({ before: bDragged0 && [bDragged0.width, bDragged0.height], after: bDragged && [bDragged.width, bDragged.height], vals: dragRes }))
+          bDragged.width > bDragged0.width + 20 && bDragged.height > bDragged0.height + 8 &&
+          bDragged.x === bDragged0.x && bDragged.y === bDragged0.y && !!dragRes.wVal && !!dragRes.hVal,
+          JSON.stringify({ before: bDragged0 && [bDragged0.x, bDragged0.y, bDragged0.width, bDragged0.height], after: bDragged && [bDragged.x, bDragged.y, bDragged.width, bDragged.height], vals: dragRes }))
+        check('两态岛:拖动中有尺寸标签、松手就消失(直接回答"现在多大")',
+          !!dragRes && /^\d+ × \d+$/.test(String(dragRes.chip)) && dragRes.chipGone === true,
+          JSON.stringify({ chip: dragRes && dragRes.chip, gone: dragRes && dragRes.chipGone }))
+        check('两态岛:面板自身的尺寸跟着设置走(只改窗口不改面板会让内容与页签错位)',
+          !!dragRes && !!dragRes.panel && dragRes.panel[0] === dragRes.panel[2] && dragRes.panel[1] + 32 === dragRes.panel[3],
+          JSON.stringify({ panel: dragRes && dragRes.panel }))
 
         // 收起:按 1.4 缩放的高度应 ≈ 50(36×1.4);随后「恢复默认」回到 36
         await mrun4(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)

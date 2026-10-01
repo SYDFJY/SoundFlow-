@@ -235,10 +235,10 @@
             <div class="mini-empty" v-else>队列为空</div>
           </div>
         </div>
-        <!-- 面板边缘拖拽改大小:右=宽、下=高、右下角=两者(滚动条已内缩 8px,不抢命中) -->
-        <div class="mini-resize mini-resize--r" @mousedown="onResizeDown($event, 'w')" title="拖动改变宽度"></div>
-        <div class="mini-resize mini-resize--b" @mousedown="onResizeDown($event, 'h')" title="拖动改变高度"></div>
-        <div class="mini-resize mini-resize--c" @mousedown="onResizeDown($event, 'both')" title="拖动改变大小"></div>
+        <!-- 改大小:面板右下角**唯一且可见**的手柄(此前三条隐形边缘条压在内容上抢点击);
+             拖动时左上角固定 —— 拖的是这个角,就往右下长 -->
+        <button class="mini-resize" @mousedown="onResizeDown($event, 'both')" title="拖动改变面板大小" aria-label="拖动改变面板大小"></button>
+        <span v-if="resizing" class="mini-size-chip" aria-hidden="true">{{ islandCfg.panelW }} × {{ islandCfg.panelH }}</span>
       </div>
       <div class="mini-pager">
         <!-- 页签带文字(播放控制/歌词/队列):圆点看不出每页是什么;滚轮切页容易误触,已取消 -->
@@ -495,7 +495,11 @@ const islandVars = computed(() => {
     '--cap-lyricgap': islandCfg.lyricGap + 'px',
     '--cap-viz': px(CAPSULE_BASE.viz) + 'px',
     '--cap-viz-h': px(CAPSULE_BASE.vizH) + 'px',
-    '--mini-ui-scale': String(islandCfg.panelScale)
+    '--mini-ui-scale': String(islandCfg.panelScale),
+    // 面板自身的尺寸必须跟着设置走(以前只改了窗口,面板还停在 CSS 基线的 360×200 ——
+    // 拖大/拖小之后面板与窗口对不上,内容与页签全错位,用户看到的就是"改大小把组件挡住了")
+    '--mini-expanded-w': islandCfg.panelW + 'px',
+    '--mini-panel-h': islandCfg.panelH + 'px'
   }
 })
 
@@ -965,14 +969,14 @@ document.addEventListener('mouseup', () => {
   }
 })
 
-// ===== 展开面板:边缘拖拽改大小(右=宽 / 下=高 / 右下角=两者)=====
-// 坐标纪律与"拖窗移动"一致:用指针的**绝对屏幕坐标**。面板保持水平居中(与「面板宽度」滑杆同一套
-// 中心锚定),所以宽度按 2×Δx 换算,被拖的那条边才 1:1 跟手;高度是顶边固定,按 Δy 即可。
-// 写回复用 mini:island-setting(带 live:true —— 主进程跳过 180ms 缓动直接 setBounds,
-// 否则每帧一次新请求会把缓动反复打断,窗口跟不上手)。
+// ===== 展开面板:右下角手柄拖拽改大小(唯一入口;左上角固定 = 系统窗口手感)=====
+// 坐标纪律与"拖窗移动"一致:用指针的**绝对屏幕坐标**。拖的是右下角,所以宽高都按 Δ 换算,
+// 被拖的那个角 1:1 跟手(主进程 live 分支同时把左上角钉住 —— 往右拖就往右长)。
+// 写回复用 mini:island-setting(带 live:true —— 主进程跳过 180ms 缓动直接 setBounds)。
 let resizeState = null
 let _resizeRaf = null
 let _resizePend = null
+const resizing = ref(false) // 拖动中显示尺寸标签
 function panelRowSpec(key) {
   for (const g of SETTING_GROUPS) {
     const row = g.rows.find((r) => r.key === key)
@@ -984,19 +988,21 @@ function applyResize(px, py) {
   const st = resizeState
   if (!st) return
   const patch = {}
-  if (st.mode !== 'h') {
+  {
     const spec = panelRowSpec('panelW')
-    const raw = st.w + 2 * (px - st.sx)
+    const raw = st.w + (px - st.sx)
     patch.panelW = Math.min(spec.max, Math.max(spec.min, Math.round(raw / spec.step) * spec.step))
   }
-  if (st.mode !== 'w') {
+  {
     const spec = panelRowSpec('panelH')
     const raw = st.h + (py - st.sy)
-    patch.panelH = Math.min(spec.max, Math.max(spec.min, alignPx(Math.round(raw))))
+    // 与宽度同一套:按设置行自己的步长取整 —— 拖出来的值必须能被步进行走到,
+    // 否则会出现"滑杆够不到 292 只有拖能得到"这种两套数值(step 8 同时也是物理网格的倍数)
+    patch.panelH = Math.min(spec.max, Math.max(spec.min, Math.round(raw / spec.step) * spec.step))
   }
   for (const k of Object.keys(patch)) {
     if (patch[k] === islandCfg[k]) continue
-    islandCfg[k] = patch[k] // 本地先落(预览/样式即时),主进程回推的 island-config 会再对齐一次
+    islandCfg[k] = patch[k] // 本地先落(样式即时),主进程回推的 island-config 会再对齐一次
     try { window.electronAPI?.sendMiniIslandSetting?.({ key: k, value: patch[k], live: true }) } catch (_) {}
   }
 }
@@ -1005,6 +1011,7 @@ function onResizeDown(e, mode) {
   e.preventDefault()
   e.stopPropagation() // 不再触发"拖窗移动"的文档级 mousedown
   resizeState = { mode, sx: e.screenX, sy: e.screenY, w: islandCfg.panelW, h: islandCfg.panelH }
+  resizing.value = true
   document.body.classList.add('mini-resizing', 'mini-resizing--' + mode)
 }
 function onResizeMove(e) {
@@ -1029,8 +1036,9 @@ function onResizeUp() {
 function endResize() {
   resizeState = null
   _resizePend = null
+  resizing.value = false
   if (_resizeRaf) { cancelAnimationFrame(_resizeRaf); _resizeRaf = null }
-  document.body.classList.remove('mini-resizing', 'mini-resizing--w', 'mini-resizing--h', 'mini-resizing--both')
+  document.body.classList.remove('mini-resizing', 'mini-resizing--both')
 }
 document.addEventListener('mousemove', onResizeMove)
 document.addEventListener('mouseup', onResizeUp)
@@ -1248,15 +1256,31 @@ function restoreMain() {
 
 /* ===== 展开态:面板 + 面板下方外侧的指示点区 ===== */
 .mini-panel { flex: 0 0 auto; width: var(--mini-expanded-w); height: var(--mini-panel-h); border-radius: 20px; position: relative; overflow: hidden; }
-/* 面板边缘拖拽改大小:手柄在面板内缘 8px(滚动条已按同样宽度右缩进,互不抢命中) */
-.mini-resize { position: absolute; z-index: 4; -webkit-app-region: no-drag; }
-.mini-resize--r { top: 0; right: 0; width: 8px; height: 100%; cursor: ew-resize; }
-.mini-resize--b { left: 0; right: 0; bottom: 0; height: 8px; cursor: ns-resize; }
-.mini-resize--c { right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; }
+/* 面板右下角:唯一的改大小手柄(可见才找得到;贴圆角、悬停加亮) */
+.mini-resize {
+  position: absolute; right: 2px; bottom: 2px; z-index: 4;
+  width: 18px; height: 18px; padding: 0; border: 0; cursor: nwse-resize;
+  background: transparent; border-radius: 0 0 14px 0;
+  -webkit-app-region: no-drag;
+}
+.mini-resize::after {
+  /* 经典"抓手"两道斜线:中性灰,浅色/深色面板上都看得见 */
+  content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px;
+  border-right: 2px solid rgba(128,128,128,0.9);
+  border-bottom: 2px solid rgba(128,128,128,0.9);
+  border-radius: 0 0 4px 0;
+}
+.mini-resize:hover { background: rgba(128,128,128,0.22); }
+.mini-resize:hover::after { border-color: var(--color-primary, #4096ff); }
+/* 拖动中的尺寸标签:直接回答"现在多大" */
+.mini-size-chip {
+  position: absolute; right: 8px; bottom: 26px; z-index: 5;
+  padding: 2px 8px; border-radius: 6px; font-size: 11px; line-height: 16px;
+  background: rgba(0,0,0,0.68); color: #fff; pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
 /* 拖动中:光标锁在窗口上(指针跑出手柄也不变),并禁掉选中 */
 body.mini-resizing { user-select: none; }
-body.mini-resizing--w { cursor: ew-resize; }
-body.mini-resizing--h { cursor: ns-resize; }
 body.mini-resizing--both { cursor: nwse-resize; }
 /* 入场/出场:面板与指示点区一起淡入位移(逐条单选择器写法 —— check-lost-styles 只解析这种形状) */
 .mini-panel-inner {
@@ -1343,7 +1367,7 @@ body.mini-resizing--both { cursor: nwse-resize; }
 }
 
 /* 歌词页(面板高内 ±3 切片,超出滚动;长行当前行内滚动) */
-.mini-lyrics { height: 100%; overflow-y: auto; padding: 8px 16px; display: flex; align-items: center; margin-right: 8px; }
+.mini-lyrics { height: 100%; overflow-y: auto; padding: 8px 16px; display: flex; align-items: center; }
 .mini-lyric-slice { width: 100%; animation: mini-lyric-in 0.12s ease; }
 @keyframes mini-lyric-in { from { opacity: 0.3; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .mini-lyric-row { min-height: 34px; display: flex; align-items: center; overflow: hidden; }
@@ -1352,7 +1376,7 @@ body.mini-resizing--both { cursor: nwse-resize; }
 /* 队列页(面板高内约 3 行 + 内部滚动) */
 .mini-queue { height: 100%; display: flex; flex-direction: column; padding: 8px 0 0; }
 .mini-queue-head { flex: 0 0 auto; font-size: 11px; color: var(--mc3, rgba(255,255,255,0.35)); padding: 0 16px 6px; }
-.mini-queue-list { flex: 1; overflow-y: auto; overflow-x: hidden; margin-right: 8px; }
+.mini-queue-list { flex: 1; overflow-y: auto; overflow-x: hidden; }
 .mini-queue-row {
   display: flex; align-items: baseline; gap: 8px;
   width: 100%; height: 58px; padding: 0 16px;
@@ -1382,7 +1406,7 @@ body.mini-resizing--both { cursor: nwse-resize; }
   background: rgba(255,255,255,0.10); color: var(--mc2, rgba(255,255,255,0.6));
 }
 .mini-settings-reset:hover { background: rgba(255,255,255,0.20); color: var(--mc-btn, #fff); }
-.mini-settings-body { flex: 1; overflow-y: auto; padding: 0 12px 10px; margin-right: 8px; }
+.mini-settings-body { flex: 1; overflow-y: auto; padding: 0 12px 10px; }
 .mini-settings-group { margin-bottom: 6px; }
 .mini-settings-gtitle { font-size: 10px; color: var(--mc3, rgba(255,255,255,0.35)); padding: 6px 2px 2px; }
 .mini-settings-row { display: flex; align-items: center; gap: 8px; min-height: 24px; padding: 1px 2px; }

@@ -77,6 +77,9 @@ const ALLOW = {
     // .mini-now-viz → 展开面板的宽频谱整块删除(2026-10-01 用户要求:与胶囊右侧那块重复);
     //   画布共用函数 drawSpectrum 仍在,只服务胶囊
     '.mini-now-viz',
+    // .mini-resize--r/--b/--c → 三条隐形边缘拖拽条删除(用户报"改大小挡住组件/很不好操作"):
+    //   它们压在队列行、歌词列表、设置面内容的边缘上抢点击;现在只留右下角一个**可见**手柄(.mini-resize)
+    '.mini-resize--r', '.mini-resize--b', '.mini-resize--c',
     // .mini-dot/.mini-dot::before/.mini-dot.active → 分页圆点换成带文字的页签 .mini-tab
     //   (圆点看不出每页是什么;aria-label 仍保留,ui-check 靠它定位)
     '.mini-dot', '.mini-dot::before', '.mini-dot.active']

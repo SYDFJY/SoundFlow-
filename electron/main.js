@@ -377,10 +377,13 @@ function applyMiniConfigGeometry(changedKey, live) {
     if (miniExpanded) {
       if (changedKey === 'panelW' || changedKey === 'panelH') {
         const exp = miniExpandedSize()
-        const next = clampToWorkArea(boundsFromCenter(cx, cur.y, exp.w, exp.h))
-        // 拖动中(live):直接落位 —— 缓动会被每帧一次的新请求反复打断,窗口跟不上手
-        if (live) { try { miniWindow.setBounds(next) } catch (_) {} }
-        else animateMiniCompactSize(next)
+        // 拖动中(live):**左上角固定**,只改宽高 —— 被拖的是右下角,往右拖就往右长(系统窗口手感);
+        // 缓动在这儿没用,每帧一次的新请求会把缓动反复打断、窗口跟不上手
+        if (live) {
+          try { miniWindow.setBounds(clampToWorkArea({ x: cur.x, y: cur.y, width: exp.w, height: exp.h })) } catch (_) {}
+        } else {
+          animateMiniCompactSize(clampToWorkArea(boundsFromCenter(cx, cur.y, exp.w, exp.h)))
+        }
       }
       return
     }
