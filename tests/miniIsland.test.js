@@ -271,11 +271,39 @@ describe('marquee(长歌词滚动)', () => {
     const u = read('src/utils/useMarquee.js')
     expect(u, '没有用 scrollWidth 量').toMatch(/const d = track\.scrollWidth - host\.clientWidth/)
     expect(u, '缺阈值常量').toMatch(/MARQUEE_MIN_OVERFLOW = 4/)
-    expect(u, '超宽判定没走阈值').toMatch(/dist\.value = d > MARQUEE_MIN_OVERFLOW \? d : 0/)
+    expect(u, '超宽判定没走阈值').toMatch(/const next = d > MARQUEE_MIN_OVERFLOW \? d : 0/)
     expect(u, '字体就绪后没复测').toMatch(/document\.fonts\.ready\.then\(\(\) => sync\(\)\)/)
   })
-  it('暂停停住:时钟只在 playing 时推进', () => {
-    expect(read('src/utils/useMarquee.js')).toMatch(/if \(!isPlaying\(\)\) return/)
+  it('距离变化时时钟归零并允许重扫(换行/改尺寸后新句子从头滚,不从半截开始)', () => {
+    const u = read('src/utils/useMarquee.js')
+    expect(u, 'dist 变化没复位').toMatch(/if \(next !== dist\.value\) \{ clock = 0; done = false; setX\(0\) \}/)
+  })
+  it('滚到尾就停:不回位、不重复(2026-10-01 按用户要求改,此前是来回跑)', () => {
+    const u = read('src/utils/useMarquee.js')
+    expect(u, '还留着"尾停 + 回位"的常量').not.toMatch(/MARQUEE_HOLD_END_MS/)
+    expect(u, '时钟没被夹在"首停 + 单程"上(会接着算回程)').toMatch(/clock = Math\.min\(clock \+ dt, MARQUEE_HOLD_START_MS \+ travel\)/)
+    expect(u, '扫到尾没停表记账').toMatch(/if \(clock >= MARQUEE_HOLD_START_MS \+ travel\) \{ done = true; return \}/)
+    expect(u, '看门狗会把停在尾部的句子重新启动').toMatch(/if \(isOn\(\) && !rafId && !done\) sync\(\)/)
+    expect(u, 'done 时还能开表(会重扫一遍)').toMatch(/if \(dist\.value > 0 && !done\) \{/)
+  })
+  it('胶囊 marquee 的轨道元素是**借用量宽那个 ref**(自己养 ref 会停在已卸载的旧元素上)', () => {
+    const s = mini(), u = read('src/utils/useMarquee.js')
+    expect(s, '没把量宽用的 ref 借给 marquee').toMatch(/elRef: capsuleTrackEl,/)
+    expect(s, '模板不再用名字 ref(函数 ref 会被卸载时的 null 回调抢掉)').toMatch(/<div class="mini-capsule-track" ref="capsuleTrackEl">\{\{ capsuleText \}\}<\/div>/)
+    expect(s, '还在自己养第二个 ref').not.toMatch(/capsuleMarqueeEl|setCapsuleTrack/)
+    expect(u, 'composable 不支持外部元素 ref').toMatch(/elRef = null \}\) \{/)
+    expect(u, '借来的 ref 没被采用').toMatch(/const trackEl = elRef \|\| ownEl/)
+    // detached 元素量出来"不溢出",会把滚动悄悄关掉 —— 必须显式挡住
+    expect(u, '没挡住已卸载元素(detached 的 scrollWidth/clientWidth 都是 0)').toMatch(/!trackEl\.value\.isConnected\) \{ dist\.value = 0; return \}/)
+    // ResizeObserver 要跟着当前宿主走(换元素后旧宿主上的观察器收不到尺寸变化)
+    expect(u, 'RO 没跟随当前宿主(新开窗口偶发不滚)').toMatch(/function retargetRo\(\) \{/)
+    expect(u, '同步时没重挂观察目标').toMatch(/measure\(\)\s*\n\s*retargetRo\(\)/)
+    // 看门狗:滚动"该开却没开"时低频自查重挂(不依赖回调时机),且必须在卸载时清掉
+    expect(u, '没有看门狗(偶发不滚就没人补救)').toMatch(/if \(isOn\(\) && !rafId && !done\) sync\(\) \}, 700\)/)
+    expect(u, '看门狗没在卸载时清').toMatch(/if \(watchdog\) \{ clearInterval\(watchdog\); watchdog = null \}/)
+  })
+  it('暂停停住:时钟只在 playing 时推进(但保留重排帧,恢复播放后能接着走)', () => {
+    expect(read('src/utils/useMarquee.js')).toMatch(/if \(!isPlaying\(\)\) \{ rafId = requestAnimationFrame\(tick\); return \}/)
   })
 })
 

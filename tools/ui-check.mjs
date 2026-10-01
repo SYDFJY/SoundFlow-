@@ -1400,6 +1400,33 @@ app.whenReady().then(async () => {
         bWide.width >= 240 && bNarrow.width < bWide.width && near(bNarrow.width, 184, 8),
         JSON.stringify({ wide: bWide && bWide.width, narrow: bNarrow && bNarrow.width, wideText: String(wideText).slice(0, 12), narrowText }))
 
+      // ①c 超长句要真的在胶囊里横向滚起来(此前 composable 的 trackEl 从没绑到元素上 → 永不滚)。
+      // marquee 的时钟只在播放时推进,所以先从迷你窗自己(权威状态)确认在播放:展开读播放键 aria-label
+      const ensured = await mrun(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+        const cap = document.querySelector('.mini-capsule'); if (cap) cap.click()
+        await wait(750)
+        const btn = document.querySelector('.mini-ctl--play')
+        const label = btn ? String(btn.getAttribute('aria-label') || '') : 'no-btn'
+        if (btn && label !== '暂停') { btn.click(); await wait(700) }
+        const label2 = btn ? String(btn.getAttribute('aria-label') || '') : 'no-btn'
+        const col = document.querySelector('.mini-collapse'); if (col) col.click()
+        await wait(750)
+        return { label, label2, capsule: !!document.querySelector('.mini-capsule') }
+      })()`)
+      mw.webContents.send('mini:lyrics', fill(longLine))
+      await sleep(3400)
+      const marquee = await mrun(`(() => {
+        const el = document.querySelector('.mini-capsule-track')
+        if (!el) return { err: '没有胶囊轨道' }
+        const tf = getComputedStyle(el).transform || 'none'
+        const nums = (tf.match(/-?[\\d.]+/g) || []).map(Number)
+        return { tf: String(tf).slice(0, 48), tx: nums.length >= 6 ? nums[4] : 0, text: el.textContent.trim().slice(0, 10) }
+      })()`)
+      check('两态岛:超长歌词在胶囊里真的横向滚动(3.4s 内轨道已左移)',
+        !!marquee && !marquee.err && Number(marquee.tx) < -2 && String(marquee.text).startsWith('这是一句'),
+        JSON.stringify({ ...marquee, ensured }))
+
       // 频谱:右侧有 canvas,且数据真的在流(迷你窗计数;窗口开着就会推,暂停时推零值)
       check('两态岛:胶囊右侧有频谱 canvas', (await mrun(`(() => !!document.querySelector('.mini-capsule-viz'))()`)) === true)
       const specCount = await mrun(`(async () => {
@@ -1754,6 +1781,55 @@ app.whenReady().then(async () => {
       }
     }
   }
+
+  // 播放页背景:预设色板已删(只剩调色盘入口)、背景亮度对每种模式都生效
+  await run(`(() => { location.hash = '#/player'; return true })()`)
+  await sleep(1700)
+  const bgProbe = await run(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+    const view = document.querySelector('.player-view')
+    if (!view) return { err: '没有播放页' }
+    const openBtn = document.querySelector('.player-topbar .icon-btn')
+    if (openBtn) openBtn.click()
+    await wait(450)
+    const panel = document.querySelector('.bg-panel')
+    if (!panel) return { err: '没有背景面板' }
+    const modeBtn = (label) => [...panel.querySelectorAll('.bg-mode-btns button')].find((b) => b.textContent.trim() === label)
+    const range = panel.querySelector('.bg-bright-slider')
+    const out = { presetDots: panel.querySelectorAll('.color-dot').length }
+    // 纯色模式 → 才渲染那行取色入口;读它 + 把亮度拉到 140,看绘制层(伪元素)的滤镜跟不跟
+    const colorBtn = modeBtn('纯色'); if (colorBtn) colorBtn.click()
+    await wait(320)
+    const pickBtn = panel.querySelector('.bg-color-pick')
+    out.hasPick = !!pickBtn
+    out.swatch = !!panel.querySelector('.bg-color-swatch')
+    out.hex = ((panel.querySelector('.bg-color-hex') || {}).textContent || '').trim()
+    out.presetDotsInColorMode = panel.querySelectorAll('.color-dot').length
+    out.colorPaint = getComputedStyle(view).getPropertyValue('--bg-paint').trim().slice(0, 30)
+    if (range) { range.value = '140'; range.dispatchEvent(new Event('input', { bubbles: true })) }
+    await wait(320)
+    out.colorFilter = getComputedStyle(view, '::before').filter
+    // 主题模式也要吃亮度(以前只有封面模式有那层伪元素)
+    const themeBtn = modeBtn('主题'); if (themeBtn) themeBtn.click()
+    await wait(320)
+    out.themePaint = getComputedStyle(view).getPropertyValue('--bg-paint').trim()
+    out.themeFilter = getComputedStyle(view, '::before').filter
+    // 收尾:亮度回 110、模式回封面(沙箱配置,不影响用户真实设置)
+    if (range) { range.value = '110'; range.dispatchEvent(new Event('input', { bubbles: true })) }
+    const coverBtn = modeBtn('封面'); if (coverBtn) coverBtn.click()
+    await wait(250)
+    if (openBtn) openBtn.click()
+    return out
+  })()`)
+  const brightRe = /brightness\((1\.4|140%)\)/
+  check('播放页背景:预设色板已删,纯色只剩「自定义颜色」调色盘入口',
+    !!bgProbe && !bgProbe.err && bgProbe.presetDots === 0 && bgProbe.presetDotsInColorMode === 0 &&
+    bgProbe.hasPick === true && bgProbe.swatch === true && /^#[0-9a-f]{6}$/i.test(String(bgProbe.hex)),
+    JSON.stringify(bgProbe))
+  check('播放页背景:亮度对纯色/主题模式都生效(绘制层滤镜 140%)',
+    !!bgProbe && !bgProbe.err && brightRe.test(String(bgProbe.colorFilter)) && brightRe.test(String(bgProbe.themeFilter)) &&
+    /^\S/.test(String(bgProbe.colorPaint)) && /^\S/.test(String(bgProbe.themePaint)),
+    JSON.stringify({ color: bgProbe && bgProbe.colorFilter, theme: bgProbe && bgProbe.themeFilter, colorPaint: bgProbe && bgProbe.colorPaint, themePaint: bgProbe && bgProbe.themePaint }))
 
   // 侧边栏:不再显示收藏数量徽标(导航项与计数本身都还在)
   await run(`(() => { location.hash = '#/home'; return true })()`)

@@ -32,6 +32,10 @@ const ALLOW = {
   // .song-meta:hover .cover-swap → 改成 .song-meta:hover .cover-actions .cover-swap
   //   (封面操作从一个按钮变成「更换封面 + 恢复原封面」一组,hover 显隐挂到容器上)
   'src/views/PlayerView.vue': ['.song-meta:hover .cover-swap', '.empty-icon', '.gradient-list', '.gradient-item', '.gradient-item.active', '.eq-*', '.queue-*', '.save-queue-*', '.vol-slider', '.vol-slider::-webkit-slider-thumb', '.lyric-loading-tip::before',
+    // .player-view[data-bg="cover"]::before → 四种背景模式收敛成单层 .player-view::before(2026-10-01):
+    //   亮度滤镜必须挂在绘制层上,而滤镜挂在根元素会把内容一起滤掉 —— 以前只有封面模式有那层,
+    //   主题/纯色/图片下"背景亮度"滑杆等于没用。绘制内容改由 --bg-paint 提供。
+    '.player-view[data-bg="cover"]::before',
     // .lyric-time* → 按用户要求去掉歌词行前的行时间戳(时间只保留在悬停提示里)
     '.lyric-time', '.lyric-line:hover .lyric-time', '.lyric-line.active .lyric-time',
     // 同上:.next-wrap → .hint-wrap

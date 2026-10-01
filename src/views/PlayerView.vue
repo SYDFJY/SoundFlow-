@@ -1,5 +1,5 @@
 <template>
-  <div class="player-view" :style="[bgStyle, { '--bg-bright': bgBrightness + '%' }]" :data-bg="bgMode" @wheel="onViewWheel">
+  <div class="player-view" :style="[bgStyle, { '--bg-bright': bgBrightness + '%' }]" @wheel="onViewWheel">
     <div class="player-overlay" :class="{ 'overlay-theme': bgMode === 'theme' }">
       <!-- 顶部栏 -->
       <div class="player-topbar">
@@ -29,9 +29,12 @@
             <button :class="{ active: bgMode === 'image' }" @click="setBgMode('image')">自定义图片</button>
           </div>
           <div v-if="bgMode === 'color'" class="color-row">
-            <button v-for="c in bgPresets.color" :key="c.value" class="color-dot" :style="{ background: c.value }" :class="{ active: bgColor === c.value }" :title="c.name" @click="setBgColor(c.value)"></button>
-            <!-- 自定义取色:复用项目已引入的 pickr(歌词色板同款) -->
-            <button class="color-dot color-dot-custom" ref="bgColorPickrEl" :style="{ background: bgColor }" :class="{ active: bgColorIsCustom }" title="自定义取色" aria-label="自定义背景色" @click="openBgColorPicker"></button>
+            <!-- 预设色板已删(用户要求):纯色只走调色盘 —— 一个当前色色块 + 文字,点击打开 Pickr -->
+            <button class="bg-color-pick" ref="bgColorPickrEl" @click="openBgColorPicker" title="打开调色盘选择背景颜色">
+              <span class="bg-color-swatch" :style="{ background: bgColor }"></span>
+              <span class="bg-color-text">自定义颜色</span>
+              <span class="bg-color-hex">{{ bgColor }}</span>
+            </button>
           </div>
           <div v-else-if="bgMode === 'image'" class="bg-image-actions">
             <button class="bg-import-btn" @click="importBgImage"><Icon name="cover" :size="14" />导入自定义图片</button>
@@ -583,8 +586,8 @@ const bgCover = ref(null)
 
 // 背景系统:状态/预设/封面取主色/bgStyle 全部由 usePlayerBackground 提供(原内联实现约 148 行)
 const {
-  bgPresets, bgMode, bgBrightness, bgColor, bgGradient, bgImageUrl, bgStyle,
-  setBgMode, setBgBrightness, setBgColor, setBgGradient, importBgImage, clearBgImage
+  bgMode, bgBrightness, bgColor, bgImageUrl, bgStyle,
+  setBgMode, setBgBrightness, setBgColor, importBgImage, clearBgImage
 } = usePlayerBackground({ coverUrl, bgCover })
 const hdCoverUrl = ref(null)
 let _coverSeq = 0
@@ -927,8 +930,7 @@ function setLyricColor(v) {
   try { window.$toast?.('歌词颜色已更新', 'success') } catch {}
 }
 const lyricIsCustom = computed(() => !lyricColorOptions.some(c => c.value === lyricColor.value))
-// 背景纯色自定义取色:当前色不在预设色板里时,给"自定义"色点加选中描边
-const bgColorIsCustom = computed(() => !bgPresets.color.some(c => c.value === bgColor.value))
+// 背景纯色取色:预设色板已删(用户要求),只留调色盘 —— 见模板里的「自定义颜色」按钮
 const bgColorPickrEl = ref(null)
 const lyricColorPickrEl = ref(null)
 let _bgPickr = null
@@ -940,7 +942,6 @@ function openBgColorPicker() {
     el: btn,
     theme: 'nano',
     default: bgColor.value,
-    swatches: bgPresets.color.map(c => c.value),
     components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
   })
   _bgPickr.on('change', (color) => { if (color) setBgColor(color.toHEXA().toString()) })
@@ -1238,11 +1239,13 @@ async function searchLyric() {
     linear-gradient(180deg, var(--player-overlay-soft, rgba(0,0,0,0.15)) 0%, rgba(0,0,0,0.06) 45%, var(--player-overlay-strong, rgba(0,0,0,0.40)) 100%);
   display: flex; flex-direction: column;
 }
-/* 封面背景:伪元素高清提亮(不模糊,封面原图铺底;单层 filter,避开 Electron 叠加渲染异常);z-index 0 垫底 */
-.player-view[data-bg="cover"]::before {
+/* 四种背景(主题/封面/纯色/图片)统一画在**这一层**上:背景亮度挂 filter 只能挂这里
+   —— 挂在根元素上会把内容一起滤掉。以前这条规则只对封面模式生效,所以主题/纯色/图片下
+   亮度滑杆等于没用(用户报的"背景亮度不起作用")。 */
+.player-view::before {
   content: "";
   position: absolute; inset: 0;
-  background-image: var(--cover-bg);
+  background: var(--bg-paint, none);
   background-size: cover;
   background-position: center;
   filter: brightness(var(--bg-bright, 110%)) saturate(1.15);
@@ -1655,6 +1658,20 @@ async function searchLyric() {
 .bg-mode-btns button:hover { color: #fff; }
 .bg-mode-btns button.active { background: var(--color-primary); color: #fff; }
 .color-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
+/* 纯色背景的取色入口(预设色板已删):色块 + 文字 + 当前 hex,点击打开调色盘 */
+.bg-color-pick {
+  display: flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 8px; padding: 5px 10px; cursor: pointer; color: var(--color-text-primary, #fff);
+  font-size: 12px; transition: background 0.15s ease, border-color 0.15s ease;
+}
+.bg-color-pick:hover { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.28); }
+.bg-color-swatch {
+  width: 20px; height: 20px; border-radius: 5px; flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.25);
+}
+.bg-color-text { font-weight: 500; }
+.bg-color-hex { opacity: 0.6; font-variant-numeric: tabular-nums; }
 
 /* 歌词排版面板:与色板同构(深色浮层,从竖条左侧弹出) */
 .format-panel {

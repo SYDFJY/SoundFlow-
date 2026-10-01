@@ -644,9 +644,13 @@ watch(() => islandCfg.lyricTransition, (mode) => {
 })
 // 胶囊超长句的滚动:加宽模式到上限后滚动;固定宽滚动模式则一直在最小宽里滚
 const capsuleTrackEl = ref(null)
+// 轨道的元素 ref 直接**借用量宽用的那个**(capsuleTrackEl):它已被证实始终指向当前挂着的元素,
+// 再不自己养第二个 ref —— 元素被 v-if 换掉时独立 ref 可能停在已卸载的旧元素上,
+// 那会让 scrollWidth/clientWidth 都量成 0、滚动悄悄失效(打包版踩过)
 const { marqueeOn: capsuleMarquee } = useMarquee({
   isOn: () => compactForm.value === 'capsule' && !expanded.value,
   isPlaying: () => isPlaying.value,
+  elRef: capsuleTrackEl,
   deps: [capsuleText, compactForm, expanded, () => islandCfg.capsuleFont, () => islandCfg.capsuleScale, () => islandCfg.lyricGap]
 })
 

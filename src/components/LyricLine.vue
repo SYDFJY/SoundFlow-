@@ -38,8 +38,9 @@ const props = defineProps({
   /**
    * 长行滚动(岛歌词页专用,默认关):
    * 开启后本行强制单行+省略号;当前行超宽(>4px)时做 marquee ——
-   * 首停 1s → 匀速左移 32px/s → 尾停 1.5s → 平滑回位;暂停时停住、离开(卸载)即停。
-   * 其余两个面不传 → 行为与样式与之前完全一致(守卫:lyricSurfaces.test.js)
+   * 停 1s → 匀速左移 32px/s → **停在尾部(不回位、不重复)**;换行后新句子从头再扫。
+   * 暂停时停住、离开(卸载)即停。其余两个面不传 → 行为与样式与之前完全一致
+   * (守卫:lyricSurfaces.test.js)
    */
   scrollLong: { type: Boolean, default: false },
   /** 是否在播放(仅 marquee 用;默认 true,不影响既有两个面) */
