@@ -1581,6 +1581,20 @@ app.whenReady().then(async () => {
           more.click(); await wait(350)
           const opened = !!document.querySelector('.mini-settings')
           const rows = document.querySelectorAll('.mini-settings-row').length
+          // 设置面必须是"实底":它是覆盖层,底下就是正在播放页(用户反馈"播放面还在挡着")
+          const stEl = document.querySelector('.mini-settings')
+          const cs = stEl ? getComputedStyle(stEl) : null
+          const bgc = cs ? cs.backgroundColor : ''
+          const bgImg = cs ? cs.backgroundImage : ''
+          let bgAlpha = 1
+          const am = /rgba?\(([^)]+)\)/.exec(bgc)
+          if (am) { const parts = am[1].split(',').map((s) => Number(s.trim())); if (parts.length >= 4) bgAlpha = parts[3] }
+          const opaque = !!cs && (bgImg !== 'none' || bgAlpha === 1)
+          const rect = stEl ? stEl.getBoundingClientRect() : null
+          const hit = rect ? document.elementFromPoint(Math.round(rect.left + rect.width / 2), Math.round(rect.top + rect.height / 2)) : null
+          const covered = !!(hit && stEl && stEl.contains(hit))
+          // 展开面板不该再有第二块频谱(与胶囊那块重复,已删)
+          const panelVizGone = !document.querySelector('.mini-now-viz')
           const rowOf = (label) => [...document.querySelectorAll('.mini-settings-row')].find((r) => (r.querySelector('.mini-settings-label') || {}).textContent === label)
           const scaleRow = rowOf('胶囊缩放')
           const range = scaleRow && scaleRow.querySelector('input[type=range]')
@@ -1597,11 +1611,16 @@ app.whenReady().then(async () => {
           const back = document.querySelector('.mini-settings-back')
           if (back) back.click()
           await wait(250)
-          return { opened, rows, pwBefore, pwAfter, closed: !document.querySelector('.mini-settings') }
+          return { opened, rows, opaque, covered, bgc, bgImg, panelVizGone, pwBefore, pwAfter, closed: !document.querySelector('.mini-settings') }
         })()`)
         check('两态岛:「•••」打开岛设置面(分组/字段齐全,返回可关)',
           !!settingsFlow && settingsFlow.opened === true && settingsFlow.rows >= 15 && settingsFlow.closed === true,
           JSON.stringify(settingsFlow))
+        check('两态岛:设置面铺了不透明底、播放页不再从底下透出(命中测试落在设置面内)',
+          !!settingsFlow && settingsFlow.opaque === true && settingsFlow.covered === true,
+          JSON.stringify({ opaque: settingsFlow && settingsFlow.opaque, covered: settingsFlow && settingsFlow.covered, bg: settingsFlow && settingsFlow.bgc, img: settingsFlow && settingsFlow.bgImg }))
+        check('两态岛:展开面板不再有第二块频谱(canvas 已删,胶囊那块不受影响)',
+          !!settingsFlow && settingsFlow.panelVizGone === true, JSON.stringify({ panelVizGone: settingsFlow && settingsFlow.panelVizGone }))
         check('两态岛:展开态改「面板宽度」→ 数值变化且窗口即时重设',
           !!settingsFlow && settingsFlow.pwBefore && settingsFlow.pwAfter && settingsFlow.pwBefore !== settingsFlow.pwAfter,
           JSON.stringify({ before: settingsFlow && settingsFlow.pwBefore, after: settingsFlow && settingsFlow.pwAfter }))

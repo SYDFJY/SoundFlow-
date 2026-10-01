@@ -366,7 +366,7 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     expect(s, '缺收起按钮').toMatch(/class="mini-collapse" @click="requestCollapse"/)
     expect(s, '活动页不是长条胶囊').toMatch(/\.mini-dot\.active \{ width: 18px; border-radius: 3px; background: #fff; \}/)
   })
-  it('媒体页(照参考图):大封面 + ••• / 进度条右端是"-剩余" / 大传输键 / 频谱 / 展开态拖拽区', () => {
+  it('媒体页(照参考图):大封面 + ••• / 进度条右端是"-剩余" / 大传输键 / 展开态拖拽区', () => {
     const s = mini()
     expect(s, '缺 •••(更多)按钮').toMatch(/class="mini-more" @click="openSettings"/)
     expect(s, '缺剩余时间显示').toMatch(/'-' \+ formatTime\(Math\.max\(0, duration - currentTime\)\)/)
@@ -375,7 +375,7 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     // 布局常量照 WinIsland 的 music_view.rs:传输键间距 72、进度条 hover 增高 3.5(4→7)
     expect(s, '传输键间距没照参考常量(72)').toMatch(/\.mini-now-controls \{ display: flex; align-items: center; justify-content: center; gap: calc\(72px \* var\(--mini-ui-scale, 1\)\); \}/)
     expect(s, '进度条没有 hover 增高').toMatch(/\.mini-now-progress:hover \.mini-bar \{ height: 7px; \}/)
-    expect(s, '展开媒体页缺频谱').toMatch(/<canvas class="mini-now-viz" ref="panelVizEl"/)
+    expect(s, '展开媒体页又长回频谱了(用户要求删掉:面板整块重复胶囊右侧那块)').not.toMatch(/mini-now-viz/)
     expect(s, '胶囊缺右侧频谱').toMatch(/<canvas class="mini-capsule-viz" ref="capsuleVizEl"/)
   })
   it('岛上频谱:三处同步 + 推送器参数(50ms / 10 柱 / 仅 miniOpen / 0.75 提亮)+ 发送方校验', () => {
@@ -398,6 +398,11 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     }
     expect(s, '缺「恢复默认」').toMatch(/@click="resetSettings"[^>]*>恢复默认/)
     expect(s, '恢复默认把形态也重置了(形态是另一个入口)').toMatch(/if \(k === 'form'\) continue/)
+    // 设置面必须盖住播放页——它是覆盖层,底色得自己铺(父级 .mini-panel-inner 没有背景,
+    // 用 background: inherit 的结果是全透明,用户实测看到播放页从底下透出来)
+    expect(s, '设置面没挂不透明底(播放页会透出来)').toMatch(/class="mini-settings" v-if="settingsOpen" :style="settingsSurfaceStyle"/)
+    expect(s, '设置面底色没叠在不透明深色底上').toMatch(/settingsSurfaceStyle = computed\(\(\) => \(\{\s*\n\s*background: `linear-gradient\(\$\{playerBg\.value\}, \$\{playerBg\.value\}\), var\(--player-bg-dark, #161b22\)`/)
+    expect(s, '设置面又写成 background: inherit(继承到的是全透明)').not.toMatch(/\.mini-settings \{[^}]*background: inherit/)
     expect(s, '四种切换动效的 class 不全').toMatch(/\.mini-capsule-anim\.anim-blur \{ animation: mini-lyric-blur/)
     expect(s, '动效模糊 class 没接上').toMatch(/\.mini-player--blur \.mini-panel-inner \{ filter: blur\(5px\); \}/)
     expect(s, '封面形状没分支').toMatch(/\.mini-capsule-cover\.shape-circle \{ border-radius: 50%; \}/)

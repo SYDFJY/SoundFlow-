@@ -87,7 +87,7 @@
       <div class="mini-panel" :style="surfaceStyle" @wheel="onPanelWheel">
         <div class="mini-panel-inner">
           <!-- 岛设置面(覆盖层;••• 或右键菜单「岛设置…」进入) -->
-          <div class="mini-settings" v-if="settingsOpen" @click.stop>
+          <div class="mini-settings" v-if="settingsOpen" :style="settingsSurfaceStyle" @click.stop>
             <div class="mini-settings-head">
               <button class="mini-settings-back" @click="closeSettings" aria-label="返回">‹</button>
               <span class="mini-settings-title">岛设置</span>
@@ -131,7 +131,7 @@
             </div>
           </div>
 
-          <!-- 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 频谱 / 音量) -->
+          <!-- 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 音量) -->
           <div class="mini-page" v-if="page === 'now'">
             <div class="mini-now">
               <div class="mini-now-top mini-drag-area">
@@ -164,7 +164,6 @@
                 </button>
                 <button class="mini-ctl" @click="next" aria-label="下一曲"><Icon name="next" :size="uiPx(20)" fill="currentColor" /></button>
               </div>
-              <canvas class="mini-now-viz" ref="panelVizEl" aria-hidden="true"></canvas>
               <div class="mini-volume" :class="{ 'is-muted': isMuted }">
                 <Icon :name="isMuted || volume <= 0 ? 'mute' : 'volume'" :size="13" />
                 <div class="mini-volume-track" ref="volumeEl" @mousedown="onVolumeDown" title="拖动调整音量">
@@ -429,6 +428,12 @@ const playerStyle = computed(() => ({
   '--mc-track': dimText.value
 }))
 const surfaceStyle = computed(() => ({ background: playerBg.value }))
+// 岛设置面必须真的"盖住"播放页:它继承不到面板底色(.mini-panel-inner 没有背景),
+// 所以自己铺 —— 面板色当渐变层叠在**不透明深色底**上:定色/白/自定义模式结果与面板同色,
+// "透明玻璃"模式(几乎全透的 rgba)也变成能读的近实底,播放页不会透出来
+const settingsSurfaceStyle = computed(() => ({
+  background: `linear-gradient(${playerBg.value}, ${playerBg.value}), var(--player-bg-dark, #161b22)`
+}))
 
 // ===== 岛设置的派生几何与 CSS 变量(基线对象是唯一事实源:样式与测量都从它算)=====
 const uiPx = (v) => Math.max(1, Math.round(v * islandCfg.panelScale)) // 面板内元素整体缩放
@@ -662,10 +667,9 @@ async function scrollQueueToActive() {
 }
 watch(page, (p) => { if (p === 'queue') scrollQueueToActive() })
 
-// ===== 频谱:主窗每 50ms 推一组降采样柱值;胶囊右侧与展开媒体页共用同一份绘制 =====
+// ===== 频谱:主窗每 50ms 推一组降采样柱值;只有胶囊右侧那一块画 =====
 const specVals = ref(new Array(SPEC_BARS).fill(0))
 const capsuleVizEl = ref(null)
-const panelVizEl = ref(null)
 let _vizColor = ''
 function vizColor() {
   if (!_vizColor) {
@@ -701,10 +705,9 @@ function drawSpectrum(canvas, vals) {
     ctx.fill()
   }
 }
-// 只画当前可见的那块(两块 canvas 状态互斥:至多一块在画)
+// 只画当前可见的那块(面板上不再有频谱,只剩胶囊右侧;展开态无需绘制)
 function drawVisibleSpectrum() {
-  if (expanded.value) drawSpectrum(panelVizEl.value, specVals.value)
-  else if (compactForm.value === 'capsule') drawSpectrum(capsuleVizEl.value, specVals.value)
+  if (!expanded.value && compactForm.value === 'capsule') drawSpectrum(capsuleVizEl.value, specVals.value)
 }
 watch([expanded, compactForm], () => { nextTick(drawVisibleSpectrum) })
 
@@ -1169,7 +1172,7 @@ function restoreMain() {
 
 .mini-empty { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--mc3, rgba(255,255,255,0.35)); }
 
-/* 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 频谱 / 音量) */
+/* 正在播放页(照参考图:封面+歌名/歌手+••• / 进度+时间 / 大传输键 / 音量) */
 .mini-now { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: calc(8px * var(--mini-ui-scale, 1)); padding: calc(12px * var(--mini-ui-scale, 1)) calc(16px * var(--mini-ui-scale, 1)); }
 .mini-now-top { display: flex; align-items: center; gap: calc(10px * var(--mini-ui-scale, 1)); }
 .mini-now-cover {
@@ -1218,8 +1221,7 @@ function restoreMain() {
 .mini-ctl:active { transform: scale(0.92); }
 .mini-ctl--play { color: var(--mc-btn, #fff); }
 
-/* 展开媒体页的宽频谱(与胶囊共用同一条流/同一个绘制函数) */
-.mini-now-viz { width: 100%; height: calc(22px * var(--mini-ui-scale, 1)); display: block; opacity: 0.85; }
+/* 画布共用函数(drawSpectrum)只服务胶囊右侧那块;展开面板不加频谱(与胶囊重复) */
 
 .mini-volume { display: flex; align-items: center; gap: 8px; color: var(--mc2, rgba(255,255,255,0.55)); }
 .mini-volume.is-muted { opacity: 0.55; }
@@ -1255,7 +1257,9 @@ function restoreMain() {
 .mini-queue-artist { max-width: 40%; font-size: 11px; opacity: 0.8; }
 
 /* ===== 岛设置面(覆盖层;分组 + 滑杆/步进/勾选/二选)===== */
-.mini-settings { position: absolute; inset: 0; display: flex; flex-direction: column; background: inherit; animation: mini-settings-in 0.16s var(--mini-spring); z-index: 3; }
+/* 底色由 settingsSurfaceStyle 内联铺设(不透明),这里不再用 background: inherit ——
+   父级 .mini-panel-inner 本就没有背景,继承的结果是全透明,播放页会从底下透出来 */
+.mini-settings { position: absolute; inset: 0; display: flex; flex-direction: column; animation: mini-settings-in 0.16s var(--mini-spring); z-index: 3; }
 @keyframes mini-settings-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 .mini-settings-head { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 8px 12px 6px; }
 .mini-settings-back {

@@ -69,7 +69,10 @@ const ALLOW = {
     '.mini-now-time',
     // .mini-player--capsule .mini-capsule-track → 该条 `transition:none` 是上一版的占位;
     //   现在换行动效挂在外层 .mini-capsule-anim 上,marquee 的 transform 与它分层,不需要这条
-    '.mini-player--capsule .mini-capsule-track']
+    '.mini-player--capsule .mini-capsule-track',
+    // .mini-now-viz → 展开面板的宽频谱整块删除(2026-10-01 用户要求:与胶囊右侧那块重复);
+    //   画布共用函数 drawSpectrum 仍在,只服务胶囊
+    '.mini-now-viz']
 }
 
 const selectors = (css) =>
