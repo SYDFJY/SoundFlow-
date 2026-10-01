@@ -73,9 +73,11 @@ describe('播放键居中且不随断点跳变', () => {
 })
 
 describe('被裁的浮层', () => {
-  it('桌面歌词菜单不会比窗口还宽(窗口最小可到 220px)', () => {
-    expect(read('public/lyric.html'), '菜单最小宽度写死 236px,窗口窄于它时右侧会被裁')
-      .toMatch(/min-width:min\(236px,100vw - 8px\)/)
+  it('桌面歌词菜单不会比窗口还宽 —— 2026-10-02 起菜单改由**共用的菜单窗口**渲染', () => {
+    // 旧的页内菜单 min(236px,100vw-8px) 随标记一起退休;现在的宽度钳制在主进程(最窄 140,最宽 360)
+    const m = read('electron/main.js')
+    expect(m, '菜单窗口宽度没有上限钳制(窄窗口/大菜单会溢出)').toMatch(/Math\.min\(360, Math\.max\(140, Math\.ceil\(size\.width\)\)\)/)
+    expect(read('public/lyric.html'), '歌词窗里又长回页内菜单了').not.toMatch(/id="ctx"/)
   })
   it('两个固定宽弹窗补了 max-width', () => {
     expect(read('src/views/PlaylistView.vue')).toMatch(/width: 560px; max-width: 92vw;/)

@@ -27,44 +27,14 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 .lyric-trans{margin-top:2px;font-size:.82em;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .empty{color:rgba(255,255,255,0.18);font-size:14px;text-align:center;padding-top:40%;-webkit-app-region:no-drag}
 
-/* ===== 右键菜单:与应用内菜单同刻度的卡片(窗口不走 Vite,数值内联) ===== */
-#ctx{display:none;position:fixed;min-width:min(236px,100vw - 8px);max-height:calc(100vh - 10px);overflow-y:auto;padding:5px;border-radius:10px;
   background:rgba(24,26,32,0.97);border:1px solid rgba(255,255,255,0.10);box-shadow:0 14px 38px rgba(0,0,0,0.55),0 2px 8px rgba(0,0,0,0.4);
   z-index:999;-webkit-app-region:no-drag}
-#ctx.open{display:block;animation:ctx-in .12s ease-out}
-@keyframes ctx-in{from{opacity:0;transform:translateY(-4px) scale(.97)}to{opacity:1;transform:none}}
-#ctx.closing{display:block;animation:ctx-out .09s ease-in forwards}
-@keyframes ctx-out{to{opacity:0;transform:translateY(-3px) scale(.98)}}
-#ctx::-webkit-scrollbar{width:4px}
-#ctx::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.16);border-radius:2px}
-.ctx-group{font-size:11px;color:rgba(255,255,255,0.38);padding:7px 10px 3px;letter-spacing:.02em}
 /* 「与播放界面一致」模式:行间距/过渡/hover 对齐播放界面;已唱过的行不再额外淡化
    (播放界面只按 |行号-当前行| 分档,没有"已唱过"这一档) */
 #lyric.app-mode .line{padding:10px 0;transition:all .4s ease}
 #lyric.app-mode .line.past{opacity:1}
 #lyric.app-mode .line:hover{background:rgba(255,255,255,0.06)}
 #lyric.app-mode .line.active{background:transparent}
-.ctx-swatches{display:flex;align-items:center;gap:7px;padding:5px 10px 8px;flex-wrap:wrap}
-.ctx-swatch{width:18px;height:18px;border-radius:50%;background:var(--c,#888);cursor:pointer;position:relative;border:1px solid rgba(255,255,255,0.22);box-sizing:border-box}
-.ctx-swatch:hover{transform:scale(1.12)}
-.ctx-swatch.on{box-shadow:0 0 0 2px rgba(24,26,32,0.97),0 0 0 3.5px var(--c,#fff)}
-.ctx-swatch.custom{overflow:hidden;background:conic-gradient(#ff5f6d,#ffc371,#7ee787,#6ec6ff,#c792ea,#ff5f6d)}
-.ctx-swatch.custom input{opacity:0;width:100%;height:100%;cursor:pointer;border:0;padding:0}
-.ctx-swatch.auto{background:rgba(255,255,255,0.1);color:#dfe5ee;font-size:11px;line-height:16px;text-align:center;border-style:dashed}
-.ctx-swatch.auto.on{background:rgba(77,148,255,0.25);color:#fff}
-.ctx-item{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:7px;font-size:13px;color:#dfe5ee;cursor:pointer;position:relative;white-space:nowrap}
-.ctx-item:hover,.ctx-item.kbd{background:rgba(255,255,255,0.09);color:#fff}
-.ctx-item:hover::before,.ctx-item.kbd::before{content:'';position:absolute;left:2px;top:50%;transform:translateY(-50%);width:2px;height:14px;border-radius:1px;background:var(--accent,#4d94ff)}
-.ctx-item svg{width:15px;height:15px;flex:0 0 15px;opacity:.85}
-.ctx-item .ctx-label{flex:1}
-.ctx-item .ctx-value{font-size:11px;color:rgba(255,255,255,0.42)}
-.ctx-item .ctx-check{width:15px;height:15px;flex:0 0 15px;opacity:0;color:var(--accent,#4d94ff)}
-.ctx-item.on .ctx-check{opacity:1}
-.ctx-item.on{color:#fff}
-.ctx-item.danger{color:#ff7b72}
-.ctx-item.danger:hover{background:rgba(255,123,114,0.14);color:#ff9b93}
-.ctx-item.danger:hover::before{background:#ff7b72}
-.ctx-sep{height:1px;background:rgba(255,255,255,0.08);margin:4px 8px}
 .ctx-sub{font-size:11px;color:rgba(255,255,255,0.3);padding:8px 10px 0}
 
 /* 缩放柄:透明窗 + 浅色桌面时原来的白色角标基本看不见,所以给一层很淡的暗底 + 提高对比,
@@ -82,123 +52,13 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div id="lyric"><div class="empty">暂无歌词</div></div>
   <div id="size-handle"></div>
 </div>
-<div id="ctx" role="menu" aria-label="桌面歌词菜单">
-  <div class="ctx-group">显示</div>
-  <div class="ctx-item" data-a="wordMode" role="menuitemcheckbox">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg>
-    <span class="ctx-label">逐字高亮</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="translation" role="menuitemcheckbox">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>
-    <span class="ctx-label">显示翻译</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="effect" role="menuitemcheckbox">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8L4 10.7l5.8 1.9L12 18.4l1.9-5.8L20 10.7l-5.8-1.9z"/><path d="M5 3v4"/><path d="M3 5h4"/></svg>
-    <span class="ctx-label">歌词特效</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="title" role="menuitemcheckbox">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-    <span class="ctx-label">显示歌名</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="style-dim" role="menuitemradio">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
-    <span class="ctx-label">淡色(当前行高亮)</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="style-app" role="menuitemradio">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
-    <span class="ctx-label">与播放界面一致</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="font-">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/></svg>
-    <span class="ctx-label">字号</span><span class="ctx-value" data-v="font"></span>
-  </div>
-  <div class="ctx-item" data-a="font+">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/><path d="M8 11h6"/><path d="M11 8v6"/></svg>
-    <span class="ctx-label">字号(加大)</span><span class="ctx-value" data-v="font"></span>
-  </div>
-  <div class="ctx-item" data-a="align">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6H3"/><path d="M15 12H3"/><path d="M17 18H3"/></svg>
-    <span class="ctx-label">左对齐</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-group">歌词颜色</div>
-  <div class="ctx-swatches">
-    <span class="ctx-swatch" data-color="#6ec6ff" style="--c:#6ec6ff" title="#6ec6ff"></span>
-    <span class="ctx-swatch" data-color="#7ee787" style="--c:#7ee787" title="#7ee787"></span>
-    <span class="ctx-swatch" data-color="#ffd700" style="--c:#ffd700" title="#ffd700"></span>
-    <span class="ctx-swatch" data-color="#ff7eb6" style="--c:#ff7eb6" title="#ff7eb6"></span>
-    <span class="ctx-swatch" data-color="#c792ea" style="--c:#c792ea" title="#c792ea"></span>
-    <span class="ctx-swatch" data-color="#ffffff" style="--c:#ffffff" title="#ffffff"></span>
-    <label class="ctx-swatch custom" title="自定义颜色(系统取色器)">
-      <input type="color" id="ctx-color-input">
-    </label>
-    <span class="ctx-swatch auto" data-a="color-auto" title="跟随应用侧歌词颜色">A</span>
-  </div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-group">背景</div>
-  <div class="ctx-item" data-a="bg-dark" role="menuitemradio">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
-    <span class="ctx-label">深色底</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="bg-light" role="menuitemradio">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.3 17.7-1.4 1.4"/><path d="m19.1 4.9-1.4 1.4"/></svg>
-    <span class="ctx-label">浅色底</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="bg-none" role="menuitemradio">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m9 9 6 6"/><path d="m15 9-6 6"/></svg>
-    <span class="ctx-label">完全透明</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="alpha-">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
-    <span class="ctx-label">降低不透明度</span><span class="ctx-value" data-v="alpha"></span>
-  </div>
-  <div class="ctx-item" data-a="alpha+">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
-    <span class="ctx-label">提高不透明度</span><span class="ctx-value" data-v="alpha"></span>
-  </div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-group">窗口</div>
-  <div class="ctx-item" data-a="locked" role="menuitemcheckbox">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-    <span class="ctx-label">锁定位置</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="pinned" role="menuitemcheckbox">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.6v1.6H7v-1.6z"/></svg>
-    <span class="ctx-label">窗口置顶</span><svg class="ctx-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-  </div>
-  <div class="ctx-item" data-a="through">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51z"/></svg>
-    <span class="ctx-label">点击穿透</span>
-  </div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-group">文件</div>
-  <div class="ctx-item" data-a="copy">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-    <span class="ctx-label">复制当前歌词</span>
-  </div>
-  <div class="ctx-item" data-a="copy-all">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H9a1 1 0 0 0-1 1v2a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1Z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
-    <span class="ctx-label">复制全部歌词</span>
-  </div>
-  <div class="ctx-item" data-a="save">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h5"/><path d="M12 12v6"/><path d="m9 15 3 3 3-3"/></svg>
-    <span class="ctx-label">保存歌词到文件</span>
-  </div>
-  <div class="ctx-sep"></div>
-  <div class="ctx-item danger" data-a="reset">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-    <span class="ctx-label">重置窗口设置</span>
-  </div>
-  <div class="ctx-item danger" data-a="close">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-    <span class="ctx-label">关闭桌面歌词</span><span class="ctx-value">Esc</span>
-  </div>
-</div>
+<!-- 菜单改由共用的菜单窗口渲染(定位在窗口之外,不遮歌词);这里只留一个隐藏的系统取色器 -->
+<input type="color" id="lyric-color-input" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px" aria-hidden="true" />
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s)
 const api=window.electronAPI
-const lyric=$('#lyric'),ctx=$('#ctx'),app=$('#app'),toast=$('#toast'),titleBar=$('#title-bar')
+const lyric=$('#lyric'),app=$('#app'),toast=$('#toast'),titleBar=$('#title-bar')
 let lines=[],activeIdx=-1,playing=false
 let words=[],wordIdx=-1,translation='',baseTime=0,syncAt=0,wordTimer=null
 // 窗口专有设置:真源在**应用侧**(随载荷 win 字段下来),窗口只消费 ——
@@ -230,34 +90,48 @@ function applyTitleBar(){
   titleBar.style.display = on ? '' : 'none'
   lyric.classList.toggle('has-title', on)
 }
-function syncMenuChecks(){
-  const on = (a, v) => { const el=ctx.querySelector(`[data-a="${a}"]`); if(el) el.classList.toggle('on', !!v) }
-  on('wordMode', appStyle.wordMode)
-  on('translation', translation !== '' || !!lastTranslationOn)
-  on('effect', appStyle.effect)
-  on('title', win.showTitle)
-  on('align', appStyle.align === 'left')
-  on('locked', win.locked)
-  on('pinned', win.pinned)
-  on('style-dim', win.lineStyle !== 'app')
-  on('style-app', win.lineStyle === 'app')
-  on('bg-dark', win.bg === 'dark')
-  on('bg-light', win.bg === 'light')
-  on('bg-none', win.bg === 'none')
-  const cur=lyricColor().toLowerCase()
-  const autoOn=!(win.color && win.color!=='auto')
-  ctx.querySelectorAll('.ctx-swatch[data-color]').forEach((el)=>{
-    el.classList.toggle('on', !autoOn && el.dataset.color.toLowerCase()===cur)
-  })
-  const autoEl=ctx.querySelector('[data-a="color-auto"]')
-  if(autoEl) autoEl.classList.toggle('on', autoOn)
-  const customEl=ctx.querySelector('.ctx-swatch.custom')
-  if(customEl){
-    const isPreset=[...ctx.querySelectorAll('.ctx-swatch[data-color]')].some((el)=>el.dataset.color.toLowerCase()===cur)
-    customEl.classList.toggle('on', !autoOn && !isPreset)
-  }
-  const fv=ctx.querySelector('[data-v="font"]'); if(fv) fv.textContent = appStyle.fontSize + 'px'
-  const av=ctx.querySelector('[data-v="alpha"]'); if(av) av.textContent = win.bg==='none' ? '—' : Math.round((Number(win.alpha)||0)*100) + '%'
+/** 菜单条目:**交给共用的菜单窗口**渲染(它定位在窗口之外,不会再盖住歌词)。
+ *  这里只产出数据 + 勾选态;点击后主进程把动作 id 发回来(lyric:menu-action → handleAction)。 */
+function buildMenuItems(){
+  const transOn = translation !== '' || !!lastTranslationOn
+  const autoOn = !(win.color && win.color !== 'auto')
+  return [
+    { type: 'groupTitle', label: '显示' },
+    { id: 'wordMode', label: '逐字高亮', icon: 'lyric', checked: !!appStyle.wordMode },
+    { id: 'translation', label: '显示翻译', icon: 'lyric', checked: transOn },
+    { id: 'effect', label: '歌词特效', icon: 'effect', checked: !!appStyle.effect },
+    { id: 'title', label: '显示歌名', icon: 'text', checked: !!win.showTitle },
+    { id: 'style-dim', label: '淡色(当前行高亮)', icon: 'lyric', checked: win.lineStyle !== 'app' },
+    { id: 'style-app', label: '与播放界面一致', icon: 'lyric', checked: win.lineStyle === 'app' },
+    { id: 'font+', label: '字号(加大)', icon: 'text', group: 'font' },
+    { id: 'font-', label: '字号(缩小)', icon: 'text' },
+    { id: 'align', label: '左对齐', icon: 'text', checked: appStyle.align === 'left' },
+    { type: 'separator' },
+    { type: 'groupTitle', label: '歌词颜色' },
+    // 颜色:不再摆一排色块 —— 一个取色板入口(系统取色器)+「跟随应用侧」
+    { id: 'color', label: '自定义颜色(取色板)…', icon: 'palette' },
+    { id: 'color-auto', label: '跟随应用侧歌词颜色', icon: 'palette', checked: autoOn },
+    { type: 'separator' },
+    { type: 'groupTitle', label: '背景' },
+    { id: 'bg-dark', label: '深色底', icon: 'bg', checked: win.bg === 'dark' },
+    { id: 'bg-light', label: '浅色底', icon: 'bg', checked: win.bg === 'light' },
+    { id: 'bg-none', label: '完全透明', icon: 'alpha', checked: win.bg === 'none' },
+    { id: 'alpha-', label: '降低不透明度', icon: 'alpha' },
+    { id: 'alpha+', label: '提高不透明度', icon: 'alpha' },
+    { type: 'separator' },
+    { type: 'groupTitle', label: '窗口' },
+    { id: 'locked', label: '锁定位置', icon: 'lock', checked: !!win.locked },
+    { id: 'pinned', label: '窗口置顶', icon: 'pin', checked: !!win.pinned },
+    { id: 'through', label: '点击穿透', icon: 'through' },
+    { type: 'separator' },
+    { type: 'groupTitle', label: '文件' },
+    { id: 'copy', label: '复制当前歌词', icon: 'copy' },
+    { id: 'copy-all', label: '复制全部歌词', icon: 'copy' },
+    { id: 'save', label: '保存歌词到文件', icon: 'save' },
+    { type: 'separator' },
+    { id: 'reset', label: '重置窗口设置', icon: 'restore', danger: true },
+    { id: 'close', label: '关闭桌面歌词  Esc', icon: 'close', danger: true }
+  ]
 }
 // 翻译开关:窗口不知道应用侧的 showTranslation 状态,用"有没有译文可显示"近似表示
 let lastTranslationOn=false
@@ -452,31 +326,15 @@ function applyStyle(){
 }
 
 // ===== 右键菜单 =====
-let menuOpen=false
-function openMenu(x,y){
-  syncMenuChecks()
-  ctx.classList.remove('closing')
-  ctx.classList.add('open')
-  menuOpen=true
-  const cw=ctx.offsetWidth,ch=ctx.offsetHeight,winW=window.innerWidth,winH=window.innerHeight
-  if(y+ch>winH) y=Math.max(2,y-ch-2)
-  if(x+cw>winW) x=Math.max(2,winW-cw-2)
-  if(x<2) x=2; if(y<2) y=2
-  ctx.style.left=x+'px'; ctx.style.top=y+'px'
-  const first=ctx.querySelector('.ctx-item'); if(first) first.classList.add('kbd') // 键盘可达:首个项先高亮
+let menuOpen=false // 菜单打开时不许拖动窗口(托盘/菜单在别处,这里只记状态)
+function openLyricMenu(){
+  menuOpen = true
+  try { api.send('lyric:menu-open', buildMenuItems()) } catch(e) {}
 }
-function closeMenu(){
-  if(!menuOpen) return
-  menuOpen=false
-  ctx.classList.add('closing')
-  setTimeout(()=>{ ctx.classList.remove('open'); ctx.classList.remove('closing'); ctx.querySelectorAll('.kbd').forEach(e=>e.classList.remove('kbd')) },90)
-}
+function closeMenu(){ menuOpen = false }
 document.addEventListener('contextmenu',e=>{
   e.preventDefault()
-  openMenu(e.clientX,e.clientY)
-})
-document.addEventListener('click',e=>{
-  if(menuOpen && !ctx.contains(e.target)) closeMenu()
+  openLyricMenu()
 })
 function showToast(msg,dur=1600){
   toast.textContent=msg;toast.style.display='block'
@@ -485,29 +343,17 @@ function showToast(msg,dur=1600){
   showToast._t=setTimeout(()=>{toast.classList.remove('show');setTimeout(()=>{toast.style.display='none'},240)},dur)
 }
 
-ctx.addEventListener('click',e=>{
-  // 色块:点了立刻生效,菜单**不关**(方便连着试几个色)
-  const sw=e.target.closest?.('.ctx-swatch')
-  if(sw){
-    e.stopPropagation()
-    if(sw.classList.contains('custom')) return // 交给 input 自己的事件
-    if(sw.dataset.a==='color-auto'){ pushSetting('color','auto'); showToast('颜色:跟随应用侧') }
-    else if(sw.dataset.color){ pushSetting('color', sw.dataset.color); showToast('颜色:'+sw.dataset.color) }
-    return
-  }
-  const item=e.target.closest?.('.ctx-item'); if(!item) return
-  const a=item.dataset.a; if(!a) return
-  closeMenu()
-  handleAction(a)
-})
 // 系统取色器:拖动过程中连续上报会刷屏,用 change(松开/确认时一次)
-const colorInput=document.getElementById('ctx-color-input')
+const colorInput=document.getElementById('lyric-color-input')
 if(colorInput){
   colorInput.addEventListener('change',()=>{
     pushSetting('color', colorInput.value)
     showToast('颜色:'+colorInput.value)
+    menuOpen=false
   })
 }
+// 菜单点完:主进程把动作 id 发回来,复用同一套 handleAction
+api.on('lyric:menu-action',(id)=>{ closeMenu(); if(id) handleAction(id) })
 /** 设置类动作一律转给**应用侧**(它是真源):窗口不自己存,改完等回推 */
 function pushSetting(key,value){ if(api&&api.lyricSetting) api.lyricSetting(key,value) }
 
@@ -528,6 +374,9 @@ function handleAction(a){
   else if(a==='bg-dark'){ pushSetting('bg','dark'); showToast('背景:深色底') }
   else if(a==='bg-light'){ pushSetting('bg','light'); showToast('背景:浅色底') }
   else if(a==='bg-none'){ pushSetting('bg','none'); showToast('背景:完全透明') }
+  // 颜色:取色板入口(系统取色器);「跟随应用侧」= 清掉窗口自有色
+  else if(a==='color'){ try{ if(colorInput){ colorInput.value = lyricColor(); colorInput.click() } }catch(e){} }
+  else if(a==='color-auto'){ pushSetting('color','auto'); showToast('颜色:跟随应用侧') }
   else if(a==='alpha+') pushSetting('alpha',+0.1)
   else if(a==='alpha-') pushSetting('alpha',-0.1)
   else if(a==='through'){
@@ -666,25 +515,11 @@ lyric.addEventListener('dblclick', e => {
   }
 })
 
-// ===== 键盘:Esc 先关菜单、再关窗口;菜单支持上下键与回车 =====
+// ===== 键盘:Esc 先关菜单、再关窗口(菜单在共用菜单窗口里,上下键/回车由它自己处理) =====
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
     if(menuOpen){ closeMenu(); return }
     if(api) api.lyricClose()
-    return
-  }
-  if(!menuOpen) return
-  const items=[...ctx.querySelectorAll('.ctx-item')]
-  const cur=items.findIndex(el=>el.classList.contains('kbd'))
-  if(e.key==='ArrowDown'||e.key==='ArrowUp'){
-    e.preventDefault()
-    const next=e.key==='ArrowDown'?(cur+1)%items.length:(cur-1+items.length)%items.length
-    items.forEach(el=>el.classList.remove('kbd'))
-    items[next].classList.add('kbd')
-  }else if(e.key==='Enter'&&cur>=0){
-    e.preventDefault()
-    const a=items[cur].dataset.a
-    if(a){closeMenu();handleAction(a)}
   }
 })
 

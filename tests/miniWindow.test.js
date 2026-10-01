@@ -122,11 +122,13 @@ describe('小窗三处文字颜色(歌名/歌手/数字进度)', () => {
     expect(m, 'miniBg 读取没带文字色').toMatch(/titleColor: storageData\.miniTitleColor \|\| 'auto'/)
     expect(m, 'applyBg 的 cfg 没带文字色').toMatch(/titleColor: storageData\.miniTitleColor \|\| 'auto'/)
     expect(m, '设置页那条 mini:bg-changed 没落盘文字色').toMatch(/\['titleColor', 'miniTitleColor'\]/)
-    // 自绘菜单后:三处文字色各一项(点一下轮换常用色;真正的取色板在岛设置面「颜色」分组)
-    for (const id of ["'color:title'", "'color:artist'", "'color:time'"]) {
-      expect(m, `菜单里缺少 ${id}`).toContain(id)
+    // 2026-10-02:颜色整批搬进**岛设置面「颜色」分组**(真正的取色板在那边),菜单里不再有颜色项
+    const s2 = read('src/views/MiniView.vue')
+    for (const label of ['歌名颜色', '歌手颜色', '进度颜色']) {
+      expect(s2, `设置面缺「${label}」行`).toContain(`label: '${label}'`)
     }
-    expect(m, '没提供"三处文字色回到自动"的项').toMatch(/'color:auto'/)
+    expect(s2, '设置面缺背景色取色板').toMatch(/aria-label="背景色\(取色板\)"/)
+    expect(m, '菜单里又出现颜色项').not.toMatch(/'color:title'|'color:bg'/)
     expect(read('src/App.vue'), '主窗口没把文字色落 localStorage').toMatch(/localStorage\.setItem\('soundflow_mini_title_color'/)
   })
 })
@@ -146,8 +148,7 @@ describe('小窗右键菜单 = 它设置的唯一入口(与桌面歌词一个思
   })
   it('小窗外观设置也在菜单里:背景四种(单选)+ 不透明度 + 三个文字颜色', () => {
     const s = m()
-    for (const k of ["'bg:dark'", "'bg:white'", "'bg:transparent'", "'color:bg'",
-      "'color:title'", "'color:artist'", "'color:time'", "'alpha:cycle'"]) {
+    for (const k of ["'bg:dark'", "'bg:white'", "'bg:transparent'", "'alpha:cycle'"]) {
       expect(s, `菜单缺少 ${k}`).toContain(k)
     }
     expect(s, '背景模式没有勾选态').toMatch(/item\('bg:dark', '背景:深色', 'bg', miniBg\.mode === 'dark'\)/)

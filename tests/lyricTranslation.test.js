@@ -208,22 +208,26 @@ describe('桌面歌词窗的右键菜单(2026-09-26 重做)', () => {
     expect(s, '没订阅 lyric:through(托盘恢复交互后窗口状态不符)').toMatch(/on\('lyric:through'/)
   })
 
-  it('菜单:分组标题 + 内联 SVG 图标,不再用 emoji', () => {
+  it('菜单:分组标题 + 内联 SVG 图标(菜单窗口渲染;歌词窗只给条目数据)', () => {
     const s = win()
-    const menu = s.slice(s.indexOf('<div id="ctx"'), s.indexOf('<div id="toast"'))
-    expect(menu, '菜单里没有分组标题').toMatch(/class="ctx-group"/)
-    expect((menu.match(/<svg/g) || []).length, '菜单项缺少内联 SVG 图标').toBeGreaterThanOrEqual(18)
-    expect(menu, '菜单里又出现 emoji 当图标(项目早已废弃这种用法)')
+    // 歌词窗:条目数据里要有分组标题,且文案里没有 emoji
+    expect(s, '菜单条目里没有分组标题').toMatch(/\{ type: 'groupTitle', label: '显示' \}/)
+    expect(s, '菜单文案里又出现 emoji(项目早已废弃这种用法)')
       .not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)
+    // 菜单窗口:卡片式外观 + 内联 SVG 图标表
+    const menuPage = read('public/menu.html')
+    expect(menuPage, '菜单窗口缺内联 SVG 图标表').toMatch(/const ICONS = \{/)
+    expect((menuPage.match(/^\s{2}\w+: '</gm) || []).length, '菜单窗口的图标表条目太少').toBeGreaterThanOrEqual(15)
+    // 歌词窗的条目数据里:显示/背景/窗口/文件各组的关键项都要在(id 化)
     for (const key of ['wordMode', 'translation', 'effect', 'title', 'bg-dark', 'locked', 'pinned', 'reset', 'close']) {
-      expect(menu, `菜单缺少项:${key}`).toContain(`data-a="${key}"`)
+      expect(s, `菜单缺少项:${key}`).toContain(`id: '${key}'`)
     }
   })
 
-  it('Esc 先关菜单、再关窗口;菜单支持键盘上下与回车', () => {
+  it('Esc 先关菜单、再关窗口(菜单在共用菜单窗口里自己收 Esc)', () => {
     const s = win()
     expect(s, 'Esc 直接关窗口(菜单开着时应当先关菜单)').toMatch(/if\(menuOpen\)\{ closeMenu\(\); return \}/)
-    expect(s, '菜单不支持方向键/回车').toMatch(/ArrowDown/)
+    expect(read('public/menu.html'), '菜单窗口没处理 Esc').toMatch(/e\.key === 'Escape'/)
   })
 })
 
@@ -285,8 +289,8 @@ describe('桌面歌词的显示方式:dim / app(2026-09-26)', () => {
   it('两种显示方式在菜单里互斥可选', () => {
     const s = winSrc()
     for (const key of ['style-dim', 'style-app']) {
-      expect(s, `菜单缺少显示方式项:${key}`).toContain(`data-a="${key}"`)
+      expect(s, `菜单缺少显示方式项:${key}`).toContain(`{ id: '${key}'`)
     }
-    expect(s, '两个方式没有互斥勾选').toMatch(/on\('style-app', win\.lineStyle === 'app'\)/)
+    expect(s, '两个方式没有互斥勾选').toMatch(/id: 'style-app', label: '与播放界面一致', icon: 'lyric', checked: win\.lineStyle === 'app'/)
   })
 })

@@ -182,7 +182,14 @@ async function openCreateModal() {
 }
 
 function showPlaylistMenu(e, pl) {
-  contextMenu.value = { show: true, x: e.clientX, y: e.clientY, playlist: pl }
+  // 菜单限制在视口内:右/下溢出时自动左移/上移(与歌曲右键菜单同一套,避免贴近边缘被截断)
+  const menuW = 140
+  const menuH = 4 * 34 + 12
+  let x = e.clientX
+  let y = e.clientY
+  if (x + menuW > window.innerWidth - 8) x = Math.max(4, window.innerWidth - menuW - 8)
+  if (y + menuH > window.innerHeight - 8) y = Math.max(4, window.innerHeight - menuH - 8)
+  contextMenu.value = { show: true, x, y, playlist: pl }
 }
 
 // 侧边栏宽度拖拽调整(记忆)

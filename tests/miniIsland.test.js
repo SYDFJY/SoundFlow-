@@ -222,7 +222,8 @@ describe('展开页数据管道', () => {
 describe('空闲淡出', () => {
   it('默认关;菜单项存在;延迟可配(默认 30s,岛设置面里改)', () => {
     const m = main(), s = mini()
-    expect(m, '右键菜单没有「空闲时淡出」').toMatch(/label: '空闲时淡出'/)
+    // 自绘菜单:条目是数据(id 化),文案沿用
+    expect(m, '右键菜单没有「空闲时淡出」').toMatch(/item\('toggle:idle', '空闲时淡出'/)
     expect(m, '开关没存 storageData.miniIdleFade').toMatch(/storageData\.miniIdleFade = !storageData\.miniIdleFade/)
     expect(m, '配置下发没读回 storageData.miniIdleFade').toMatch(/enabled: !!storageData\.miniIdleFade/)
     expect(m, '延迟不是设置项(默认 30s / 5–120)').toMatch(/idleFadeSeconds: \{ store: 'miniIdleFadeSeconds', min: 5, max: 120, def: 30 \}/)
@@ -330,8 +331,8 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
   it('默认胶囊;菜单两项 radio;切换走 setMiniCompactForm(落盘 + 全量配置下发)', () => {
     const m = main()
     expect(m, '默认不是胶囊').toMatch(/miniSetting\('form'\) === 'card' \? 'card' : 'capsule'/)
-    expect(m, '菜单缺「紧凑形态:胶囊」').toMatch(/label: '紧凑形态:胶囊', type: 'radio'/)
-    expect(m, '菜单缺「紧凑形态:卡片」').toMatch(/label: '紧凑形态:卡片', type: 'radio'/)
+    // 自绘菜单把"两项 radio"收成一行开关(点一下在胶囊/卡片之间切)
+    expect(m, '菜单缺紧凑形态切换项').toMatch(/item\('toggle:form', miniCompactForm\(\) === 'capsule' \? '紧凑形态:卡片' : '紧凑形态:胶囊', 'form'\)/)
     expect(m, '切换没落盘').toMatch(/storageData\.miniCompactForm = form === 'card' \? 'card' : 'capsule'/)
     expect(m, '切换没下发全量配置').toMatch(/function setMiniCompactForm\(form\) \{[\s\S]{0,200}sendMiniIslandConfig\(\)/)
   })
@@ -354,6 +355,25 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     expect(p, 'preload 里还留着旧的 mini:form-sync').not.toContain("'mini:form-sync'")
     expect(m, '主进程里还留着 mini:open-menu').not.toMatch(/ipcMain\.on\('mini:open-menu'/)
   })
+  it('尺寸上报的"已是这个尺寸"判据用**已请求的目标**,不是动画中的旧 bounds(踩过)', () => {
+    // 真实现场:上报 A(宽)→ 上报 B(窄) 在同一个 tick 连着到,处理 B 时窗口还没开始动
+    // (bounds 仍是 A 之前的宽度),B 被当成"已经是这个尺寸"丢掉 → 窗口停在上报 A 的宽度不动。
+    // 探针实测:歌词回到短句后,窗口在 224 上挂了 4.5 秒才回 184。
+    const m = main()
+    expect(m, '缺"已请求的目标尺寸"这个状态').toMatch(/let miniSizeTarget = null/)
+    expect(m, '动画开始没记录目标(下一条上报会被旧 bounds 骗过)').toMatch(/function animateMiniCompactSize\(target\) \{[\s\S]{0,120}miniSizeTarget = \{ width: target\.width, height: target\.height \}/)
+    expect(m, '判据又退回用当前 bounds(动画中恒为旧值)').toMatch(/const done = miniSizeTarget \|\| cur[\s\S]{0,40}if \(done\.width === w && done\.height === h\) return/)
+    // 别人改过窗口尺寸(展开/收起/恢复默认/live 拖拽)后,旧目标要作废,否则会挡掉后续上报
+    expect(m, '展开后没清掉紧凑目标').toMatch(/miniSizeTarget = null \/\/ 展开尺寸不是紧凑上报算出来的/)
+    // 尺寸已相同就直接 return 的那条分支:必须先取消在跑的动画,否则上一次的定时器继续跑,
+    // 把窗口推向旧目标(窗口挂宽、短句缩不回来)
+    // 尺寸已相同就直接 return 的那条分支:必须先取消在跑的动画,否则上一次的定时器继续跑,
+    // 把窗口推向旧目标(窗口挂宽、短句缩不回来)。用位置比较,别再写跨行正则。
+    const iCancel = m.indexOf('if (miniSizeTimer) { clearTimeout(miniSizeTimer); miniSizeTimer = null }')
+    const iSame = m.indexOf('if (from.width === target.width && from.height === target.height) {')
+    expect(iCancel > 0 && iSame > 0 && iCancel < iSame,
+      '取消在跑的动画没排在"尺寸已相同就返回"之前(旧定时器还会把窗口推向旧目标)').toBe(true)
+  })
   it('设置写回:键白名单 + 范围钳制 + 发送方校验(不信渲染端)', () => {
     const m = main()
     const fn = /ipcMain\.on\('mini:island-setting'[\s\S]*?\n  \}\)/.exec(m)
@@ -372,7 +392,8 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
   })
   it('「岛设置…」:收起/未开窗时先展开再开面(挂起意图,不靠 sleep)', () => {
     const m = main(), s = mini()
-    expect(m, '菜单缺「岛设置…」且不在首位').toMatch(/const menu = Menu\.buildFromTemplate\(\[\s*\n\s*\{ label: '岛设置…', click: \(\) => openMiniIslandSettings\(\) \}/)
+    // 自绘菜单:条目数据里「岛设置…」在"窗口"组之后(不再强制首位,但必须可达)
+    expect(m, '菜单缺「岛设置…」').toMatch(/item\('action:settings', '岛设置…', 'settings'\)/)
     expect(m, '收起态没挂起').toMatch(/function openMiniIslandSettings\(\)[\s\S]{0,300}miniPendingSettings = true/)
     expect(m, '展开后没补发 open-settings').toMatch(/if \(miniPendingSettings\) \{[\s\S]{0,120}send\('mini:open-settings'\)/)
     expect(s, '渲染端没有挂起兜底').toMatch(/if \(expanded\.value\) openSettings\(\)\s*\n\s*else pendingSettings\.value = true/)
@@ -513,5 +534,28 @@ describe('与既有约定的衔接', () => {
   })
   it('根类名仍是 .mini-player(route-smoke 的渲染判据)', () => {
     expect(mini()).toMatch(/<div\s+class="mini-player"/)
+  })
+})
+
+describe('颜色一律取色板:迷你窗的颜色搬进岛设置面(2026-10-02)', () => {
+  it('设置面有「颜色」分组:背景色 + 三处文字色(取色板)+ 各自「自动」开关', () => {
+    const s = mini()
+    expect(s, '设置面缺「颜色」分组').toMatch(/<div class="mini-settings-gtitle">颜色<\/div>/)
+    expect(s, '缺背景色取色板').toMatch(/aria-label="背景色\(取色板\)" @click="openMiniColorPicker\('bg', \$event\)"/)
+    expect(s, '三处文字色没有按行生成').toMatch(/v-for="c in TEXT_COLOR_ROWS"/)
+    expect(s, '文字色缺「自动(按背景亮度)」开关').toMatch(/:aria-label="c\.label \+ ' 自动\(按背景亮度\)'"/)
+    expect(s, '没有取色器接线').toMatch(/function openMiniColorPicker\(key, e\) \{/)
+  })
+  it('写回复用既有 mini:bg-changed(不新增通道、不自存一份)', () => {
+    const s = mini()
+    expect(s, '没走既有的 mini:bg-changed').toMatch(/send\?\.\('mini:bg-changed', \{/)
+    expect(s, '改文字色没落盘').toMatch(/function setTextColor\(key, v\) \{[\s\S]{0,200}sendMiniBgColors\(\)/)
+    const m = main()
+    expect(m, '主进程不再处理 mini:bg-changed').toMatch(/ipcMain\.on\('mini:bg-changed'/)
+  })
+  it('菜单里不再放颜色预设(它们是"应有取色板"的那批)', () => {
+    const m = main()
+    expect(m, '菜单里又出现颜色轮换项').not.toMatch(/'color:bg'|'color:title'|'color:artist'|'color:time'|'color:auto'/)
+    expect(m, '菜单里还留着按元素取色的老辅助').not.toMatch(/curTextColor/)
   })
 })

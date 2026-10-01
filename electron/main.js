@@ -201,6 +201,10 @@ let miniPendingExpand = false // 窗口还在加载时的"打开即展开",加�
 let miniPendingSettings = false // 收起/未开窗时点了「岛设置…」:展开后自动开设置面(渲染端也会兜一层)
 let miniIslandLockUntil = 0 // 220ms 防抖:连点按钮不重复触发
 let miniSizeTimer = null // 紧凑态尺寸动画(胶囊随歌词伸缩/形态切换)的定时器
+// 紧凑态**已请求**的目标尺寸。动画期间 getBounds() 还是旧值,拿它当"要不要重设"的判据会漏:
+// 上报 A(宽)→ 上报 B(窄)在同一个 tick 里连着来,处理 B 时窗口还没开始动(仍是上报 A 之前的宽度),
+// 于是 B 被当成"已经是这个尺寸"丢掉,窗口停在 A 的宽度不动(用户报的"变宽了不会缩回去"就是这个)
+let miniSizeTarget = null
 // 胶囊的"意图水平中心":宽度伸缩**始终围绕它**换算,不按"当前已对齐的边界"反推 ——
 // 后者会在每次 alignToPhysicalGrid 取整时把中心带偏(实测报告两三次后偏 4px)。
 // 拖动/展开锚定/新建时会更新它。
@@ -269,6 +273,7 @@ function resetMiniIslandState() {
   miniPendingExpand = false
   miniPendingSettings = false
   miniIslandLockUntil = 0
+  miniSizeTarget = null // 窗口尺寸已由别人接管,别再用旧目标挡掉上报
 }
 
 function expandMiniIsland() {
@@ -283,6 +288,7 @@ function expandMiniIsland() {
   const target = clampToWorkArea(boundsFromCenter(centerX, cur.y, exp.w, exp.h))
   miniExpandShiftY = target.y - cur.y
   try { miniWindow.setBounds(target) } catch (_) {}
+  miniSizeTarget = null // 展开尺寸不是紧凑上报算出来的,清掉避免挡后续上报
   miniExpanded = true
   broadcastMiniExpanded(true) // 渲染端收到后播入场动画(窗口已就位,不会裁内容)
   // 「岛设置…」在收起态点的:展开就位后把设置面打开
@@ -305,6 +311,7 @@ function collapseMiniIsland() {
     })
     try { miniWindow.setBounds(target) } catch (_) {}
   }
+  miniSizeTarget = null
   miniExpandShiftY = 0
   if (a) miniCenterX = a.x + (a.width || MINI_COMPACT_W) / 2 // 收起回锚点 → 中心随之复位
   broadcastMiniExpanded(false)
@@ -452,6 +459,7 @@ function applyMiniConfigGeometry(changedKey, live) {
         // 缓动在这儿没用,每帧一次的新请求会把缓动反复打断、窗口跟不上手
         if (live) {
           try { miniWindow.setBounds(clampToWorkArea({ x: cur.x, y: cur.y, width: exp.w, height: exp.h })) } catch (_) {}
+          miniSizeTarget = null
         } else {
           animateMiniCompactSize(clampToWorkArea(boundsFromCenter(cx, cur.y, exp.w, exp.h)))
         }
@@ -469,13 +477,17 @@ function applyMiniConfigGeometry(changedKey, live) {
 // "拖动本就每帧 setBounds"这条链路已被验证过,所以这么改尺寸是安全的。
 function animateMiniCompactSize(target) {
   if (!miniWindow || miniWindow.isDestroyed()) return
+  miniSizeTarget = { width: target.width, height: target.height }
+  // ⚠️ 取消在跑的动画必须放在最前面:曾经放在"尺寸已相同就直接 return"那之后 ——
+  // 连着两次请求(先宽后窄、同 tick)时,第二次落进那个分支**直接返回**,上一次的定时器
+  // 还在跑,于是它继续把窗口推向旧目标(实测:窗口在 224 上挂住,短句再也缩不回来)。
+  if (miniSizeTimer) { clearTimeout(miniSizeTimer); miniSizeTimer = null }
   let from
   try { from = miniWindow.getBounds() } catch (_) { return }
   if (from.width === target.width && from.height === target.height) {
     try { miniWindow.setBounds(target) } catch (_) {}
     return
   }
-  if (miniSizeTimer) { clearTimeout(miniSizeTimer); miniSizeTimer = null }
   const steps = 10
   let i = 0
   const step = () => {
@@ -1158,9 +1170,8 @@ function createMiniWindow() {
     const sendCmd = (cmd) => {
       try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tray-command', cmd) } catch {}
     }
-    // 小窗自己的设置与播放器设置**都在这个菜单里** —— 与桌面歌词右键菜单一个思路:
-    // 设置直接出现在菜单里,不必去应用设置页找(只为它开一节反而更绕)。
-    const curTextColor = (key) => (key === 'title' ? miniBg.titleColor : (key === 'artist' ? miniBg.artistColor : miniBg.timeColor))
+    // 小窗自己的设置与播放器设置都在这个菜单里(与桌面歌词右键菜单一个思路);
+    // 颜色那几项是例外 —— 它们在岛设置面的「颜色」分组里(取色板),菜单不再放预设色
     // 条目数据交给共用的自绘菜单窗口(原生菜单退休:风格与应用不一致,且会盖住小窗)
     const items = []
     const item = (id, label, icon, checked, danger) => ({ id, label, icon, checked: !!checked, danger: !!danger })
@@ -1181,12 +1192,8 @@ function createMiniWindow() {
     items.push(item('bg:dark', '背景:深色', 'bg', miniBg.mode === 'dark'))
     items.push(item('bg:white', '背景:白色', 'bg', miniBg.mode === 'white'))
     items.push(item('bg:transparent', '背景:完全透明', 'alpha', miniBg.mode === 'transparent'))
-    // 自定义背景色:仍然是**取色板**(颜色项将在设置面的「颜色」分组里也有一份,这里保留入口)
-    items.push(item('color:bg', '背景:自定义色…', 'bg', miniBg.mode === 'custom'))
-    items.push(item('color:title', '歌名颜色:自定义…', 'text', false))
-    items.push(item('color:artist', '歌手颜色:自定义…', 'text', false))
-    items.push(item('color:time', '进度颜色:自定义…', 'text', false))
-    items.push(item('color:auto', '三处文字色:自动(按背景亮度)', 'text', miniBg.titleColor === 'auto' && miniBg.artistColor === 'auto' && miniBg.timeColor === 'auto'))
+    // 颜色(背景色 + 三处文字色)已搬进**岛设置面的「颜色」分组**,那里是真取色板;
+    // 菜单里不再放一组预设色轮换(那正是"颜色应有取色板"要解决的问题)
     items.push(item('alpha:cycle', '不透明度:' + Math.round((miniBg.alpha || 0.05) * 100) + '%(点击循环,透明模式才有效)', 'alpha'))
     items.push({ type: 'groupTitle', label: '窗口' })
     items.push(item('toggle:desktopLyric', '桌面歌词', 'lyric', !!miniMenuState.desktopLyric))
@@ -1205,17 +1212,6 @@ function createMiniWindow() {
       if (id.startsWith('rate:')) return sendCmd('rate:' + id.slice(5))
       if (id.startsWith('bg:')) return applyBg(id.slice(3))
       if (id.startsWith('alpha:')) { const arr = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85]; const cur = Math.abs(miniBg.alpha || 0.05); const i = arr.findIndex((a) => Math.abs(a - cur) < 0.001); return applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, arr[(i + 1) % arr.length]) }
-      if (id === 'color:auto') return applyTextColor('all', 'auto')
-      // 颜色项:小窗里没有取色器,给一组常用值轮换(设置面「颜色」分组里有真正的取色板)
-      if (id.startsWith('color:')) {
-        const key = id.slice(6)
-        const paletteFor = (k) => (k === 'bg' ? ['#161b22', '#0e1c2e', '#2e1216', '#0f2218'] : ['auto', '#ffffff', '#6ec6ff', '#ffd166', '#7ee787', '#ff9ecd'])
-        const cur = key === 'bg' ? (miniBg.mode === 'custom' ? miniBg.color : '') : curTextColor(key)
-        const arr = paletteFor(key)
-        const i = arr.findIndex((c) => c === cur)
-        const next = arr[(i + 1) % arr.length]
-        return key === 'bg' ? applyBg('custom', next) : applyTextColor(key, next)
-      }
       if (id === 'toggle:desktopLyric') return sendCmd('toggle-desktop-lyric')
       if (id === 'toggle:onTop') {
         storageData.miniAlwaysOnTop = storageData.miniAlwaysOnTop === false
@@ -1724,7 +1720,9 @@ function setupIPC() {
     if (capsule) { storageData.miniCompactW = w; saveStorage() }
     try {
       const cur = miniWindow.getBounds()
-      if (cur.width === w && cur.height === h) return
+      // 判据用"已请求的目标"而不是当前 bounds:动画没走完时 bounds 还是旧值(见 miniSizeTarget 注释)
+      const done = miniSizeTarget || cur
+      if (done.width === w && done.height === h) return
       if (!Number.isFinite(miniCenterX)) miniCenterX = cur.x + cur.width / 2
       animateMiniCompactSize(clampToWorkArea(boundsFromCenter(miniCenterX, cur.y, w, h)))
     } catch (_) {}

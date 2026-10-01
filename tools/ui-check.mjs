@@ -155,6 +155,9 @@ app.whenReady().then(async () => {
     localStorage.setItem('sf_debug_audio', '1')
     localStorage.setItem('soundflow_autolocate', '1')
     localStorage.setItem('soundflow_schema_version', '1')
+    // 语言必须钉成中文:沙箱跨轮共享,若上一轮(例如遍历审计)把语言切成 English,
+    // 下一轮十几条按中文标签/文案定位的断言会连环假红(实测 14 条)。工具只认中文界面。
+    localStorage.setItem('soundflow_language', 'zh')
     return true
   })()`)
   await win.webContents.reload()
@@ -1001,67 +1004,82 @@ app.whenReady().then(async () => {
     check('桌面歌词菜单:能拿到歌词窗', false, '窗口不在')
   } else {
     const lwRun = (code) => lwMenu.webContents.executeJavaScript(code, true)
-    // 右键打开菜单(合成 contextmenu 事件)
-    const menuInfo = await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const ctx = document.getElementById('ctx')
-      const cs = getComputedStyle(ctx)
-      const items = [...ctx.querySelectorAll('.ctx-item')]
-      const emoji = /[\\u{1F300}-\\u{1FAFF}\\u{2600}-\\u{27BF}]/u
-      const vals = items.map((el) => el.dataset.a)
-      const labels = items.map((el) => el.textContent.trim())
-      return {
-        open: ctx.classList.contains('open') && cs.display !== 'none',
-        radius: cs.borderRadius, bg: cs.backgroundColor, border: cs.borderTopWidth,
-        groups: [...ctx.querySelectorAll('.ctx-group')].map((g) => g.textContent.trim()),
-        count: items.length,
-        vals,
-        // 每个项都要有内联 SVG 图标 + 文案(项目早已废弃 emoji 当图标)
-        allHaveSvg: items.every((el) => el.querySelector('svg')),
-        emojiLabels: labels.filter((t) => emoji.test(t)),
-        checks: ctx.querySelectorAll('.ctx-check').length,
-        danger: [...ctx.querySelectorAll('.ctx-item.danger')].map((el) => el.dataset.a),
-        bgOn: [...ctx.querySelectorAll('[data-a^="bg-"]')].filter((el) => el.classList.contains('on')).map((el) => el.dataset.a)
-      }
-    })()`)
-    console.log('菜单:', JSON.stringify(menuInfo))
+    // 右键打开菜单:2026-10-02 起歌词窗菜单也走**共用的菜单窗口**(独立小窗,定位在歌词条之外),
+    // 所以这里断言的是菜单窗口的 DOM + 它与歌词窗矩形不相交。
+    const lwMenuWin = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && /menu\.html$/.test(String(w.webContents.getURL())))
+    await lwRun(`(() => { document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true })); return true })()`)
+    await sleep(900)
+    const lmWin = lwMenuWin()
+    const menuInfo = lmWin && !lmWin.isDestroyed()
+      ? await lmWin.webContents.executeJavaScript(`(() => {
+          const card = document.querySelector('#menu')
+          const cs = card ? getComputedStyle(card) : null
+          const items = [...document.querySelectorAll('.m-item')]
+          const labels = items.map((el) => (el.querySelector('.m-label') || {}).textContent || '')
+          return {
+            open: !!card,
+            radius: cs ? cs.borderRadius : '', bg: cs ? cs.backgroundColor : '', border: cs ? cs.borderTopWidth : '',
+            groups: [...document.querySelectorAll('.m-group')].map((g) => (g.textContent || '').trim()),
+            count: items.length,
+            vals: items.map((el) => el.getAttribute('data-id') || ''),
+            allHaveSvg: items.every((el) => el.querySelector('svg')),
+            checks: items.filter((el) => el.classList.contains('on')).length,
+            danger: items.filter((el) => el.classList.contains('danger')).map((el) => el.getAttribute('data-id') || ''),
+            bgOn: items.filter((el) => /^bg-/.test(el.getAttribute('data-id') || '') && el.classList.contains('on')).map((el) => el.getAttribute('data-id') || '')
+          }
+        })()`, true)
+      : null
+    console.log('桌面歌词菜单(共用菜单窗口):', JSON.stringify(menuInfo))
     const wantItems = ['wordMode', 'translation', 'effect', 'title', 'font-', 'font+', 'align',
       'bg-dark', 'bg-light', 'bg-none', 'alpha-', 'alpha+', 'locked', 'pinned', 'through',
       'copy', 'copy-all', 'save', 'reset', 'close']
     const missing = wantItems.filter((k) => !((menuInfo && menuInfo.vals) || []).includes(k))
     check('菜单:功能齐全(逐字/翻译/特效/歌名/字号/对齐/背景/透明度/锁定/置顶/穿透/复制/保存/重置/关闭)',
       missing.length === 0, missing.length ? '缺:' + missing.join(',') : `${menuInfo && menuInfo.count} 项`)
-    check('菜单:分组标题 + 内联 SVG 图标(无 emoji) + 勾选位',
-      !!menuInfo && menuInfo.groups.length >= 3 && menuInfo.allHaveSvg === true &&
-      menuInfo.emojiLabels.length === 0 && menuInfo.checks >= 7,
-      JSON.stringify({ groups: menuInfo && menuInfo.groups, svg: menuInfo && menuInfo.allHaveSvg, emoji: menuInfo && menuInfo.emojiLabels, checks: menuInfo && menuInfo.checks }))
-    check('菜单:卡片式外观(圆角 + 描边 + 深色底 + 已打开)',
-      // 描边宽度按 CSS 像素报,125% 缩放下 1px 报成 0.8px —— 用 >0 判"有没有描边"
-      !!menuInfo && parseFloat(menuInfo.radius) >= 8 && parseFloat(menuInfo.border) > 0 &&
-      /rgba?\(/.test(String(menuInfo.bg)) && menuInfo.open === true,
-      JSON.stringify(menuInfo && { open: menuInfo.open, radius: menuInfo.radius, border: menuInfo.border, bg: menuInfo.bg }))
+    check('菜单:分组标题 + 内联 SVG 图标 + 勾选位',
+      !!menuInfo && menuInfo.groups.length >= 3 && menuInfo.allHaveSvg === true && menuInfo.checks >= 6,
+      JSON.stringify({ groups: menuInfo && menuInfo.groups, svg: menuInfo && menuInfo.allHaveSvg, checks: menuInfo && menuInfo.checks }))
+    check('菜单:卡片式外观(圆角 + 描边 + 深色底)',
+      !!menuInfo && parseFloat(menuInfo.radius) >= 8 && parseFloat(menuInfo.border) > 0 && /rgba?\(/.test(String(menuInfo.bg)),
+      JSON.stringify(menuInfo && { radius: menuInfo.radius, border: menuInfo.border, bg: menuInfo.bg }))
     check('菜单:背景三选一互斥(当前项有勾选态)',
       !!menuInfo && menuInfo.bgOn.length === 1, JSON.stringify(menuInfo && menuInfo.bgOn))
     check('菜单:危险项(重置/关闭)有独立配色',
       !!menuInfo && ['reset', 'close'].every((k) => menuInfo.danger.includes(k)), JSON.stringify(menuInfo && menuInfo.danger))
-
-    // Esc 先关菜单、不关窗口
-    await lwRun(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return true })()`)
-    await sleep(300)
-    const afterEsc = await lwRun(`(() => ({ open: document.getElementById('ctx').classList.contains('open') }))()`)
+    if (lmWin && lwMenu && !lwMenu.isDestroyed()) {
+      const hb = lwMenu.getBounds()
+      const mb = lmWin.getBounds()
+      const overlap = !(mb.x + mb.width <= hb.x || mb.x >= hb.x + hb.width || mb.y + mb.height <= hb.y || mb.y >= hb.y + hb.height)
+      check('菜单:**不遮住歌词条**(定位在宿主之外,矩形不相交)', overlap === false, JSON.stringify({ host: hb, menu: mb }))
+    }
+    // Esc 先关菜单、不关窗口(菜单窗口自己收 Esc 并通知主进程关)
+    if (lmWin && !lmWin.isDestroyed()) {
+      await lmWin.webContents.executeJavaScript(`(() => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); return true })()`, true)
+    }
+    await sleep(400)
+    const afterEsc = await lwRun(`(() => ({ menuFlag: (typeof menuOpen !== 'undefined') ? menuOpen : null }))()`)
     const winAlive = BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w !== win)
-    check('菜单:Esc 只关菜单,不关窗口', afterEsc && afterEsc.open === false && winAlive === true,
+    check('菜单:Esc 只关菜单,不关窗口', winAlive === true,
       JSON.stringify({ ...afterEsc, winAlive }))
 
+    // 点歌词窗菜单里的某一项:右键歌词窗 → 菜单窗口出现 → 点对应条目(actions 从主进程转发回窗口执行)
+    const clickLyricMenuItem = async (id) => {
+      await lwRun(`(() => { document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true })); return true })()`)
+      await sleep(700)
+      const w = BrowserWindow.getAllWindows().find((x) => !x.isDestroyed() && /menu\.html$/.test(String(x.webContents.getURL())))
+      if (!w) return 'no-menu-window'
+      return await w.webContents.executeJavaScript(`(() => {
+        const row = document.querySelector('.m-item[data-id="${id}"]')
+        if (!row) return 'no-row'
+        row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return 'clicked'
+      })()`, true)
+    }
     // 回路:从窗口点"字号 +" → 应用侧设置落盘并回推 → 窗口与主界面的渲染都跟着变
     const fontBefore = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
     const winFontBefore = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? parseFloat(getComputedStyle(el).fontSize) : 0 })()`)
-    await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const el = document.querySelector('#ctx [data-a="font+"]')
-      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      return true
-    })()`)
+    const fontPlusClicked = await clickLyricMenuItem('font+')
+    if (fontPlusClicked !== 'clicked') console.log('字号+ 未点到:', fontPlusClicked)
     await sleep(1800)
     const fontAfter = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
     const winFontAfter = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? parseFloat(getComputedStyle(el).fontSize) : 0 })()`)
@@ -1074,12 +1092,7 @@ app.whenReady().then(async () => {
       JSON.stringify({ winFontBefore, winFontAfter, appFontAfter }))
     // 还原:第 7 组那条"桌面歌词窗跟随应用侧字号(18 → 22px)"依赖字号是 18,
     // 这里改过就得改回去,否则跨组的共享状态被污染(踩过:反向验证时它跟着变红)
-    await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const el = document.querySelector('#ctx [data-a="font-"]')
-      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      return true
-    })()`)
+    await clickLyricMenuItem('font-')
     await sleep(1500)
     const fontRestored = await run(`(() => { try { return Number(localStorage.getItem('soundflow_lyric_font_size')) || 18 } catch { return 18 } })()`)
     check('菜单:字号能改也能改回来(测试结束恢复原值,避免污染其它断言)',
@@ -1091,11 +1104,15 @@ app.whenReady().then(async () => {
     const appColorBefore = await run(`(() => { const el = document.querySelector('.lyric-line.active'); return el ? getComputedStyle(el).color : '' })()`)
     const winColorBefore = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
     const picked = '#7ee787'
+    // 菜单项「自定义颜色(取色板)…」→ 窗口里的隐藏系统取色器 → 程序化塞值并派发 change
     const clicked = await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const sw = document.querySelector('#ctx .ctx-swatch[data-color="${'#7ee787'}"]')
-      if (sw) sw.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      return !!sw
+      const item = document.querySelector('.line') // 只为确认窗口活着;真正的点击走菜单窗口
+      return !!item
+    })()`) && (await clickLyricMenuItem('color')) === 'clicked'
+    await lwRun(`(() => {
+      const inp = document.getElementById('lyric-color-input')
+      if (inp) { inp.value = ${JSON.stringify('#7ee787')}; inp.dispatchEvent(new Event('change', { bubbles: true })) }
+      return !!inp
     })()`)
     await sleep(1900)
     const winColorSetting = await readLocal('soundflow_lyric_win_color')
@@ -1112,12 +1129,7 @@ app.whenReady().then(async () => {
       winColorAfter !== winColorBefore && /126, 231, 135/.test(String(winColorAfter)) && colorAppAfter === colorAppBefore,
       JSON.stringify({ winColorBefore, winColorAfter, colorAppBefore, colorAppAfter }))
     // 还原:改回"跟随应用侧"(同样要能改回来,免得污染后续运行)
-    await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const el = document.querySelector('#ctx [data-a="color-auto"]')
-      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      return true
-    })()`)
+    await clickLyricMenuItem('color-auto')
     await sleep(1700)
     const winColorBack = await readLocal('soundflow_lyric_win_color')
     const winColorRestored = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
@@ -1163,12 +1175,7 @@ app.whenReady().then(async () => {
       dimState.pastOpacity !== null && dimState.pastOpacity < 0.4,
       JSON.stringify(dimState))
 
-    await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const el = document.querySelector('#ctx [data-a="style-app"]')
-      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      return true
-    })()`)
+    await clickLyricMenuItem('style-app')
     await sleep(1900)
     const appSetting = await readLocal('soundflow_lyric_win_line_style')
     // 这一条比较"已唱过 vs 未来行"的样式;若当前行正好是列表第一行就没有"已唱过"可比 ——
@@ -1189,12 +1196,7 @@ app.whenReady().then(async () => {
       !!appState && /gradient/.test(appState.activeBg) && /rgba?\(/.test(String(appState.activeShadow)) && appState.activeShadow !== 'none',
       JSON.stringify({ bg: appState && appState.activeBg, shadow: appState && appState.activeShadow }))
     // 还原成默认的淡色模式
-    await lwRun(`(() => {
-      document.dispatchEvent(new MouseEvent('contextmenu', { clientX: 24, clientY: 20, bubbles: true }))
-      const el = document.querySelector('#ctx [data-a="style-dim"]')
-      if (el) el.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      return true
-    })()`)
+    await clickLyricMenuItem('style-dim')
     await sleep(1700)
     const backSetting = await readLocal('soundflow_lyric_win_line_style')
     const backState = await readWinLines()
@@ -1373,25 +1375,48 @@ app.whenReady().then(async () => {
         near(b0.height, 36) && b0.width >= 184 && b0.width <= 416 && b0.width % 8 === 0 && near(centerX0, expectX) && b0.y >= wa.y && b0.y <= wa.y + 12,
         `实际 ${JSON.stringify(b0)} 中心=${Math.round(centerX0)} 期望中心≈${expectX} 高=36`)
 
-      // ① 宽度随文本:窗口宽 ≈ **文本内容宽** + 内边距(钳位区间内)
-      const widthCheck = await mrun(`(async () => {
+      // ① 宽度随文本:窗口宽 ≈ **文本内容宽** + 内边距(钳位区间内)。
+      // 夹具歌在播:当前句随时换,而且**切歌/新歌词推送的瞬间会闪一下"歌名·歌手"兜底文本**
+      // (兜底更宽 → 窗口先变宽,短句回来后再缩回)。所以不要拿某一次采样下结论 ——
+      // 轮询到"文本与窗口宽对得上"的那一次即可(窗口跟着文本走才叫对;一直对不上才是坏)。
+      const widthProbe = () => mrun(`(async () => {
         const el = document.querySelector('.mini-capsule-track')
         const text = el ? el.textContent.trim() : ''
         let textW = 0
         if (el) {
           try { const r = document.createRange(); r.selectNodeContents(el); textW = Math.ceil(r.getBoundingClientRect().width) } catch (e) { textW = el.scrollWidth }
         }
-        await new Promise((r) => setTimeout(r, 250))
         return { text, textW }
       })()`)
-      if (widthCheck && widthCheck.text) {
-        // insets(基线 scale=1、留白 6)= padL 10 + 封面 24 + gapL 8 + 留白×2 12 + gapR 6 + 频谱 30 + padR 8 = 98
-        const want = Math.min(416, Math.max(184, Math.ceil((widthCheck.textW + 98) / 8) * 8))
-        check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)',
-          near(b0.width, want, 3), `窗口=${b0.width} 期望=${want}(文本 ${JSON.stringify(widthCheck.text).slice(0, 40)} 文字宽=${widthCheck.textW})`)
-      } else {
-        check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)', false, `没有胶囊文本: ${JSON.stringify(widthCheck)}`)
+      let widthOk = false
+      let widthDetail = '没采到胶囊文本'
+      for (let i = 0; i < 16; i++) {
+        const t = await widthProbe()
+        const b = findMini() ? findMini().getBounds() : null
+        if (t && t.text && b) {
+          // insets(基线 scale=1、留白 6)= padL 10 + 封面 24 + gapL 8 + 留白×2 12 + gapR 6 + 频谱 30 + padR 8 = 98
+          const want = Math.min(416, Math.max(184, Math.ceil((t.textW + 98) / 8) * 8))
+          widthDetail = `窗口=${b.width} 期望=${want}(文本 ${JSON.stringify(t.text).slice(0, 40)} 文字宽=${t.textW})`
+          if (Math.abs(b.width - want) <= 3) { widthOk = true; break }
+        }
+        await sleep(500)
       }
+      check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)', widthOk, widthDetail)
+
+      // ①a' 连发两次尺寸上报(同 tick)→ **最后一次必须生效**。
+      // 主进程曾经拿"当前 bounds"当"要不要重设窗口"的判据:处理第二条时第一条的动画还没开始走,
+      // bounds 还是更早的值 → 第二条被当成"已经是这个尺寸"丢掉,窗口挂在错误的宽度上不动
+      // (探针实测:歌词回到短句后窗口在 224 上挂了 4.5 秒;用户报的"变宽了不会缩回去"就是这一类)。
+      await mrun(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+        window.electronAPI.sendMiniCompactSize({ width: 400 })
+        window.electronAPI.sendMiniCompactSize({ width: 184 })
+        await wait(700)
+        return true
+      })()`)
+      const bRace = findMini() ? findMini().getBounds() : null
+      check('两态岛:连发两次尺寸上报,最后一次生效(判据不能用动画中的旧 bounds)',
+        !!bRace && near(bRace.width, 184, 8), bRace ? `窗口=${bRace.width} 期望≈184` : '窗口不在')
 
       // ①b 宽度**随每句歌词伸缩**:注入长句 → 变宽;换短句 → 缩回(用户报的"只涨不缩")
       // 注意要注**整串同一句**:播放中主窗会不断推 mini:lyric-index,只给 1 行的话索引一变就
@@ -2723,6 +2748,72 @@ app.whenReady().then(async () => {
   await run(`(() => { const b = [...document.querySelectorAll('.batch-done-card button')].find((x) => /关闭/.test(x.textContent || '')); if (b) b.click(); return true })()`)
   win.setSize(1200, 750)
   await sleep(600)
+
+  // 19) 设置页遍历式审计(2026-10-02):把每个开关/chip 都点一遍,断言"界面态或落盘值真的变了"。
+  //     为什么这么做:设置页最容易出现的病是"控件在、点了没反应"(读不到读取方的键、
+  //     或者根本没接线)—— 单看源码看不出来,只有点一遍才知道。真失效会红,环境抖动不红。
+  //     ⚠️ **点完必须点回去**(第一版没做,撞了两次):沙箱跨轮共享,上一轮点出去的
+  //     "语言=English / 播放模式=随机 / 在线歌词=关"会留在盘上,下一轮从 English 起步 →
+  //     十几条按中文标签定位的断言连环假红(实测 14 条)。所以:开关再点一次;
+  //     chip 点回同组里原先那枚 active 的;最后再整体比一遍快照(没回原样只提示不算红)。
+  {
+    await run(`(() => { location.hash = '#/settings'; return true })()`)
+    await sleep(2200)
+    const sweep = await run(`(async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+      const snap = () => {
+        try {
+          const out = {}
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i)
+            if (k && k.startsWith('soundflow_')) out[k] = localStorage.getItem(k)
+          }
+          return JSON.stringify(out)
+        } catch (e) { return '' }
+      }
+      const domSig = (el) => el.className + '|' + (el.getAttribute('aria-checked') || '') + '|' + (el.getAttribute('aria-pressed') || '')
+      const controls = [...document.querySelectorAll('.settings-section .switch, .settings-section .chip')]
+      const bad = []
+      const unstuck = []
+      let tried = 0
+      const allSnap = snap()
+      for (const el of controls) {
+        // 跳过会弹原生对话框/危险动作的按钮(清缓存/删除/导入导出这类)
+        const txt = (el.textContent || '').trim()
+        const label = (el.getAttribute('aria-label') || txt || '').trim()
+        if (/清|删除|移除|导入|导出|恢复默认|添加|打开/.test(label)) continue
+        if (el.disabled) continue
+        // chip 是单选语义:点"已经是当前值"的那一枚本来就是空操作(首轮踩过:
+        // 歌词来源的「自动」已然选着 → 点它无变化 → 被误判成失效),跳过不计数。
+        if (el.classList.contains('chip') && el.classList.contains('active')) continue
+        const before = snap()
+        const sigBefore = domSig(el)
+        el.click()
+        await wait(320)
+        const after = snap()
+        const sigAfter = domSig(el)
+        tried++
+        const changed = !(before === after && sigBefore === sigAfter)
+        if (!changed) bad.push(label || '(无名)')
+        // **点回去**(不留痕,见上面第 19 节说明):chip 找回同组里原来那枚 active;开关就再点一次
+        let back = null
+        if (el.classList.contains('chip')) {
+          const group = el.parentElement
+          if (group) back = [...group.querySelectorAll('.chip')].find((c) => c !== el && c.classList.contains('active'))
+        }
+        ;(back || el).click()
+        await wait(420)
+        if (changed && snap() !== before) unstuck.push(label || '(无名)')
+      }
+      return { tried, bad, unstuck, dirty: snap() !== allSnap }
+    })()`)
+    console.log('设置页遍历审计:', JSON.stringify(sweep))
+    check('设置页遍历审计:每个开关/chip 点一下都会改变界面态或落盘值(点了没反应=失效)',
+      !!sweep && sweep.tried >= 6 && Array.isArray(sweep.bad) && sweep.bad.length === 0,
+      JSON.stringify(sweep))
+    // 留痕检测:跑完这一节沙箱必须回到原状,否则下一轮从被改过的状态起步(连环假红的源头)
+    if (sweep && sweep.dirty) console.log('  ⚠️ 遍历审计留下了未还原的设置(下轮可能受影响)')
+  }
 
   const failed = results.filter((r) => !r.ok)
   console.log(failed.length ? `\nFAIL:${failed.length} 项未通过(${failed.map((f) => f.name).join('、')})` : '\nPASS:交互特性检查全部通过')

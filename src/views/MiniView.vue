@@ -142,6 +142,34 @@
                   </span>
                 </div>
               </div>
+              <!-- 颜色:一律走取色板(背景色 + 三处文字色)。这些项原先在小窗右键菜单里是几组预设色,
+                   现在搬进来换成取色板(Pickr),文字色另给一个「自动(按背景亮度)」开关 -->
+              <div class="mini-settings-group">
+                <div class="mini-settings-gtitle">颜色</div>
+                <div class="mini-settings-row">
+                  <span class="mini-settings-label">背景色</span>
+                  <span class="mini-settings-ctl">
+                    <button class="mini-color-btn" :style="{ background: miniBgColor }" aria-label="背景色(取色板)" @click="openMiniColorPicker('bg', $event)"></button>
+                    <span class="mini-settings-value">{{ miniBgColor }}</span>
+                  </span>
+                </div>
+                <div class="mini-settings-row" v-for="c in TEXT_COLOR_ROWS" :key="c.key">
+                  <span class="mini-settings-label">{{ c.label }}</span>
+                  <span class="mini-settings-ctl">
+                    <button
+                      class="mini-switch mini-switch--auto" :class="{ on: textColorOf(c.key) === 'auto' }"
+                      :aria-label="c.label + ' 自动(按背景亮度)'" role="switch" :aria-checked="textColorOf(c.key) === 'auto'"
+                      @click="setTextColor(c.key, 'auto')"
+                    ><span class="mini-switch-dot"></span></button>
+                    <button
+                      class="mini-color-btn" :style="{ background: textColorOf(c.key) === 'auto' ? 'transparent' : textColorOf(c.key) }"
+                      :class="{ 'is-auto': textColorOf(c.key) === 'auto' }"
+                      :aria-label="c.label + '(取色板)'" @click="openMiniColorPicker(c.key, $event)"
+                    ></button>
+                    <span class="mini-settings-value">{{ textColorOf(c.key) === 'auto' ? '自动' : textColorOf(c.key) }}</span>
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -407,6 +435,66 @@ const miniBgColor = ref(localStorage.getItem('soundflow_mini_bg_color') || '#161
 // 于是"完全透明"永远设不上(用户报的"还是不够透明")
 const _storedAlpha = parseFloat(localStorage.getItem('soundflow_mini_bg_alpha'))
 const miniBgAlpha = ref(Number.isFinite(_storedAlpha) ? Math.min(1, Math.max(0, _storedAlpha)) : 0.05)
+
+// ===== 颜色:岛设置面里的四行取色板(背景色 + 三处文字色)=====
+// 写回仍走既有的 mini:bg-changed(主进程落盘,再把 mini:bg-sync 回推)—— 不新增通道、不自存一份。
+// 这些项原先在小窗右键菜单里是几组预设色(用户要求"颜色一律用取色板"),现在统一搬到这里。
+const TEXT_COLOR_ROWS = [
+  { key: 'titleColor', label: '歌名颜色' },
+  { key: 'artistColor', label: '歌手颜色' },
+  { key: 'timeColor', label: '进度颜色' }
+]
+function textColorOf(key) {
+  if (key === 'titleColor') return miniTitleColor.value
+  if (key === 'artistColor') return miniArtistColor.value
+  return miniTimeColor.value
+}
+function sendMiniBgColors() {
+  try {
+    window.electronAPI?.send?.('mini:bg-changed', {
+      mode: miniBgMode.value,
+      color: miniBgColor.value,
+      alpha: miniBgAlpha.value,
+      titleColor: miniTitleColor.value,
+      artistColor: miniArtistColor.value,
+      timeColor: miniTimeColor.value
+    })
+  } catch (_) {}
+}
+function setTextColor(key, v) {
+  if (key === 'titleColor') miniTitleColor.value = v
+  else if (key === 'artistColor') miniArtistColor.value = v
+  else miniTimeColor.value = v
+  sendMiniBgColors()
+}
+// 取色器(nano)本体约 200×196。面板默认 200 高(窗口 232)放得下;缩到最小时窗口内高约 183,
+// 顶部会被切掉 ~7px(色板顶端),**色板/色相条/HEX/Save 都还在**,实测可正常取色。
+// 若以后面板还要更矮,就换成一枚隐藏的 <input type="color"> 走系统取色器(桌面歌词窗就是那么做的)。
+let _miniColorPickr = null
+function openMiniColorPicker(key, e) {
+  const btn = e && e.currentTarget
+  if (!btn || typeof window.Pickr === 'undefined') return
+  if (_miniColorPickr) { try { _miniColorPickr.destroy() } catch (_) {} _miniColorPickr = null }
+  const cur = key === 'bg' ? miniBgColor.value : textColorOf(key)
+  _miniColorPickr = window.Pickr.create({
+    el: btn,
+    theme: 'nano',
+    default: (cur && cur !== 'auto') ? cur : '#ffffff',
+    components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
+  })
+  const apply = (color) => {
+    if (!color) return
+    const hex = color.toHEXA().toString()
+    if (key === 'bg') {
+      miniBgColor.value = hex
+      if (miniBgMode.value !== 'custom') miniBgMode.value = 'custom'
+      sendMiniBgColors()
+    } else setTextColor(key, hex)
+  }
+  _miniColorPickr.on('change', apply)
+  _miniColorPickr.on('save', (c) => { apply(c); try { _miniColorPickr.hide() } catch (_) {} })
+  try { _miniColorPickr.show() } catch (_) {}
+}
 // 按钮悬停提示:显示在窗口内(浮层气泡在这个尺寸里放不下)
 const hoverHint = ref('')
 const bgIsLight = computed(() => {
@@ -1432,6 +1520,17 @@ body.mini-resizing--both { cursor: nwse-resize; }
   background: #fff; transition: transform 0.15s var(--mini-spring);
 }
 .mini-switch.on .mini-switch-dot { transform: translateX(14px); }
+/* 取色板按钮(岛设置面「颜色」分组):显示当前色;A 自动时留一个虚线框 */
+.mini-color-btn {
+  width: 22px; height: 22px; border-radius: 6px; padding: 0; cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.24); flex-shrink: 0;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.18);
+}
+.mini-color-btn.is-auto { border-style: dashed; background: transparent !important; }
+.mini-color-btn:hover { border-color: var(--color-primary); }
+.mini-switch--auto { width: 26px; height: 14px; }
+.mini-switch--auto .mini-switch-dot { width: 10px; height: 10px; }
+.mini-switch--auto.on .mini-switch-dot { transform: translateX(12px); }
 .mini-choice {
   border: 0; cursor: pointer; border-radius: 6px; padding: 2px 7px; font-size: 10px;
   background: rgba(255,255,255,0.10); color: var(--mc2, rgba(255,255,255,0.6));
