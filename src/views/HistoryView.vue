@@ -118,28 +118,9 @@ const historyEntries = computed(() => {
   return result.slice(0, 800)
 })
 
-// 播放排行
-const rankedSongs = computed(() => {
-  const counts = musicStore.playCounts
-  const history = musicStore.history
-  // 找每首歌最近一次播放时间
-  const lastPlayTime = {}
-  for (const h of history) {
-    if (!lastPlayTime[h.path]) lastPlayTime[h.path] = h.time
-  }
-
-  const songs = musicStore.songs
-    .filter(s => counts[s.path] && counts[s.path] > 0)
-    .map(s => ({ ...s, _playCount: counts[s.path] || 0, _lastPlayTime: lastPlayTime[s.path] || 0 }))
-
-  if (rankMode.value === 'count') {
-    songs.sort((a, b) => b._playCount - a._playCount)
-  } else {
-    // 按最近播放
-    songs.sort((a, b) => (b._lastPlayTime || 0) - (a._lastPlayTime || 0))
-  }
-  return songs
-})
+// 播放排行:**实现只有一份**(musicStore.rankSongs,统计页也用它);
+// 这里只负责"选口径"(按次数 / 按最近播放)—— 此前两页各写一套排序,口径会悄悄漂移
+const rankedSongs = computed(() => musicStore.rankSongs({ by: rankMode.value === 'count' ? 'count' : 'recent' }))
 
 function playHistory(idx) {
   const queue = historyEntries.value.map(s => ({ ...s }))

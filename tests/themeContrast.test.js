@@ -37,9 +37,10 @@ const DARK_PANEL_GROUPS = [
   {
     file: 'src/views/PlayerView.vue',
     why: '播放页浮层统一深色(一条聚合规则覆盖全部)',
-    names: ['.queue-panel', '.eq-panel', '.pitch-panel', '.rate-panel', '.spec-panel', '.vol-pop', '.bg-panel', '.color-panel']
+    // .ls-panel = 侧边栏四块弹出面板(来源/外观/颜色/排版)共用的基类
+    // (2026-10-01 由 .format-panel / .color-panel 合并改名而来)
+    names: ['.queue-panel', '.eq-panel', '.pitch-panel', '.rate-panel', '.spec-panel', '.vol-pop', '.bg-panel', '.ls-panel']
   },
-  { file: 'src/views/PlayerView.vue', why: '歌词格式面板', names: ['.format-panel'] },
   { file: 'src/components/EqPanel.vue', why: 'EQ 面板', names: ['.eq-panel'] },
   { file: 'src/components/QueuePanel.vue', why: '播放队列面板', names: ['.queue-panel'] }
 ]

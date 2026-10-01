@@ -16,7 +16,9 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
 #lyric::-webkit-scrollbar{width:3px}
 #lyric::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.15);border-radius:2px}
 #lyric::-webkit-scrollbar-track{background:transparent}
-.line{padding:3px 8px;font-size:14px;color:rgba(255,255,255,0.28);transition:color .25s ease,font-size .25s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.6;border-radius:6px;cursor:pointer;-webkit-app-region:no-drag}
+.line{font-size:14px;color:rgba(255,255,255,0.28);transition:color .25s ease,font-size .25s ease;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.6;border-radius:6px;cursor:pointer;-webkit-app-region:no-drag;padding:3px 8px}
+/* 长句滚动:外层 .line 负责裁剪,内层 track 负责平移(与播放界面同一套结构) */
+.line-track{display:inline-block;white-space:nowrap;vertical-align:bottom;max-width:none}
 .line.active{font-size:18px;font-weight:700;padding:5px 8px}
 .line.near{color:rgba(255,255,255,0.55)}
 .line.past{opacity:.12}
@@ -316,10 +318,58 @@ function renderLines(){
     }else{
       cls=i===activeIdx?'line active':(i>activeIdx&&i-activeIdx<=2?'line near':(i<activeIdx?'line past':'line'))
     }
-    return `<div class="${cls}" data-i="${i}">${lineInner(l,i)}</div>`
+    // 内容包一层 track:外层负责裁剪(省略号),内层负责 marquee 平移 —— 与播放界面同一套做法
+    return `<div class="${cls}" data-i="${i}"><div class="line-track">${lineInner(l,i)}</div></div>`
   }).join('')
   applyStyle()
+  mqSync()
 }
+// ===== 长句滚动(只在当前行):停 1s → 32px/s 匀速 → **停在尾部**(不回位、不重复)=====
+// 常量必须与 apply 侧 src/utils/useMarquee.js 一致(守卫会比对两处:1000 / 32 / 4)。
+// 这里的窗口是独立页面拿不到 ESM,所以是**第二份实现** —— 但只有常量与行为必须同参。
+const MQ_HOLD_MS=1000, MQ_SPEED=32, MQ_MIN_OVERFLOW=4
+let mqRaf=null,mqClock=0,mqLast=0,mqDist=0,mqDone=false
+function mqReset(track){
+  mqClock=0;mqDone=false
+  if(track) track.style.transform=''
+}
+function mqStop(){
+  if(mqRaf){cancelAnimationFrame(mqRaf);mqRaf=null}
+  mqLast=0;mqClock=0;mqDist=0;mqDone=false
+}
+function mqMeasure(){
+  const line=lyric.querySelector('.line.active')
+  if(!line) return null
+  const track=line.querySelector('.line-track')
+  if(!track) return null
+  const d=Math.ceil(track.getBoundingClientRect().width)-line.clientWidth
+  return {line:line,track:track,d:d}
+}
+function mqSync(){
+  if(!lines.length){mqStop();return}
+  const m=mqMeasure()
+  if(!m){mqStop();return}
+  const next=m.d>MQ_MIN_OVERFLOW?m.d:0
+  if(next!==mqDist) mqReset(m.track)
+  mqDist=next
+  if(!mqDist||mqDone){ if(mqRaf){cancelAnimationFrame(mqRaf);mqRaf=null} return }
+  if(!mqRaf){ mqLast=0; mqRaf=requestAnimationFrame(mqTick) }
+}
+function mqTick(ts){
+  mqRaf=null
+  const dt=mqLast?Math.min(64,ts-mqLast):0
+  mqLast=ts
+  if(!mqDist) return
+  if(!playing){ mqRaf=requestAnimationFrame(mqTick); return } // 暂停:时钟不推进,画面保持
+  const travel=(mqDist/MQ_SPEED)*1000
+  mqClock=Math.min(mqClock+dt, MQ_HOLD_MS+travel)
+  const x=mqClock<MQ_HOLD_MS?0:Math.min(mqDist,(mqClock-MQ_HOLD_MS)/travel*mqDist)
+  const m=mqMeasure()
+  if(m) m.track.style.transform=x?`translateX(${(-x).toFixed(1)}px)`:''
+  if(mqClock>=MQ_HOLD_MS+travel){ mqDone=true; return } // 到尾即停
+  mqRaf=requestAnimationFrame(mqTick)
+}
+window.addEventListener('resize',()=>{ mqReset(mqMeasure()&&mqMeasure().track); mqSync() })
 function scrollToActive(){
   const active=lyric.querySelector('.line.active')
   if(!active) return

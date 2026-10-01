@@ -98,6 +98,9 @@ const MINI_SETTING_SPEC = {
   idleFadeSeconds: { store: 'miniIdleFadeSeconds', min: 5, max: 120, def: 30 } // ~auto_hide_delay
 }
 function round8(v) { return Math.round(v / 8) * 8 }
+// 胶囊宽上报专用:**向上**取整到 8。四舍五入会把 433 缩成 432 —— 窗口比文字窄 1~4px,
+// 贴着右边缘的收尾字就被裁掉一半(用户报"最右侧的字被挡住一部分")。
+function ceil8(v) { return Math.ceil(v / 8) * 8 }
 function miniSetting(key) {
   const spec = MINI_SETTING_SPEC[key]
   if (!spec) return undefined
@@ -127,7 +130,8 @@ function miniCapsuleGeo() {
 function miniCapsuleWidth(v) {
   const g = miniCapsuleGeo()
   const w = Number.isFinite(v) ? v : g.minW
-  return Math.min(g.maxW, Math.max(g.minW, round8(w)))
+  // 用 ceil8:宁可宽一点点,也不能比文字窄(窄了会裁最后一个字)
+  return Math.min(g.maxW, Math.max(g.minW, ceil8(w)))
 }
 function miniPanelSize() {
   return { w: round8(miniSetting('panelW')), h: Math.round(miniSetting('panelH')) }

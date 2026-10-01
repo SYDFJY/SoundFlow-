@@ -36,6 +36,10 @@ const ALLOW = {
     //   亮度滤镜必须挂在绘制层上,而滤镜挂在根元素会把内容一起滤掉 —— 以前只有封面模式有那层,
     //   主题/纯色/图片下"背景亮度"滑杆等于没用。绘制内容改由 --bg-paint 提供。
     '.player-view[data-bg="cover"]::before',
+    // .format-panel / .color-panel(+title) → 合并成侧边栏四块弹出面板共用的 .ls-panel
+    //   (来源/外观/颜色/排版);同名样式与 .color-dot 系列随"歌词颜色改用取色板"一并退休
+    '.format-panel', '.color-panel', '.color-panel-title',
+    '.color-dot', '.color-dot.active', '.color-dot-custom', '.color-dot-custom::after',
     // .lyric-time* → 按用户要求去掉歌词行前的行时间戳(时间只保留在悬停提示里)
     '.lyric-time', '.lyric-line:hover .lyric-time', '.lyric-line.active .lyric-time',
     // 同上:.next-wrap → .hint-wrap

@@ -144,4 +144,18 @@ describe('桌面歌词窗与应用侧设置同源', () => {
     }
     expect(w, '窗口的自有设置里不该再有 fontSize/lyricColor').not.toMatch(/saveSettings\(\)\{\s*try\{localStorage\.setItem\('lyric_window_settings',JSON\.stringify\(\{fontSize/)
   })
+
+  it('长句滚动:桌面窗与 apply 侧同一套常量(1000/32/4),且都是"滚到尾就停"', () => {
+    const w = read('public/lyric.html')
+    const u = read('src/utils/useMarquee.js')
+    // 真源(apply 侧 composable)
+    expect(u, 'apply 侧缺速度常量').toMatch(/MARQUEE_SPEED = 32/)
+    expect(u, 'apply 侧缺首停常量').toMatch(/MARQUEE_HOLD_START_MS = 1000/)
+    expect(u, 'apply 侧缺溢出阈值').toMatch(/MARQUEE_MIN_OVERFLOW = 4/)
+    // 桌面窗那份实现(独立页面拿不到 ESM):常量必须同参
+    expect(w, '桌面窗没有长句滚动实现').toMatch(/MQ_HOLD_MS\s*=\s*1000\s*,\s*MQ_SPEED\s*=\s*32\s*,\s*MQ_MIN_OVERFLOW\s*=\s*4/)
+    expect(w, '桌面窗还留着"尾停+回位"的旧常量').not.toMatch(/MQ_HOLD_END/)
+    expect(w, '桌面窗没在扫到尾之后停住').toMatch(/mqDone\s*=\s*true/)
+    expect(w, '桌面窗的轨道层没包(外层裁剪/内层平移)').toMatch(/<div class="line-track">/)
+  })
 })

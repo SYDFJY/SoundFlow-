@@ -9,6 +9,7 @@
         <div class="range-switch">
           <button class="chip" :class="{ active: timeRange === 'all' }" @click="setTimeRange('all')">全部</button>
           <button class="chip" :class="{ active: timeRange === '30d' }" @click="setTimeRange('30d')">近30天</button>
+          <button class="chip" :class="{ active: timeRange === 'year' }" @click="setTimeRange('year')">{{ currentYear }}年度</button>
         </div>
         <button class="btn" @click="reportOpen = true"><Icon name="upload" :size="15" />听歌报告</button>
         <button class="btn--ghost" @click="router.push('/history')"><Icon name="history" :size="15" />播放记录与排行</button>
@@ -17,6 +18,8 @@
 
     <div class="page-body">
     <div class="page-inner">
+    <!-- 分组一:概览 -->
+    <div class="stat-group-title">概览</div>
     <!-- 总览卡 -->
     <div class="stat-cards">
       <div class="stat-card">
@@ -37,10 +40,20 @@
       </div>
     </div>
 
-    <!-- 近 7 天播放趋势 -->
+    <!-- 分组二:听歌时间(趋势随所选期间:全部/近30天 = 近 7 天柱,年度 = 12 个月柱) -->
+    <div class="stat-group-title">听歌时间</div>
     <div class="stat-section">
-      <h3 class="section-title">近 7 天播放趋势</h3>
-      <div class="trend-chart">
+      <h3 class="section-title">{{ timeRange === 'year' ? currentYear + ' 年度月度分布' : '近 7 天播放趋势' }}</h3>
+      <div v-if="timeRange === 'year' && yearMonths" class="trend-chart rm-bars">
+        <div v-for="m in yearMonths" :key="m.month" class="trend-col" :title="`${m.month}月: ${m.count} 次`">
+          <div class="trend-bar-wrap">
+            <div class="trend-bar" :style="{ height: (m.count ? Math.max(8, m.count / yearMonthMax * 100) : 2) + '%' }"></div>
+          </div>
+          <span class="trend-label">{{ m.month }}月</span>
+          <span class="trend-count">{{ m.count }}</span>
+        </div>
+      </div>
+      <div v-else class="trend-chart">
         <div v-for="d in weekTrend" :key="d.label" class="trend-col" :title="`${d.label}: ${d.count} 次`">
           <div class="trend-bar-wrap">
             <div class="trend-bar" :style="{ height: (d.count ? Math.max(8, d.count / weekMax * 100) : 2) + '%' }"></div>
@@ -51,21 +64,16 @@
       </div>
     </div>
 
+    <div class="stat-group-title">最爱听</div>
     <div class="stats-columns">
-      <!-- Top 10 歌曲 -->
+      <!-- 歌曲排行不再在这页重复一份(与「播放记录」页的排行 tab 是同一能力):
+           留一个入口过去,榜单只在那边维护一份实现 -->
       <div class="stat-section">
-        <h3 class="section-title">Top 10 歌曲</h3>
-        <div class="rank-list">
-          <div v-for="(s, i) in topSongs" :key="s.path" class="rank-item" @dblclick="playTop(i)">
-            <span class="rank-no" :class="{ hot: i < 3 }">{{ i + 1 }}</span>
-            <div class="rank-cover"><img v-if="s.coverUrl" :src="s.coverUrl" loading="lazy" alt="" /></div>
-            <div class="rank-info text-ellipsis">
-              <span class="rank-title text-ellipsis">{{ s.title }}</span>
-              <span class="rank-artist text-ellipsis">{{ s.artist }}</span>
-            </div>
-            <span class="rank-count">{{ s._playCount }} 次</span>
-          </div>
-          <div v-if="!topSongs.length" class="rank-empty"><span class="rank-empty-icon"><Icon name="music" :size="34" /></span><span>还没有播放记录,先听几首歌吧</span></div>
+        <h3 class="section-title">歌曲排行</h3>
+        <div class="rank-empty">
+          <span class="rank-empty-icon"><Icon name="music" :size="34" /></span>
+          <span>完整排行在「播放记录」页(按次数 / 按最近播放两种口径)</span>
+          <button class="btn--ghost rank-link" @click="router.push('/history')"><Icon name="history" :size="14" />查看完整排行</button>
         </div>
       </div>
 
@@ -131,7 +139,8 @@
       </div>
     </div>
 
-    <!-- 分布:年代/音质 + 多样性 -->
+    <!-- 分组四:曲库构成 —— 分布:年代/音质 + 多样性 -->
+    <div class="stat-group-title">曲库构成</div>
     <div class="stats-columns">
       <div class="stat-section">
         <h3 class="section-title">年代分布</h3>
@@ -172,21 +181,8 @@
     <div class="report-card">
       <button class="report-close" title="关闭" aria-label="关闭听歌报告" @click="reportOpen = false"><Icon name="close" :size="15" /></button>
       <div class="report-head"><Icon name="spectrum" :size="16" />我的听歌报告</div>
-      <div class="report-range">
-        <button class="chip chip--sm" :class="{ active: reportRange === 'all' }" @click="reportRange = 'all'">全部</button>
-        <button class="chip chip--sm" :class="{ active: reportRange === '30d' }" @click="reportRange = '30d'">近30天</button>
-        <button class="chip chip--sm" :class="{ active: reportRange === '7d' }" @click="reportRange = '7d'">本周</button>
-        <button class="chip chip--sm" :class="{ active: reportRange === 'year' }" @click="reportRange = 'year'">{{ currentYear }}年度</button>
-      </div>
-      <div v-if="reportRange === 'year' && yearMonths && yearMonthMax" class="report-sec">
-        <div class="rs-title"><Icon name="date" :size="14" />年度月份热力</div>
-        <div class="rm-bars">
-          <div v-for="m in yearMonths" :key="m.month" class="rm-col" :title="`${m.month}月 ${m.count}次`">
-            <div class="rm-bar" :style="{ height: (m.count / yearMonthMax * 100) + '%' }"></div>
-            <span class="rm-label">{{ m.month }}</span>
-          </div>
-        </div>
-      </div>
+      <!-- 期间不再自带选择器:跟随页面顶部所选期间(此前两套选择器 + 同一批数字两处渲染,重复) -->
+      <div class="report-range-note">统计期间:{{ rangeLabel }}</div>
       <div class="report-stats">
         <div class="rs-item"><div class="rs-num">{{ reportTotal }}</div><div class="rs-label">播放次数</div></div>
         <div class="rs-item"><div class="rs-num">{{ reportHours }}</div><div class="rs-label">听歌时长(时)</div></div>
@@ -277,6 +273,8 @@ const rangeSongs = computed(() => {
 // 时间范围 = 按天表(playCounts 没有时间信息,按天数据只能来自它)。
 // 榜单仍按 playCounts(那本就该是"最近常听"的口径,需要歌曲信息)。
 const isAllTime = computed(() => timeRange.value === 'all')
+// 期间文案(报告顶部与图表标题共用一份)
+const rangeLabel = computed(() => (timeRange.value === '30d' ? '近 30 天' : (timeRange.value === 'year' ? `${currentYear.value} 年度` : '全部时间')))
 const totalPlays = computed(() => (isAllTime.value ? musicStore.allTimePlays : scopeAgg.value.plays))
 const totalHours = computed(() => Math.round((isAllTime.value ? musicStore.allTimeSeconds : scopeAgg.value.seconds) / 3600))
 const artistCount = computed(() => new Set(rangeSongs.value.map(s => s.artist).filter(Boolean)).size)
@@ -338,19 +336,10 @@ const weekTrend = computed(() => {
 })
 const weekMax = computed(() => Math.max(1, ...weekTrend.value.map(d => d.count)))
 
-// Top 榜单
-const topSongs = computed(() => rangeSongs.value.slice(0, 10))
-const topArtists = computed(() => aggregate('artist'))
-const topAlbums = computed(() => aggregate('album'))
-
-function aggregate(field) {
-  const map = new Map()
-  for (const s of rangeSongs.value) {
-    const k = (s[field] || '').trim() || '未知'
-    map.set(k, (map.get(k) || 0) + s._playCount)
-  }
-  return [...map.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count).slice(0, 8)
-}
+// Top 榜单:**实现只有一份**(musicStore.rankGroups,与播放记录页的排行同源);
+// 歌曲排行的完整榜单归「播放记录」页,这里只留歌手/专辑(那边没有)
+const topArtists = computed(() => musicStore.rankGroups('artist', { days: scopeDays.value, limit: 8 }))
+const topAlbums = computed(() => musicStore.rankGroups('album', { days: scopeDays.value, limit: 8 }))
 
 // ==== 丰富化维度(基于播放历史时间戳,computed 惰性) ====
 const timeRange = ref('all') // all | 30d
@@ -364,7 +353,7 @@ const rangeHistory = computed(() => {
   return musicStore.history.filter(h => h.time >= cutoff)
 })
 // 当前时间范围对应的天数(0 = 全部):聚合与"时段/星期"都用它,口径只有一处
-const scopeDays = computed(() => (timeRange.value === '30d' ? 30 : 0))
+const scopeDays = computed(() => (timeRange.value === '30d' ? 30 : (timeRange.value === 'year' ? 365 : 0)))
 /** 当前范围的播放汇总(次数/秒数/小时直方图/星期直方图),来自按天聚合表 */
 const scopeAgg = computed(() => musicStore.playStatsInRange(scopeDays.value))
 
@@ -475,7 +464,7 @@ function copyShare() {
 
 // ========== 听歌报告弹窗(全部 / 近30天 / 本周) ==========
 const reportOpen = ref(false)
-const reportRange = ref('all')
+// 报告不再自带期间选择器:跟随页面顶部所选期间(唯一的 timeRange)
 // 本周(近 7 天)历史
 const weekHistory = computed(() => {
   const cutoff = Date.now() - 7 * 86400000
@@ -488,13 +477,12 @@ const yearHistory = computed(() => {
   return musicStore.history.filter(h => h.time && h.time >= cutoff)
 })
 const reportHistory = computed(() => {
-  if (reportRange.value === 'year') return yearHistory.value
-  if (reportRange.value === '7d') return weekHistory.value
+  if (timeRange.value === 'year') return yearHistory.value
   return rangeHistory.value
 })
 // 年度月份热力(1-12 月)
 const yearMonths = computed(() => {
-  if (reportRange.value !== 'year') return null
+  if (timeRange.value !== 'year') return null
   const prefix = `${currentYear.value}-`
   const arr = Array.from({ length: 12 }, (_, i) => ({ month: i + 1, count: 0 }))
   for (const [key, v] of Object.entries(musicStore.playStats)) {
@@ -505,68 +493,12 @@ const yearMonths = computed(() => {
   return arr
 })
 const yearMonthMax = computed(() => Math.max(1, ...(yearMonths.value || []).map(m => m.count)))
-const reportSongsAgg = computed(() => {
-  // 历史条目只有 path/title/artist/time,时长与专辑从曲库补齐
-  const songMap = new Map(musicStore.songs.map(s => [s.path, s]))
-  const map = new Map()
-  for (const h of reportHistory.value) {
-    const s = songMap.get(h.path)
-    const key = h.path
-    const cur = map.get(key) || {
-      path: key,
-      title: h.title || s?.title || '',
-      artist: h.artist || s?.artist || '',
-      album: s?.album,
-      duration: s?.duration || 0,
-      _playCount: 0
-    }
-    cur._playCount++
-    map.set(key, cur)
-  }
-  return [...map.values()]
-})
-const reportTopSongs = computed(() => [...reportSongsAgg.value].sort((a, b) => b._playCount - a._playCount).slice(0, 3))
-const reportTopArtists = computed(() => {
-  const m = new Map()
-  for (const s of reportSongsAgg.value) {
-    if (!s.artist) continue
-    m.set(s.artist, (m.get(s.artist) || 0) + s._playCount)
-  }
-  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }))
-})
-const reportTopAlbums = computed(() => {
-  const m = new Map()
-  for (const s of reportSongsAgg.value) {
-    if (!s.album) continue
-    m.set(s.album, (m.get(s.album) || 0) + s._playCount)
-  }
-  return [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([name, count]) => ({ name, count }))
-})
-// 报告区间的起止日期键(YYYY-MM-DD 字典序即时间序,区间过滤就是字符串比较)
-function rangeStartKey() {
-  if (reportRange.value === 'year') return `${currentYear.value}-01-01`
-  if (reportRange.value === '7d') return dayKey(Date.now(), -6)
-  if (reportRange.value === '30d') return dayKey(Date.now(), -29)
-  return '0000-00-00'
-}
-/** 区间内的按天聚合汇总(次数与秒数):这是统计口径,不再受播放日志 500 条上限影响 */
-const rangeAgg = computed(() => {
-  const from = rangeStartKey()
-  let plays = 0
-  let seconds = 0
-  for (const [key, v] of Object.entries(musicStore.playStats)) {
-    if (key < from) continue
-    plays += v.plays || 0
-    seconds += v.seconds || 0
-  }
-  return { plays, seconds }
-})
-const reportTotal = computed(() => rangeAgg.value.plays)
-// 听歌时长:历史记录里没有时长字段,按 path 关联曲库取 —— 与总览卡片同一口径,
-// 对已有历史记录同样准确(此前累加 h.duration 恒为 0,这一格永远是 0)
-// 听歌时长:直接读按天聚合里累计的秒数(播放时按歌曲时长累加),
-// 比"用历史记录条数 × 时长"准确,也不再受记录数上限影响
-const reportHours = computed(() => Math.round(rangeAgg.value.seconds / 3600))
+const reportTopSongs = computed(() => musicStore.rankSongs({ days: scopeDays.value, limit: 3 }))
+// 报告的歌手/专辑榜:与页面上的 Top 歌手/专辑同一个实现(rankGroups),只换条数
+const reportTopArtists = computed(() => musicStore.rankGroups('artist', { days: scopeDays.value, limit: 3 }))
+const reportTopAlbums = computed(() => musicStore.rankGroups('album', { days: scopeDays.value, limit: 3 }))
+const reportTotal = computed(() => totalPlays.value)
+const reportHours = computed(() => totalHours.value)
 const reportCoverPct = computed(() => {
   const played = new Set(reportHistory.value.map(h => h.path))
   return musicStore.songs.length ? Math.round(played.size / musicStore.songs.length * 100) : 0
@@ -587,7 +519,7 @@ const reportPeak = computed(() => {
 registerStatsWatchers()
 
 function playTop(idx) {
-  const queue = rangeSongs.value.map(s => ({ ...s }))
+  const queue = musicStore.rankSongs({ days: scopeDays.value }).map(s => ({ ...s }))
   playerStore.setPlayQueue(queue, idx)
 }
 </script>
@@ -683,6 +615,19 @@ function playTop(idx) {
 
 .stat-section { background: var(--bg-card, rgba(255,255,255,0.06)); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
 .section-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+/* 分组标题:8 个板块此前平铺,加了 概览/听歌时间/最爱听/曲库构成 四组才看得出层次 */
+.stat-group-title {
+  font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--text-tertiary, rgba(128,128,128,0.9));
+  margin: 22px 0 10px; padding-left: 8px; position: relative;
+}
+.stat-group-title::before {
+  content: ''; position: absolute; left: 0; top: 50%; width: 3px; height: 12px;
+  margin-top: -6px; border-radius: 2px; background: var(--color-primary);
+}
+/* 报告顶部的期间说明(期间选择器已并入页面顶栏) */
+.report-range-note { text-align: center; font-size: 11px; color: var(--text-tertiary, rgba(255,255,255,0.5)); margin: 2px 0 8px; }
+.rank-link { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; }
 
 .stats-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 @media (max-width: 1200px) { .stats-columns { grid-template-columns: 1fr; } }

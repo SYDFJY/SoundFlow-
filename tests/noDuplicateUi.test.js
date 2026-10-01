@@ -162,3 +162,74 @@ describe('其他界面里"点了没反应"的入口', () => {
     expect(read('src/stores/appStore.js'), 'store 的钳位与滑块上界不一致').toMatch(new RegExp(`Math\\.min\\(${m[2]},`))
   })
 })
+
+describe('统计页与播放记录页共用同一份排行实现(2026-10-01 用户报"统计界面功能重复")', () => {
+  it('排行实现只有一份:store 的 rankSongs / rankGroups', () => {
+    const store = read('src/stores/musicStore.js')
+    expect(store, 'store 里缺共享的歌曲排行').toMatch(/function rankSongs\(\{ days = 0, by = 'count', limit = 0 \} = \{\}\)/)
+    expect(store, 'store 里缺共享的分组排行').toMatch(/function rankGroups\(field, \{ days = 0, limit = 8 \} = \{\}\)/)
+    expect(store, '共享实现没有导出').toMatch(/rankSongs, rankGroups,/)
+  })
+  it('两个页面都只调它,不许再自建排序/聚合', () => {
+    const h = read('src/views/HistoryView.vue')
+    expect(h, '播放记录页没走共享排行').toMatch(/musicStore\.rankSongs\(\{ by:/)
+    expect(h, '播放记录页还留着自己那套排序').not.toMatch(/songs\.sort\(\(a, b\) => b\._playCount - a\._playCount\)/)
+    const s = read('src/views/StatsView.vue')
+    expect(s, '统计页的歌手/专辑榜没走共享实现').toMatch(/musicStore\.rankGroups\('artist'/)
+    expect(s, '统计页还留着自己的聚合函数').not.toMatch(/function aggregate\(field\)/)
+    expect(s, '统计页的歌曲排行没改成"去播放记录页"的入口').toMatch(/router\.push\('\/history'\)/)
+  })
+  it('听歌报告不再自带期间选择器(跟随页面),也没有第二套聚合', () => {
+    const s = read('src/views/StatsView.vue')
+    expect(s, '报告又长回自己的期间选择器').not.toMatch(/reportRange/)
+    expect(s, '报告又自己聚合一遍(该用页面同一批 computed)').not.toMatch(/const reportSongsAgg|function rangeStartKey|const rangeAgg/)
+  })
+  it('层级:四组标题 + 期间补了「年度」档', () => {
+    const s = read('src/views/StatsView.vue')
+    for (const t of ['概览', '听歌时间', '最爱听', '曲库构成']) {
+      expect(s, `缺分组标题「${t}」`).toContain(`<div class="stat-group-title">${t}</div>`)
+    }
+    expect(s, '期间没有年度档').toMatch(/setTimeRange\('year'\)/)
+    expect(s, "scopeDays 没把年度算成 365 天").toMatch(/timeRange\.value === 'year' \? 365 : 0/)
+  })
+})
+
+describe('颜色一律走取色板(2026-10-01 用户要求)', () => {
+  it('播放页:歌词颜色删掉 8 色色板,只留取色板入口', () => {
+    const p = read('src/views/PlayerView.vue')
+    expect(p, '又长回歌词色板预设了').not.toMatch(/lyricColorOptions/)
+    expect(p, '歌词颜色面板缺取色板入口').toMatch(/ref="lyricColorPickrEl" @click="openLyricPicker"/)
+    expect(p, '歌词取色器又塞了预设 swatches').not.toMatch(/swatches: lyricColorOptions/)
+  })
+  it('设置页:自定义主色删掉 10 个预设色块', () => {
+    const s = settings()
+    expect(s, '又长回主色预设色块了').not.toMatch(/PRIMARY_SWATCHES|mini-swatch/)
+    expect(s, '主色取色器又塞了预设 swatches').not.toMatch(/swatches: PRIMARY_SWATCHES/)
+  })
+  it('侧边栏四个入口(来源/外观/颜色/排版)+ 面板行样式', () => {
+    const p = read('src/views/PlayerView.vue')
+    for (const t of ['来源', '外观', '颜色', '排版']) {
+      expect(p, `侧边栏缺「${t}」入口`).toMatch(new RegExp(`aria-label="歌词${t === '来源' ? '来源' : t}"`))
+    }
+    expect(p, '四块面板没共用 ls-panel').toMatch(/class="ls-panel"/)
+    expect(p, '外观面板缺开关行').toMatch(/class="ls-switch"/)
+  })
+})
+
+describe('设置页审计后的三条修正(2026-10-01)', () => {
+  it('两处"续播"文案不再歧义', () => {
+    const s = settings()
+    expect(s, '「启动时继续上次播放」文案没了').toContain('启动时继续上次播放')
+    expect(s, '「记住每首的播放进度」文案没了').toContain('记住每首的播放进度')
+    expect(s, '又写回旧文案「切歌续播」').not.toContain('label-text">切歌续播<')
+  })
+  it('启动续播只有一个写入点(store),设置页不再自己抄一份 setItem', () => {
+    const s = settings()
+    expect(s, '设置页又直接写 soundflow_auto_play 了').not.toMatch(/localStorage\.setItem\('soundflow_auto_play'/)
+    expect(s, '设置页没走 store 的 setAutoPlay').toMatch(/appStore\.setAutoPlay\(/)
+    expect(read('src/stores/appStore.js'), 'store 缺 setAutoPlay').toMatch(/function setAutoPlay\(on\) \{/)
+  })
+  it('语言切换如实标注"只翻译了部分界面"', () => {
+    expect(settings(), '语言项没标注半翻译的事实').toMatch(/部分界面完成翻译/)
+  })
+})

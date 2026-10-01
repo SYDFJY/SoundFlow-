@@ -365,6 +365,49 @@ export const useMusicStore = defineStore('music', () => {
 
   const favoriteCount = computed(() => favorites.size)
 
+  /**
+   * 歌曲排行:**统计页与播放记录页共用这一份实现**(2026-10-01 去重)。
+   * 此前两页各写一套 —— 统计页 `rangeSongs.slice(0,10)`,播放记录页自己 filter+sort,
+   * 同一份数据两套口径,改一处忘一处两页数就对不上(用户报"统计界面功能重复")。
+   *
+   * @param days  0 = 全部时间;>0 只算最近 N 天有播放记录的(用 history 判定,上限 500 条的既有边界)
+   * @param by    'count' 按播放次数 / 'recent' 按最近播放
+   * @param limit 0 = 全部
+   */
+  function rankSongs({ days = 0, by = 'count', limit = 0 } = {}) {
+    const counts = playCounts.value
+    const lastPlay = new Map()
+    for (const h of history.value) {
+      if (h && h.path && !lastPlay.has(h.path)) lastPlay.set(h.path, h.time || 0)
+    }
+    let list = songs.value
+      .filter((s) => (counts[s.path] || 0) > 0)
+      .map((s) => ({ ...s, _playCount: counts[s.path] || 0, _lastPlayTime: lastPlay.get(s.path) || 0 }))
+    if (days > 0) {
+      const cutoff = Date.now() - days * 24 * 3600 * 1000
+      const inRange = new Set()
+      for (const h of history.value) if (h && h.time >= cutoff) inRange.add(h.path)
+      list = list.filter((s) => inRange.has(s.path))
+    }
+    list.sort(by === 'recent'
+      ? (a, b) => (b._lastPlayTime || 0) - (a._lastPlayTime || 0)
+      : (a, b) => b._playCount - a._playCount)
+    return limit > 0 ? list.slice(0, limit) : list
+  }
+
+  /** 按字段(歌手/专辑)聚合的排行:同样两页共用(统计页的 Top 歌手/Top 专辑/报告) */
+  function rankGroups(field, { days = 0, limit = 8 } = {}) {
+    const map = new Map()
+    for (const s of rankSongs({ days })) {
+      const k = String(s[field] || '').trim() || '未知'
+      map.set(k, (map.get(k) || 0) + s._playCount)
+    }
+    return [...map.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit)
+  }
+
   const favoriteSongs = computed(() => {
     const favs = songs.value.filter(s => favorites.has(s.path))
     if (favoriteOrderOverride.value.length) {
@@ -1297,6 +1340,7 @@ export const useMusicStore = defineStore('music', () => {
     loadFromStorage, saveToStorage, restoreLibrary, addSongs, removeSongs,
     scanTotal, scanDone, scanFailed, scanCurrent, cancelScan,
     backfillAddedTime, backfillFingerprint, backfillPlayStats, playStatsInRange,
+    rankSongs, rankGroups,
     toggleFavorite, isFavorite, toggleFavoriteBatch,
     incrementPlayCount, createPlaylist, deletePlaylist, renamePlaylist, setPlaylistCover, reorderPlaylists,
     addSongToPlaylist, removeSongFromPlaylist, moveSongInPlaylist, moveSong, moveFavorite, getPlaylistSongs,

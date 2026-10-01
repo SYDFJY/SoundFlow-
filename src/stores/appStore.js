@@ -403,6 +403,12 @@ export const useAppStore = defineStore('app', () => {
     if (customPrimary.value) setPrimaryColor(customPrimary.value)
   }
 
+  // 启动时继续上次播放(默认关):唯一写入点 —— 设置页只调它,不再自己抄一份 setItem
+  function setAutoPlay(on) {
+    autoPlay.value = !!on
+    localStorage.setItem('soundflow_auto_play', autoPlay.value ? '1' : '0')
+  }
+
   // 跟随系统深色模式:系统切换时自动用 深色(dark)/浅色(light) 主题
   function setFollowSystemTheme(on) {
     followSystemTheme.value = !!on
@@ -533,7 +539,7 @@ export const useAppStore = defineStore('app', () => {
     theme, fontSize, showSidebar, sidebarWidth,
     language, autoPlay, closeAction, followSystemTheme,
     themes, applyTheme, loadSettings, saveSettings, setFontSize,
-    setFollowSystemTheme, applySystemTheme,
+    setFollowSystemTheme, applySystemTheme, setAutoPlay,
     exportThemeJSON, importThemeJSON, exportThemeToFile, importThemeFromFile,
     setPrimaryColor, resetPrimaryColor, customPrimary
   }

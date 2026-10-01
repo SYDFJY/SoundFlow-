@@ -37,10 +37,10 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">启动自动续播</span>
-            <span class="label-desc">打开应用后自动继续播放上次的歌曲</span>
+            <span class="label-text">启动时继续上次播放</span>
+            <span class="label-desc">打开应用后自动播放上次的歌(与下面「记住每首的播放进度」是两件事)</span>
           </div>
-          <button class="switch" role="switch" :aria-checked="appStore.autoPlay" aria-label="启动自动续播" :class="{ on: appStore.autoPlay }" @click="toggleAutoPlay">
+          <button class="switch" role="switch" :aria-checked="appStore.autoPlay" aria-label="启动时继续上次播放" :class="{ on: appStore.autoPlay }" @click="toggleAutoPlay">
             <span class="switch-track"></span>
           </button>
         </div>
@@ -67,7 +67,7 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">{{ t('settings.language') }}</span>
-            <span class="label-desc">Language / 界面语言</span>
+            <span class="label-desc">Language / 界面语言(目前只有部分界面完成翻译,其余仍显示中文)</span>
           </div>          <div class="lang-options">
             <button class="chip" :class="{ active: currentLang === 'zh' }" @click="switchLang('zh')">简体中文</button>
             <button class="chip" :class="{ active: currentLang === 'en' }" @click="switchLang('en')">English</button>
@@ -123,10 +123,10 @@
         </div>
         <div class="setting-item">
           <div class="setting-label">
-            <span class="label-text">切歌续播</span>
-            <span class="label-desc">记忆上次播放进度(默认关 = 切歌从头播放;开启后切回未播完的歌会从上次进度继续)</span>
+            <span class="label-text">记住每首的播放进度</span>
+            <span class="label-desc">默认关 = 每次都从头播;开启后切回没播完的歌会从上次的位置接着播</span>
           </div>
-          <button class="switch" role="switch" :aria-checked="playerStore.resumeProgress" aria-label="切歌续播" :class="{ on: playerStore.resumeProgress }" @click="playerStore.resumeProgress = !playerStore.resumeProgress; playerStore.saveSettings()">
+          <button class="switch" role="switch" :aria-checked="playerStore.resumeProgress" aria-label="记住每首的播放进度" :class="{ on: playerStore.resumeProgress }" @click="playerStore.resumeProgress = !playerStore.resumeProgress; playerStore.saveSettings()">
             <span class="switch-track"></span>
           </button>
         </div>
@@ -305,9 +305,7 @@
             <span class="label-desc">实时全局生效(按钮/高亮/进度条),点「恢复」还原主题默认色</span>
           </div>
           <div class="setting-control mini-color-picker">
-            <div class="mini-swatches">
-              <button v-for="c in PRIMARY_SWATCHES" :key="c" class="mini-swatch" :class="{ active: (appStore.customPrimary || '').toLowerCase() === c.toLowerCase() }" :style="{ background: c }" :title="c" @click="setPrimary(c)"></button>
-            </div>
+            <!-- 预设色块已删(用户要求"涉及颜色的一律使用取色板"):只留取色器 + 恢复默认 -->
             <div ref="primaryPickrEl" class="pickr-wrap"></div>
             <button class="btn" @click="resetPrimary">恢复默认</button>
           </div>
@@ -738,11 +736,9 @@ const lyricMgrBusy = ref(false)
 // Esc 关闭弹窗
 function onSettingsEsc() { lyricMgrOpen.value = false }
 // 迷你窗背景同步(命名函数便于卸载时移除,避免监听泄漏)
-// 自定义主色(全局联动)
-const PRIMARY_SWATCHES = ['#1677E6', '#4493f8', '#722ed1', '#13c2c2', '#52c41a', '#fa8c16', '#f5222d', '#eb2f96', '#f2f0ea', '#1e2433']
+// 自定义主色(全局联动;预设色块已删,只走取色板)
 const primaryPickrEl = ref(null)
 let _primaryPickr = null
-function setPrimary(c) { appStore.setPrimaryColor(c) }
 function resetPrimary() { appStore.resetPrimaryColor() }
 function initPrimaryPickr() {
   if (!primaryPickrEl.value || typeof window.Pickr === 'undefined') return
@@ -750,7 +746,6 @@ function initPrimaryPickr() {
     el: primaryPickrEl.value,
     theme: 'nano',
     default: appStore.customPrimary || '#1677E6',
-    swatches: PRIMARY_SWATCHES,
     components: { preview: true, opacity: false, hue: true, interaction: { hex: true, input: true, save: true } }
   })
   _primaryPickr.on('save', (color) => { if (color) appStore.setPrimaryColor(color.toHEXA().toString()) })
@@ -1061,8 +1056,9 @@ function setSongNotify(v) {
   try { window.$toast?.('切歌通知已切换为「' + (v === 'off' ? '关闭' : v === 'card' ? '应用内卡片' : '系统横幅') + '」', 'success') } catch {}
 }
 function toggleAutoPlay() {
-  appStore.autoPlay = !appStore.autoPlay
-  localStorage.setItem('soundflow_auto_play', appStore.autoPlay ? '1' : '0')
+  // 落盘交给 store 一份(唯一写入点):此前这里又抄了一遍 localStorage.setItem,
+  // 与 appStore 的写法各一份,改一处忘一处就会"开关看着变了、重启又变回去"
+  appStore.setAutoPlay(!appStore.autoPlay)
 }
 
 function selectFont(family) {

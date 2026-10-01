@@ -344,6 +344,9 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     expect(m, '整体回放里没有全量配置').toMatch(/send\('mini:island-config', miniIslandConfig\(\)\)/)
     expect(m, '胶囊宽度没记住(重启会先窄后宽把中心带偏)').toMatch(/storageData\.miniCompactW = w/)
     expect(m, '宽度上限改小后没再钳已存宽度').toMatch(/miniCapsuleWidth\(storageData\.miniCompactW\)/)
+    // 窗口宽必须**向上**取整:四舍五入(433→432)会让窗口比文字窄 1~4px,贴着右缘的收尾字被裁一半
+    expect(m, '缺向上取整的 ceil8').toMatch(/function ceil8\(v\) \{ return Math\.ceil\(v \/ 8\) \* 8 \}/)
+    expect(m, '胶囊宽又用回四舍五入(会把最后一个字裁掉)').toMatch(/return Math\.min\(g\.maxW, Math\.max\(g\.minW, ceil8\(w\)\)\)/)
     expect(s, '渲染端没上报尺寸').toMatch(/window\.electronAPI\.sendMiniCompactSize\(\{ width \}\)/)
     expect(s, '渲染端没接全量配置').toMatch(/onApi\('mini:island-config', \(cfg\) => applyIslandConfig\(cfg\)\)/)
     expect(s, '渲染端没写回设置').toMatch(/sendMiniIslandSetting\?\.\(\{ key, value \}\)/)

@@ -420,12 +420,21 @@ app.whenReady().then(async () => {
   check('切回封面页(分栏)会定位到当前行(不停在歌词开头)',
     split && split.inView === true, JSON.stringify(split))
 
-  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]'); if (b) b.click(); return true })()`)
+  // 侧边栏四个入口(来源/外观/颜色/排版):开关都在「外观」面板里,先开面板再点
+  const openLyricPanel = (label) => run(`(() => {
+    const entry = [...document.querySelectorAll('.ls-btn--entry')].find((b) => (b.textContent || '').trim() === ${JSON.stringify(label)})
+    if (!entry) return false
+    if (!entry.classList.contains('active')) entry.click()
+    return true
+  })()`)
+  await openLyricPanel('外观')
+  await sleep(500)
+  await run(`(() => { const b = document.querySelector('.ls-switch[aria-label="歌词高亮方式"]'); if (b) b.click(); return true })()`)
   await sleep(1100)
   const splitWords = await run(`(() => {
     const box = document.querySelector('.split-lyrics')
-    const tb = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')
-    return { words: box ? box.querySelectorAll('.lyric-word').length : -1, label: tb ? tb.textContent.trim() : null }
+    const tb = document.querySelector('.ls-switch[aria-label="歌词高亮方式"]')
+    return { words: box ? box.querySelectorAll('.lyric-word').length : -1, on: tb ? tb.classList.contains('on') : null }
   })()`)
   check('分栏下点「逐字」真的生效(两面共用同一套渲染)', splitWords && splitWords.words > 2, JSON.stringify(splitWords))
 
@@ -666,11 +675,19 @@ app.whenReady().then(async () => {
     return lines.map((_, i) => `译${i + 1}`)
   })
 
-  const transBtn = `document.querySelector('.ls-btn[aria-label="歌词翻译"]')`
-  const hiBtn = `document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')`
-  const transOn = () => run(`(() => { const b = ${transBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  // 开关都在侧边栏的「外观」面板里(四入口之一);这两个选择器在面板打开后依然有效
+  const openAppearance = () => run(`(() => {
+    const entry = [...document.querySelectorAll('.ls-btn--entry')].find((b) => (b.textContent || '').trim() === '外观')
+    if (entry && !entry.classList.contains('active')) entry.click()
+    return true
+  })()`)
+  const transBtn = `document.querySelector('.ls-switch[aria-label="歌词翻译"]')`
+  const hiBtn = `document.querySelector('.ls-switch[aria-label="歌词高亮方式"]')`
+  const transOn = () => run(`(() => { const b = ${transBtn}; return b ? b.getAttribute('aria-checked') : null })()`)
   const setTrans = async (on) => {
     if ((await transOn()) === (on ? 'true' : 'false')) return
+    await openAppearance()
+    await sleep(350)
     await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
     await sleep(1900)
   }
@@ -689,20 +706,24 @@ app.whenReady().then(async () => {
     const hit = await run(`(async () => {
       const re = new RegExp(${JSON.stringify(pattern)})
       const body = document.querySelector('.list-body')
-      // 列表是虚拟滚动:只渲染可见行。先找当前视口,找不到就滚到底再找一遍
-      // (标题排序里 "曲目N" 全在 "Track N" 之后,找中文那首时视口通常还停在拉丁那一片)
-      for (const attempt of [0, 1]) {
+      // 列表是虚拟滚动:只渲染可见行 —— 逐屏往下滚着找(最多 24 屏),
+      // 别再只试"当前视口 + 滚到底"两下:夹具里重复条目会把中文那批挤得更深(实测漏过行)
+      const findRow = () => {
         const rows = [...document.querySelectorAll('.list-row')]
-        const row = rows.find((r) => re.test(r.textContent || ''))
+        return rows.find((r) => re.test(r.textContent || ''))
+      }
+      body && (body.scrollTop = 0)
+      await new Promise((r) => setTimeout(r, 220))
+      for (let i = 0; i < 24; i++) {
+        const row = findRow()
         if (row) {
           const label = (row.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 24)
           row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
-          return { label }
+          return { label, screen: i }
         }
-        if (attempt === 0 && body) {
-          body.scrollTop = body.scrollHeight
-          await new Promise((r) => setTimeout(r, 500))
-        }
+        if (!body) break
+        body.scrollTop += Math.max(200, body.clientHeight - 60)
+        await new Promise((r) => setTimeout(r, 260))
       }
       const rows = [...document.querySelectorAll('.list-row')]
       return { err: 'no-row', hash: location.hash, rows: rows.length, sample: rows.slice(0, 3).map((r) => (r.textContent || '').replace(/\\s+/g, ' ').trim().slice(0, 40)) }
@@ -741,7 +762,8 @@ app.whenReady().then(async () => {
   await run(`(() => { location.hash = '#/player'; return true })()`)
   await sleep(1600)
   await gotoLyricTab()
-  const hiPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  await openAppearance(); await sleep(400)
+  const hiPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-checked') : null })()`)
   if (hiPressed === 'false') {
     await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
     await sleep(1200)
@@ -855,7 +877,8 @@ app.whenReady().then(async () => {
   // 第 8 组末尾把窗口关掉了,这里从列表页的右侧按钮重新打开(播放页里没有那个按钮)。
   // 先把"逐字"关掉:开着逐字时窗口的当前行显示的是**词片**(随整份载荷推来的那一行),
   // 与索引可以不同步 —— 那样量到的"行内数字"是词片那一行的,判不了译文对不对得上。
-  const hiNow = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
+  await openAppearance(); await sleep(400)
+  const hiNow = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-checked') : null })()`)
   if (hiNow === 'true') {
     await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
     await sleep(1400)
@@ -1165,7 +1188,13 @@ app.whenReady().then(async () => {
     })()`)
     await sleep(1900)
     const appSetting = await readLocal('soundflow_lyric_win_line_style')
-    const appState = await readWinLines()
+    // 这一条比较"已唱过 vs 未来行"的样式;若当前行正好是列表第一行就没有"已唱过"可比 ——
+    // 等它走过去再比(夹具歌在播,当前行会推进),别把"没得比"当成失败
+    let appState = await readWinLines()
+    for (let i = 0; i < 4 && (!appState || appState.pastOpacity === null); i++) {
+      await sleep(900)
+      appState = await readWinLines()
+    }
     console.log('显示方式 app:', JSON.stringify(appState))
     check('显示方式:切到"与播放界面一致"写进设置并切了模式',
       appSetting === 'app' && !!appState && appState.hasAppClass === true,
@@ -1384,17 +1413,26 @@ app.whenReady().then(async () => {
 
       // ①b 宽度**随每句歌词伸缩**:注入长句 → 变宽;换短句 → 缩回(用户报的"只涨不缩")
       // 注意要注**整串同一句**:播放中主窗会不断推 mini:lyric-index,只给 1 行的话索引一变就
-      // 越界退回"歌名·歌手"兜底,量到的就不是我们要的那句了
+      // 越界退回"歌名·歌手"兜底,量到的就不是我们要的那句了。
+      // 另外:夹具歌在播、切歌会推真实歌词覆盖注入 —— 注入后**校验文本真的变了**,没生效就再注一次
       const longLine = '这是一句特别长的歌词用来把胶囊撑到宽度上限确认会跟着变宽'
       const fill = (text) => ({ lines: Array.from({ length: 80 }, () => ({ text })), currentIdx: 0 })
-      mw.webContents.send('mini:lyrics', fill(longLine))
-      await sleep(1000)
+      const readCapsuleText = () => mrun(`(() => { const el = document.querySelector('.mini-capsule-track'); return el ? el.textContent.trim() : '' })()`)
+      const injectAndWait = async (text) => {
+        for (let i = 0; i < 4; i++) {
+          mw.webContents.send('mini:lyrics', fill(text))
+          await sleep(i === 0 ? 1000 : 900)
+          const got = await readCapsuleText()
+          if (String(got).startsWith(text.slice(0, 6))) return got
+        }
+        return await readCapsuleText()
+      }
+      const wideText = await injectAndWait(longLine)
+      await sleep(400)
       const bWide = findMini() ? findMini().getBounds() : null
-      const wideText = await mrun(`(() => { const el = document.querySelector('.mini-capsule-track'); return el ? el.textContent.trim() : '' })()`)
-      mw.webContents.send('mini:lyrics', fill('短句'))
-      await sleep(1200)
+      const narrowText = await injectAndWait('短句')
+      await sleep(400)
       const bNarrow = findMini() ? findMini().getBounds() : null
-      const narrowText = await mrun(`(() => { const el = document.querySelector('.mini-capsule-track'); return el ? el.textContent.trim() : '' })()`)
       check('两态岛:胶囊宽度随每句歌词伸缩(长句变宽、换短句缩回,不再只涨不缩)',
         !!bWide && !!bNarrow && String(wideText).startsWith('这是一句') && narrowText === '短句' &&
         bWide.width >= 240 && bNarrow.width < bWide.width && near(bNarrow.width, 184, 8),
@@ -2272,7 +2310,7 @@ app.whenReady().then(async () => {
   check('在线歌词:查不到的歌不弹网络警告(以前每首无歌词的歌都弹一次)',
     Array.isArray(toastDump) && !toastDump.some((t) => /网络不可用/.test(t.msg)), JSON.stringify(toastDump))
 
-  // 17b) 歌词工具栏的「来源」组:曾被"去重"误删(入口不是重复,重复的是实现),
+  // 17b) 侧边栏的「来源」入口:曾被"去重"误删(入口不是重复,重复的是实现),
   //      用户直接来问"为啥侧边栏的歌词来源选项没了"。这里钉住它真的在、真的能切。
   await run(`(() => {
     // 工具栏可能处于收起状态(.lyric-source-switch.collapsed):先展开
@@ -2282,32 +2320,55 @@ app.whenReady().then(async () => {
     return true
   })()`)
   await sleep(600)
+  await openLyricPanel('来源')
+  await sleep(450)
   const srcGroup = await run(`(() => {
-    const labels = [...document.querySelectorAll('.ls-group-label')].map((e) => (e.textContent || '').trim())
-    const btns = [...document.querySelectorAll('.ls-btn')].filter((b) => /^(自动|网易云|LRCLIB|QQ音乐)$/.test((b.textContent || '').trim()))
-    return { labels, sources: btns.map((b) => (b.textContent || '').trim()), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()), stored: localStorage.getItem('soundflow_lyric_source') }
+    const entries = [...document.querySelectorAll('.ls-btn--entry')].map((e) => (e.textContent || '').trim())
+    const btns = [...document.querySelectorAll('.ls-choice')]
+    return { entries, sources: btns.map((b) => (b.textContent || '').trim()), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()), stored: localStorage.getItem('soundflow_lyric_source') }
   })()`)
   console.log('歌词工具栏分组:', JSON.stringify(srcGroup))
-  check('歌词工具栏:「来源」组回来了(4 个按钮 + 当前项高亮)',
-    !!srcGroup && srcGroup.labels.includes('来源') && srcGroup.sources.length === 4 && srcGroup.active.length === 1,
+  check('歌词工具栏:四个入口(来源/外观/颜色/排版)+「来源」面板 4 选 1 且当前项高亮',
+    !!srcGroup && ['来源', '外观', '颜色', '排版'].every((x) => srcGroup.entries.includes(x)) &&
+    srcGroup.sources.length === 4 && srcGroup.active.length === 1,
     JSON.stringify(srcGroup))
   await run(`(() => {
-    const b = [...document.querySelectorAll('.ls-btn')].find((x) => (x.textContent || '').trim() === '网易云')
+    const b = [...document.querySelectorAll('.ls-choice')].find((x) => (x.textContent || '').trim() === '网易云')
     if (b) b.click()
     return !!b
   })()`)
   await sleep(1600)
   const afterSwitch = await run(`(() => {
-    const btns = [...document.querySelectorAll('.ls-btn')].filter((b) => /^(自动|网易云|LRCLIB|QQ音乐)$/.test((b.textContent || '').trim()))
+    const btns = [...document.querySelectorAll('.ls-choice')]
     return { stored: localStorage.getItem('soundflow_lyric_source'), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()) }
   })()`)
   console.log('切来源后:', JSON.stringify(afterSwitch))
   check('歌词工具栏:点「网易云」立刻生效(落盘 + 高亮跟着切)',
     !!afterSwitch && afterSwitch.stored === 'netease' && afterSwitch.active.includes('网易云'),
     JSON.stringify(afterSwitch))
+  // 「颜色」面板:预设色板已删,只剩取色板入口
+  await openLyricPanel('颜色')
+  await sleep(450)
+  const colorPanel = await run(`(() => {
+    const panel = document.querySelector('.ls-panel')
+    const pick = panel ? panel.querySelector('.bg-color-pick') : null
+    return {
+      dots: panel ? panel.querySelectorAll('.color-dot').length : -1,
+      hasPick: !!pick,
+      hex: pick ? (pick.querySelector('.bg-color-hex') || {}).textContent : null
+    }
+  })()`)
+  console.log('歌词颜色面板:', JSON.stringify(colorPanel))
+  check('歌词颜色:预设色板已删,只剩取色板入口(色块 + 当前 hex)',
+    !!colorPanel && colorPanel.dots === 0 && colorPanel.hasPick === true && /^#[0-9a-f]{6}$/i.test(String(colorPanel.hex)),
+    JSON.stringify(colorPanel))
+  await run(`(() => { const e = [...document.querySelectorAll('.ls-btn--entry')].find((b) => (b.textContent || '').trim() === '颜色'); if (e) e.click(); return true })()`)
+  await sleep(300)
   // 恢复 auto:别把来源状态留给下一轮
+  await openLyricPanel('来源')
+  await sleep(400)
   await run(`(() => {
-    const b = [...document.querySelectorAll('.ls-btn')].find((x) => (x.textContent || '').trim() === '自动')
+    const b = [...document.querySelectorAll('.ls-choice')].find((x) => (x.textContent || '').trim() === '自动')
     if (b) b.click()
     return true
   })()`)
