@@ -47,6 +47,12 @@ describe('快捷键:事件 → 组合串', () => {
     expect(DEFAULT_SHORTCUTS.next).toBe(comboFromEvent({ ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, code: 'ArrowRight' }))
     expect(DEFAULT_SHORTCUTS.mute).toBe(comboFromEvent({ ctrlKey: true, altKey: false, shiftKey: false, metaKey: false, code: 'KeyM' }))
   })
+
+  it('显隐迷你窗/岛的默认组合是 Ctrl+Alt+I(必须带修饰键,裸键会抢走所有程序的该按键)', () => {
+    expect(DEFAULT_SHORTCUTS.toggleMini).toBe(comboFromEvent({ ctrlKey: true, altKey: true, shiftKey: false, metaKey: false, code: 'KeyI' }))
+    expect(hasModifier(DEFAULT_SHORTCUTS.toggleMini)).toBe(true)
+    expect(SHORTCUT_ACTIONS.some((a) => a.key === 'toggleMini'), '动作清单里缺 toggleMini(设置页/帮助面板就看不到它)').toBe(true)
+  })
 })
 
 describe('快捷键:配置读取', () => {

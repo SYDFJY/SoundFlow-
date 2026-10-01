@@ -30,6 +30,9 @@ export const usePlayerStore = defineStore('player', () => {
   const currentTime = ref(0)
   const duration = ref(0)
   const miniOpen = ref(false)
+  // 两态岛展开状态:权威在主进程(它管窗口几何),经 mini:expanded 同步过来;
+  // 播放栏两处岛按钮的激活态用它
+  const islandExpanded = ref(false)
   // 音量弹层开关(播放栏/播放页共享:一处打开另一处自动关闭)
   const volPanelOpen = ref(false)
   const volume = ref(0.8)
@@ -133,11 +136,19 @@ export const usePlayerStore = defineStore('player', () => {
       artist: currentSong.value?.artist || '',
       coverUrl: currentSong.value?.coverUrl || null,
       volume: volume.value,
+      isMuted: isMuted.value,
       isPlaying: typeof forcePlaying === 'boolean' ? forcePlaying : isPlaying.value
     })
   }
   // 迷你窗打开时立即同步一次当前播放状态(消除新窗口刚挂载时的空占位,不必等下一次 timeupdate)
-  watch(miniOpen, (open) => { if (open) sendMiniUpdate() })
+  watch(miniOpen, (open) => {
+    if (!open) return
+    sendMiniUpdate()
+    // 展开页的数据同样先同步一份(岛可能一打开就是展开态:主进程 pendingExpand)
+    sendMiniLyrics()
+    sendMiniLyricIndex()
+    sendMiniQueue()
+  })
   function initAudio() {
     if (audio.value) return
     audio.value = new Audio()
@@ -1947,6 +1958,75 @@ export const usePlayerStore = defineStore('player', () => {
   }
   watch([playMode, desktopLyricState, playbackRate], pushMiniMenuState)
 
+  // ========== 两态岛展开页数据推送 ==========
+  // 与桌面歌词窗同构:主窗发送 → 主进程缓存转发 → 迷你窗。迷你窗是独立 SPA(无 pinia),
+  // 数据只能走 IPC。
+  /** 岛歌词页载荷:低频全量(行 + 译文 + 偏移);不含样式 —— 岛歌词页固定样式,不做独立设置 */
+  function buildMiniLyricsPayload() {
+    updateLyricIndex()
+    return {
+      lines: lyrics.value.map((l, i) => ({ time: l.time, text: l.text, trans: translationFor(i) })),
+      currentIdx: currentLyricIndex.value,
+      // 偏移给到窗内:逐字进度由窗内用自己的插值时钟算(与桌面歌词窗同一套做法)
+      offsetSeconds: lyricOffsetSeconds.value
+    }
+  }
+  function sendMiniLyrics() {
+    if (!window.electronAPI || !window.electronAPI.sendMiniLyrics) return
+    if (!miniOpen.value) return // 迷你窗没开就不推(避免白拷贝全量歌词)
+    try { window.electronAPI.sendMiniLyrics(buildMiniLyricsPayload()) } catch {}
+  }
+  /** 岛歌词页轻量增量:当前行索引 + 该行的词片 + 译文(行切换频率本身低,无需节流) */
+  function sendMiniLyricIndex() {
+    if (!window.electronAPI || !window.electronAPI.sendMiniLyricIndex) return
+    if (!miniOpen.value) return
+    const idx = currentLyricIndex.value
+    const line = lyrics.value[idx]
+    const next = lyrics.value[idx + 1]
+    const words = line ? buildWordSegments(line, next ? next.time : null) : []
+    try {
+      window.electronAPI.sendMiniLyricIndex({ currentIdx: idx, words, translation: translationFor(idx) })
+    } catch {}
+  }
+  /** 岛队列页载荷:截断推送(当前索引 ±50);offset = songs[0] 在完整队列里的绝对索引 */
+  const MINI_QUEUE_SPAN = 50
+  function buildMiniQueuePayload() {
+    const q = playQueue.value
+    const cur = currentIndex.value
+    const anchor = cur < 0 ? 0 : cur
+    const start = Math.max(0, anchor - MINI_QUEUE_SPAN)
+    const end = Math.min(q.length, anchor + MINI_QUEUE_SPAN + 1)
+    return {
+      total: q.length,
+      offset: start,
+      currentIndex: cur,
+      songs: q.slice(start, end).map((s) => ({
+        qid: s._qid,
+        title: s.title || '',
+        artist: s.artist || '',
+        duration: s.duration || 0
+      }))
+    }
+  }
+  let _miniQueueTimer = null
+  function sendMiniQueue() {
+    if (!window.electronAPI || !window.electronAPI.sendMiniQueue) return
+    if (!miniOpen.value) return
+    if (_miniQueueTimer) return // 300ms 合并:拖拽排序/批量入队时只推最后一次
+    _miniQueueTimer = setTimeout(() => {
+      _miniQueueTimer = null
+      try { window.electronAPI.sendMiniQueue(buildMiniQueuePayload()) } catch {}
+    }, 300)
+  }
+  // 队列是数组 ref:**原地增删/重排不会触发浅 watch**,必须 deep(否则岛队列页永远不动)
+  watch(playQueue, () => sendMiniQueue(), { deep: true })
+  watch(currentIndex, () => sendMiniQueue())
+  watch(currentSong, () => { sendMiniLyrics() })
+  watch(lyrics, () => { sendMiniLyrics(); sendMiniLyricIndex() })
+  watch(currentLyricIndex, () => sendMiniLyricIndex())
+  watch(showTranslation, () => sendMiniLyrics())
+  watch(translations, () => sendMiniLyrics())
+
   // 桌面歌词窗口被系统/托盘关闭时,主进程通知归零状态
   if (window.electronAPI && window.electronAPI.on) {
     try {
@@ -2722,7 +2802,7 @@ export const usePlayerStore = defineStore('player', () => {
     setLyricUserOffset,
     refreshLyricWindowStyle, buildLyricWindowPayload, nudgeLyricOffset, resetLyricUserOffset, getLyricUserOffset,
     resumeProgress,
-    volPanelOpen, miniOpen,
+    volPanelOpen, miniOpen, islandExpanded,
     endAction, setEndAction,
     userStartedPlay, showTranslation, translating, translations, translateNotice, toggleTranslation, translateCurrentLyrics, translationFor,
     lyricSettingRev, applyLyricSettingFromWindow,

@@ -2,7 +2,7 @@
  * SoundFlow 声流音乐 — Electron 主进程
  */
 const iconv = require('iconv-lite')
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker, nativeTheme, Notification } = require('electron')
+const { app, BrowserWindow, screen, ipcMain, dialog, Menu, shell, Tray, nativeImage, globalShortcut, powerSaveBlocker, nativeTheme, Notification } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { readdir, stat, readFile, writeFile, mkdir, access, rename, unlink } = require('fs/promises')
@@ -61,6 +61,15 @@ const APP_NAME = 'SoundFlow 声流音乐'
 const localDist = path.join(__dirname, '..', 'dist')
 const isDev = !app.isPackaged && !fs.existsSync(localDist)
 
+// ===== 迷你窗/两态岛尺寸契约 =====
+// 与 src/views/MiniView.vue 的 CSS 常量、tests/miniIsland.test.js 的期望值三处一致(有守卫测试)。
+const MINI_COMPACT_W = 320
+const MINI_COMPACT_H = 80
+const MINI_EXPANDED_W = 320
+const MINI_EXPANDED_H = 420
+const MINI_TOP_OFFSET = 10 // 首次出现的默认位置距工作区顶部(对齐 WinIsland 的 TOP_OFFSET=10)
+const MINI_SNAP_EDGE = 20 // 拖动结束后距顶边小于该值则吸附贴顶
+
 // ========== 窗口引用 ==========
 // 主题→窗口底色映射(消除启动时窗口底色与主题不符的闪色;
 // 渲染进程首帧渲染前,窗口底色直接匹配目标主题)
@@ -82,16 +91,156 @@ let lyricLocked = false
 // 迷你窗最近一次收到的播放状态。迷你窗是独立窗口,渲染端只有 mini:update 事件、
 // 没有初始状态拉取,所以新建时必须把这份缓存回放给它,否则首帧是空默认值(会闪一下)。
 let lastMiniUpdate = null
+// 两态岛展开页的数据缓存(与 lastMiniUpdate 同构):迷你窗可能在之后才创建,建窗时回放
+let lastMiniLyrics = null
+let lastMiniQueue = null
+// 空闲淡出阈值:固定 30s(后续要可配置再加设置项,登记在计划里)
+const MINI_IDLE_FADE_SECONDS = 30
+function miniIdleSyncPayload() {
+  return { enabled: !!storageData.miniIdleFade, seconds: MINI_IDLE_FADE_SECONDS }
+}
 // 迷你窗「可显示」回调:由渲染端 mini:ready 或兜底定时器触发,只会生效一次
 let _showMiniOnce = null
 // 渲染端就绪信号。必须独立记录:渲染端脚本在 did-finish-load 之前就已执行,
 // 所以 mini:ready 有可能先到 —— 只用一个回调变量会漏掉这个信号,导致每次都退化成兜底等待。
 let _miniReadySignaled = false
 
+// ===== 两态岛状态机(主进程是唯一权威;渲染端只信 mini:expanded 事件)=====
+let miniExpanded = false
+let miniExpandAnchor = null // 展开前的紧凑帧 {x,y};收起时精确回到这里
+let miniExpandShiftY = 0 // 展开时为"底部贴边"整体上移的量(≤0);紧凑帧换算用
+let miniPendingExpand = false // 窗口还在加载时的"打开即展开",加载完应用
+let miniIslandLockUntil = 0 // 220ms 防抖:连点按钮不重复触发
+
+// 把窗口框夹进"它所在显示器"的工作区(建窗/展开/收起都用它)
+function clampToWorkArea(bounds) {
+  try {
+    const wa = screen.getDisplayMatching(bounds).workArea
+    const x = Math.min(Math.max(Math.round(bounds.x), wa.x), Math.max(wa.x, wa.x + wa.width - bounds.width))
+    const y = Math.min(Math.max(Math.round(bounds.y), wa.y), Math.max(wa.y, wa.y + wa.height - bounds.height))
+    return { x, y, width: bounds.width, height: bounds.height }
+  } catch (_) { return bounds }
+}
+
+// 位置对齐到物理像素网格。
+// 为什么:请求位置落在半个物理像素上时,Windows 会把窗口外框撑大 —— 实测 125% 缩放下
+// 320×80 的小窗变成 320×83(顶部 y=10 会落到 12.5px 上)。而 Electron 又忽略非整数 x/y
+// (实测 y=10.4 直接被丢弃、窗口跑去居中),所以只能取"既是整数 DIP、又落在物理像素边界"
+// 的最近值:scale=1.25 → 步长 4 DIP(4×1.25=5px),10 → 8 或 12。
+function alignToPhysicalGrid(v) {
+  try {
+    const s = screen.getPrimaryDisplay().scaleFactor || 1
+    if (Number.isInteger(s)) return Math.round(v)
+    let step = 1
+    for (let i = 1; i <= 8; i++) {
+      const px = i * s
+      if (Math.abs(px - Math.round(px)) < 1e-6) { step = i; break }
+    }
+    return Math.round(Math.round(v / step) * step)
+  } catch (_) { return Math.round(v) }
+}
+
+// 把"当前窗口实际 frame"换算成"紧凑帧"并持久化。
+// 展开态必须用 anchor 换算,不能直接写 getPosition —— 展开时的 setBounds 也会触发 moved,
+// 直接写会把展开后(或为贴底上移后)的坐标当成紧凑位置存下来,重启后岛就跑到别处了。
+function persistMiniPos(bounds) {
+  const y = miniExpanded ? bounds.y - miniExpandShiftY : bounds.y
+  storageData.miniPos = { x: Math.round(bounds.x), y: Math.round(y) }
+  saveStorage(true)
+}
+
+// 广播岛展开状态:迷你窗(自身布局)与主窗(播放栏按钮激活态)都要收到
+function broadcastMiniExpanded(force) {
+  const val = typeof force === 'boolean' ? force : miniExpanded
+  try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:expanded', val) } catch (_) {}
+  try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:expanded', val) } catch (_) {}
+  syncTrayIsland(val)
+}
+
+// 托盘「灵动岛」勾选态跟随(状态机在主进程,直接维护,不走渲染端)
+function syncTrayIsland(checked) {
+  try {
+    const item = trayMenu && trayMenu.getMenuItemById('island')
+    if (item) item.checked = !!checked
+  } catch (_) {}
+}
+
+function resetMiniIslandState() {
+  miniExpanded = false
+  miniExpandAnchor = null
+  miniExpandShiftY = 0
+  miniPendingExpand = false
+  miniIslandLockUntil = 0
+}
+
+function expandMiniIsland() {
+  if (!miniWindow || miniWindow.isDestroyed() || miniExpanded) return
+  let cur
+  try { cur = miniWindow.getBounds() } catch (_) { return }
+  miniExpandAnchor = { x: cur.x, y: cur.y }
+  // 优先向下展开(y 不变);底部空间不够时 clampToWorkArea 整体上移贴底。
+  // 目标 y 对齐物理像素网格:否则 420 高也会被外框撑成 421(125% 缩放实测)
+  const target = clampToWorkArea({ x: cur.x, y: alignToPhysicalGrid(cur.y), width: MINI_EXPANDED_W, height: MINI_EXPANDED_H })
+  miniExpandShiftY = target.y - cur.y
+  try { miniWindow.setBounds(target) } catch (_) {}
+  miniExpanded = true
+  broadcastMiniExpanded(true) // 渲染端收到后播入场动画(窗口已就位,不会裁内容)
+}
+
+function collapseMiniIsland() {
+  if (!miniWindow || miniWindow.isDestroyed() || !miniExpanded) return
+  miniExpanded = false
+  const a = miniExpandAnchor
+  if (a) {
+    const target = clampToWorkArea({ x: a.x, y: alignToPhysicalGrid(a.y), width: MINI_COMPACT_W, height: MINI_COMPACT_H })
+    try { miniWindow.setBounds(target) } catch (_) {}
+  }
+  miniExpandShiftY = 0
+  broadcastMiniExpanded(false)
+}
+
+// 三处入口(小窗按钮/播放栏按钮/托盘)统一走这里:未开窗→打开并展开;开着→展开/收起
+function toggleMiniIsland() {
+  if (!miniWindow || miniWindow.isDestroyed()) {
+    miniPendingExpand = true
+    createMiniWindow()
+    return
+  }
+  if (Date.now() < miniIslandLockUntil) return
+  miniIslandLockUntil = Date.now() + 220
+  if (miniPendingExpand) { miniPendingExpand = false; return } // 加载中再点一次 = 取消 pending
+  if (miniExpanded) collapseMiniIsland()
+  else expandMiniIsland()
+}
+
+// 把最近一次缓存状态整体回放给迷你窗。
+// 两条路径都调它(did-finish-load + mini:ready 握手):渲染端是懒加载路由,
+// 挂监听可能在 did-finish-load 之后 —— 只发一次会丢,首帧就会先闪空状态。
+function replayMiniStateToMiniWindow() {
+  if (!miniWindow || miniWindow.isDestroyed()) return
+  const send = (ch, data) => { try { miniWindow.webContents.send(ch, data) } catch (_) {} }
+  if (lastMiniUpdate) send('mini:update', lastMiniUpdate)
+  if (lastMiniLyrics) send('mini:lyrics', lastMiniLyrics)
+  if (lastMiniQueue) send('mini:queue', lastMiniQueue)
+  send('mini:idle-sync', miniIdleSyncPayload())
+  send('mini:expanded', miniExpanded)
+}
+
+// 悬浮播放器窗口显隐(迷你窗开/关);Ctrl+Alt+H 在 globalShortcut 回调里直调
+function toggleMiniWindowFromMain() {
+  if (miniWindow && !miniWindow.isDestroyed()) { miniWindow.close(); miniWindow = null }
+  else createMiniWindow()
+}
+// 测试钩子:系统级热键(RegisterHotKey)无法在自动化里真按,shortcut-check 需要直调
+// "与 globalShortcut 回调同一个函数"来验证"主窗收托盘 + 岛关闭时仍能唤回"。
+// 只挂一个只读引用,不改变任何生产行为。
+global.__sfIslandTestHooks = { toggleMiniWindowFromMain }
+
 // 音频工具链(ffmpeg/ffprobe)的解析集中在下方「音频工具链」小节:单一入口 resolveAudioTools()。
 // 此前响度分析有一套含 resourcesPath 的探测,转码却只查 ffprobe 同级目录与 PATH,两套不一致。
 let lastLyricData = null
 let tray = null
+let trayMenu = null // 托盘菜单引用:「灵动岛」勾选态要按 id 找回来更新
 
 // ========== 单实例锁 ==========
 // 防多实例并行写同一 userData(数据损坏)。注意:失败不直接退出——
@@ -593,13 +742,26 @@ function notifyMiniState(open) {
 function createMiniWindow() {
   if (miniWindow) { miniWindow.focus(); return }
 
+  // 初始位置:有记忆就夹进所在工作区(显示器拔插后不留在屏外);没有就放主显示器顶部居中
+  // (岛的心智;此前不设坐标时 Electron 默认把窗口居中在屏幕中央,不像"岛")
+  let initX, initY
   const pos = storageData.miniPos || null
+  if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+    const p = clampToWorkArea({ x: pos.x, y: pos.y, width: MINI_COMPACT_W, height: MINI_COMPACT_H })
+    initX = alignToPhysicalGrid(p.x); initY = alignToPhysicalGrid(p.y)
+  } else {
+    try {
+      const wa = screen.getPrimaryDisplay().workArea
+      initX = alignToPhysicalGrid(Math.round(wa.x + (wa.width - MINI_COMPACT_W) / 2))
+      initY = alignToPhysicalGrid(wa.y + MINI_TOP_OFFSET)
+    } catch (_) {}
+  }
   // 迷你窗背景模式(设置页可改):transparent 模式不设 backgroundColor(绕开白底 bug),其余不透明
   const miniBg = { mode: storageData.miniBgMode || 'dark', color: storageData.miniBgColor || '#161b22' }
   const miniTransparent = miniBg.mode === 'transparent'
   miniWindow = new BrowserWindow({
-    width: 320,
-    height: 80,
+    width: MINI_COMPACT_W,
+    height: MINI_COMPACT_H,
     frame: false,
     // 置顶由小窗自己的菜单切换并持久化(此前写死 true:关掉置顶、重开又回来)
     alwaysOnTop: storageData.miniAlwaysOnTop !== false,
@@ -609,7 +771,7 @@ function createMiniWindow() {
     ...(miniTransparent
       ? { transparent: true, backgroundColor: '#00000000' } // 透明窗口:显式透明底,避免渲染前露黑/白底闪色
       : { backgroundColor: miniBg.mode === 'white' ? '#ffffff' : miniBg.color }),
-    ...(pos ? { x: pos.x, y: pos.y } : {}),
+    ...(Number.isFinite(initX) ? { x: initX, y: initY } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -638,12 +800,12 @@ function createMiniWindow() {
   _showMiniOnce = showMini
   _miniReadySignaled = false
   miniWindow.webContents.once('did-finish-load', () => {
-    // 回放最近一次状态,让渲染端在显示之前就有正确内容
-    if (lastMiniUpdate) {
-      try { miniWindow.webContents.send('mini:update', lastMiniUpdate) } catch (e) {
-        log.warn('[迷你窗] 初始状态回放失败:', e && e.message)
-      }
-    }
+    // 回放最近状态,让渲染端在显示之前就有正确内容(did-finish-load 时渲染端可能还没挂监听,
+    // mini:ready 握手时会再整体回放一次 —— 两条路径保证不漏)
+    replayMiniStateToMiniWindow()
+    // "打开即展开"(三处入口的"打开岛"路径):加载完立即展开,首帧就是展开态。
+    // 此时渲染端可能还没挂监听,mini:ready 里会补发一次 mini:expanded 状态。
+    if (miniPendingExpand) { miniPendingExpand = false; expandMiniIsland() }
     // 信号可能已经先到(渲染端脚本早于 did-finish-load 执行)
     if (_miniReadySignaled) showMini()
     else setTimeout(showMini, 600)
@@ -653,16 +815,17 @@ function createMiniWindow() {
     _miniReadySignaled = false
   })
 
-  // 位置记忆(拖动后保存,重启恢复)
+  // 位置记忆(拖动后保存,重启恢复)。
+  // 必须经 persistMiniPos 换算:展开态的 setBounds 也会触发 moved,
+  // 且展开态下窗口 y 是"展开帧"的 y —— 直接写会把紧凑位置存错。
   let posSaveTimer = null
   miniWindow.on('moved', () => {
     if (posSaveTimer) return
     posSaveTimer = setTimeout(() => {
       posSaveTimer = null
       try {
-        const [x, y] = miniWindow.getPosition()
-        storageData.miniPos = { x, y }
-        saveStorage(true)
+        if (!miniWindow || miniWindow.isDestroyed()) return
+        persistMiniPos(miniWindow.getBounds())
       } catch {}
     }, 400)
   })
@@ -836,6 +999,18 @@ function createMiniWindow() {
           if (miniWindow && !miniWindow.isDestroyed()) miniWindow.setAlwaysOnTop(storageData.miniAlwaysOnTop)
         }
       },
+      {
+        label: '空闲时淡出',
+        type: 'checkbox',
+        checked: !!storageData.miniIdleFade,
+        click: () => {
+          storageData.miniIdleFade = !storageData.miniIdleFade
+          saveStorage()
+          if (miniWindow && !miniWindow.isDestroyed()) {
+            try { miniWindow.webContents.send('mini:idle-sync', miniIdleSyncPayload()) } catch (_) {}
+          }
+        }
+      },
       { type: 'separator' },
       {
         label: '恢复主窗口',
@@ -882,7 +1057,14 @@ function createMiniWindow() {
     } catch (_) {}
   })
 
-  miniWindow.on('closed', () => { miniWindow = null; notifyMiniState(false) })
+  miniWindow.on('closed', () => {
+    miniWindow = null
+    notifyMiniState(false)
+    // 岛状态随窗口销毁重置(重开窗永远是紧凑态);同时通知主窗按钮取消激活 + 托盘取消勾选。
+    // 右键菜单改背景模式触发的"重建"也会走这里 —— 重建前静默收起由这条覆盖。
+    resetMiniIslandState()
+    broadcastMiniExpanded(false)
+  })
 
   notifyMiniState(true)
   return miniWindow
@@ -1031,6 +1213,17 @@ function createTray() {
         if (lyricWindow && !lyricWindow.isDestroyed()) lyricWindow.close()
       }
     } },
+    { label: '灵动岛', id: 'island', type: 'checkbox', checked: !!miniExpanded, click: (item) => {
+      // 点击时 Electron 已自行翻转 checked:按"目标状态"执行(勾=打开并展开,取消=收起),
+      // 不再 toggle —— 否则勾选态与状态机会互相翻转
+      if (item.checked) {
+        if (!miniWindow || miniWindow.isDestroyed()) { miniPendingExpand = true; createMiniWindow() }
+        else if (!miniExpanded && !miniPendingExpand) expandMiniIsland()
+      } else {
+        if (miniPendingExpand) miniPendingExpand = false
+        else if (miniExpanded) collapseMiniIsland()
+      }
+    } },
     { label: '恢复歌词交互(取消点击穿透)', click: () => {
       if (lyricWindow && !lyricWindow.isDestroyed()) {
         try {
@@ -1045,6 +1238,7 @@ function createTray() {
 
   tray.setToolTip(APP_NAME)
   tray.setContextMenu(contextMenu)
+  trayMenu = contextMenu // 「灵动岛」勾选态按 id 找回并更新(见 syncTrayIsland)
   tray.on('double-click', () => {
     if (mainWindow) { mainWindow.show(); mainWindow.focus() }
   })
@@ -1264,10 +1458,9 @@ function setupIPC() {
   })
   // get-folder-watch 已拆到 electron/ipc/system.js
 
-  // 迷你播放器
+  // 迷你播放器开关(走具名函数:Ctrl+Alt+H 的 globalShortcut 回调直调同一个)
   ipcMain.on('mini:toggle', () => {
-    if (miniWindow) { miniWindow.close(); miniWindow = null }
-    else createMiniWindow()
+    toggleMiniWindowFromMain()
   })
 
   // 小窗菜单的勾选态:渲染端回推(播放模式 / 桌面歌词开关)
@@ -1461,7 +1654,52 @@ function setupIPC() {
     if (!miniWindow || miniWindow.isDestroyed()) return
     if (event.sender !== miniWindow.webContents) return
     _miniReadySignaled = true
+    // 先把整体状态交给渲染端(含 expanded),再显示窗口 —— 首帧尽量就是最终形态
+    replayMiniStateToMiniWindow()
     if (_showMiniOnce) _showMiniOnce()
+  })
+
+  // ===== 两态岛(小窗展开/收起)=====
+  // 三处入口(小窗按钮/播放栏按钮)统一发这个命令;托盘在主进程内直调 toggleMiniIsland
+  ipcMain.on('mini:toggle-island', (event) => {
+    const fromMini = miniWindow && !miniWindow.isDestroyed() && event.sender === miniWindow.webContents
+    const fromMain = mainWindow && !mainWindow.isDestroyed() && event.sender === mainWindow.webContents
+    if (!fromMini && !fromMain) return
+    toggleMiniIsland()
+  })
+
+  // 两态岛展开页数据(与 mini:update 同构:主窗发送 → 这里缓存并转发 → 迷你窗)
+  ipcMain.on('mini:lyrics', (event, data) => {
+    lastMiniLyrics = data
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:lyrics', data)
+  })
+  ipcMain.on('mini:lyric-index', (event, data) => {
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:lyric-index', data)
+  })
+  ipcMain.on('mini:queue', (event, data) => {
+    lastMiniQueue = data
+    if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:queue', data)
+  })
+  // 队列页点击跳播:转给主窗口(由它调 playerStore.playIndex,传完整队列的绝对索引)
+  ipcMain.on('mini:play-index', (event, index) => {
+    if (mainWindow && !mainWindow.isDestroyed() && Number.isInteger(index)) {
+      mainWindow.webContents.send('mini:play-index', index)
+    }
+  })
+
+  // 拖动结束(渲染端只在"真的拖动过"之后才发):顶边吸附 + 主动落盘 ——
+  // 不依赖 moved 的 400ms 前置锁节流(拖动期间可能已写过一次,吸附结果会被吃掉)
+  ipcMain.on('mini:drag-end', (event) => {
+    if (!miniWindow || miniWindow.isDestroyed()) return
+    if (event.sender !== miniWindow.webContents) return
+    try {
+      const b = miniWindow.getBounds()
+      const wa = screen.getDisplayMatching(b).workArea
+      let next = b
+      if (Math.abs(b.y - wa.y) < MINI_SNAP_EDGE) next = Object.assign({}, b, { y: wa.y })
+      if (next.y !== b.y) miniWindow.setBounds(next)
+      persistMiniPos(next)
+    } catch (_) {}
   })
 
   // 迷你播放器控制命令转发到主窗口
@@ -1681,6 +1919,9 @@ app.whenReady().then(async () => {
         try {
           const ok = globalShortcut.register(accel, () => {
             try {
+              // 迷你窗显隐在**主进程内直接执行**:主窗收进托盘、岛也没开时没有任何可见窗口,
+              // 转发给"可见窗口"会把动作丢掉(岛就再也唤不回来了)
+              if (action === 'toggleMini') { toggleMiniWindowFromMain(); return }
               const w = BrowserWindow.getAllWindows().find(x => x.isVisible() && !x.isDestroyed())
               if (w && !w.webContents.isDestroyed()) w.webContents.send('user-shortcut', action)
             } catch (_) {}

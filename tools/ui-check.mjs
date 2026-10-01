@@ -13,7 +13,7 @@
  *    · 打包版占着音频设备时,沙箱里拿到的频域数据全是 0 →"频谱在动"那条会假红;
  *    · 两者共用一个 userData 的单实例锁,同时跑还可能互相抢窗口状态。
  */
-import { app, BrowserWindow, ipcMain, Menu } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -84,6 +84,13 @@ function ensureDuplicateFixture () {
 }
 
 require(path.join(here, '..', 'electron', 'main.js'))
+// 捕获托盘菜单(两态岛的"托盘入口"断言要用):菜单没有公开的读取 API,
+// main.js 在 whenReady 里建托盘,这里先包一层 setContextMenu 把它建好的菜单存下来
+let __trayMenu = null
+{
+  const _origSetContextMenu = Tray.prototype.setContextMenu
+  Tray.prototype.setContextMenu = function (menu) { __trayMenu = menu; return _origSetContextMenu.call(this, menu) }
+}
 // 脚本自己出错(比如引用未声明的变量)会让整个流程静默停住、进程不退 ——
 // 外面看起来就是"卡死",只能靠外层超时才结束(这次就白等了 20 分钟)。这里让它立刻可见。
 process.on('unhandledRejection', (e) => { console.error('✗ 检查脚本内部错误(未处理的 Promise):', e && e.stack || e); app.exit(1) })
@@ -1320,6 +1327,196 @@ app.whenReady().then(async () => {
     await sleep(3000)
     await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
     await sleep(800)
+  }
+
+  // 12b) 两态岛(2026-10-01):迷你播放器原位升级 —— 新增「岛」按钮(小窗 / 播放栏两处 / 托盘共三处入口),
+  //      点击展开为 320×420 的三页面板(播放控制 / 歌词 / 队列)。这里验:默认位置、展开收起几何、
+  //      三处入口、顶边吸附(含持久化)、切页/跳播/音量滑杆/双击作用域。结束时小窗是关闭态。
+  {
+    const { screen } = require('electron')
+    const wa = screen.getPrimaryDisplay().workArea
+    // 清掉历史 miniPos(默认 Electron userData 跨次运行会留下上次拖动的位置)→ 才能验"首开默认位置"
+    await run(`(() => { try { window.electronAPI.storeSet('miniPos', null) } catch (e) {} return true })()`)
+    await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+    await sleep(3400)
+    const mw = findMini()
+    if (!mw) {
+      check('两态岛:小窗能打开(后续断言的前提)', false, '窗口不在')
+    } else {
+      const mrun = (code) => mw.webContents.executeJavaScript(code, true)
+      const expectX = wa.x + Math.round((wa.width - 320) / 2)
+      const near = (a, b, tol = 2) => Math.abs(a - b) <= tol
+      const b0 = mw.getBounds()
+      check('两态岛:首开默认位置 = 工作区顶部居中(距顶 ~10px;此前 Electron 默认居中在屏幕中央)',
+        near(b0.x, expectX) && b0.y >= wa.y && b0.y <= wa.y + 12 && near(b0.width, 320) && near(b0.height, 80),
+        `实际 ${JSON.stringify(b0)} 期望 x≈${expectX} y≈${wa.y + 10}`)
+
+      // ① 岛按钮(小窗内):展开 ↔ 收起,几何 320×420 ↔ 320×80,收起精确回原位
+      const clickIsland = () => mrun(`(() => { const b=document.querySelector('.mini-btn--island'); if(!b) return false; b.click(); return true })()`)
+      await clickIsland(); await sleep(650)
+      const b1 = mw.getBounds()
+      const dom1 = await mrun(`(() => ({ cls: document.querySelector('.mini-player').classList.contains('mini-player--expanded'), panel: !!document.querySelector('.mini-panel'), dots: document.querySelectorAll('.mini-dot').length }))()`)
+      check('两态岛:小窗岛按钮展开到 320×420(面板与 3 个分页圆点出现,窗口位置不动)',
+        near(b1.width, 320) && near(b1.height, 420) && near(b1.x, b0.x) && near(b1.y, b0.y) && dom1.cls === true && dom1.panel === true && dom1.dots === 3,
+        `bounds ${JSON.stringify(b1)} dom ${JSON.stringify(dom1)}`)
+      await clickIsland(); await sleep(750)
+      const b2 = mw.getBounds()
+      check('两态岛:再点收起回 320×80,且精确回到原位(不漂)',
+        near(b2.width, 320) && near(b2.height, 80) && near(b2.x, b0.x) && near(b2.y, b0.y),
+        `bounds ${JSON.stringify(b2)} 期望 ${JSON.stringify(b0)}`)
+
+      // ② 顶边吸附:真拖到距顶 20px 内松手 → 贴顶;重开窗仍在贴顶(说明已落盘)
+      mw.setBounds({ x: wa.x + 200, y: wa.y + 40, width: 320, height: 80 })
+      await sleep(300)
+      await mrun(`(() => {
+        const fire = (t, x, y) => document.dispatchEvent(new MouseEvent(t, { screenX: x, screenY: y, buttons: 1, button: 0, bubbles: true }))
+        fire('mousedown', 800, 500)
+        for (let i = 1; i <= 3; i++) fire('mousemove', 800, 500 - i * 10)
+        fire('mouseup', 800, 470)
+        return true
+      })()`)
+      await sleep(900)
+      const b3 = mw.getBounds()
+      check('两态岛:拖到距顶 20px 内松手 → 吸附贴顶(拖动本身的 1:1 跟手仍由第 12 节守)',
+        b3.y === wa.y, `y=${b3.y} 期望 ${wa.y}`)
+      await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+      await sleep(900)
+      await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+      await sleep(3400)
+      const mw2 = findMini()
+      const bSnap = mw2 ? mw2.getBounds() : null
+      check('两态岛:吸附后的位置已持久化(重开窗仍在贴顶)',
+        !!bSnap && bSnap.y === wa.y, bSnap ? `y=${bSnap.y}` : '窗口不在')
+
+      // ③ 播放栏入口:未开窗时点它 → 打开并直接展开(首帧即展开态)
+      if (findMini()) { await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`); await sleep(900) }
+      const barOk = await run(`(() => { const b=document.querySelector('.island-toggle'); if(!b) return false; b.click(); return true })()`)
+      await sleep(3800)
+      const mw3 = findMini()
+      const b4 = mw3 ? mw3.getBounds() : null
+      const dom4 = mw3 ? await mw3.webContents.executeJavaScript(`(() => ({ expanded: document.querySelector('.mini-player').classList.contains('mini-player--expanded'), panel: !!document.querySelector('.mini-panel') }))()`, true) : null
+      check('两态岛:播放栏入口 → 未开窗时打开并直接展开(首帧即展开态)',
+        barOk === true && !!b4 && near(b4.height, 420) && !!dom4 && dom4.expanded === true && dom4.panel === true,
+        `bounds ${JSON.stringify(b4)} dom ${JSON.stringify(dom4)}`)
+
+      // ④ 托盘入口:按"目标状态"执行(取消勾选=收起、勾选=展开;窗口都保留)
+      const trayItem = __trayMenu && __trayMenu.getMenuItemById('island')
+      if (!trayItem) {
+        check('两态岛:托盘菜单有「灵动岛」勾选项', false, '捕获不到托盘菜单或没有该项')
+      } else {
+        check('两态岛:托盘菜单有「灵动岛」勾选项', trayItem.type === 'checkbox', `type=${trayItem.type}`)
+        // 注意:不要预置 checked —— MenuItem.click 本身会先翻转 checked 再调 handler(与真实点击一致);
+        // 预置 + 翻转 = 反相(第一版就这么踩的:表现为"取消勾选反而展开了")
+        try { trayItem.click(trayItem) } catch (e) { console.error('托盘模拟失败:', e && e.message) }
+        await sleep(700)
+        const mwt = findMini()
+        const b5 = mwt ? mwt.getBounds() : null
+        check('两态岛:托盘点击(当前展开)→ 收起回 320×80(窗口保留)',
+          !!b5 && near(b5.width, 320) && near(b5.height, 80), b5 ? JSON.stringify(b5) : '窗口不在')
+        try { trayItem.click(trayItem) } catch (e) {}
+        await sleep(700)
+        const b6 = mwt && !mwt.isDestroyed() ? mwt.getBounds() : null
+        check('两态岛:托盘再点一次 → 展开到 320×420(勾选态同步为真)',
+          !!b6 && near(b6.height, 420) && trayItem.checked === true,
+          b6 ? `${JSON.stringify(b6)} checked=${trayItem.checked}` : '窗口不在')
+      }
+
+      // ⑤ 展开面板:音量滑杆 / 切页 / 队列跳播 / 歌词页 / 菜单项 / 双击作用域
+      const mw4 = findMini()
+      if (!mw4) {
+        check('两态岛:面板检查的前提(小窗在展开态)', false, '窗口不在')
+      } else {
+        const mrun4 = (code) => mw4.webContents.executeJavaScript(code, true)
+        // 音量滑杆(播放控制页;拖到 ~25%,小窗填充应跟随主窗回推的 volume)
+        const vol = await mrun4(`(async () => {
+          const track = document.querySelector('.mini-volume-track')
+          if (!track) return { err: '没有音量滑杆' }
+          const r = track.getBoundingClientRect()
+          const x = r.left + r.width * 0.25, y = r.top + r.height / 2
+          const fire = (t) => track.dispatchEvent(new MouseEvent(t, { clientX: x, clientY: y, bubbles: true }))
+          fire('mousedown'); fire('mousemove'); fire('mouseup')
+          await new Promise((res) => setTimeout(res, 900))
+          const fill = document.querySelector('.mini-volume-fill')
+          return { width: fill ? fill.style.width : null }
+        })()`)
+        check('两态岛:展开页音量滑杆 → 拖动后填充跟随(mini:volume → 主窗 setVolume → mini:update 回推)',
+          !!vol && vol.width === '25%', JSON.stringify(vol))
+
+        // 切页(点圆点)+ 队列跳播(绝对索引)+ 歌词页:一次往返读全,减少 IPC 往返
+        const firstTitle = String((items[0] && items[0].title) || '')
+        const seq = await mrun4(`(async () => {
+          const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+          const dotOf = (label) => [...document.querySelectorAll('.mini-dot')].find((d) => d.getAttribute('aria-label') === label)
+          const out = {}
+          const qdot = dotOf('队列')
+          if (!qdot) return { err: '没有队列圆点' }
+          qdot.click(); await wait(450)
+          let rows = [...document.querySelectorAll('.mini-queue-row')]
+          out.rows = rows.length
+          out.head = (document.querySelector('.mini-queue-head') || {}).textContent || ''
+          if (rows.length < 6) return Object.assign(out, { err: '队列行不足 6' })
+          // ① 跳到第 6 行(无本地歌词)→ 歌词页:要么渲染行、要么空态文案(绝不能是空白)
+          out.target5 = (rows[5].querySelector('.mini-queue-title') || {}).textContent || ''
+          rows[5].click(); await wait(1200)
+          out.after5 = (document.querySelector('.mini-title') || {}).textContent || ''
+          const ldot = dotOf('歌词'); if (ldot) ldot.click(); await wait(450)
+          out.emptyText = (document.querySelector('.mini-empty') || {}).textContent || ''
+          out.emptyLines = document.querySelectorAll('.lyric-line').length
+          // ② 跳回第 1 行(带本地歌词)→ 暂停(短夹具播完会跳走)→ 歌词页应渲染共用组件
+          const qdot2 = dotOf('队列'); if (qdot2) qdot2.click(); await wait(450)
+          rows = [...document.querySelectorAll('.mini-queue-row')]
+          rows[0].click(); await wait(1200)
+          out.after0 = (document.querySelector('.mini-title') || {}).textContent || ''
+          try { window.electronAPI.send('mini:toggle-play') } catch (e) {}
+          await wait(500)
+          const ldot2 = dotOf('歌词'); if (ldot2) ldot2.click(); await wait(550)
+          const lines = [...document.querySelectorAll('.lyric-line')]
+          out.lines = lines.length
+          out.single = lines.filter((l) => l.classList.contains('single')).length
+          out.marquee = lines.filter((l) => l.classList.contains('marquee')).length
+          out.text = lines.map((l) => l.textContent).join('|').slice(0, 120)
+          out.activeLine = !!document.querySelector('.lyric-line.active')
+          out.activeDot = (document.querySelector('.mini-dot.active') || {}).getAttribute
+            ? document.querySelector('.mini-dot.active').getAttribute('aria-label') : null
+          return out
+        })()`)
+        check('两态岛:队列页有行与"共 N 首",点两行跳播后小窗标题都跟着换(绝对索引)',
+          !!seq && seq.rows > 0 && /共 \d+ 首/.test(String(seq.head)) && seq.after5 === seq.target5 && seq.after0 === firstTitle,
+          JSON.stringify({ rows: seq && seq.rows, head: seq && seq.head, target5: seq && seq.target5, after5: seq && seq.after5, after0: seq && seq.after0 }))
+        check('两态岛:歌词页永远不是空白(有行渲染行,无行显示空态文案),圆点状态跟随',
+          !!seq && seq.activeDot === '歌词' && (seq.lines > 0 || String(seq.emptyText).includes('暂无歌词')),
+          JSON.stringify({ lines: seq && seq.lines, emptyText: seq && seq.emptyText, emptyLines: seq && seq.emptyLines, dot: seq && seq.activeDot }))
+        check('两态岛:带本地歌词的歌 → 歌词页渲染共用组件(单行裁剪、短行不滚)',
+          !!seq && seq.lines > 0 && seq.single === seq.lines && seq.marquee === 0 && String(seq.text).length > 0,
+          JSON.stringify({ lines: seq && seq.lines, single: seq && seq.single, marquee: seq && seq.marquee, active: seq && seq.activeLine, text: seq && seq.text }))
+
+        // 小窗右键菜单里有「空闲时淡出」勾选项(小窗设置唯一入口的约定不变)
+        let capturedMenu = null
+        const _p2 = Menu.prototype.popup
+        Menu.prototype.popup = function (...a) { capturedMenu = this; return _p2.apply(this, a) }
+        try {
+          const sz = mw4.getSize()
+          mw4.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(sz[0] / 2), y: 20, button: 'right', clickCount: 1 })
+          mw4.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(sz[0] / 2), y: 20, button: 'right', clickCount: 1 })
+          await sleep(900)
+        } finally { Menu.prototype.popup = _p2 }
+        const idleItem = capturedMenu ? capturedMenu.items.find((i) => i.label === '空闲时淡出') : null
+        check('两态岛:小窗右键菜单有「空闲时淡出」(默认不勾)',
+          !!idleItem && idleItem.type === 'checkbox' && idleItem.checked === false,
+          idleItem ? `type=${idleItem.type} checked=${idleItem.checked}` : '菜单里没有')
+        try { if (capturedMenu) capturedMenu.closePopup(mw4) } catch (e) {}
+
+        // 双击作用域:内容区双击不恢复主窗;header 双击恢复(小窗关闭)
+        const dblPanel = await mrun4(`(() => { const el=document.querySelector('.mini-panel'); if(!el) return false; el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true })()`)
+        await sleep(600)
+        const stillOpen = !!findMini()
+        check('两态岛:展开态内容区双击不恢复主窗(回归修复;此前 dblclick 挂在根元素上)',
+          dblPanel === true && stillOpen === true, `dispatched=${dblPanel} stillOpen=${stillOpen}`)
+        await mrun4(`(() => { const h=document.querySelector('.mini-header'); if(!h) return false; h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true })()`)
+        await sleep(1400)
+        check('两态岛:header 双击恢复主窗口(小窗关闭)', !findMini(), `closed=${!findMini()}`)
+      }
+    }
   }
 
   // 侧边栏:不再显示收藏数量徽标(导航项与计数本身都还在)

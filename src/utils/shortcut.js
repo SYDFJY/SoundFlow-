@@ -18,7 +18,11 @@ export const DEFAULT_SHORTCUTS = {
   prev: 'Control+ArrowLeft',
   volUp: 'Control+ArrowUp',
   volDown: 'Control+ArrowDown',
-  mute: 'Control+KeyM'
+  mute: 'Control+KeyM',
+  // 显示/隐藏悬浮播放器(迷你窗/岛);语义是"窗口显隐",打开=紧凑态。
+  // 用 I 而不是 WinIsland 的 H:H 在用户机器上已被其它程序占用(实测启动即报冲突),
+  // I 与"岛"的语义也更好记;被占用时走既有机制(警告 + 应用内仍可用),不静默失败
+  toggleMini: 'Control+Alt+KeyI'
 }
 
 /** 设置页/帮助面板共用的动作清单(顺序即界面顺序) */
@@ -28,7 +32,8 @@ export const SHORTCUT_ACTIONS = [
   { key: 'prev', label: '上一曲' },
   { key: 'volUp', label: '音量 +' },
   { key: 'volDown', label: '音量 -' },
-  { key: 'mute', label: '静音' }
+  { key: 'mute', label: '静音' },
+  { key: 'toggleMini', label: '显隐迷你窗/岛' }
 ]
 
 /**

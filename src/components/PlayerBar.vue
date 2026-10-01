@@ -125,6 +125,11 @@
         <Icon name="miniPlayer" :size="18" />
       </button>
 
+      <!-- 灵动岛(迷你窗的两态展开;与迷你按钮并列的第二个入口,同走 mini:toggle-island) -->
+      <button class="right-btn island-toggle" :class="{ active: playerStore.islandExpanded }" @click="toggleIsland" v-tooltip:top="'灵动岛(展开为面板)'">
+        <Icon :name="playerStore.islandExpanded ? 'islandCollapse' : 'islandExpand'" :size="18" />
+      </button>
+
       <!-- 桌面歌词 -->
       <button class="right-btn" :class="{ active: playerStore.desktopLyricState !== 0 }" :aria-label="t('player.lyrics')" :aria-pressed="playerStore.desktopLyricState !== 0" @click="playerStore.cycleDesktopLyric()" v-tooltip:top="t('player.lyrics')">
         <Icon name="lyrics" :size="18" />
@@ -400,6 +405,8 @@ function setTimer(minutes) {
   showTimer.value = false
 }
 function toggleMini() { window.electronAPI?.toggleMiniWindow() }
+// 灵动岛:未开窗→打开并展开;开着→展开/收起(展开状态由主进程经 mini:expanded 同步)
+function toggleIsland() { window.electronAPI?.toggleMiniIsland() }
 
 function setCustomTimer() {
   const m = customMinutes.value

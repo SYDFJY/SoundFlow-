@@ -275,6 +275,11 @@
               <Icon name="miniPlayer" :size="18" />
             </button>
 
+            <!-- 灵动岛(迷你窗的两态展开;与迷你按钮并列的第二个入口,同走 mini:toggle-island) -->
+            <button class="ctrl-btn ctrl-btn--small island-toggle" :class="{ active: playerStore.islandExpanded }" @click="toggleIsland" title="灵动岛(展开为面板)">
+              <Icon :name="playerStore.islandExpanded ? 'islandCollapse' : 'islandExpand'" :size="18" />
+            </button>
+
             <!-- 音量(默认收起,点击图标展开滑块) -->
             <div class="volume-control" :class="{ expanded: playerStore.volPanelOpen }">
               <button class="vol-btn" @click="playerStore.volPanelOpen = !playerStore.volPanelOpen" :title="t('player.volume')">
@@ -808,6 +813,8 @@ const { volInput, setVolume, volDragStart, volDragEnd, consumeVolDragging, confi
 // 播放页滚轮调音量:歌词区滚轮用于滚动歌词,不拦截(其余排除由 wheelVolume 内部处理)
 function onViewWheel(e) { wheelVolume(e, ['.lyrics-scroll, .lyrics-content, .lyric-mode']) }
 function toggleMini() { window.electronAPI?.toggleMiniWindow() }
+// 灵动岛:未开窗→打开并展开;开着→展开/收起(展开状态由主进程经 mini:expanded 同步)
+function toggleIsland() { window.electronAPI?.toggleMiniIsland() }
 
 // 点击歌词跳转到对应播放进度
 function seekToLine(line) {

@@ -7,9 +7,10 @@
  * **状态会翻转、界面毫无变化**(用户报的"功能只作用在歌词界面的歌词上"就是这个)。
  * 行渲染收敛到一处之后,再加行内功能不会再漏面。
  *
- * 面的差异只留一个开关:wordMode(逐字)。行时间戳不再显示(2026-09-24 按用户要求去掉)。
+ * 面的差异只留开关:wordMode(逐字)、scrollLong(岛歌词页的长行滚动)。
+ * 行时间戳不再显示(2026-09-24 按用户要求去掉)。
  */
-import { computed } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 
 const props = defineProps({
   /** 歌词行 { time, text } */
@@ -32,7 +33,16 @@ const props = defineProps({
   wordIdx: { type: Number, default: -1 },
   /** 逐字里"还没唱到"的字用的底色(原始设置色,不带行内计算) */
   wordColor: { type: String, default: '' },
-  translation: { type: String, default: '' }
+  translation: { type: String, default: '' },
+  /**
+   * 长行滚动(岛歌词页专用,默认关):
+   * 开启后本行强制单行+省略号;当前行超宽(>4px)时做 marquee ——
+   * 首停 1s → 匀速左移 32px/s → 尾停 1.5s → 平滑回位;暂停时停住、离开(卸载)即停。
+   * 其余两个面不传 → 行为与样式与之前完全一致(守卫:lyricSurfaces.test.js)
+   */
+  scrollLong: { type: Boolean, default: false },
+  /** 是否在播放(仅 marquee 用;默认 true,不影响既有两个面) */
+  playing: { type: Boolean, default: true }
 })
 defineEmits(['seek'])
 
@@ -57,12 +67,86 @@ function wordStyle (wi) {
   return { color: props.wordColor + (wi < props.wordIdx ? 'cc' : '99') }
 }
 const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText}` : '点击跳转'))
+
+// ===== 长行 marquee(仅 scrollLong 启用;只作用于当前行)=====
+// 平移作用在内层 .lyric-track 上,省略号/裁剪留在外层行上 —— 这样同一行的
+// 单行省略(非当前行)与滚动(当前行)可以共存,且逐字高亮(更内层的 span)不受影响。
+const trackEl = ref(null)
+const marqueeDist = ref(0)
+const marqueeOn = computed(() => props.scrollLong && active.value && marqueeDist.value > 0)
+const MARQUEE_SPEED = 32 // px/s
+const HOLD_START_MS = 1000
+const HOLD_END_MS = 1500
+const MIN_OVERFLOW = 4
+let rafId = null
+let clock = 0
+let lastTs = 0
+let ro = null
+
+function setX(x) {
+  if (trackEl.value) trackEl.value.style.transform = x ? `translateX(${(-x).toFixed(1)}px)` : ''
+}
+function measure() {
+  if (!props.scrollLong || !active.value || !trackEl.value) { marqueeDist.value = 0; return }
+  const track = trackEl.value
+  const host = track.parentElement
+  if (!host) return
+  const d = track.scrollWidth - host.clientWidth
+  marqueeDist.value = d > MIN_OVERFLOW ? d : 0
+}
+function tick(ts) {
+  rafId = requestAnimationFrame(tick)
+  const dt = lastTs ? Math.min(64, ts - lastTs) : 0
+  lastTs = ts
+  const dist = marqueeDist.value
+  if (!dist) { clock = 0; setX(0); return }
+  if (!props.playing) return // 暂停停住:时钟不推进,画面保持
+  const travel = (dist / MARQUEE_SPEED) * 1000
+  clock = (clock + dt) % (HOLD_START_MS + travel + HOLD_END_MS + travel)
+  const t = clock
+  let x
+  if (t < HOLD_START_MS) x = 0
+  else if (t < HOLD_START_MS + travel) x = ((t - HOLD_START_MS) / travel) * dist
+  else if (t < HOLD_START_MS + travel + HOLD_END_MS) x = dist
+  else x = dist - ((t - HOLD_START_MS - travel - HOLD_END_MS) / travel) * dist
+  setX(x)
+}
+function sync() {
+  measure()
+  if (marqueeDist.value > 0) {
+    if (!rafId) { lastTs = 0; rafId = requestAnimationFrame(tick) }
+  } else if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+    clock = 0
+    setX(0)
+  }
+}
+watch(
+  [active, () => props.scrollLong, () => props.line && props.line.text, () => props.translation],
+  () => { nextTick(sync) }
+)
+onMounted(() => {
+  sync()
+  // 字体就绪后宽度会变:复测一次(仓库教训:按宽度判断的事要在布局稳定后再量)
+  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => sync()).catch(() => {}) } catch (_) {}
+  try {
+    if (typeof ResizeObserver !== 'undefined' && trackEl.value && trackEl.value.parentElement) {
+      ro = new ResizeObserver(() => sync())
+      ro.observe(trackEl.value.parentElement)
+    }
+  } catch (_) {}
+})
+onUnmounted(() => {
+  if (rafId) { cancelAnimationFrame(rafId); rafId = null }
+  if (ro) { ro.disconnect(); ro = null }
+})
 </script>
 
 <template>
   <div
     class="lyric-line"
-    :class="{ active, left: align === 'left', near, far }"
+    :class="{ active, left: align === 'left', near, far, single: scrollLong, marquee: marqueeOn }"
     :style="{
       fontSize: fontPx,
       lineHeight: gap,
@@ -73,16 +157,18 @@ const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText
     :title="title"
     @click="$emit('seek', line)"
   >
-    <template v-if="showWords">
-      <span
-        v-for="(w, wi) in words" :key="wi"
-        class="lyric-word"
-        :class="{ cur: wi === wordIdx }"
-        :style="wordStyle(wi)"
-      >{{ w.c }}</span>
-    </template>
-    <template v-else>{{ line.text }}</template>
-    <div v-if="translation" class="lyric-trans">{{ translation }}</div>
+    <div class="lyric-track" ref="trackEl">
+      <template v-if="showWords">
+        <span
+          v-for="(w, wi) in words" :key="wi"
+          class="lyric-word"
+          :class="{ cur: wi === wordIdx }"
+          :style="wordStyle(wi)"
+        >{{ w.c }}</span>
+      </template>
+      <template v-else>{{ line.text }}</template>
+      <div v-if="translation" class="lyric-trans">{{ translation }}</div>
+    </div>
   </div>
 </template>
 
@@ -106,4 +192,13 @@ const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText
   text-overflow: ellipsis;
   margin-top: 2px;
 }
+
+/* 内层轨道:marquee 的平移发生在这里,裁剪/省略号留在外层行上 */
+.lyric-track { display: block; }
+/* 岛歌词页(传 scrollLong 才生效):单行 + 省略号 */
+.lyric-line.single { overflow: hidden; }
+.lyric-line.single .lyric-track { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 当前行超宽时转为滚动:轨道按内容宽度铺开,由 JS 设置 transform。
+   必须写在 single 之后(同特异性后写赢),它是 single 的"当前行"变体。 */
+.lyric-line.marquee .lyric-track { width: max-content; overflow: visible; text-overflow: clip; }
 </style>

@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 // 主进程 → 渲染进程 的事件通道白名单(渲染端通过 on() 订阅)
 const RECEIVE_CHANNELS = [
   'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'lyric:drag-start',
-  'mini:update', 'mini:state', 'mini:bg-sync', 'window-state',
+  'mini:update', 'mini:state', 'mini:bg-sync', 'mini:expanded', 'mini:lyrics', 'mini:lyric-index', 'mini:queue', 'mini:idle-sync', 'window-state',
   'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
   // 桌面歌词窗改了设置(字号/对齐/特效/逐字/翻译/背景/锁定/置顶/显示歌名)→ 主窗口落盘并回推
   'lyric-setting',
@@ -21,14 +21,25 @@ const RECEIVE_CHANNELS = [
   'player:seek', 'player:set-volume',
   // 主进程侧的失败上报(音源连不上/返回异常/返回的不是歌词)→ 诊断面板「最近失败」
   'failure-note',
+  // 迷你窗队列页点击跳播 → 主窗口执行(绝对索引)
+  'mini:play-index',
 ]
 // 渲染进程 → 主进程 的单向发送通道白名单
 const SEND_CHANNELS = [
   'smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore',
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
+  // 两态岛:展开/收起(小窗按钮/播放栏按钮统一命令;托盘在主进程内直调)
+  'mini:toggle-island',
+  // 两态岛的展开页数据(与 mini:update 同构:主窗发送 → 主进程缓存转发 → 迷你窗)
+  // mini:lyrics 低频全量;mini:lyric-index 高频轻量(节流由渲染端做);mini:queue 截断推送
+  'mini:lyrics', 'mini:lyric-index', 'mini:queue',
+  // 队列页点击跳播(绝对索引)→ 主窗口 playIndex
+  'mini:play-index',
   'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
   // 迷你小窗的拖动(与桌面歌词同一套:绝对坐标锚点,不用 app-region)
   'mini:drag-start', 'mini:drag-move',
+  // 拖动结束(仅真的拖动过才发):主进程据此做顶边吸附 + 主动落盘
+  'mini:drag-end',
   // 渲染端把"小窗菜单要显示的勾选态"(播放模式/桌面歌词开关)回推给主进程
   'mini:menu-state',
   'loudness-batch', 'loudness-stop', 'lyric:close', 'lyric:update', 'lyric:index',
@@ -133,6 +144,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 迷你播放器
   toggleMiniWindow: () => ipcRenderer.send('mini:toggle'),
+  // 两态岛:展开/收起(小窗按钮/播放栏按钮走同一命令;托盘在主进程内直调)
+  toggleMiniIsland: () => ipcRenderer.send('mini:toggle-island'),
+  // 岛展开状态(主进程权威):小窗用它切布局,主窗播放栏按钮用它显示激活态
+  onMiniExpanded: (cb) => {
+    const h = (_e, expanded) => cb(!!expanded)
+    ipcRenderer.on('mini:expanded', h)
+    return () => ipcRenderer.removeListener('mini:expanded', h)
+  },
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
   onMiniState: (cb) => {
     const h = (_e, open) => cb(open)
@@ -163,8 +182,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 于是主进程的 context-menu 永远不会触发 —— 右键菜单点了没反应就是这个原因。
   miniDragStart: (screenX, screenY) => ipcRenderer.send('mini:drag-start', screenX, screenY),
   miniDragMove: (screenX, screenY) => ipcRenderer.send('mini:drag-move', screenX, screenY),
+  sendMiniDragEnd: () => ipcRenderer.send('mini:drag-end'),
   // 小窗右键菜单的勾选态:主进程拿不到渲染端的 store,只能由渲染端回推(照 lyric:win-config 的范式)
   sendMiniMenuState: (state) => ipcRenderer.send('mini:menu-state', state),
+  // 两态岛展开页的数据推送(主窗口 store → 主进程缓存转发 → 迷你窗)
+  sendMiniLyrics: (data) => ipcRenderer.send('mini:lyrics', data),
+  sendMiniLyricIndex: (data) => ipcRenderer.send('mini:lyric-index', data),
+  sendMiniQueue: (data) => ipcRenderer.send('mini:queue', data),
+  // 迷你窗队列页点击跳播:传完整队列里的**绝对索引**
+  sendMiniPlayIndex: (index) => ipcRenderer.send('mini:play-index', index),
   sendLyricUpdate: (data) => ipcRenderer.send('lyric:update', data),
   sendLyricIndex: (idx) => ipcRenderer.send('lyric:index', idx),
   // 响度分析(ReplayGain)

@@ -93,6 +93,33 @@ describe('歌词行渲染必须两面共用', () => {
   })
 })
 
+describe('岛歌词页(第 3 个渲染面,2026-10-01)', () => {
+  const mini = () => read('src/views/MiniView.vue')
+
+  it('迷你窗的岛歌词页渲染 <LyricLine>(第 3 个使用点,不许再复制一份模板)', () => {
+    const s = mini()
+    expect(s, '岛歌词页没用共用组件(又在一份份复制模板)').toMatch(/<LyricLine/)
+    // 与另两面同一套约定:逐字 + 译文(译文由主窗推送,迷你窗没有 store)
+    expect(s, '岛歌词页没接逐字').toMatch(/:word-mode="true"/)
+    expect(s, '岛歌词页没接译文').toMatch(/:translation=/)
+    expect(s, '岛歌词页不该内联复制逐字渲染').not.toMatch(/class="lyric-word"/)
+  })
+
+  it('长行滚动只给岛歌词页,另两面与桌面歌词窗都不启用(默认关)', () => {
+    const line = read('src/components/LyricLine.vue')
+    expect(line, 'scrollLong 默认不是关(否则会悄悄改变另两面的行为)').toMatch(/scrollLong: \{ type: Boolean, default: false \}/)
+    expect(read('src/views/PlayerView.vue'), 'PlayerView 不该启用长行滚动').not.toMatch(/:scroll-long/)
+    expect(read('public/lyric.html'), '桌面歌词窗的长行滚动登记为后续可选,本轮不启用').not.toMatch(/scroll-long/)
+    expect(mini(), '岛歌词页没启用长行滚动').toMatch(/:scroll-long="true"/)
+  })
+
+  it('歌词页的"当前行"仍按 currentIdx 判定,不另起一套(~把当前行搞错是这类改动的典型翻车)', () => {
+    const s = mini()
+    expect(s, '岛歌词页没传 current-idx').toMatch(/:current-idx="lyricCurrentIdx"/)
+    expect(s, '切片没有以当前行为锚').toMatch(/const c = lyricCurrentIdx\.value < 0 \? 0 : lyricCurrentIdx\.value/)
+  })
+})
+
 describe('桌面歌词窗与应用侧设置同源', () => {
   it('推送载荷带样式/翻译/逐字(不再只有 time/text)', () => {
     const s = read('src/stores/playerStore.js')

@@ -202,6 +202,11 @@ function onGlobalKey(e) {
   } else if (matchShortcut(e, 'mute')) {
     e.preventDefault()
     playerStore.toggleMute()
+  } else if (matchShortcut(e, 'toggleMini')) {
+    // 兜底:该组合被别的程序占用、全局注册失败时,应用内仍能按
+    // (正常注册时按键被系统级吞掉,这里不会重复触发)
+    e.preventDefault()
+    window.electronAPI?.toggleMiniWindow?.()
   } else if ((e.code === 'Slash' && e.shiftKey) || e.code === 'NumpadDivide') {
     // ? 键:快捷键帮助面板
     e.preventDefault()
@@ -294,22 +299,29 @@ onMounted(async () => {
         else if (action === 'volUp') playerStore.setVolume(Math.min(1, playerStore.volume + 0.05))
         else if (action === 'volDown') playerStore.setVolume(Math.max(0, playerStore.volume - 0.05))
         else if (action === 'mute') playerStore.toggleMute()
+        // 显隐悬浮播放器(迷你窗/岛)。主进程对 toggleMini 有特判会直调,这里只是兜底:
+        // 岛自己有焦点时走这条(与全局注册路径等价,重复触发有 220ms 锁兜底)
+        else if (action === 'toggleMini') window.electronAPI.toggleMiniWindow?.()
       } catch (_) {}
     })
-    // 启动注册用户自定义快捷键:被占用/不支持的要让用户知道,否则表现为"按了没反应"
+    // 启动注册快捷键:被占用/不支持的要让用户知道,否则表现为"按了没反应"。
+    // 必须**总是**注册(loadShortcuts 与默认值合并):此前只在 localStorage 已有内容时才注册 ——
+    // 全新环境里默认快捷键从不进系统级(含新增的 Ctrl+Alt+H 显隐迷你窗),表现为"按了没反应"
     try {
-      const sc = JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}')
-      if (Object.keys(sc).length) {
-        window.electronAPI.updateShortcuts(sc).then((res) => {
-          // 裸键(如默认的空格)不做系统级注册是设计如此,不该在启动时提示"未能生效"
-          const failed = ((res && res.failed) || []).filter(f => f.reason !== 'needs-modifier')
-          if (failed.length) {
-            window.$toast?.(`${failed.length} 个全局快捷键未能生效(可能被其他程序占用),可在 设置 → 快捷键 查看`, 'warning', 6000)
-          }
-        }).catch(() => {})
-      }
+      const sc = loadShortcuts()
+      window.electronAPI.updateShortcuts(sc).then((res) => {
+        // 裸键(如默认的空格)不做系统级注册是设计如此,不该在启动时提示"未能生效"
+        const failed = ((res && res.failed) || []).filter(f => f.reason !== 'needs-modifier')
+        if (failed.length) {
+          window.$toast?.(`${failed.length} 个全局快捷键未能生效(可能被其他程序占用),可在 设置 → 快捷键 查看`, 'warning', 6000)
+        }
+      }).catch(() => {})
     } catch (_) {}
     window.electronAPI.onMiniState((open) => { playerStore.miniOpen = open })
+    // 岛展开状态(权威在主进程):播放栏两处岛按钮的激活态用它
+    window.electronAPI.onMiniExpanded((expanded) => { playerStore.islandExpanded = expanded })
+    // 岛队列页点击跳播(绝对索引)→ 与队列面板行点击同一个方法
+    window.electronAPI.on('mini:play-index', (idx) => { try { playerStore.playIndex(idx) } catch (_) {} })
     window.electronAPI.on('player:set-volume', (v) => { if (typeof v === 'number') playerStore.setVolume(v) })
     window.electronAPI.on('player:seek', (t) => { if (Number.isFinite(t)) playerStore.seek(t) })
     // 启动自动检查:发现新版本时提示(详情在设置-关于手动检查)

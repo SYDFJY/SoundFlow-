@@ -130,6 +130,35 @@ app.whenReady().then(async () => {
   const bare = registered.filter((c) => !/\+/.test(c))
   check(bare.length === 0, '没有把**裸键**注册成系统级热键(裸键会抢走所有程序的按键)', bare.length ? `被抢:${bare.join(', ')}` : '')
 
+  // ── 两态岛:Ctrl+Alt+I 默认注册(启动注册改为"总是带上合并后的默认值",不再依赖 localStorage 非空);
+  //    并且"主窗收托盘 + 岛关闭"时仍能唤回 —— 这是这条热键唯一的真实用途场景
+  //    (此前动作是"转发给第一个可见窗口",没有可见窗口时会被直接丢弃)。
+  //    必须放在下面"定制组合"段之前:那段会 updateShortcuts(只带一个动作) → unregisterAll,把启动注册全清掉
+  let islandRegistered = false
+  try { islandRegistered = globalShortcut.isRegistered('Control+Alt+I') } catch {}
+  check(islandRegistered, '两态岛:Ctrl+Alt+I(显隐迷你窗/岛)启动即默认注册', islandRegistered ? 'Control+Alt+I 已注册' : '没注册上')
+  {
+    const findMini = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && /#\/mini/.test(String(w.webContents.getURL())))
+    const hooks = global.__sfIslandTestHooks
+    check(!!hooks && typeof hooks.toggleMiniWindowFromMain === 'function',
+      '两态岛:测试钩子可用(直调与 globalShortcut 回调同一个函数)')
+    // 收进托盘(隐藏主窗);确保岛是关的
+    win.hide()
+    await sleep(400)
+    if (findMini()) { await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`); await sleep(900) }
+    const before = !!findMini()
+    if (hooks) hooks.toggleMiniWindowFromMain()
+    await sleep(3600)
+    const recalled = !!findMini()
+    check(!before && recalled, '两态岛:主窗收托盘 + 岛关闭时,热键路径仍能唤回岛(动作不再被"可见窗口"丢弃)',
+      `before=${before} recalled=${recalled}`)
+    // 清场:关岛 + 显示主窗
+    await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
+    await sleep(900)
+    win.show()
+    await sleep(400)
+  }
+
   // ── 定制组合:带 Alt/Shift 的必须能匹配上(此前录制器丢掉修饰键、匹配器又只认 Ctrl)
   // 注意只编码一次:setItem 要收到 JSON 文本(与应用自己的 JSON.stringify(map) 一致)。
   // 多编码一层会存进一个"字符串形式的 JSON",解析出来是 string 而不是对象 → 应用退回默认值,
@@ -210,11 +239,14 @@ app.whenReady().then(async () => {
   const bareKey = await record('KeyX')
   check(bareKey.ok === 'recording', '设置页能进入录制态', bareKey.ok)
   check(bareKey.saved === 'KeyX', '裸键仍然被保存下来(应用内可用)', JSON.stringify(bareKey.saved))
-  const bareText = (bareKey.toasts || []).map((t) => t.msg).join(' | ')
+  // 只取与本次录制动作相关的提示:启动注册现在总是带上全部默认值,其它动作的默认组合
+  // 也可能被本机其它程序占用 —— 那类"另一个动作注册失败"的提示与本条断言无关
+  const bareMine = (bareKey.toasts || []).filter((t) => t.msg.includes('播放/暂停'))
+  const bareText = bareMine.map((t) => t.msg).join(' | ')
   check(!/注册失败|无法注册/.test(bareText), '裸键不报"注册失败/无法注册"(它只是不做系统级注册)',
     bareText || '(没有提示)')
-  check(bareKey.toasts.length === 0 || (bareKey.toasts[0] || {}).type !== 'warning',
-    '裸键的提示不是警告级(避免看起来像出错)', JSON.stringify(bareKey.toasts))
+  check(bareMine.length === 0 || (bareMine[0] || {}).type !== 'warning',
+    '裸键的提示不是警告级(避免看起来像出错)', JSON.stringify(bareMine))
 
   const comboKey = await record('KeyY') // 无修饰键,用于对比
   await run(`(() => { const row = [...document.querySelectorAll('.setting-item')].find((it) => (it.querySelector('.label-text') || {}).textContent === '播放/暂停'); const btn = row && row.querySelector('button'); if (btn) { btn.click(); } return true })()`)
@@ -230,7 +262,9 @@ app.whenReady().then(async () => {
   const comboSaved = await run(`(() => JSON.parse(localStorage.getItem('soundflow_shortcuts') || '{}').playPause)()`)
   console.log('录制 Ctrl+Alt+Y →', JSON.stringify({ saved: comboSaved, toasts: comboToasts }))
   check(comboSaved === 'Control+Alt+KeyY', '带修饰键的组合被正确保存', String(comboSaved))
-  check((comboToasts || []).length === 0, '带修饰键的组合能正常注册(没有失败提示)', JSON.stringify(comboToasts))
+  // 同上:只断言"本次录制的动作"没有失败提示
+  const comboMine = (comboToasts || []).filter((t) => t.msg.includes('播放/暂停'))
+  check(comboMine.length === 0, '带修饰键的组合能正常注册(没有失败提示)', JSON.stringify(comboMine))
   // 关键:设置页录的组合必须**真的**到主进程并注册上 —— 此前把 Vue 响应式代理直接传给 IPC,
   // 结构化克隆失败抛 "An object could not be cloned",主进程根本没收到(录完要等重启才生效)
   let uiRegistered = false

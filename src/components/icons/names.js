@@ -98,6 +98,10 @@ export const ICONS = {
   // ---- 面板 / 形态 ----
   equalizer: SlidersVertical,
   miniPlayer: PictureInPicture2,
+  // 两态岛(迷你窗展开/收起):岛在紧凑条下方展开,所以"向下"是展开;
+  // 与排序用的 expand/collapse 语义分开命名,避免两处混用后各自改不动
+  islandExpand: ChevronDown,
+  islandCollapse: ChevronUp,
   timer: Timer,
   rewind: RotateCcw,
   fastForward: RotateCw,
