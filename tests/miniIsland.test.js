@@ -30,24 +30,36 @@ const line = () => read('src/components/LyricLine.vue')
 const shortcut = () => read('src/utils/shortcut.js')
 
 describe('尺寸契约:三处一致', () => {
-  it('main.js 顶层常量:紧凑 320×80 / 展开 320×420', () => {
+  it('main.js 顶层常量:卡片 320×80 / 胶囊 36×(180–420) / 展开 360×232', () => {
     const m = main()
     expect(m, '缺少 MINI_COMPACT_W = 320').toMatch(/const MINI_COMPACT_W = 320/)
     expect(m, '缺少 MINI_COMPACT_H = 80').toMatch(/const MINI_COMPACT_H = 80/)
-    expect(m, '缺少 MINI_EXPANDED_W = 320').toMatch(/const MINI_EXPANDED_W = 320/)
-    expect(m, '缺少 MINI_EXPANDED_H = 420').toMatch(/const MINI_EXPANDED_H = 420/)
+    expect(m, '缺少 MINI_CAPSULE_H = 36').toMatch(/const MINI_CAPSULE_H = 36/)
+    expect(m, '缺少 MINI_CAPSULE_MIN_W = 184(8 的倍数,中心才能落在物理像素网格上)').toMatch(/const MINI_CAPSULE_MIN_W = 184/)
+    expect(m, '缺少 MINI_CAPSULE_MAX_W = 416(同上是 8 的倍数)').toMatch(/const MINI_CAPSULE_MAX_W = 416/)
+    expect(m, '缺少 MINI_EXPANDED_W = 360').toMatch(/const MINI_EXPANDED_W = 360/)
+    expect(m, '缺少 MINI_EXPANDED_H = 232').toMatch(/const MINI_EXPANDED_H = 232/)
   })
-  it('MiniView 的 CSS 变量与 main.js 一致(320/80/420)', () => {
+  it('MiniView 的 CSS 变量与 main.js 一致(卡片 320/80、胶囊 36、展开 360 / 面板 200 + 指示点 24)', () => {
     const s = mini()
     expect(s, 'CSS 缺 --mini-compact-w: 320px').toMatch(/--mini-compact-w: 320px;/)
     expect(s, 'CSS 缺 --mini-compact-h: 80px').toMatch(/--mini-compact-h: 80px;/)
-    expect(s, 'CSS 缺 --mini-expanded-h: 420px').toMatch(/--mini-expanded-h: 420px;/)
+    expect(s, 'CSS 缺 --mini-capsule-h: 36px').toMatch(/--mini-capsule-h: 36px;/)
+    expect(s, 'CSS 缺 --mini-expanded-w: 360px').toMatch(/--mini-expanded-w: 360px;/)
+    expect(s, 'CSS 缺 --mini-panel-h: 200px').toMatch(/--mini-panel-h: 200px;/)
+    expect(s, 'CSS 缺 --mini-pager-h: 24px').toMatch(/--mini-pager-h: 24px;/)
   })
-  it('展开高度分解对得上:header 80 + 面板 312 + 底栏 28 = 420', () => {
+  it('展开高度分解对得上:面板 200 + 间隙 8 + 指示点区 24 = 232', () => {
+    const m = main(), s = mini()
+    expect(m, 'MINI_EXPANDED_H 不是 232(200+24+8)').toMatch(/const MINI_EXPANDED_H = 232/)
+    expect(s, '面板没按变量定尺寸').toMatch(/\.mini-panel \{ flex: 0 0 auto; width: var\(--mini-expanded-w\); height: var\(--mini-panel-h\);/)
+    expect(s, '指示点区没按变量定尺寸').toMatch(/\.mini-pager \{ flex: 0 0 auto; height: var\(--mini-pager-h\);/)
+  })
+  it('胶囊内边距合计与脚本测量常量一致(10 左 + 24 封面 + 8 间距 + 14 右 = 56)', () => {
     const s = mini()
-    expect(s, '面板不再是 312px').toMatch(/\.mini-panel \{ flex: 0 0 auto; height: 312px;/)
-    expect(s, '底栏不再是 28px').toMatch(/\.mini-pager \{ flex: 0 0 auto; height: 28px;/)
-    expect(s, 'header 没钉在紧凑高度上').toMatch(/\.mini-header \{[\s\S]{0,120}height: var\(--mini-compact-h\)/)
+    expect(s, '脚本里没有 CAPSULE_INSETS = 56').toMatch(/const CAPSULE_INSETS = 56/)
+    expect(s, '封面尺寸变了(24 是内边距合计的一部分)').toMatch(/\.mini-capsule-cover \{\s+width: 24px; height: 24px;/)
+    expect(s, '胶囊内边距/间距变了(量宽会与窗口对不上)').toMatch(/gap: 8px;\s+padding: 0 14px 0 10px;/)
   })
   it('展开/收起/切页统一用弹簧近似曲线(常量只写一处)', () => {
     expect(mini(), '弹簧曲线不是统一常量').toMatch(/--mini-spring: cubic-bezier\(0\.34, 1\.56, 0\.64, 1\)/)
@@ -58,15 +70,17 @@ describe('放置与吸附', () => {
   it('首次默认位置 = 主显示器顶部居中,距顶 10px', () => {
     const m = main()
     expect(m, '缺少距顶偏移常量').toMatch(/const MINI_TOP_OFFSET = 10/)
-    expect(m, '没有按宽居中').toMatch(/Math\.round\(wa\.x \+ \(wa\.width - MINI_COMPACT_W\) \/ 2\)/)
+    // 以"对齐后的中心"反推 x(直接对 x 取整会把中心推偏,125% 缩放下实测偏 4px)
+    expect(m, '默认位置没按中心反推').toMatch(/const cx = alignToPhysicalGrid\(Math\.round\(wa\.x \+ wa\.width \/ 2\)\)/)
     expect(m, '默认位置没用偏移常量').toMatch(/initY = alignToPhysicalGrid\(wa\.y \+ MINI_TOP_OFFSET\)/)
+    expect(m, '缺少由中心算窗口框的helper').toMatch(/function boundsFromCenter\(centerX, y, width, height\)/)
   })
   it('位置对齐物理像素网格(否则 125% 缩放下外框被撑大:320×80 → 实测 320×83)', () => {
     const m = main()
     expect(m, '缺少对齐函数').toMatch(/function alignToPhysicalGrid\(v\)/)
     expect(m, '默认位置没对齐').toMatch(/initY = alignToPhysicalGrid\(wa\.y \+ MINI_TOP_OFFSET\)/)
     expect(m, '恢复位置没对齐').toMatch(/initY = alignToPhysicalGrid\(p\.y\)/)
-    expect(m, '展开目标没对齐(420 会被撑成 421)').toMatch(/y: alignToPhysicalGrid\(cur\.y\)/)
+    expect(m, '展开目标没按中心对齐(宽高都会落在半像素上)').toMatch(/boundsFromCenter\(centerX, cur\.y, MINI_EXPANDED_W, MINI_EXPANDED_H\)/)
     expect(m, '收起目标没对齐').toMatch(/y: alignToPhysicalGrid\(a\.y\)/)
   })
   it('吸附阈值 20px,判定发生在 mini:drag-end', () => {
@@ -123,7 +137,7 @@ describe('状态机(主进程是唯一权威)', () => {
   })
   it('渲染端只信主进程事件:展开时不自行假设 expanded', () => {
     const s = mini()
-    expect(s, '没有从 mini:expanded 同步').toMatch(/on\('mini:expanded', \(val\) => \{/)
+    expect(s, '没有从 mini:expanded 同步').toMatch(/onApi\('mini:expanded', \(val\) => \{/)
     const fn = /function toggleIsland\(\)[\s\S]*?\n\}/.exec(s)
     expect(fn, '找不到 toggleIsland').toBeTruthy()
     expect(fn[0], '展开时渲染端自行把 expanded 置 true 了(权威应在主进程)').not.toMatch(/expanded\.value = true/)
@@ -229,12 +243,14 @@ describe('监听/定时器都有卸载路径', () => {
     expect(fn[0], 'idle 定时器没清').toMatch(/clearTimeout\(idleTimer\)/)
     expect(fn[0], 'IPC 订阅没释放').toMatch(/_apiUnsubs/)
   })
-  it('LyricLine:marquee 的 rAF 与 ResizeObserver 在卸载时清掉', () => {
-    const l = line()
-    const fn = /onUnmounted\(\(\) => \{[\s\S]*?\n\}\)/.exec(l)
-    expect(fn, '找不到 onUnmounted').toBeTruthy()
+  it('marquee 的 rAF 与 ResizeObserver 在卸载时清掉(实现已抽到共用 composable)', () => {
+    const u = read('src/utils/useMarquee.js')
+    const fn = /onUnmounted\(\(\) => \{[\s\S]*?\n\s*\}\)/.exec(u)
+    expect(fn, '找不到 useMarquee 的 onUnmounted').toBeTruthy()
     expect(fn[0], 'marquee rAF 没停(离开歌词页会一直转)').toMatch(/cancelAnimationFrame\(rafId\)/)
     expect(fn[0], 'ResizeObserver 没断开').toMatch(/ro\.disconnect\(\)/)
+    // 一份实现:LyricLine 与岛歌词页都从 useMarquee 取,不许再各写一套
+    expect(line(), 'LyricLine 没用共用 composable').toMatch(/useMarquee\(\{/)
   })
 })
 
@@ -246,14 +262,14 @@ describe('marquee(长歌词滚动)', () => {
     expect(mini(), '岛歌词页没启用长行滚动').toMatch(/:scroll-long="true"/)
   })
   it('判定用 scrollWidth,阈值 4px(沿仓库"按宽度量"的教训)', () => {
-    const l = line()
-    expect(l, '没有用 scrollWidth 量').toMatch(/const d = track\.scrollWidth - host\.clientWidth/)
-    expect(l, '缺阈值常量').toMatch(/const MIN_OVERFLOW = 4/)
-    expect(l, '超宽判定没走阈值').toMatch(/marqueeDist\.value = d > MIN_OVERFLOW \? d : 0/)
-    expect(l, '字体就绪后没复测').toMatch(/document\.fonts\.ready\.then\(\(\) => sync\(\)\)/)
+    const u = read('src/utils/useMarquee.js')
+    expect(u, '没有用 scrollWidth 量').toMatch(/const d = track\.scrollWidth - host\.clientWidth/)
+    expect(u, '缺阈值常量').toMatch(/MARQUEE_MIN_OVERFLOW = 4/)
+    expect(u, '超宽判定没走阈值').toMatch(/dist\.value = d > MARQUEE_MIN_OVERFLOW \? d : 0/)
+    expect(u, '字体就绪后没复测').toMatch(/document\.fonts\.ready\.then\(\(\) => sync\(\)\)/)
   })
   it('暂停停住:时钟只在 playing 时推进', () => {
-    expect(line()).toMatch(/if \(!props\.playing\) return/)
+    expect(read('src/utils/useMarquee.js')).toMatch(/if \(!isPlaying\(\)\) return/)
   })
 })
 
@@ -273,6 +289,57 @@ describe('快捷键第 7 项(toggleMini)', () => {
     const a = app()
     expect(a, '启动注册又变成"localStorage 有内容才注册"').not.toMatch(/JSON\.parse\(localStorage\.getItem\('soundflow_shortcuts'\) \|\| '\{\}'\)/)
     expect(a).toMatch(/const sc = loadShortcuts\(\)\s+window\.electronAPI\.updateShortcuts\(sc\)/)
+  })
+})
+
+describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
+  it('默认胶囊;菜单两项 radio;切换走 setMiniCompactForm(落盘 + 告知渲染端)', () => {
+    const m = main()
+    expect(m, '默认不是胶囊').toMatch(/return storageData\.miniCompactForm === 'card' \? 'card' : 'capsule'/)
+    expect(m, '菜单缺「紧凑形态:胶囊」').toMatch(/label: '紧凑形态:胶囊', type: 'radio'/)
+    expect(m, '菜单缺「紧凑形态:卡片」').toMatch(/label: '紧凑形态:卡片', type: 'radio'/)
+    expect(m, '切换没落盘').toMatch(/storageData\.miniCompactForm = next/)
+    expect(m, '切换没告知渲染端').toMatch(/miniWindow\.webContents\.send\('mini:form-sync', next\)/)
+  })
+  it('mini:form-sync / mini:compact-size 三处同步(preload + 主进程 + 渲染端)', () => {
+    const p = pre(), m = main(), s = mini()
+    expect(p, 'preload 没收 mini:form-sync').toContain("'mini:form-sync'")
+    expect(p, 'preload 没放行 mini:compact-size').toContain("'mini:compact-size'")
+    expect(m, '主进程没接 mini:compact-size').toMatch(/ipcMain\.on\('mini:compact-size'/)
+    expect(m, '整体回放里没有形态').toMatch(/send\('mini:form-sync', miniCompactForm\(\)\)/)
+    expect(m, '胶囊宽度没记住(重启会先窄后宽把中心带偏)').toMatch(/storageData\.miniCompactW = w/)
+    expect(s, '渲染端没上报尺寸').toMatch(/window\.electronAPI\.sendMiniCompactSize\(\{ width \}\)/)
+    expect(s, '渲染端没接形态下发').toMatch(/onApi\('mini:form-sync', \(form\) => \{/)
+  })
+  it('胶囊:单击展开带 260ms 消歧、双击恢复保留(定时器卸载时清)', () => {
+    const s = mini()
+    expect(s, '没有消歧窗口常量').toMatch(/const CAPSULE_CLICK_DELAY = 260/)
+    expect(s, '单击没走定时器').toMatch(/capsuleClickTimer = setTimeout\(\(\) => \{[\s\S]{0,90}toggleIsland\(\)/)
+    expect(s, '双击没清掉单击定时器(会""又展开又恢复"")').toMatch(/function onCapsuleDblClick\(\) \{\s*\n\s*if \(capsuleClickTimer\) \{ clearTimeout\(capsuleClickTimer\); capsuleClickTimer = null \}/)
+    expect(s, '拖过之后的 click 还可能触发展开').toMatch(/function onCapsuleClick\(\) \{\s*\n\s*if \(suppressClick\) return/)
+    const un = /onUnmounted\(\(\) => \{[\s\S]*?\n\}\)/.exec(s)
+    expect(un[0], '消歧定时器没在卸载时清').toMatch(/if \(capsuleClickTimer\) \{ clearTimeout\(capsuleClickTimer\)/)
+  })
+  it('胶囊文案:当前句 → "歌名 · 歌手"兜底 → 完全无歌时 SoundFlow', () => {
+    const s = mini()
+    const fn = /const capsuleText = computed\(\(\) => \{[\s\S]*?\n\}\)/.exec(s)
+    expect(fn, '找不到胶囊文案').toBeTruthy()
+    expect(fn[0], '缺歌名·歌手兜底').toMatch(/return a \? `\$\{t\} · \$\{a\}` : t/)
+    expect(fn[0], '缺完全无歌时的兜底').toContain("'SoundFlow'")
+  })
+  it('指示点区在面板下方**外侧**(不在面板里),收起按钮就在旁边', () => {
+    const s = mini()
+    expect(s, '指示点区跑到面板里去了').toMatch(/<\/div>\s*<div class="mini-pager">/)
+    expect(s, '缺收起按钮').toMatch(/class="mini-collapse" @click="requestCollapse"/)
+    expect(s, '活动页不是长条胶囊').toMatch(/\.mini-dot\.active \{ width: 18px; border-radius: 3px; background: #fff; \}/)
+  })
+  it('媒体页(照参考图):大封面 + ••• / 进度条右端是"-剩余" / 大传输键 / 展开态拖拽区', () => {
+    const s = mini()
+    expect(s, '缺 •••(更多)按钮').toMatch(/class="mini-more" @click="openMiniMenu"/)
+    expect(s, '••• 没走小窗现有菜单(不该新增第二份)').toMatch(/window\.electronAPI\.openMiniMenu\(\)/)
+    expect(s, '缺剩余时间显示').toMatch(/'-' \+ formatTime\(Math\.max\(0, duration - currentTime\)\)/)
+    expect(s, '缺大播放键').toMatch(/class="mini-ctl mini-ctl--play"/)
+    expect(s, '展开态拖拽区标记丢了(展开态整块不可拖)').toMatch(/\.mini-drag-area/)
   })
 })
 

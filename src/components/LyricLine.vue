@@ -10,7 +10,8 @@
  * 面的差异只留开关:wordMode(逐字)、scrollLong(岛歌词页的长行滚动)。
  * 行时间戳不再显示(2026-09-24 按用户要求去掉)。
  */
-import { computed, ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { computed } from 'vue'
+import { useMarquee } from '@/utils/useMarquee'
 
 const props = defineProps({
   /** 歌词行 { time, text } */
@@ -69,77 +70,13 @@ function wordStyle (wi) {
 const title = computed(() => (props.timeText ? `点击跳转到 ${props.timeText}` : '点击跳转'))
 
 // ===== 长行 marquee(仅 scrollLong 启用;只作用于当前行)=====
+// 实现抽到 @/utils/useMarquee(岛歌词页的胶囊与这里共用同一份):
 // 平移作用在内层 .lyric-track 上,省略号/裁剪留在外层行上 —— 这样同一行的
 // 单行省略(非当前行)与滚动(当前行)可以共存,且逐字高亮(更内层的 span)不受影响。
-const trackEl = ref(null)
-const marqueeDist = ref(0)
-const marqueeOn = computed(() => props.scrollLong && active.value && marqueeDist.value > 0)
-const MARQUEE_SPEED = 32 // px/s
-const HOLD_START_MS = 1000
-const HOLD_END_MS = 1500
-const MIN_OVERFLOW = 4
-let rafId = null
-let clock = 0
-let lastTs = 0
-let ro = null
-
-function setX(x) {
-  if (trackEl.value) trackEl.value.style.transform = x ? `translateX(${(-x).toFixed(1)}px)` : ''
-}
-function measure() {
-  if (!props.scrollLong || !active.value || !trackEl.value) { marqueeDist.value = 0; return }
-  const track = trackEl.value
-  const host = track.parentElement
-  if (!host) return
-  const d = track.scrollWidth - host.clientWidth
-  marqueeDist.value = d > MIN_OVERFLOW ? d : 0
-}
-function tick(ts) {
-  rafId = requestAnimationFrame(tick)
-  const dt = lastTs ? Math.min(64, ts - lastTs) : 0
-  lastTs = ts
-  const dist = marqueeDist.value
-  if (!dist) { clock = 0; setX(0); return }
-  if (!props.playing) return // 暂停停住:时钟不推进,画面保持
-  const travel = (dist / MARQUEE_SPEED) * 1000
-  clock = (clock + dt) % (HOLD_START_MS + travel + HOLD_END_MS + travel)
-  const t = clock
-  let x
-  if (t < HOLD_START_MS) x = 0
-  else if (t < HOLD_START_MS + travel) x = ((t - HOLD_START_MS) / travel) * dist
-  else if (t < HOLD_START_MS + travel + HOLD_END_MS) x = dist
-  else x = dist - ((t - HOLD_START_MS - travel - HOLD_END_MS) / travel) * dist
-  setX(x)
-}
-function sync() {
-  measure()
-  if (marqueeDist.value > 0) {
-    if (!rafId) { lastTs = 0; rafId = requestAnimationFrame(tick) }
-  } else if (rafId) {
-    cancelAnimationFrame(rafId)
-    rafId = null
-    clock = 0
-    setX(0)
-  }
-}
-watch(
-  [active, () => props.scrollLong, () => props.line && props.line.text, () => props.translation],
-  () => { nextTick(sync) }
-)
-onMounted(() => {
-  sync()
-  // 字体就绪后宽度会变:复测一次(仓库教训:按宽度判断的事要在布局稳定后再量)
-  try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => sync()).catch(() => {}) } catch (_) {}
-  try {
-    if (typeof ResizeObserver !== 'undefined' && trackEl.value && trackEl.value.parentElement) {
-      ro = new ResizeObserver(() => sync())
-      ro.observe(trackEl.value.parentElement)
-    }
-  } catch (_) {}
-})
-onUnmounted(() => {
-  if (rafId) { cancelAnimationFrame(rafId); rafId = null }
-  if (ro) { ro.disconnect(); ro = null }
+const { trackEl, marqueeOn } = useMarquee({
+  isOn: () => props.scrollLong && active.value,
+  isPlaying: () => props.playing,
+  deps: [active, () => props.scrollLong, () => props.line && props.line.text, () => props.translation]
 })
 </script>
 

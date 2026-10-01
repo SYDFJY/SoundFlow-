@@ -63,12 +63,30 @@ const isDev = !app.isPackaged && !fs.existsSync(localDist)
 
 // ===== 迷你窗/两态岛尺寸契约 =====
 // 与 src/views/MiniView.vue 的 CSS 常量、tests/miniIsland.test.js 的期望值三处一致(有守卫测试)。
-const MINI_COMPACT_W = 320
+const MINI_COMPACT_W = 320 // 卡片形态(经典迷你播放器)
 const MINI_COMPACT_H = 80
-const MINI_EXPANDED_W = 320
-const MINI_EXPANDED_H = 420
+const MINI_CAPSULE_H = 36 // 胶囊形态:顶端居中的细胶囊(封面 + 一句歌词)
+const MINI_CAPSULE_MIN_W = 184 // 取 8 的倍数:这样"x 与宽都落在物理像素网格"和"水平中心也对齐网格"能同时成立
+const MINI_CAPSULE_MAX_W = 416 // (125% 缩放下 x/宽必须是 4 的倍数,中心才可能精确对齐;8 的倍数更稳)
+const MINI_EXPANDED_W = 360 // 展开面板(照 WinIsland 参考图:面板 360×200 + 面板下方的指示点区)
+const MINI_EXPANDED_H = 232
+const MINI_PANEL_H = 200
+const MINI_PAGER_H = 24
 const MINI_TOP_OFFSET = 10 // 首次出现的默认位置距工作区顶部(对齐 WinIsland 的 TOP_OFFSET=10)
 const MINI_SNAP_EDGE = 20 // 拖动结束后距顶边小于该值则吸附贴顶
+function miniCompactForm() {
+  return storageData.miniCompactForm === 'card' ? 'card' : 'capsule'
+}
+function miniCapsuleWidth(w) {
+  const v = Number.isFinite(w) ? w : MINI_CAPSULE_MIN_W
+  return Math.min(MINI_CAPSULE_MAX_W, Math.max(MINI_CAPSULE_MIN_W, Math.ceil(v / 8) * 8))
+}
+// 由"水平中心 + 宽高"算窗口框:中心对齐物理像素网格,宽取 8 的倍数 → x 自动落在网格上。
+// 直接对 x 取整会把中心推偏(实测每次 ±2、多次累积),所以一律以中心为锚。
+function boundsFromCenter(centerX, y, width, height) {
+  const cx = alignToPhysicalGrid(Math.round(centerX))
+  return { x: cx - width / 2, y: alignToPhysicalGrid(y), width, height }
+}
 
 // ========== 窗口引用 ==========
 // 主题→窗口底色映射(消除启动时窗口底色与主题不符的闪色;
@@ -111,6 +129,14 @@ let miniExpandAnchor = null // 展开前的紧凑帧 {x,y};收起时精确回到
 let miniExpandShiftY = 0 // 展开时为"底部贴边"整体上移的量(≤0);紧凑帧换算用
 let miniPendingExpand = false // 窗口还在加载时的"打开即展开",加载完应用
 let miniIslandLockUntil = 0 // 220ms 防抖:连点按钮不重复触发
+let miniSizeTimer = null // 紧凑态尺寸动画(胶囊随歌词伸缩/形态切换)的定时器
+// 胶囊的"意图水平中心":宽度伸缩**始终围绕它**换算,不按"当前已对齐的边界"反推 ——
+// 后者会在每次 alignToPhysicalGrid 取整时把中心带偏(实测报告两三次后偏 4px)。
+// 拖动/展开锚定/新建时会更新它。
+let miniCenterX = null
+// 迷你窗右键菜单的展示函数:由 createMiniWindow 赋值(菜单体要用它内部的局部设置帮手);
+// 右键触发 + 展开面板的「•••」按钮经 IPC(mini:open-menu)走同一条 —— 不新增第二份菜单
+let showMiniContextMenu = null
 
 // 把窗口框夹进"它所在显示器"的工作区(建窗/展开/收起都用它)
 function clampToWorkArea(bounds) {
@@ -177,10 +203,11 @@ function expandMiniIsland() {
   if (!miniWindow || miniWindow.isDestroyed() || miniExpanded) return
   let cur
   try { cur = miniWindow.getBounds() } catch (_) { return }
-  miniExpandAnchor = { x: cur.x, y: cur.y }
-  // 优先向下展开(y 不变);底部空间不够时 clampToWorkArea 整体上移贴底。
-  // 目标 y 对齐物理像素网格:否则 420 高也会被外框撑成 421(125% 缩放实测)
-  const target = clampToWorkArea({ x: cur.x, y: alignToPhysicalGrid(cur.y), width: MINI_EXPANDED_W, height: MINI_EXPANDED_H })
+  // 锚点带上紧凑帧的尺寸:收起时精确还原(卡片 320×80 / 胶囊 w×36 都适用)
+  miniExpandAnchor = { x: cur.x, y: cur.y, width: cur.width, height: cur.height }
+  // **围绕水平中心**展开(胶囊/卡片宽度不同,保持"顶端居中"的生长感);越界由夹取兜底
+  const centerX = Number.isFinite(miniCenterX) ? miniCenterX : cur.x + cur.width / 2
+  const target = clampToWorkArea(boundsFromCenter(centerX, cur.y, MINI_EXPANDED_W, MINI_EXPANDED_H))
   miniExpandShiftY = target.y - cur.y
   try { miniWindow.setBounds(target) } catch (_) {}
   miniExpanded = true
@@ -192,10 +219,16 @@ function collapseMiniIsland() {
   miniExpanded = false
   const a = miniExpandAnchor
   if (a) {
-    const target = clampToWorkArea({ x: a.x, y: alignToPhysicalGrid(a.y), width: MINI_COMPACT_W, height: MINI_COMPACT_H })
+    const target = clampToWorkArea({
+      x: alignToPhysicalGrid(a.x),
+      y: alignToPhysicalGrid(a.y),
+      width: a.width || MINI_COMPACT_W,
+      height: a.height || MINI_COMPACT_H
+    })
     try { miniWindow.setBounds(target) } catch (_) {}
   }
   miniExpandShiftY = 0
+  if (a) miniCenterX = a.x + (a.width || MINI_COMPACT_W) / 2 // 收起回锚点 → 中心随之复位
   broadcastMiniExpanded(false)
 }
 
@@ -224,13 +257,55 @@ function replayMiniStateToMiniWindow() {
   if (lastMiniQueue) send('mini:queue', lastMiniQueue)
   send('mini:idle-sync', miniIdleSyncPayload())
   send('mini:expanded', miniExpanded)
+  send('mini:form-sync', miniCompactForm())
 }
 
-// 悬浮播放器窗口显隐(迷你窗开/关);Ctrl+Alt+H 在 globalShortcut 回调里直调
+// 悬浮播放器窗口显隐(迷你窗开/关);Ctrl+Alt+I 在 globalShortcut 回调里直调
 function toggleMiniWindowFromMain() {
   if (miniWindow && !miniWindow.isDestroyed()) { miniWindow.close(); miniWindow = null }
   else createMiniWindow()
 }
+
+// 紧凑形态切换(胶囊/卡片):只落盘 + 告知渲染端;几何由渲染端按新形态上报尺寸后统一伸缩
+// (展开态不立刻改几何 —— 面板与形态无关,收起时自然会按新形态上报)
+function setMiniCompactForm(form) {
+  const next = form === 'card' ? 'card' : 'capsule'
+  storageData.miniCompactForm = next
+  saveStorage()
+  try { if (miniWindow && !miniWindow.isDestroyed()) miniWindow.webContents.send('mini:form-sync', next) } catch (_) {}
+}
+
+// 紧凑态尺寸变化用 ~180ms 缓动分步(setTimeout 近似 rAF;每步对齐物理像素网格)。
+// "拖动本就每帧 setBounds"这条链路已被验证过,所以这么改尺寸是安全的。
+function animateMiniCompactSize(target) {
+  if (!miniWindow || miniWindow.isDestroyed()) return
+  let from
+  try { from = miniWindow.getBounds() } catch (_) { return }
+  if (from.width === target.width && from.height === target.height) {
+    try { miniWindow.setBounds(target) } catch (_) {}
+    return
+  }
+  if (miniSizeTimer) { clearTimeout(miniSizeTimer); miniSizeTimer = null }
+  const steps = 10
+  let i = 0
+  const step = () => {
+    if (!miniWindow || miniWindow.isDestroyed()) { miniSizeTimer = null; return }
+    i++
+    const t = i / steps
+    const e = 1 - Math.pow(1 - t, 3) // ease-out cubic
+    const b = {
+      x: alignToPhysicalGrid(Math.round(from.x + (target.x - from.x) * e)),
+      y: alignToPhysicalGrid(Math.round(from.y + (target.y - from.y) * e)),
+      width: Math.round(from.width + (target.width - from.width) * e),
+      height: Math.round(from.height + (target.height - from.height) * e)
+    }
+    try { miniWindow.setBounds(b) } catch (_) {}
+    if (i < steps) miniSizeTimer = setTimeout(step, 16)
+    else { miniSizeTimer = null; try { miniWindow.setBounds(target) } catch (_) {} }
+  }
+  miniSizeTimer = setTimeout(step, 16)
+}
+
 // 测试钩子:系统级热键(RegisterHotKey)无法在自动化里真按,shortcut-check 需要直调
 // "与 globalShortcut 回调同一个函数"来验证"主窗收托盘 + 岛关闭时仍能唤回"。
 // 只挂一个只读引用,不改变任何生产行为。
@@ -742,35 +817,42 @@ function notifyMiniState(open) {
 function createMiniWindow() {
   if (miniWindow) { miniWindow.focus(); return }
 
+  // 初始尺寸按形态:卡片 320×80;胶囊 = 上次量到的宽度(miniCompactW) × 36 ——
+  // 开窗即用同一宽度,避免"先窄后宽"把水平中心带偏
+  const initForm = miniCompactForm()
+  const initW = initForm === 'card' ? MINI_COMPACT_W : miniCapsuleWidth(storageData.miniCompactW)
+  const initH = initForm === 'card' ? MINI_COMPACT_H : MINI_CAPSULE_H
+  miniCenterX = null // 新建窗口:中心随初始位置重建
   // 初始位置:有记忆就夹进所在工作区(显示器拔插后不留在屏外);没有就放主显示器顶部居中
   // (岛的心智;此前不设坐标时 Electron 默认把窗口居中在屏幕中央,不像"岛")
   let initX, initY
   const pos = storageData.miniPos || null
   if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
-    const p = clampToWorkArea({ x: pos.x, y: pos.y, width: MINI_COMPACT_W, height: MINI_COMPACT_H })
+    const p = clampToWorkArea({ x: pos.x, y: pos.y, width: initW, height: initH })
     initX = alignToPhysicalGrid(p.x); initY = alignToPhysicalGrid(p.y)
   } else {
     try {
       const wa = screen.getPrimaryDisplay().workArea
-      initX = alignToPhysicalGrid(Math.round(wa.x + (wa.width - MINI_COMPACT_W) / 2))
+      const cx = alignToPhysicalGrid(Math.round(wa.x + wa.width / 2)) // 先对齐中心,再反推 x
+      initX = cx - initW / 2
       initY = alignToPhysicalGrid(wa.y + MINI_TOP_OFFSET)
     } catch (_) {}
   }
-  // 迷你窗背景模式(设置页可改):transparent 模式不设 backgroundColor(绕开白底 bug),其余不透明
-  const miniBg = { mode: storageData.miniBgMode || 'dark', color: storageData.miniBgColor || '#161b22' }
-  const miniTransparent = miniBg.mode === 'transparent'
+  miniCenterX = Number.isFinite(initX) ? initX + initW / 2 : null
   miniWindow = new BrowserWindow({
-    width: MINI_COMPACT_W,
-    height: MINI_COMPACT_H,
+    width: initW,
+    height: initH,
     frame: false,
     // 置顶由小窗自己的菜单切换并持久化(此前写死 true:关掉置顶、重开又回来)
     alwaysOnTop: storageData.miniAlwaysOnTop !== false,
     resizable: false,
     skipTaskbar: true,
     show: false, // 渲染完成前不显示,避免闪现一帧空白/默认画面
-    ...(miniTransparent
-      ? { transparent: true, backgroundColor: '#00000000' } // 透明窗口:显式透明底,避免渲染前露黑/白底闪色
-      : { backgroundColor: miniBg.mode === 'white' ? '#ffffff' : miniBg.color }),
+    // 迷你窗**恒定透明**:卡片矩形底 / 胶囊底 / 展开圆角面板 + 面板外的指示点区 —— 三种形状都由
+    // CSS 画,窗口本身不该有底色。顺带简化:背景模式(深/白/自定义/透明)从此只改 CSS,
+    // **不再需要为它重建窗口**(旧实现每次切模式都关窗重建,拖透明度滑杆会连闪)
+    transparent: true,
+    backgroundColor: '#00000000',
     ...(Number.isFinite(initX) ? { x: initX, y: initY } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -834,7 +916,7 @@ function createMiniWindow() {
   // (参数是 ContextMenuParams);BrowserWindow 上那个同名场景叫 `system-context-menu`,
   // 只在标题栏这类非客户区触发。此前写成 `miniWindow.on('context-menu')`,回调**永远不会被调用**
   // —— 用户报的"右键小窗没反应"就是这个(把菜单内容做得再全也没用)。
-  miniWindow.webContents.on('context-menu', () => {
+  showMiniContextMenu = () => {
     const miniBg = {
       mode: storageData.miniBgMode || 'dark',
       color: storageData.miniBgColor || '#161b22',
@@ -844,9 +926,8 @@ function createMiniWindow() {
       timeColor: storageData.miniTimeColor || 'auto'
     }
     const presetColors = ['#161b22', '#1e90ff', '#2ecc71', '#e74c3c', '#f39c12']
-    // 应用背景模式并同步渲染端
+    // 应用背景模式并同步渲染端(窗口恒透明:背景模式只改 CSS,任何变化都不再重建窗口)
     const applyBg = (mode, color, alpha) => {
-      const prevMode = storageData.miniBgMode
       storageData.miniBgMode = mode
       if (color) storageData.miniBgColor = color
       if (typeof alpha === 'number') storageData.miniBgAlpha = alpha
@@ -861,10 +942,7 @@ function createMiniWindow() {
       }
       try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('mini:bg-sync', cfg) } catch {}
       if (miniWindow && !miniWindow.isDestroyed()) {
-        // 只有**窗口级**参数(透明 ↔ 不透明)变了才需要重建;
-        // 透明度只是 CSS 层的事 —— 此前每挪一档都关窗重建,拖动时窗口连续闪十几次
-        if (mode !== prevMode) recreateMiniWindow()
-        else { try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch {} }
+        try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch (_) {}
       }
     }
     /** 改文字色(可按元素:title/artist/time;窗口不用重建,只是 CSS 值) */
@@ -887,17 +965,7 @@ function createMiniWindow() {
         try { miniWindow.webContents.send('mini:bg-sync', cfg) } catch {}
       }
     }
-    /** 重建迷你窗(窗口参数随模式变化时用;保留位置) */
-    const recreateMiniWindow = () => {
-      if (!miniWindow || miniWindow.isDestroyed()) return
-      const pos = miniWindow.getPosition()
-      miniWindow.close()
-      miniWindow = null
-      setTimeout(() => {
-        if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
-        createMiniWindow()
-      }, 250)
-    }
+    /** 重建迷你窗(已废弃:窗口恒透明后不再需要为背景模式重建;保留此注释以免有人再引入) */
     const sendCmd = (cmd) => {
       try { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tray-command', cmd) } catch {}
     }
@@ -1011,6 +1079,8 @@ function createMiniWindow() {
           }
         }
       },
+      { label: '紧凑形态:胶囊', type: 'radio', checked: miniCompactForm() === 'capsule', click: () => setMiniCompactForm('capsule') },
+      { label: '紧凑形态:卡片', type: 'radio', checked: miniCompactForm() === 'card', click: () => setMiniCompactForm('card') },
       { type: 'separator' },
       {
         label: '恢复主窗口',
@@ -1027,7 +1097,8 @@ function createMiniWindow() {
       { label: '退出应用', click: () => { app.isQuitting = true; app.quit() } } // 与托盘一致:不设这个标志时 close 会被拦成隐藏,退不掉
     ])
     menu.popup({ window: miniWindow })
-  })
+  }
+  miniWindow.webContents.on('context-menu', () => { if (showMiniContextMenu) showMiniContextMenu() })
 
   // 小窗拖动:与桌面歌词同一套做法(绝对坐标锚点 + setBounds 锁尺寸)。
   // 为什么不用 CSS 的 -webkit-app-region: drag:**拖拽区域不把鼠标事件交给页面**,
@@ -1048,12 +1119,10 @@ function createMiniWindow() {
     try {
       // 与歌词窗同理:只调 setPosition 时非整数缩放(125%)下尺寸会随移动漂移,
       // 用 setBounds 一次设全并带上拖动开始时锁定的尺寸
-      miniWindow.setBounds({
-        x: Math.round(miniDragAnchor.winX + (screenX - miniDragAnchor.screenX)),
-        y: Math.round(miniDragAnchor.winY + (screenY - miniDragAnchor.screenY)),
-        width: miniDragAnchor.width,
-        height: miniDragAnchor.height
-      })
+      const bx = Math.round(miniDragAnchor.winX + (screenX - miniDragAnchor.screenX))
+      const by = Math.round(miniDragAnchor.winY + (screenY - miniDragAnchor.screenY))
+      miniWindow.setBounds({ x: bx, y: by, width: miniDragAnchor.width, height: miniDragAnchor.height })
+      miniCenterX = bx + miniDragAnchor.width / 2 // 拖过之后中心以新位置为准
     } catch (_) {}
   })
 
@@ -1471,12 +1540,10 @@ function setupIPC() {
     if (typeof state.rate === 'number') miniMenuState.rate = state.rate
   })
 
-  // 迷你窗背景变化:持久化。
-  // **窗口参数**(透明 ↔ 不透明)变了才重建;只改透明度就推一条 mini:bg-sync 让窗口自己改 CSS ——
-  // 设置页那个滑杆是 @input 触发的,此前每挪一档都关窗重建一次,拖一下连闪十几次。
+  // 迷你窗背景变化:**只改 CSS**(窗口恒透明),一律推 mini:bg-sync ——
+  // 旧实现里"透明 ↔ 不透明要重建窗口"的分支随恒透明一起退休(拖透明度滑杆曾连闪十几次)
   ipcMain.on('mini:bg-changed', (event, cfg) => {
     if (!cfg || !cfg.mode) return
-    const prevMode = storageData.miniBgMode
     storageData.miniBgMode = cfg.mode
     storageData.miniBgColor = cfg.color || storageData.miniBgColor || '#161b22'
     if (typeof cfg.alpha === 'number') storageData.miniBgAlpha = cfg.alpha
@@ -1493,17 +1560,26 @@ function setupIPC() {
       artistColor: storageData.miniArtistColor || 'auto',
       timeColor: storageData.miniTimeColor || 'auto'
     }
-    if (cfg.mode !== prevMode) {
-      const pos = miniWindow.getPosition()
-      miniWindow.close()
-      miniWindow = null
-      setTimeout(() => {
-        if (pos && !storageData.miniPos) storageData.miniPos = { x: pos[0], y: pos[1] }
-        createMiniWindow()
-      }, 250)
-    } else {
-      try { miniWindow.webContents.send('mini:bg-sync', next) } catch {}
-    }
+    try { miniWindow.webContents.send('mini:bg-sync', next) } catch {}
+  })
+
+  // 紧凑态尺寸上报:卡片固定 320×80;胶囊 = 渲染端量出来的文本宽 × 36。
+  // 主进程钳位 + 对齐 + **围绕水平中心**伸缩("顶端居中"的生长感),并记住胶囊宽度(重启不漂)
+  ipcMain.on('mini:compact-size', (event, size) => {
+    if (!miniWindow || miniWindow.isDestroyed()) return
+    if (event.sender !== miniWindow.webContents) return
+    if (miniExpanded) return // 展开态不受紧凑尺寸影响(收起时渲染端会再报一次)
+    if (!size || !Number.isFinite(size.width)) return
+    const capsule = miniCompactForm() === 'capsule'
+    const w = capsule ? miniCapsuleWidth(size.width) : MINI_COMPACT_W
+    const h = capsule ? MINI_CAPSULE_H : MINI_COMPACT_H
+    if (capsule) { storageData.miniCompactW = w; saveStorage() }
+    try {
+      const cur = miniWindow.getBounds()
+      if (cur.width === w && cur.height === h) return
+      if (!Number.isFinite(miniCenterX)) miniCenterX = cur.x + cur.width / 2
+      animateMiniCompactSize(clampToWorkArea(boundsFromCenter(miniCenterX, cur.y, w, h)))
+    } catch (_) {}
   })
 
   // ========== 桌面歌词(参考蓝韵:独立 lyric.html) ==========
@@ -1685,6 +1761,13 @@ function setupIPC() {
     if (mainWindow && !mainWindow.isDestroyed() && Number.isInteger(index)) {
       mainWindow.webContents.send('mini:play-index', index)
     }
+  })
+
+  // 展开面板的「•••」按钮 → 弹出同一条小窗右键菜单(菜单是唯一设置入口,不新增第二份)
+  ipcMain.on('mini:open-menu', (event) => {
+    if (!miniWindow || miniWindow.isDestroyed()) return
+    if (event.sender !== miniWindow.webContents) return
+    if (showMiniContextMenu) showMiniContextMenu()
   })
 
   // 拖动结束(渲染端只在"真的拖动过"之后才发):顶边吸附 + 主动落盘 ——

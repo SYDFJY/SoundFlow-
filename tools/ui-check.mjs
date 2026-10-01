@@ -1196,10 +1196,12 @@ app.whenReady().then(async () => {
   // 12) 迷你小窗:透明度能到 0、悬停提示在窗内、侧边栏不再有收藏徽标
   //     用户反馈:"背景透明选项还是不够透明,最好看不出来""悬停按钮出现的文字会被挡住"
   //     "侧边栏我的收藏旁边不要显示收藏了多少歌"
+  //     本节断言全部按**卡片形态**写:先把沙箱形态钉成 card(默认形态已改为胶囊,见 12b)
   const findMini = () => BrowserWindow.getAllWindows().find(
     (w) => !w.isDestroyed() && w !== win && /#\/mini/.test(String(w.webContents.getURL())))
   const miniAlive = () => !!findMini()
   if (!miniAlive()) {
+    await run(`(async () => { try { await window.electronAPI.storeSet('miniCompactForm', 'card') } catch (e) {} return true })()`)
     await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
     await sleep(3200)
   }
@@ -1302,12 +1304,13 @@ app.whenReady().then(async () => {
       check('小窗:透明模式能重建窗口', false, '重建后没找到窗口')
     } else {
       const bg = await mini2.webContents.executeJavaScript(`(() => {
-        const el=document.querySelector('.mini-player')
+        const el=document.querySelector('.mini-card')
+        const root=document.querySelector('.mini-player')
         const cs=el?getComputedStyle(el):null
         return {
           bg: cs?cs.backgroundColor:null,
           bodyMini: document.body.classList.contains('mini-window'),
-          transparentClass: el?el.classList.contains('mini-player--transparent'):null
+          transparentClass: root?root.classList.contains('mini-player--transparent'):null
         }
       })()`, true)
       console.log('小窗透明模式:', JSON.stringify(bg))
@@ -1329,14 +1332,22 @@ app.whenReady().then(async () => {
     await sleep(800)
   }
 
-  // 12b) 两态岛(2026-10-01):迷你播放器原位升级 —— 新增「岛」按钮(小窗 / 播放栏两处 / 托盘共三处入口),
-  //      点击展开为 320×420 的三页面板(播放控制 / 歌词 / 队列)。这里验:默认位置、展开收起几何、
-  //      三处入口、顶边吸附(含持久化)、切页/跳播/音量滑杆/双击作用域。结束时小窗是关闭态。
+  // 12b) 两态岛(v2:默认**歌词胶囊**,展开为参考图式面板 360×232)——
+  //      这里验:默认位置/胶囊几何、宽度随文本、单击展开与收起、顶边吸附(含持久化)、
+  //      三处入口、切页/跳播/音量滑杆/双击作用域、经菜单切换形态。结束时小窗是关闭态。
   {
     const { screen } = require('electron')
     const wa = screen.getPrimaryDisplay().workArea
-    // 清掉历史 miniPos(默认 Electron userData 跨次运行会留下上次拖动的位置)→ 才能验"首开默认位置"
-    await run(`(() => { try { window.electronAPI.storeSet('miniPos', null) } catch (e) {} return true })()`)
+    const near = (a, b, tol = 2) => Math.abs(a - b) <= tol
+    // 清掉历史 miniPos/宽度,并把形态钉成**胶囊**(默认形态,显式写死以便断言)
+    await run(`(async () => {
+      try {
+        await window.electronAPI.storeSet('miniPos', null)
+        await window.electronAPI.storeSet('miniCompactW', null)
+        await window.electronAPI.storeSet('miniCompactForm', 'capsule')
+      } catch (e) {}
+      return true
+    })()`)
     await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`)
     await sleep(3400)
     const mw = findMini()
@@ -1344,29 +1355,61 @@ app.whenReady().then(async () => {
       check('两态岛:小窗能打开(后续断言的前提)', false, '窗口不在')
     } else {
       const mrun = (code) => mw.webContents.executeJavaScript(code, true)
-      const expectX = wa.x + Math.round((wa.width - 320) / 2)
-      const near = (a, b, tol = 2) => Math.abs(a - b) <= tol
       const b0 = mw.getBounds()
-      check('两态岛:首开默认位置 = 工作区顶部居中(距顶 ~10px;此前 Electron 默认居中在屏幕中央)',
-        near(b0.x, expectX) && b0.y >= wa.y && b0.y <= wa.y + 12 && near(b0.width, 320) && near(b0.height, 80),
-        `实际 ${JSON.stringify(b0)} 期望 x≈${expectX} y≈${wa.y + 10}`)
+      const centerX0 = b0.x + b0.width / 2
+      const expectX = wa.x + Math.round(wa.width / 2)
+      check('两态岛:默认形态是胶囊 —— 高 36、宽在 184–416(8 的倍数)、顶端水平居中',
+        near(b0.height, 36) && b0.width >= 184 && b0.width <= 416 && b0.width % 8 === 0 && near(centerX0, expectX) && b0.y >= wa.y && b0.y <= wa.y + 12,
+        `实际 ${JSON.stringify(b0)} 中心=${Math.round(centerX0)} 期望中心≈${expectX} 高=36`)
 
-      // ① 岛按钮(小窗内):展开 ↔ 收起,几何 320×420 ↔ 320×80,收起精确回原位
-      const clickIsland = () => mrun(`(() => { const b=document.querySelector('.mini-btn--island'); if(!b) return false; b.click(); return true })()`)
-      await clickIsland(); await sleep(650)
+      // ① 宽度随文本:窗口宽 ≈ 文本 scrollWidth + 内边距(钳位区间内)
+      const widthCheck = await mrun(`(async () => {
+        const el = document.querySelector('.mini-capsule-track')
+        const text = el ? el.textContent.trim() : ''
+        await new Promise((r) => setTimeout(r, 250))
+        return { text, scroll: el ? el.scrollWidth : 0 }
+      })()`)
+      if (widthCheck && widthCheck.text) {
+        const want = Math.min(416, Math.max(184, Math.ceil((Math.ceil(widthCheck.scroll) + 56) / 8) * 8))
+        check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)',
+          near(b0.width, want, 3), `窗口=${b0.width} 期望=${want}(文本 ${JSON.stringify(widthCheck.text).slice(0, 40)} scroll=${widthCheck.scroll})`)
+      } else {
+        check('两态岛:胶囊宽度 = 文本宽 + 内边距(按文本伸缩,钳在 184–416)', false, `没有胶囊文本: ${JSON.stringify(widthCheck)}`)
+      }
+
+      // ② 单击胶囊 → 260ms 消歧后展开;收起按钮回胶囊
+      const clickCapsule = () => mrun(`(() => { const el=document.querySelector('.mini-capsule'); if(!el) return false; el.click(); return true })()`)
+      await clickCapsule(); await sleep(700)
       const b1 = mw.getBounds()
-      const dom1 = await mrun(`(() => ({ cls: document.querySelector('.mini-player').classList.contains('mini-player--expanded'), panel: !!document.querySelector('.mini-panel'), dots: document.querySelectorAll('.mini-dot').length }))()`)
-      check('两态岛:小窗岛按钮展开到 320×420(面板与 3 个分页圆点出现,窗口位置不动)',
-        near(b1.width, 320) && near(b1.height, 420) && near(b1.x, b0.x) && near(b1.y, b0.y) && dom1.cls === true && dom1.panel === true && dom1.dots === 3,
+      const dom1 = await mrun(`(() => ({
+        cls: document.querySelector('.mini-player').classList.contains('mini-player--expanded'),
+        panel: !!document.querySelector('.mini-panel'),
+        pager: !!document.querySelector('.mini-pager'),
+        dots: document.querySelectorAll('.mini-dot').length,
+        collapse: !!document.querySelector('.mini-collapse'),
+        bar: !!document.querySelector('.mini-bar'),
+        play: !!document.querySelector('.mini-ctl--play'),
+        more: !!document.querySelector('.mini-more')
+      }))()`)
+      check('两态岛:单击胶囊展开到 360×232(面板 + 面板外指示点区 + 收起按钮 + 媒体页三件套)',
+        near(b1.width, 360) && near(b1.height, 232) && dom1.cls === true && dom1.panel === true && dom1.pager === true &&
+        dom1.dots === 3 && dom1.collapse === true && dom1.bar && dom1.play && dom1.more,
         `bounds ${JSON.stringify(b1)} dom ${JSON.stringify(dom1)}`)
-      await clickIsland(); await sleep(750)
+      const pagerGeom = await mrun(`(() => {
+        const panel = document.querySelector('.mini-panel').getBoundingClientRect()
+        const pager = document.querySelector('.mini-pager').getBoundingClientRect()
+        return { panelBottom: Math.round(panel.bottom), pagerTop: Math.round(pager.top) }
+      })()`)
+      check('两态岛:指示点区在面板下方**外侧**(照参考图)', pagerGeom.pagerTop >= pagerGeom.panelBottom - 1, JSON.stringify(pagerGeom))
+      await mrun(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)
+      await sleep(800)
       const b2 = mw.getBounds()
-      check('两态岛:再点收起回 320×80,且精确回到原位(不漂)',
-        near(b2.width, 320) && near(b2.height, 80) && near(b2.x, b0.x) && near(b2.y, b0.y),
-        `bounds ${JSON.stringify(b2)} 期望 ${JSON.stringify(b0)}`)
+      check('两态岛:收起按钮回到胶囊(高 36,水平中心不变)',
+        near(b2.height, 36) && near(b2.x + b2.width / 2, centerX0), `bounds ${JSON.stringify(b2)} 期望中心≈${Math.round(centerX0)}`)
 
-      // ② 顶边吸附:真拖到距顶 20px 内松手 → 贴顶;重开窗仍在贴顶(说明已落盘)
-      mw.setBounds({ x: wa.x + 200, y: wa.y + 40, width: 320, height: 80 })
+      // ③ 顶边吸附:真拖到距顶 20px 内松手 → 贴顶;重开窗仍在贴顶(说明已落盘)
+      const curCompact = mw.getBounds()
+      mw.setBounds({ x: wa.x + 200, y: wa.y + 40, width: curCompact.width, height: curCompact.height })
       await sleep(300)
       await mrun(`(() => {
         const fire = (t, x, y) => document.dispatchEvent(new MouseEvent(t, { screenX: x, screenY: y, buttons: 1, button: 0, bubbles: true }))
@@ -1388,7 +1431,7 @@ app.whenReady().then(async () => {
       check('两态岛:吸附后的位置已持久化(重开窗仍在贴顶)',
         !!bSnap && bSnap.y === wa.y, bSnap ? `y=${bSnap.y}` : '窗口不在')
 
-      // ③ 播放栏入口:未开窗时点它 → 打开并直接展开(首帧即展开态)
+      // ④ 播放栏入口:未开窗时点它 → 打开并直接展开(首帧即展开态)
       if (findMini()) { await run(`(() => { try { window.electronAPI.toggleMiniWindow() } catch (e) {} return true })()`); await sleep(900) }
       const barOk = await run(`(() => { const b=document.querySelector('.island-toggle'); if(!b) return false; b.click(); return true })()`)
       await sleep(3800)
@@ -1396,10 +1439,10 @@ app.whenReady().then(async () => {
       const b4 = mw3 ? mw3.getBounds() : null
       const dom4 = mw3 ? await mw3.webContents.executeJavaScript(`(() => ({ expanded: document.querySelector('.mini-player').classList.contains('mini-player--expanded'), panel: !!document.querySelector('.mini-panel') }))()`, true) : null
       check('两态岛:播放栏入口 → 未开窗时打开并直接展开(首帧即展开态)',
-        barOk === true && !!b4 && near(b4.height, 420) && !!dom4 && dom4.expanded === true && dom4.panel === true,
+        barOk === true && !!b4 && near(b4.height, 232) && !!dom4 && dom4.expanded === true && dom4.panel === true,
         `bounds ${JSON.stringify(b4)} dom ${JSON.stringify(dom4)}`)
 
-      // ④ 托盘入口:按"目标状态"执行(取消勾选=收起、勾选=展开;窗口都保留)
+      // ⑤ 托盘入口:按"目标状态"执行(取消勾选=收起、勾选=展开;窗口都保留)
       const trayItem = __trayMenu && __trayMenu.getMenuItemById('island')
       if (!trayItem) {
         check('两态岛:托盘菜单有「灵动岛」勾选项', false, '捕获不到托盘菜单或没有该项')
@@ -1411,13 +1454,13 @@ app.whenReady().then(async () => {
         await sleep(700)
         const mwt = findMini()
         const b5 = mwt ? mwt.getBounds() : null
-        check('两态岛:托盘点击(当前展开)→ 收起回 320×80(窗口保留)',
-          !!b5 && near(b5.width, 320) && near(b5.height, 80), b5 ? JSON.stringify(b5) : '窗口不在')
+        check('两态岛:托盘点击(当前展开)→ 收起回胶囊(高 36;窗口保留)',
+          !!b5 && near(b5.height, 36) && b5.width >= 184 && b5.width <= 416, b5 ? JSON.stringify(b5) : '窗口不在')
         try { trayItem.click(trayItem) } catch (e) {}
         await sleep(700)
         const b6 = mwt && !mwt.isDestroyed() ? mwt.getBounds() : null
-        check('两态岛:托盘再点一次 → 展开到 320×420(勾选态同步为真)',
-          !!b6 && near(b6.height, 420) && trayItem.checked === true,
+        check('两态岛:托盘再点一次 → 展开到 360×232(勾选态同步为真)',
+          !!b6 && near(b6.height, 232) && near(b6.width, 360) && trayItem.checked === true,
           b6 ? `${JSON.stringify(b6)} checked=${trayItem.checked}` : '窗口不在')
       }
 
@@ -1458,7 +1501,9 @@ app.whenReady().then(async () => {
           // ① 跳到第 6 行(无本地歌词)→ 歌词页:要么渲染行、要么空态文案(绝不能是空白)
           out.target5 = (rows[5].querySelector('.mini-queue-title') || {}).textContent || ''
           rows[5].click(); await wait(1200)
-          out.after5 = (document.querySelector('.mini-title') || {}).textContent || ''
+          // 跳播后队列页的当前行高亮会跟着移动 —— 用它验证"跳的真是这一行"
+          // (若切回媒体页读标题,队列页已卸载;而此刻页面就在队列页)
+          out.after5 = (document.querySelector('.mini-queue-row.active .mini-queue-title') || {}).textContent || ''
           const ldot = dotOf('歌词'); if (ldot) ldot.click(); await wait(450)
           out.emptyText = (document.querySelector('.mini-empty') || {}).textContent || ''
           out.emptyLines = document.querySelectorAll('.lyric-line').length
@@ -1466,7 +1511,7 @@ app.whenReady().then(async () => {
           const qdot2 = dotOf('队列'); if (qdot2) qdot2.click(); await wait(450)
           rows = [...document.querySelectorAll('.mini-queue-row')]
           rows[0].click(); await wait(1200)
-          out.after0 = (document.querySelector('.mini-title') || {}).textContent || ''
+          out.after0 = (document.querySelector('.mini-queue-row.active .mini-queue-title') || {}).textContent || ''
           try { window.electronAPI.send('mini:toggle-play') } catch (e) {}
           await wait(500)
           const ldot2 = dotOf('歌词'); if (ldot2) ldot2.click(); await wait(550)
@@ -1504,17 +1549,34 @@ app.whenReady().then(async () => {
         check('两态岛:小窗右键菜单有「空闲时淡出」(默认不勾)',
           !!idleItem && idleItem.type === 'checkbox' && idleItem.checked === false,
           idleItem ? `type=${idleItem.type} checked=${idleItem.checked}` : '菜单里没有')
+        // 菜单里切换紧凑形态 → 卡片(radio 两项;收起后应变成 320×80 的经典卡片)
+        const formItem = capturedMenu ? capturedMenu.items.find((i) => i.label === '紧凑形态:卡片') : null
+        check('两态岛:右键菜单有「紧凑形态:胶囊/卡片」两项(radio)',
+          !!capturedMenu && capturedMenu.items.some((i) => i.label === '紧凑形态:胶囊' && i.type === 'radio') && !!formItem && formItem.type === 'radio',
+          capturedMenu ? `卡片项=${formItem ? formItem.type : '无'}` : '菜单里没有')
+        try { if (formItem) formItem.click(formItem) } catch (e) {}
+        await sleep(400)
         try { if (capturedMenu) capturedMenu.closePopup(mw4) } catch (e) {}
 
-        // 双击作用域:内容区双击不恢复主窗;header 双击恢复(小窗关闭)
+        // 双击作用域:展开态内容区双击不恢复主窗;收起后(卡片形态)双击 header 恢复
         const dblPanel = await mrun4(`(() => { const el=document.querySelector('.mini-panel'); if(!el) return false; el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true })()`)
         await sleep(600)
         const stillOpen = !!findMini()
         check('两态岛:展开态内容区双击不恢复主窗(回归修复;此前 dblclick 挂在根元素上)',
           dblPanel === true && stillOpen === true, `dispatched=${dblPanel} stillOpen=${stillOpen}`)
-        await mrun4(`(() => { const h=document.querySelector('.mini-header'); if(!h) return false; h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true })()`)
+        await mrun4(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)
+        await sleep(900)
+        const mw5 = findMini()
+        const b7 = mw5 ? mw5.getBounds() : null
+        const dom7 = mw5 ? await mw5.webContents.executeJavaScript(`(() => ({ card: !!document.querySelector('.mini-card'), header: !!document.querySelector('.mini-header') }))()`, true) : null
+        check('两态岛:菜单切到卡片形态后,收起回来是 320×80 的经典卡片',
+          !!b7 && near(b7.width, 320) && near(b7.height, 80) && !!dom7 && dom7.card === true && dom7.header === true,
+          `bounds ${JSON.stringify(b7)} dom ${JSON.stringify(dom7)}`)
+        if (mw5) {
+          await mw5.webContents.executeJavaScript(`(() => { const h=document.querySelector('.mini-header'); if(!h) return false; h.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return true })()`, true)
+        }
         await sleep(1400)
-        check('两态岛:header 双击恢复主窗口(小窗关闭)', !findMini(), `closed=${!findMini()}`)
+        check('两态岛:卡片 header 双击恢复主窗口(小窗关闭)', !findMini(), `closed=${!findMini()}`)
       }
     }
   }

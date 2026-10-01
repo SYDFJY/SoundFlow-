@@ -39,12 +39,14 @@ describe('小窗背景:透明度能到 0', () => {
     expect(m, '不透明度没有做成单选勾选的子菜单').toMatch(/label: '不透明度 ▸'/)
   })
 
-  it('只改透明度不重建窗口(设置页那个滑杆是 @input 触发的,重建会连续闪十几次)', () => {
+  it('窗口恒透明:背景模式只改 CSS,不再重建窗口(旧实现切"透明/不透明"要关窗重建)', () => {
     const s = read('electron/main.js')
     const fn = /ipcMain\.on\('mini:bg-changed'[\s\S]*?\n  \}\)/.exec(s)
     expect(fn, '没找到 mini:bg-changed').toBeTruthy()
-    expect(fn[0], '没按"模式变没变"分流重建').toMatch(/if \(cfg\.mode !== prevMode\)/)
-    expect(fn[0], '透明度变化时没把新样式推给小窗').toMatch(/miniWindow\.webContents\.send\('mini:bg-sync', next\)/)
+    expect(fn[0], '背景变化时没把新样式推给小窗').toMatch(/miniWindow\.webContents\.send\('mini:bg-sync', next\)/)
+    expect(fn[0], '又出现按模式重建窗口的分支(恒透明后不需要,重建会闪)').not.toMatch(/miniWindow\.close\(\)/)
+    expect(s, '窗口没有恒定透明(卡片/胶囊/展开面板的形状都靠 CSS 画,窗口本身不该有底色)')
+      .toMatch(/transparent: true,\s+backgroundColor: '#00000000',/)
   })
 
   it('透明模式把次要图层调淡(按钮/封面占位),不再是一块块底色', () => {

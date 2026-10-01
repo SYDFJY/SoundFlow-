@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron')
 // 主进程 → 渲染进程 的事件通道白名单(渲染端通过 on() 订阅)
 const RECEIVE_CHANNELS = [
   'menu-add-folder', 'menu-add-files', 'tray-command', 'global-hotkey', 'user-shortcut', 'lyric:drag-start',
-  'mini:update', 'mini:state', 'mini:bg-sync', 'mini:expanded', 'mini:lyrics', 'mini:lyric-index', 'mini:queue', 'mini:idle-sync', 'window-state',
+  'mini:update', 'mini:state', 'mini:bg-sync', 'mini:expanded', 'mini:form-sync', 'mini:lyrics', 'mini:lyric-index', 'mini:queue', 'mini:idle-sync', 'window-state',
   'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
   // 桌面歌词窗改了设置(字号/对齐/特效/逐字/翻译/背景/锁定/置顶/显示歌名)→ 主窗口落盘并回推
   'lyric-setting',
@@ -30,9 +30,13 @@ const SEND_CHANNELS = [
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
   // 两态岛:展开/收起(小窗按钮/播放栏按钮统一命令;托盘在主进程内直调)
   'mini:toggle-island',
+  // 展开面板的「•••」按钮 → 弹出小窗右键菜单(与右键同一条)
+  'mini:open-menu',
   // 两态岛的展开页数据(与 mini:update 同构:主窗发送 → 主进程缓存转发 → 迷你窗)
   // mini:lyrics 低频全量;mini:lyric-index 高频轻量(节流由渲染端做);mini:queue 截断推送
   'mini:lyrics', 'mini:lyric-index', 'mini:queue',
+  // 紧凑态尺寸上报(卡片 320×80;胶囊 = 量出的文本宽 × 36)—— 主进程钳位/对齐/围绕中心伸缩
+  'mini:compact-size',
   // 队列页点击跳播(绝对索引)→ 主窗口 playIndex
   'mini:play-index',
   'lyric:toggle', 'lyric:lock', 'lyric:click-through', 'lyric:pin',
@@ -152,6 +156,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('mini:expanded', h)
     return () => ipcRenderer.removeListener('mini:expanded', h)
   },
+  // 紧凑形态(胶囊/卡片;主进程权威,菜单切换后下发)
+  onMiniFormSync: (cb) => {
+    const h = (_e, form) => cb(form)
+    ipcRenderer.on('mini:form-sync', h)
+    return () => ipcRenderer.removeListener('mini:form-sync', h)
+  },
+  // 紧凑态尺寸上报(渲染端量好后告诉主进程;主进程钳位/对齐/围绕水平中心伸缩)
+  sendMiniCompactSize: (size) => ipcRenderer.send('mini:compact-size', size),
+  // 展开面板「•••」→ 小窗右键菜单(设置唯一入口,不新增第二份)
+  openMiniMenu: () => ipcRenderer.send('mini:open-menu'),
   sendMiniUpdate: (data) => ipcRenderer.send('mini:update', data),
   onMiniState: (cb) => {
     const h = (_e, open) => cb(open)

@@ -61,7 +61,12 @@ const ALLOW = {
     '.eq-extra-item span', '.eq-extra-item input[type="range"]',
     '.source-btn', '.source-btn:hover', '.source-btn.active',
     '.folder-item', '.folder-path', '.remove-btn', '.remove-btn:hover'],
-  'src/views/MiniView.vue': ['.mini-vol', '.mini-player:hover .mini-vol', '.mini-vol-icon', '.mini-vol-slider', '.mini-vol-slider::-webkit-slider-thumb']
+  'src/views/MiniView.vue': ['.mini-vol', '.mini-player:hover .mini-vol', '.mini-vol-icon', '.mini-vol-slider', '.mini-vol-slider::-webkit-slider-thumb',
+    // .mini-player--expanded → 展开高度不再挂在根元素上:窗口恒透明后"形状走 CSS",
+    //   高度改由 .mini-panel(200)+ 指示点区(24)+ 间隙分解(见 tests/miniIsland.test.js 的契约守卫)
+    '.mini-player--expanded',
+    // .mini-now-time → 媒体页时间改成一行两段(左已播 / 右"-剩余"),更名为 .mini-now-times
+    '.mini-now-time']
 }
 
 const selectors = (css) =>
