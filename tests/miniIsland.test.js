@@ -333,6 +333,8 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
     expect(fn[0], '空闲延迟没走 idle-sync 回推').toMatch(/miniWindow\.webContents\.send\('mini:idle-sync', miniIdleSyncPayload\(\)\)/)
     expect(m, '改设置后没即时重设窗口几何').toMatch(/function applyMiniConfigGeometry\(changedKey\)/)
     expect(m, '高 < 字号时没抬高度(字会被裁)').toMatch(/Math\.max\(Math\.round\(miniSetting\('capsuleBaseH'\) \* s\), Math\.round\(font\) \+ 12\)/)
+    expect(m, '派生高度没对齐物理像素网格(47 会被撑成 48)').toMatch(/const h = alignToPhysicalGrid\(rawH\)/)
+    expect(mini(), '渲染端的高度没做同样对齐(与窗口差 1px)').toMatch(/const h = alignPx\(Math\.max\(Math\.round\(islandCfg\.capsuleBaseH \* s\), font \+ 12\)\)/)
   })
   it('「岛设置…」:收起/未开窗时先展开再开面(挂起意图,不靠 sleep)', () => {
     const m = main(), s = mini()

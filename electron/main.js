@@ -113,11 +113,13 @@ function miniCompactForm() {
   return miniSetting('form') === 'card' ? 'card' : 'capsule'
 }
 // 胶囊派生几何:高 = round(基准高×缩放),且 **高 ≥ 字号 + 12**(否则字被裁);
+// 高度**对齐物理像素网格**(否则 125% 下 47 会被外框撑成 48 —— 与 x/宽同一条规则);
 // 宽度钳位 = [round8(最小宽×缩放), round8(上限×缩放)]
 function miniCapsuleGeo() {
   const s = miniSetting('capsuleScale')
   const font = miniSetting('capsuleFont')
-  const h = Math.max(Math.round(miniSetting('capsuleBaseH') * s), Math.round(font) + 12)
+  const rawH = Math.max(Math.round(miniSetting('capsuleBaseH') * s), Math.round(font) + 12)
+  const h = alignToPhysicalGrid(rawH)
   const minW = round8(miniSetting('capsuleMinW') * s)
   const maxW = Math.max(minW, round8(miniSetting('capsuleMaxW') * s))
   return { h, minW, maxW, font, scale: s }

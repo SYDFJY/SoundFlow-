@@ -432,11 +432,23 @@ const surfaceStyle = computed(() => ({ background: playerBg.value }))
 
 // ===== 岛设置的派生几何与 CSS 变量(基线对象是唯一事实源:样式与测量都从它算)=====
 const uiPx = (v) => Math.max(1, Math.round(v * islandCfg.panelScale)) // 面板内元素整体缩放
+// 与 main.js 的 alignToPhysicalGrid 同一规则:位置/尺寸对齐物理像素网格
+// (125% 缩放下,半像素的尺寸会被 Windows 的外框撑大 1px —— x/宽/高都要过这一关)
+function alignPx(v) {
+  const s = window.devicePixelRatio || 1
+  if (Number.isInteger(s)) return Math.round(v)
+  let step = 1
+  for (let i = 1; i <= 8; i++) {
+    const px = i * s
+    if (Math.abs(px - Math.round(px)) < 1e-6) { step = i; break }
+  }
+  return Math.round(Math.round(v / step) * step)
+}
 const capsuleGeo = computed(() => {
   const s = islandCfg.capsuleScale
   const px = (v) => Math.round(v * s)
   const font = Math.max(1, Math.round(islandCfg.capsuleFont * s))
-  const h = Math.max(Math.round(islandCfg.capsuleBaseH * s), font + 12) // 高 ≥ 字号 + 12,否则字被裁
+  const h = alignPx(Math.max(Math.round(islandCfg.capsuleBaseH * s), font + 12)) // 高 ≥ 字号 + 12,并对齐网格
   const insets = px(CAPSULE_BASE.padL) + px(CAPSULE_BASE.cover) + px(CAPSULE_BASE.gapL) +
     2 * islandCfg.lyricGap + px(CAPSULE_BASE.gapR) + px(CAPSULE_BASE.viz) + px(CAPSULE_BASE.padR)
   const minW = Math.max(8, Math.round(islandCfg.capsuleMinW * s / 8) * 8)
