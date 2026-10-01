@@ -47,15 +47,16 @@ describe('StatsView 总览数字必须跟随数据更新', () => {
     expect(s, 'onUnmounted 在 KeepAlive 下不会触发,别用它停动画链').not.toMatch(/onUnmounted\(/)
   })
 
-  it('报告的次数与时长读按天聚合表,不读播放日志(否则受 500 条上限影响)', () => {
-    // 历史是"播放日志"(上限 500 条),统计口径必须走按天聚合的 playStats
-    const agg = /const rangeAgg = computed\(\(\) => \{[\s\S]*?\n\}\)/.exec(s)
-    expect(agg, '没找到 rangeAgg(区间聚合)').toBeTruthy()
-    expect(agg[0], 'rangeAgg 应当读 musicStore.playStats').toMatch(/musicStore\.playStats/)
+  it('报告的次数与时长与页面同一口径(读按天聚合/整表,不读播放日志)', () => {
+    // 历史是"播放日志"(上限 500 条),统计口径必须走按天聚合的 playStats 或 playCounts 整表。
+    // 2026-10-01 去重后:报告不再自建 rangeAgg,而是**直接复用页面的 totalPlays/totalHours**
+    // (两者就是 scopeAgg / allTimePlays 的口径),所以这里钉"报告是别名,不是第二套聚合"。
+    expect(s, 'totalPlays 不再读整表/按天聚合').toMatch(/const totalPlays = computed\(\(\) => \(isAllTime\.value \? musicStore\.allTimePlays : scopeAgg\.value\.plays\)\)/)
     const hours = /const reportHours = computed\(\(\) => ([^\n]+)/.exec(s)
     expect(hours, '没找到 reportHours').toBeTruthy()
     expect(hours[1], 'reportHours 不应再去累加历史条目').not.toMatch(/reportHistory/)
-    expect(hours[1], 'reportHours 应读区间聚合的秒数').toMatch(/rangeAgg/)
+    expect(hours[1], 'reportHours 没复用页面口径(只允许别名 totalHours)').toMatch(/totalHours\.value/)
+    expect(s, '又冒出第二套区间聚合').not.toMatch(/const rangeAgg = computed|function rangeStartKey/)
   })
 
   it('报告头部数字不再自称"播放记录(上限 500)"——口径统一后就是播放次数', () => {

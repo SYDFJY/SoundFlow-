@@ -66,15 +66,23 @@
 
     <div class="stat-group-title">最爱听</div>
     <div class="stats-columns">
-      <!-- 歌曲排行不再在这页重复一份(与「播放记录」页的排行 tab 是同一能力):
-           留一个入口过去,榜单只在那边维护一份实现 -->
+      <!-- 歌曲排行:留在这页(用户:一切以首页/统计页为重)。实现与播放记录页的排行 tab 同一份
+           (musicStore.rankSongs),那边是同一实现的第二个入口,不算重复 -->
       <div class="stat-section">
         <h3 class="section-title">歌曲排行</h3>
-        <div class="rank-empty">
-          <span class="rank-empty-icon"><Icon name="music" :size="34" /></span>
-          <span>完整排行在「播放记录」页(按次数 / 按最近播放两种口径)</span>
-          <button class="btn--ghost rank-link" @click="router.push('/history')"><Icon name="history" :size="14" />查看完整排行</button>
+        <div class="rank-list">
+          <div v-for="(s, i) in topSongs" :key="s.path" class="rank-item" @dblclick="playTop(i)">
+            <span class="rank-no" :class="{ hot: i < 3 }">{{ i + 1 }}</span>
+            <div class="rank-cover"><img v-if="s.coverUrl" :src="s.coverUrl" loading="lazy" alt="" /></div>
+            <div class="rank-info text-ellipsis">
+              <span class="rank-title text-ellipsis">{{ s.title }}</span>
+              <span class="rank-artist text-ellipsis">{{ s.artist }}</span>
+            </div>
+            <span class="rank-count">{{ s._playCount }} 次</span>
+          </div>
+          <div v-if="!topSongs.length" class="rank-empty"><span class="rank-empty-icon"><Icon name="music" :size="34" /></span><span>还没有播放记录,先听几首歌吧</span></div>
         </div>
+        <button class="btn--ghost rank-link" @click="router.push('/history')"><Icon name="history" :size="14" />查看完整排行(含按最近播放)</button>
       </div>
 
       <div class="stats-right">
@@ -338,6 +346,8 @@ const weekMax = computed(() => Math.max(1, ...weekTrend.value.map(d => d.count))
 
 // Top 榜单:**实现只有一份**(musicStore.rankGroups,与播放记录页的排行同源);
 // 歌曲排行的完整榜单归「播放记录」页,这里只留歌手/专辑(那边没有)
+// 歌曲排行:同一份共享实现(rankSongs),本页只取前 10 并跟随页面期间
+const topSongs = computed(() => musicStore.rankSongs({ days: scopeDays.value, limit: 10 }))
 const topArtists = computed(() => musicStore.rankGroups('artist', { days: scopeDays.value, limit: 8 }))
 const topAlbums = computed(() => musicStore.rankGroups('album', { days: scopeDays.value, limit: 8 }))
 

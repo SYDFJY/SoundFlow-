@@ -371,6 +371,73 @@ function openMiniIslandSettings() {
   try { miniWindow.webContents.send('mini:open-settings') } catch (_) {}
 }
 
+// ===== 共用自绘菜单窗口(小窗右键 / 桌面歌词右键)=====
+// 两个反馈:① 原生菜单一点应用的风格都没有;② **菜单把宿主盖住了**(歌词条很薄,按光标弹必盖)。
+// 做法:独立的小透明窗口承载菜单(卡片外观),主进程发**条目数据**,窗口只渲染与回传点击 id;
+// 定位规则保证**菜单矩形与宿主矩形不相交**(优先正下方,其次右侧/左侧/上方,均夹取到工作区内)。
+let appMenuWindow = null
+let appMenuPick = null
+let appMenuHostRect = null
+
+function ensureAppMenuWindow() {
+  if (appMenuWindow && !appMenuWindow.isDestroyed()) return appMenuWindow
+  appMenuWindow = new BrowserWindow({
+    width: 232, height: 140,
+    show: false, frame: false, transparent: true, resizable: false, movable: false,
+    minimizable: false, maximizable: false, skipTaskbar: true, alwaysOnTop: true,
+    focusable: true, hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  })
+  hardenWindow(appMenuWindow)
+  try { appMenuWindow.setAlwaysOnTop(true, 'screen-saver') } catch (_) {}
+  if (isDev) appMenuWindow.loadURL('http://localhost:5173/menu.html')
+  else appMenuWindow.loadFile(path.join(__dirname, '..', 'dist', 'menu.html'))
+  // 失焦即关:点别处/切窗口都算"放弃菜单"
+  appMenuWindow.on('blur', () => hideAppMenu())
+  appMenuWindow.on('closed', () => { appMenuWindow = null; appMenuPick = null; appMenuHostRect = null })
+  return appMenuWindow
+}
+
+function hideAppMenu() {
+  appMenuPick = null
+  appMenuHostRect = null
+  try { if (appMenuWindow && !appMenuWindow.isDestroyed()) appMenuWindow.hide() } catch (_) {}
+}
+
+/** 定位:永远在宿主之外。返回 {x,y}(已夹取到工作区、并对齐物理像素网格) */
+function placeAppMenuOutside(host, size) {
+  const wa = screen.getDisplayMatching(host).workArea
+  const gap = 8
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v))
+  const cands = [
+    { x: host.x, y: host.y + host.height + gap },              // 正下方(默认)
+    { x: host.x + host.width + gap, y: host.y },               // 右侧
+    { x: host.x - size.width - gap, y: host.y },               // 左侧
+    { x: host.x, y: host.y - size.height - gap }               // 上方
+  ]
+  const fits = (c) => c.x >= wa.x && c.y >= wa.y && c.x + size.width <= wa.x + wa.width && c.y + size.height <= wa.y + wa.height
+  const hits = (c) => !(c.x + size.width <= host.x || c.x >= host.x + host.width || c.y + size.height <= host.y || c.y >= host.y + host.height)
+  const chosen = cands.find((c) => fits(c) && !hits(c)) || cands.find(fits) || cands[0]
+  return {
+    x: alignToPhysicalGrid(clamp(chosen.x, wa.x, wa.x + wa.width - size.width)),
+    y: alignToPhysicalGrid(clamp(chosen.y, wa.y, wa.y + wa.height - size.height))
+  }
+}
+
+/** 打开共用菜单:items = 条目数据,onPick(id) 执行动作,host = 宿主窗口矩形 */
+function openAppMenu({ items, host, onPick }) {
+  const w = ensureAppMenuWindow()
+  appMenuPick = onPick || null
+  appMenuHostRect = host
+  const send = () => { try { w.webContents.send('menu:items', { items }) } catch (_) {} }
+  if (w.webContents.isLoading()) w.webContents.once('did-finish-load', send)
+  else send()
+}
+
 // 岛设置改完后,窗口几何的即时重设:收起态改胶囊(高/宽钳位),展开态改面板档位。
 // 宽度仍由渲染端按新字号重新量后上报(这里先按当前宽度套上新钳位,避免闪一下旧尺寸)。
 function applyMiniConfigGeometry(changedKey, live) {
@@ -1048,7 +1115,6 @@ function createMiniWindow() {
       artistColor: storageData.miniArtistColor || 'auto',
       timeColor: storageData.miniTimeColor || 'auto'
     }
-    const presetColors = ['#161b22', '#1e90ff', '#2ecc71', '#e74c3c', '#f39c12']
     // 应用背景模式并同步渲染端(窗口恒透明:背景模式只改 CSS,任何变化都不再重建窗口)
     const applyBg = (mode, color, alpha) => {
       storageData.miniBgMode = mode
@@ -1094,134 +1160,91 @@ function createMiniWindow() {
     }
     // 小窗自己的设置与播放器设置**都在这个菜单里** —— 与桌面歌词右键菜单一个思路:
     // 设置直接出现在菜单里,不必去应用设置页找(只为它开一节反而更绕)。
-    const alphaPresets = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85]
-    const textPresets = [
-      { v: 'auto', l: '自动(按背景亮度)' },
-      { v: '#ffffff', l: '白色' },
-      { v: '#111111', l: '黑色' },
-      { v: '#4d94ff', l: '主题蓝' },
-      { v: '#ffd166', l: '暖黄' },
-      { v: '#7ee787', l: '浅绿' },
-      { v: '#ff9ecd', l: '浅粉' }
-    ]
     const curTextColor = (key) => (key === 'title' ? miniBg.titleColor : (key === 'artist' ? miniBg.artistColor : miniBg.timeColor))
-    const textSub = (key, label) => ({
-      label,
-      submenu: textPresets.map((p) => ({
-        label: p.l,
-        type: 'radio',
-        checked: curTextColor(key) === p.v,
-        click: () => applyTextColor(key, p.v)
-      }))
-    })
-    const menu = Menu.buildFromTemplate([
-      { label: '岛设置…', click: () => openMiniIslandSettings() },
-      { type: 'separator' },
-      { label: '上一曲', click: () => sendCmd('prev') },
-      { label: '播放 / 暂停', click: () => sendCmd('toggle-play') },
-      { label: '下一曲', click: () => sendCmd('next') },
-      { label: '快退 10 秒', click: () => sendCmd('skip-back') },
-      { label: '快进 10 秒', click: () => sendCmd('skip-forward') },
-      { type: 'separator' },
-      {
-        label: '播放模式 ▸',
-        submenu: MINI_PLAY_MODES.map((m) => ({
-          label: m.l,
-          type: 'radio',
-          checked: miniMenuState.playMode === m.v,
-          click: () => sendCmd('play-mode:' + m.v)
-        }))
-      },
-      {
-        label: '音量 ▸',
-        submenu: [
-          { label: '音量 +', click: () => sendCmd('volume-up') },
-          { label: '音量 −', click: () => sendCmd('volume-down') },
-          { label: '静音切换', click: () => sendCmd('toggle-mute') }
-        ]
-      },
-      {
-        label: '倍速 ▸',
-        submenu: [0.75, 1, 1.25, 1.5, 2].map((r) => ({
-          label: r + '×',
-          type: 'radio',
-          checked: Math.abs((miniMenuState.rate || 1) - r) < 0.001,
-          click: () => sendCmd('rate:' + r)
-        }))
-      },
-      { type: 'separator' },
-      { label: '背景:深色', type: 'radio', checked: miniBg.mode === 'dark', click: () => applyBg('dark') },
-      { label: '背景:白色', type: 'radio', checked: miniBg.mode === 'white', click: () => applyBg('white') },
-      {
-        label: '背景:自定义色 ▸',
-        submenu: presetColors.map((c) => ({
-          label: c,
-          type: 'radio',
-          checked: miniBg.mode === 'custom' && miniBg.color === c,
-          click: () => applyBg('custom', c)
-        }))
-      },
-      { label: '背景:完全透明', type: 'radio', checked: miniBg.mode === 'transparent', click: () => applyBg('transparent') },
-      {
-        label: '不透明度 ▸',
-        // 0% = 完全透明(看不见底色);只在"完全透明"模式下有意义
-        submenu: alphaPresets.map((a) => ({
-          label: Math.round(a * 100) + '%',
-          type: 'radio',
-          checked: Math.abs((miniBg.alpha || 0.05) - a) < 0.001,
-          click: () => applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, a)
-        }))
-      },
-      textSub('title', '歌名颜色 ▸'),
-      textSub('artist', '歌手颜色 ▸'),
-      textSub('time', '进度颜色 ▸'),
-      { type: 'separator' },
-      {
-        label: '桌面歌词',
-        type: 'checkbox',
-        checked: !!miniMenuState.desktopLyric,
-        click: () => sendCmd('toggle-desktop-lyric')
-      },
-      {
-        label: '小窗置顶',
-        type: 'checkbox',
-        checked: storageData.miniAlwaysOnTop !== false,
-        click: () => {
-          storageData.miniAlwaysOnTop = storageData.miniAlwaysOnTop === false
-          saveStorage()
-          if (miniWindow && !miniWindow.isDestroyed()) miniWindow.setAlwaysOnTop(storageData.miniAlwaysOnTop)
+    // 条目数据交给共用的自绘菜单窗口(原生菜单退休:风格与应用不一致,且会盖住小窗)
+    const items = []
+    const item = (id, label, icon, checked, danger) => ({ id, label, icon, checked: !!checked, danger: !!danger })
+    items.push({ type: 'groupTitle', label: '播放' })
+    items.push(item('cmd:prev', '上一曲', 'prev'))
+    items.push(item('cmd:toggle-play', '播放 / 暂停', 'play'))
+    items.push(item('cmd:next', '下一曲', 'next'))
+    items.push(item('cmd:skip-back', '快退 10 秒', 'back'))
+    items.push(item('cmd:skip-forward', '快进 10 秒', 'forward'))
+    items.push({ type: 'groupTitle', label: '播放模式' })
+    for (const m of MINI_PLAY_MODES) items.push(item('mode:' + m.v, m.l, 'mode', miniMenuState.playMode === m.v))
+    items.push({ type: 'groupTitle', label: '音量 / 倍速' })
+    items.push(item('cmd:volume-up', '音量 +', 'volume'))
+    items.push(item('cmd:volume-down', '音量 −', 'volume'))
+    items.push(item('cmd:toggle-mute', '静音切换', 'volume'))
+    for (const r of [0.75, 1, 1.25, 1.5, 2]) items.push(item('rate:' + r, r + '×', 'speed', Math.abs((miniMenuState.rate || 1) - r) < 0.001))
+    items.push({ type: 'groupTitle', label: '外观' })
+    items.push(item('bg:dark', '背景:深色', 'bg', miniBg.mode === 'dark'))
+    items.push(item('bg:white', '背景:白色', 'bg', miniBg.mode === 'white'))
+    items.push(item('bg:transparent', '背景:完全透明', 'alpha', miniBg.mode === 'transparent'))
+    // 自定义背景色:仍然是**取色板**(颜色项将在设置面的「颜色」分组里也有一份,这里保留入口)
+    items.push(item('color:bg', '背景:自定义色…', 'bg', miniBg.mode === 'custom'))
+    items.push(item('color:title', '歌名颜色:自定义…', 'text', false))
+    items.push(item('color:artist', '歌手颜色:自定义…', 'text', false))
+    items.push(item('color:time', '进度颜色:自定义…', 'text', false))
+    items.push(item('color:auto', '三处文字色:自动(按背景亮度)', 'text', miniBg.titleColor === 'auto' && miniBg.artistColor === 'auto' && miniBg.timeColor === 'auto'))
+    items.push(item('alpha:cycle', '不透明度:' + Math.round((miniBg.alpha || 0.05) * 100) + '%(点击循环,透明模式才有效)', 'alpha'))
+    items.push({ type: 'groupTitle', label: '窗口' })
+    items.push(item('toggle:desktopLyric', '桌面歌词', 'lyric', !!miniMenuState.desktopLyric))
+    items.push(item('toggle:onTop', '小窗置顶', 'pin', storageData.miniAlwaysOnTop !== false))
+    items.push(item('toggle:idle', '空闲时淡出', 'alpha', !!storageData.miniIdleFade))
+    items.push(item('toggle:form', miniCompactForm() === 'capsule' ? '紧凑形态:卡片' : '紧凑形态:胶囊', 'form'))
+    items.push({ type: 'separator' })
+    items.push(item('action:settings', '岛设置…', 'settings'))
+    items.push(item('action:restore', '恢复主窗口', 'restore'))
+    items.push(item('action:quit', '退出应用', 'exit', false, true))
+
+    const pick = (id) => {
+      if (!id) return
+      if (id.startsWith('cmd:')) return sendCmd(id.slice(4))
+      if (id.startsWith('mode:')) return sendCmd('play-mode:' + id.slice(5))
+      if (id.startsWith('rate:')) return sendCmd('rate:' + id.slice(5))
+      if (id.startsWith('bg:')) return applyBg(id.slice(3))
+      if (id.startsWith('alpha:')) { const arr = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85]; const cur = Math.abs(miniBg.alpha || 0.05); const i = arr.findIndex((a) => Math.abs(a - cur) < 0.001); return applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, arr[(i + 1) % arr.length]) }
+      if (id === 'color:auto') return applyTextColor('all', 'auto')
+      // 颜色项:小窗里没有取色器,给一组常用值轮换(设置面「颜色」分组里有真正的取色板)
+      if (id.startsWith('color:')) {
+        const key = id.slice(6)
+        const paletteFor = (k) => (k === 'bg' ? ['#161b22', '#0e1c2e', '#2e1216', '#0f2218'] : ['auto', '#ffffff', '#6ec6ff', '#ffd166', '#7ee787', '#ff9ecd'])
+        const cur = key === 'bg' ? (miniBg.mode === 'custom' ? miniBg.color : '') : curTextColor(key)
+        const arr = paletteFor(key)
+        const i = arr.findIndex((c) => c === cur)
+        const next = arr[(i + 1) % arr.length]
+        return key === 'bg' ? applyBg('custom', next) : applyTextColor(key, next)
+      }
+      if (id === 'toggle:desktopLyric') return sendCmd('toggle-desktop-lyric')
+      if (id === 'toggle:onTop') {
+        storageData.miniAlwaysOnTop = storageData.miniAlwaysOnTop === false
+        saveStorage()
+        if (miniWindow && !miniWindow.isDestroyed()) miniWindow.setAlwaysOnTop(storageData.miniAlwaysOnTop)
+        return
+      }
+      if (id === 'toggle:idle') {
+        storageData.miniIdleFade = !storageData.miniIdleFade
+        saveStorage()
+        if (miniWindow && !miniWindow.isDestroyed()) {
+          try { miniWindow.webContents.send('mini:idle-sync', miniIdleSyncPayload()) } catch (_) {}
         }
-      },
-      {
-        label: '空闲时淡出',
-        type: 'checkbox',
-        checked: !!storageData.miniIdleFade,
-        click: () => {
-          storageData.miniIdleFade = !storageData.miniIdleFade
-          saveStorage()
-          if (miniWindow && !miniWindow.isDestroyed()) {
-            try { miniWindow.webContents.send('mini:idle-sync', miniIdleSyncPayload()) } catch (_) {}
-          }
+        return
+      }
+      if (id === 'toggle:form') return setMiniCompactForm(miniCompactForm() === 'capsule' ? 'card' : 'capsule')
+      if (id === 'action:settings') return openMiniIslandSettings()
+      if (id === 'action:restore') {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore()
+          mainWindow.show()
+          mainWindow.focus()
         }
-      },
-      { label: '紧凑形态:胶囊', type: 'radio', checked: miniCompactForm() === 'capsule', click: () => setMiniCompactForm('capsule') },
-      { label: '紧凑形态:卡片', type: 'radio', checked: miniCompactForm() === 'card', click: () => setMiniCompactForm('card') },
-      { type: 'separator' },
-      {
-        label: '恢复主窗口',
-        click: () => {
-          if (mainWindow) {
-            if (mainWindow.isMinimized()) mainWindow.restore()
-            mainWindow.show()
-            mainWindow.focus()
-          }
-          if (miniWindow) { miniWindow.close(); miniWindow = null }
-        }
-      },
-      { type: 'separator' },
-      { label: '退出应用', click: () => { app.isQuitting = true; app.quit() } } // 与托盘一致:不设这个标志时 close 会被拦成隐藏,退不掉
-    ])
-    menu.popup({ window: miniWindow })
+        if (miniWindow) { miniWindow.close(); miniWindow = null }
+        return
+      }
+      if (id === 'action:quit') { app.isQuitting = true; app.quit() }
+    }
+    openAppMenu({ items, host: miniWindow.getBounds(), onPick: pick })
   }
   miniWindow.webContents.on('context-menu', () => { if (showMiniContextMenu) showMiniContextMenu() })
 
@@ -1939,11 +1962,51 @@ function setupIPC() {
     } catch (_) {}
   })
 
+  // ===== 共用自绘菜单窗口:窗口回传「渲染后的尺寸 / 点击的条目 / 请求关闭」 =====
+  ipcMain.on('menu:size', (event, size) => {
+    if (!appMenuWindow || appMenuWindow.isDestroyed()) return
+    if (event.sender !== appMenuWindow.webContents) return
+    const w = size && Number.isFinite(size.width) ? Math.min(360, Math.max(140, Math.ceil(size.width))) : 232
+    const h = size && Number.isFinite(size.height) ? Math.min(560, Math.max(60, Math.ceil(size.height))) : 140
+    if (!appMenuHostRect) return
+    const pos = placeAppMenuOutside(appMenuHostRect, { width: w, height: h })
+    try { appMenuWindow.setBounds({ x: pos.x, y: pos.y, width: w, height: h }) } catch (_) {}
+    // show() 会拿焦点 —— 这样"点别处"能触发 blur 自动关;键盘 Esc 也才收得到
+    try { appMenuWindow.show() } catch (_) {}
+    try { appMenuWindow.focus() } catch (_) {}
+  })
+  ipcMain.on('menu:click', (event, payload) => {
+    if (!appMenuWindow || appMenuWindow.isDestroyed()) return
+    if (event.sender !== appMenuWindow.webContents) return
+    const id = payload && payload.id
+    const fn = appMenuPick
+    hideAppMenu()
+    if (fn && id) { try { fn(id) } catch (_) {} }
+  })
+  ipcMain.on('menu:close', (event) => {
+    if (!appMenuWindow || appMenuWindow.isDestroyed()) return
+    if (event.sender !== appMenuWindow.webContents) return
+    hideAppMenu()
+  })
+
+  // 桌面歌词窗右键:窗口把自己那份菜单条目 + 动作转给主进程(主进程再交给菜单窗口)
+  ipcMain.on('lyric:menu-open', (event, items) => {
+    if (!lyricWindow || lyricWindow.isDestroyed()) return
+    if (event.sender !== lyricWindow.webContents) return
+    if (!Array.isArray(items)) return
+    openAppMenu({
+      items,
+      host: lyricWindow.getBounds(),
+      onPick: (id) => {
+        try { lyricWindow.webContents.send('lyric:menu-action', id) } catch (_) {}
+      }
+    })
+  })
+
   // 迷你播放器控制命令转发到主窗口
   ipcMain.on('mini:seek', (event, seconds) => {
     if (mainWindow && !mainWindow.isDestroyed() && Number.isFinite(seconds)) {
-      mainWindow.webContents.send('player:seek', seconds)
-    }
+      mainWindow.webContents.send('player:seek', seconds)    }
   })
   ipcMain.on('mini:volume', (event, v) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('player:set-volume', v)

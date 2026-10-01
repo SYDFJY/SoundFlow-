@@ -198,46 +198,47 @@
           ><Icon :name="lyricSidebarCollapsed ? 'back' : 'forward'" :size="14" /></button>
 
           <template v-if="!lyricSidebarCollapsed">
-            <!-- 四个入口,各自弹出面板:此前 4 个来源 + 5 个外观按钮平铺 11 行,占掉近半屏 -->
-            <div class="ls-group-label">歌词</div>
-            <button class="ls-btn ls-btn--entry" :class="{ active: openLyricPanel === 'source' }" :aria-pressed="openLyricPanel === 'source'" :aria-expanded="openLyricPanel === 'source'" title="歌词来源" aria-label="歌词来源" @click="toggleLyricPanel('source')">来源</button>
-            <button class="ls-btn ls-btn--entry" :class="{ active: openLyricPanel === 'appearance' }" :aria-pressed="openLyricPanel === 'appearance'" :aria-expanded="openLyricPanel === 'appearance'" title="歌词外观(翻译 / 特效 / 对齐 / 逐字)" aria-label="歌词外观" @click="toggleLyricPanel('appearance')">外观</button>
-            <button class="ls-btn ls-btn--entry" :class="{ active: openLyricPanel === 'color' }" :aria-pressed="openLyricPanel === 'color'" :aria-expanded="openLyricPanel === 'color'" title="歌词颜色(取色板)" aria-label="歌词颜色" @click="toggleLyricPanel('color')">颜色</button>
-            <button class="ls-btn ls-btn--entry" :class="{ active: openLyricPanel === 'format' }" :aria-pressed="openLyricPanel === 'format'" :aria-expanded="openLyricPanel === 'format'" title="歌词排版(字号 / 行距 / 时间偏移)" aria-label="歌词排版" @click="toggleLyricPanel('format')">排版</button>
+            <!-- 来源:一个图标按钮 + 弹层(4 选 1)。此前 4 个文字按钮平铺占 4 行 —— 图标韵味保留,
+                 只把这一项收起来(竖条 11 行 → 8 行) -->
+            <div class="ls-group-label">来源</div>
+            <button
+              class="ls-btn" :class="{ active: showSourcePanel }" :aria-pressed="showSourcePanel" :aria-expanded="showSourcePanel"
+              :title="'歌词来源:' + currentSourceLabel" :aria-label="'歌词来源:' + currentSourceLabel"
+              @click="showSourcePanel = !showSourcePanel"
+            ><Icon name="globe" :size="15" /></button>
+
+            <div class="ls-sep" aria-hidden="true"></div>
+            <div class="ls-group-label">外观</div>
+            <button class="ls-btn" :class="{ active: showColorPanel }" :aria-pressed="showColorPanel" :aria-expanded="showColorPanel" title="歌词颜色(取色板)" aria-label="歌词颜色" @click="showColorPanel = !showColorPanel"><Icon name="color" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: playerStore.showTranslation, 'is-loading': playerStore.translating }" :aria-pressed="playerStore.showTranslation" v-tooltip:top="playerStore.translating ? '翻译中…' : '歌词翻译'" aria-label="歌词翻译" @click="playerStore.toggleTranslation()"><Icon name="translate" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: lyricAlign === 'left' }" :aria-pressed="lyricAlign === 'left'" :title="lyricAlign === 'left' ? '当前左对齐,点击改为居中' : '当前居中,点击改为左对齐'" aria-label="歌词对齐方式" @click="toggleLyricAlign"><Icon name="swap" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: lyricEffect }" :aria-pressed="lyricEffect" title="歌词特效(远近变淡/发光)" aria-label="歌词特效" @click="toggleLyricEffect"><Icon name="effect" :size="15" /></button>
+            <button class="ls-btn" :class="{ active: lyricMode === 'word' }" :aria-pressed="lyricMode === 'word'" :title="'歌词高亮: ' + (lyricMode === 'word' ? '逐字(点击改为整行)' : '整行(点击改为逐字)')" aria-label="歌词高亮方式" @click="toggleLyricMode">{{ lyricMode === 'word' ? '逐字' : '整行' }}</button>
+
+            <div class="ls-sep" aria-hidden="true"></div>
+            <!-- 字号 / 行距 / 偏移 三组连续参数收进弹出面板:
+                 原先占 7 个按钮 + 2 个分组标题,竖条长到近半屏;改成滑杆后
+                 一眼能看到当前值,也能拖动连续调整(点按 A−/A+ 要按很多次) -->
+            <button
+              class="ls-btn" :class="{ active: showFormatPanel }" :aria-pressed="showFormatPanel"
+              :aria-expanded="showFormatPanel"
+              title="歌词排版(字号 / 行距 / 时间偏移)" aria-label="歌词排版"
+              @click="showFormatPanel = !showFormatPanel"
+            ><Icon name="settings" :size="15" /></button>
           </template>
         </div>
-        <!-- 来源面板:4 选 1 -->
-        <div v-if="openLyricPanel === 'source'" class="ls-panel" @click.stop>
+        <!-- 来源弹层:4 选 1(选中即收起,按钮标题/提示跟着当前来源) -->
+        <div v-if="showSourcePanel" class="ls-panel" @click.stop>
           <div class="fp-title">歌词来源</div>
           <button
             v-for="opt in playerStore.LYRIC_SOURCE_OPTIONS" :key="opt.value"
-            class="ls-choice" :class="{ active: playerStore.lyricSource === opt.value }"
+            class="ls-src-row" :class="{ active: playerStore.lyricSource === opt.value }"
             :aria-pressed="playerStore.lyricSource === opt.value"
-            @click="playerStore.changeLyricSource(opt.value)"
+            @click="pickLyricSource(opt.value)"
           >{{ opt.label }}<Icon v-if="playerStore.lyricSource === opt.value" name="check" :size="13" /></button>
         </div>
-        <!-- 外观面板:翻译 / 特效 / 对齐 / 逐字 四行开关 -->
-        <div v-if="openLyricPanel === 'appearance'" class="ls-panel" @click.stop>
-          <div class="fp-title">歌词外观</div>
-          <div class="ls-row">
-            <span class="ls-row-label">翻译</span>
-            <button class="ls-switch" :class="{ on: playerStore.showTranslation }" :aria-label="playerStore.translating ? '歌词翻译(翻译中)' : '歌词翻译'" :aria-checked="playerStore.showTranslation" role="switch" @click="playerStore.toggleTranslation()"><span class="ls-switch-dot"></span></button>
-          </div>
-          <div class="ls-row">
-            <span class="ls-row-label">特效(远近变淡)</span>
-            <button class="ls-switch" :class="{ on: lyricEffect }" aria-label="歌词特效" :aria-checked="lyricEffect" role="switch" @click="toggleLyricEffect"><span class="ls-switch-dot"></span></button>
-          </div>
-          <div class="ls-row">
-            <span class="ls-row-label">左对齐</span>
-            <button class="ls-switch" :class="{ on: lyricAlign === 'left' }" aria-label="歌词对齐方式" :aria-checked="lyricAlign === 'left'" role="switch" @click="toggleLyricAlign"><span class="ls-switch-dot"></span></button>
-          </div>
-          <div class="ls-row">
-            <span class="ls-row-label">逐字高亮</span>
-            <button class="ls-switch" :class="{ on: lyricMode === 'word' }" aria-label="歌词高亮方式" :aria-checked="lyricMode === 'word'" role="switch" @click="toggleLyricMode"><span class="ls-switch-dot"></span></button>
-          </div>
-        </div>
         <!-- 歌词排版面板:字号 / 行距 / 偏移 -->
-        <div v-if="openLyricPanel === 'format'" class="ls-panel" @click.stop>
+        <div v-if="showFormatPanel" class="ls-panel" @click.stop>
           <div class="fp-title">歌词排版</div>
           <div class="fp-row">
             <span class="fp-label">字号</span>
@@ -262,7 +263,7 @@
           <div class="fp-hint">偏移按曲记忆,换歌自动读回</div>
         </div>
         <!-- 歌词颜色面板:**取色板**(预设色板已删——用户要求一律走取色板) -->
-        <div v-if="openLyricPanel === 'color'" class="ls-panel" @click.stop>
+        <div v-if="showColorPanel" class="ls-panel" @click.stop>
           <div class="fp-title">歌词颜色</div>
           <button class="bg-color-pick" ref="lyricColorPickrEl" @click="openLyricPicker" title="打开调色盘选择歌词颜色">
             <span class="bg-color-swatch" :style="{ background: lyricColor }"></span>
@@ -527,7 +528,7 @@ let _pvPanelWatch = null
 function setupPvPanelsClickOutside() {
   if (_pvPanelWatch) return
   _pvPanelWatch = watch(
-    [showQueuePanel, showEqPanel, showBgPanel, () => !!openLyricPanel.value, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel, showSpecPanel, showModePanel],
+    [showQueuePanel, showEqPanel, showBgPanel, showColorPanel, showFormatPanel, showSourcePanel, () => playerStore.volPanelOpen, showRatePanel, showPitchPanel, showSpecPanel, showModePanel],
     (vs) => {
       if (vs.some(Boolean)) document.addEventListener('click', onPvPanelDocClick)
       else document.removeEventListener('click', onPvPanelDocClick)
@@ -543,7 +544,9 @@ function onPvPanelDocClick(e) {
   showQueuePanel.value = false
   showEqPanel.value = false
   showBgPanel.value = false
-  openLyricPanel.value = ''
+  showColorPanel.value = false
+  showFormatPanel.value = false
+  showSourcePanel.value = false
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
   showRatePanel.value = false
@@ -961,10 +964,14 @@ function openLyricPicker() {
   _lyricPickr.on('save', (color) => { if (color) { setLyricColor(color.toHEXA().toString()); _lyricPickr?.hide() } })
 }
 const showBgPanel = ref(false)
-// 侧边栏四个入口当前打开哪个(同一时刻只开一个)
-const openLyricPanel = ref('')
-function toggleLyricPanel(name) {
-  openLyricPanel.value = openLyricPanel.value === name ? '' : name
+// 侧边栏的三个弹层(来源 / 颜色 / 排版);来源选中即收起
+const showSourcePanel = ref(false)
+const showColorPanel = ref(false)
+const showFormatPanel = ref(false)
+const currentSourceLabel = computed(() => (playerStore.LYRIC_SOURCE_OPTIONS.find(o => o.value === playerStore.lyricSource) || {}).label || '自动')
+function pickLyricSource(v) {
+  playerStore.changeLyricSource(v)
+  showSourcePanel.value = false
 }
 const lyricEffect = ref((() => { try { return localStorage.getItem('soundflow_lyric_effect') === '1' } catch { return false } })())
 // 歌词行颜色/阴影的规则在 src/utils/lyricStyle.js —— **与桌面歌词窗共用同一份**:
@@ -1037,7 +1044,9 @@ function onPvEsc() {
   showQueuePanel.value = false
   showEqPanel.value = false
   showBgPanel.value = false
-  openLyricPanel.value = ''
+  showColorPanel.value = false
+  showFormatPanel.value = false
+  showSourcePanel.value = false
   playerStore.volPanelOpen = false
   showPitchPanel.value = false
   showRatePanel.value = false
@@ -1630,8 +1639,6 @@ async function searchLyric() {
 }
 .ls-btn:hover { color: #fff; }
 .ls-btn.active { background: var(--color-primary); color: #fff; }
-/* 四个入口(来源/外观/颜色/排版):文字按钮,比图标按钮略高,一眼知道点开什么 */
-.ls-btn--entry { padding: 8px 0; font-size: 12px; letter-spacing: 0.02em; }
 /* 偏移按钮:标签形如 +0.3s / ±0,比 A− 略宽且不允许换行 */
 .ls-offset { width: 52px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ls-offset.active { font-weight: 600; }
@@ -1724,27 +1731,15 @@ async function searchLyric() {
 .fp-mini:disabled { opacity: 0.4; cursor: not-allowed; }
 .fp-hint { margin-top: 6px; font-size: 10px; color: rgba(255,255,255,0.4); text-align: center; }
 
-/* 来源 / 外观面板的行(与迷你岛设置面同构:标签 + 控件) */
-.ls-choice {
+/* 来源弹层的行(4 选 1;当前项打勾)—— 与弹层其它内容同构 */
+.ls-src-row {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
   width: 100%; padding: 7px 10px; border-radius: 7px;
   font-size: 12px; color: rgba(255,255,255,0.78); text-align: left;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.ls-choice:hover { background: rgba(255,255,255,0.08); color: #fff; }
-.ls-choice.active { background: var(--color-primary); color: #fff; font-weight: 600; }
-.ls-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 2px; min-height: 26px; }
-.ls-row-label { font-size: 12px; color: rgba(255,255,255,0.78); }
-.ls-switch {
-  position: relative; width: 30px; height: 16px; border-radius: 8px; border: 0; cursor: pointer;
-  background: rgba(255,255,255,0.18); transition: background 0.15s ease; flex-shrink: 0;
-}
-.ls-switch.on { background: var(--color-primary); }
-.ls-switch-dot {
-  position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
-  background: #fff; transition: transform 0.15s ease;
-}
-.ls-switch.on .ls-switch-dot { transform: translateX(14px); }
+.ls-src-row:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.ls-src-row.active { background: var(--color-primary); color: #fff; font-weight: 600; }
 .bg-image-actions { display: flex; flex-direction: column; gap: 8px; }
 .bg-import-btn { padding: 8px 0; font-size: var(--font-size-xs); color: #fff; background: var(--color-primary); border-radius: 6px; transition: all 0.15s; }
 .bg-import-btn:hover { background: var(--color-primary-light); }

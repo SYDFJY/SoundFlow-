@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>SoundFlow 菜单</title>
+<style>
+  /* 共用自绘菜单:与应用一套卡片风格(深色底/描边/圆角/分组标题)。
+     窗口由主进程定位在**宿主之外**(不遮主体),这里只负责画与回传点击。 */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    font-size: 12.5px; color: #dfe5ee; user-select: none;
+    -webkit-app-region: no-drag;
+  }
+  #menu {
+    display: inline-block; min-width: 160px; max-width: 340px;
+    padding: 5px; border-radius: 10px;
+    background: rgba(24, 26, 32, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  }
+  .m-group {
+    font-size: 10px; letter-spacing: 0.08em; color: rgba(255,255,255,0.38);
+    padding: 7px 10px 3px;
+  }
+  .m-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 10px; border-radius: 7px; cursor: pointer;
+    white-space: nowrap; position: relative;
+  }
+  .m-item:hover { background: rgba(255,255,255,0.09); color: #fff; }
+  .m-item.danger { color: #ff8a8a; }
+  .m-item.danger:hover { background: rgba(255,90,90,0.16); }
+  .m-ico { width: 15px; height: 15px; flex-shrink: 0; opacity: 0.85; }
+  .m-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .m-check { width: 14px; height: 14px; flex-shrink: 0; opacity: 0; color: var(--accent, #4d94ff); }
+  .m-item.on .m-check { opacity: 1; }
+  .m-sep { height: 1px; margin: 5px 8px; background: rgba(255,255,255,0.08); }
+  .m-sub { padding-left: 10px; border-left: 2px solid rgba(255,255,255,0.08); margin-left: 10px; }
+  .m-empty { padding: 10px; color: rgba(255,255,255,0.4); }
+</style>
+</head>
+<body>
+  <div id="menu"></div>
+<script>
+const api = window.electronAPI
+const root = document.getElementById('menu')
+let accent = '#4d94ff'
+
+// 极简内联图标集(不引外部依赖:这个窗口独立于 Vite 构建,只有 preload 可用)
+const ICONS = {
+  play: '<path d="M8 5v14l11-7z"/>',
+  pause: '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>',
+  prev: '<path d="M6 5h2v14H6zm12 0v14l-9-7z"/>',
+  next: '<path d="M16 5h2v14h-2zM6 5l9 7-9 7z"/>',
+  back: '<path d="M11 18V6l-8.5 6zM13 6h2v12h-2z"/>',
+  forward: '<path d="M13 18V6l8.5 6zM11 6H9v12h2z"/>',
+  mode: '<path d="M17 2l4 4-4 4V7h-4V5h4zM3 6h6v2H3zm0 6h10v2H3zm0 6h10v2H3z"/>',
+  volume: '<path d="M4 9h3l4-4v14l-4-4H4zM15 8.5a4 4 0 010 7"/>',
+  speed: '<path d="M12 4a8 8 0 018 8h-2a6 6 0 10-6 6v2a8 8 0 010-16zm1 3v5l4 2-.8 1.6L12 13V7z"/>',
+  bg: '<circle cx="12" cy="12" r="9"/><path d="M12 3v18"/>',
+  alpha: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 000 18z" fill="currentColor"/>',
+  text: '<path d="M5 5h14v3h-5v11h-4V8H5z"/>',
+  lyric: '<path d="M4 6h16v2H4zm0 5h10v2H4zm0 5h16v2H4z"/>',
+  window: '<rect x="4" y="5" width="16" height="14" rx="2"/>',
+  pin: '<path d="M12 17v5"/><path d="M9 10.8V4h6v6.8l2 2.6v1.6H7v-1.6z"/>',
+  expand: '<path d="M4 9h16v2H4z"/>',
+  collapse: '<path d="M4 9h16v2H4z" transform="rotate(180 12 10)"/>',
+  form: '<rect x="4" y="5" width="16" height="7" rx="3.5"/><rect x="4" y="14" width="16" height="5" rx="2.5"/>',
+  exit: '<path d="M10 4H6v16h4v-2H8V6h2zM14 8l4 4-4 4v-3H11v-2h3z"/>',
+  settings: '<path d="M4 7h16v2H4zm0 8h16v2H4z"/><circle cx="9" cy="8" r="2" fill="currentColor"/><circle cx="15" cy="16" r="2" fill="currentColor"/>',
+  restore: '<path d="M4 4h16v12H4z"/><path d="M8 20h8v-2H8z"/>',
+  check: '<path d="M20 6L9 17l-5-5"/>'
+}
+function icon(name) {
+  if (!name || !ICONS[name]) return ''
+  return `<svg class="m-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`
+}
+
+function render(items) {
+  const rows = []
+  for (const it of items || []) {
+    if (!it) continue
+    if (it.type === 'separator') { rows.push('<div class="m-sep"></div>'); continue }
+    if (it.type === 'groupTitle') { rows.push(`<div class="m-group">${esc(it.label)}</div>`); continue }
+    const cls = ['m-item']
+    if (it.checked) cls.push('on')
+    if (it.danger) cls.push('danger')
+    rows.push(`<div class="${cls.join(' ')}" data-id="${esc(it.id || '')}" role="menuitem"${it.checked ? ' aria-checked="true"' : ''}>
+      ${icon(it.icon)}<span class="m-label">${esc(it.label)}</span>
+      <svg class="m-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICONS.check}</svg>
+    </div>`)
+  }
+  root.innerHTML = rows.join('') || '<div class="m-empty">(无可用项)</div>'
+  reportSize()
+}
+function esc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+// 把渲染后的真实尺寸报给主进程:由它把窗口放到**宿主之外**再显示(避免先亮后跳)
+function reportSize() {
+  const r = root.getBoundingClientRect()
+  try { api.send('menu:size', { width: Math.ceil(r.width) + 2, height: Math.ceil(r.height) + 2 }) } catch (e) {}
+}
+
+root.addEventListener('click', (e) => {
+  const row = e.target.closest && e.target.closest('.m-item')
+  if (!row) return
+  const id = row.getAttribute('data-id')
+  if (id) { try { api.send('menu:click', { id }) } catch (err) {} }
+})
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { try { api.send('menu:close') } catch (err) {} }
+})
+api.on('menu:items', (payload) => {
+  if (payload && typeof payload.accent === 'string') {
+    accent = payload.accent
+    document.documentElement.style.setProperty('--accent', accent)
+  }
+  render(payload && payload.items)
+})
+// 字体就绪后尺寸会变,复报一次
+try { if (document.fonts && document.fonts.ready) document.fonts.ready.then(reportSize).catch(() => {}) } catch (e) {}
+window.addEventListener('resize', reportSize)
+</script>
+</body>
+</html>

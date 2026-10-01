@@ -35,8 +35,9 @@ describe('小窗背景:透明度能到 0', () => {
 
   it('右键菜单的透明度预设里有 0%(最上一档就是完全透明)', () => {
     const m = read('electron/main.js')
-    expect(m, '透明度预设里没有 0%').toMatch(/const alphaPresets = \[0,/)
-    expect(m, '不透明度没有做成单选勾选的子菜单').toMatch(/label: '不透明度 ▸'/)
+    // 自绘菜单后不透明度改成一档循环(菜单窗口塞不下一排单选),0 必须在档位里
+    expect(m, '透明度档里没有 0%').toMatch(/const arr = \[0, 0\.1, 0\.2, 0\.3, 0\.5, 0\.7, 0\.85\]/)
+    expect(m, '菜单里没有不透明度这一项').toMatch(/'alpha:cycle'/)
   })
 
   it('窗口恒透明:背景模式只改 CSS,不再重建窗口(旧实现切"透明/不透明"要关窗重建)', () => {
@@ -121,10 +122,11 @@ describe('小窗三处文字颜色(歌名/歌手/数字进度)', () => {
     expect(m, 'miniBg 读取没带文字色').toMatch(/titleColor: storageData\.miniTitleColor \|\| 'auto'/)
     expect(m, 'applyBg 的 cfg 没带文字色').toMatch(/titleColor: storageData\.miniTitleColor \|\| 'auto'/)
     expect(m, '设置页那条 mini:bg-changed 没落盘文字色').toMatch(/\['titleColor', 'miniTitleColor'\]/)
-    expect(m, '菜单里没有按元素分的颜色子菜单').toMatch(/textSub\('title', '歌名颜色 ▸'\)/)
-    for (const label of ["'歌手颜色 ▸'", "'进度颜色 ▸'"]) {
-      expect(m, `菜单里缺少 ${label}`).toContain(label)
+    // 自绘菜单后:三处文字色各一项(点一下轮换常用色;真正的取色板在岛设置面「颜色」分组)
+    for (const id of ["'color:title'", "'color:artist'", "'color:time'"]) {
+      expect(m, `菜单里缺少 ${id}`).toContain(id)
     }
+    expect(m, '没提供"三处文字色回到自动"的项').toMatch(/'color:auto'/)
     expect(read('src/App.vue'), '主窗口没把文字色落 localStorage').toMatch(/localStorage\.setItem\('soundflow_mini_title_color'/)
   })
 })
@@ -133,23 +135,27 @@ describe('小窗右键菜单 = 它设置的唯一入口(与桌面歌词一个思
   const m = () => read('electron/main.js')
   it('播放器设置都在菜单里:播放控制 / 播放模式 / 音量 / 倍速', () => {
     const s = m()
-    for (const k of ["label: '上一曲'", "label: '播放 / 暂停'", "label: '下一曲'", "label: '快退 10 秒'", "label: '快进 10 秒'",
-      "label: '播放模式 ▸'", "label: '音量 ▸'", "label: '倍速 ▸'"]) {
+    // 自绘菜单:条目是数据(id + label + icon),子菜单摊平成"分组标题 + 项"
+    for (const k of ["'cmd:prev'", "'cmd:toggle-play'", "'cmd:next'", "'cmd:skip-back'", "'cmd:skip-forward'",
+      "'mode:'", "'cmd:volume-up'", "'cmd:volume-down'", "'cmd:toggle-mute'", "'rate:'"]) {
       expect(s, `菜单缺少 ${k}`).toContain(k)
+    }
+    for (const t of ['播放', '播放模式', '音量 / 倍速']) {
+      expect(s, `菜单缺少分组标题「${t}」`).toContain(`{ type: 'groupTitle', label: '${t}' }`)
     }
   })
   it('小窗外观设置也在菜单里:背景四种(单选)+ 不透明度 + 三个文字颜色', () => {
     const s = m()
-    for (const k of ["label: '背景:深色'", "label: '背景:白色'", "label: '背景:自定义色 ▸'", "label: '背景:完全透明'",
-      "label: '不透明度 ▸'", "textSub('title', '歌名颜色 ▸')", "textSub('artist', '歌手颜色 ▸')", "textSub('time', '进度颜色 ▸')"]) {
+    for (const k of ["'bg:dark'", "'bg:white'", "'bg:transparent'", "'color:bg'",
+      "'color:title'", "'color:artist'", "'color:time'", "'alpha:cycle'"]) {
       expect(s, `菜单缺少 ${k}`).toContain(k)
     }
-    expect(s, '背景模式没有勾选态(radio)').toMatch(/label: '背景:深色', type: 'radio'/)
+    expect(s, '背景模式没有勾选态').toMatch(/item\('bg:dark', '背景:深色', 'bg', miniBg\.mode === 'dark'\)/)
   })
   it('两个开关也有勾选态:桌面歌词 / 小窗置顶', () => {
     const s = m()
-    expect(s, '桌面歌词不是勾选项').toMatch(/label: '桌面歌词',[\s\S]{0,40}type: 'checkbox'/)
-    expect(s, '小窗置顶不是勾选项').toMatch(/label: '小窗置顶',[\s\S]{0,40}type: 'checkbox'/)
+    expect(s, '桌面歌词不是勾选项').toMatch(/item\('toggle:desktopLyric', '桌面歌词', 'lyric', !!miniMenuState\.desktopLyric\)/)
+    expect(s, '小窗置顶不是勾选项').toMatch(/item\('toggle:onTop', '小窗置顶', 'pin', storageData\.miniAlwaysOnTop !== false\)/)
   })
 })
 

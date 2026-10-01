@@ -420,21 +420,13 @@ app.whenReady().then(async () => {
   check('切回封面页(分栏)会定位到当前行(不停在歌词开头)',
     split && split.inView === true, JSON.stringify(split))
 
-  // 侧边栏四个入口(来源/外观/颜色/排版):开关都在「外观」面板里,先开面板再点
-  const openLyricPanel = (label) => run(`(() => {
-    const entry = [...document.querySelectorAll('.ls-btn--entry')].find((b) => (b.textContent || '').trim() === ${JSON.stringify(label)})
-    if (!entry) return false
-    if (!entry.classList.contains('active')) entry.click()
-    return true
-  })()`)
-  await openLyricPanel('外观')
-  await sleep(500)
-  await run(`(() => { const b = document.querySelector('.ls-switch[aria-label="歌词高亮方式"]'); if (b) b.click(); return true })()`)
+  // 侧边栏退回图标版:图标按钮直接点(逐字/整行 是文字按钮)
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]'); if (b) b.click(); return true })()`)
   await sleep(1100)
   const splitWords = await run(`(() => {
     const box = document.querySelector('.split-lyrics')
-    const tb = document.querySelector('.ls-switch[aria-label="歌词高亮方式"]')
-    return { words: box ? box.querySelectorAll('.lyric-word').length : -1, on: tb ? tb.classList.contains('on') : null }
+    const tb = document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')
+    return { words: box ? box.querySelectorAll('.lyric-word').length : -1, label: tb ? tb.textContent.trim() : null }
   })()`)
   check('分栏下点「逐字」真的生效(两面共用同一套渲染)', splitWords && splitWords.words > 2, JSON.stringify(splitWords))
 
@@ -676,18 +668,11 @@ app.whenReady().then(async () => {
   })
 
   // 开关都在侧边栏的「外观」面板里(四入口之一);这两个选择器在面板打开后依然有效
-  const openAppearance = () => run(`(() => {
-    const entry = [...document.querySelectorAll('.ls-btn--entry')].find((b) => (b.textContent || '').trim() === '外观')
-    if (entry && !entry.classList.contains('active')) entry.click()
-    return true
-  })()`)
-  const transBtn = `document.querySelector('.ls-switch[aria-label="歌词翻译"]')`
-  const hiBtn = `document.querySelector('.ls-switch[aria-label="歌词高亮方式"]')`
-  const transOn = () => run(`(() => { const b = ${transBtn}; return b ? b.getAttribute('aria-checked') : null })()`)
+  const transBtn = `document.querySelector('.ls-btn[aria-label="歌词翻译"]')`
+  const hiBtn = `document.querySelector('.ls-btn[aria-label="歌词高亮方式"]')`
+  const transOn = () => run(`(() => { const b = ${transBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
   const setTrans = async (on) => {
     if ((await transOn()) === (on ? 'true' : 'false')) return
-    await openAppearance()
-    await sleep(350)
     await run(`(() => { const b = ${transBtn}; if (b) b.click(); return true })()`)
     await sleep(1900)
   }
@@ -762,8 +747,7 @@ app.whenReady().then(async () => {
   await run(`(() => { location.hash = '#/player'; return true })()`)
   await sleep(1600)
   await gotoLyricTab()
-  await openAppearance(); await sleep(400)
-  const hiPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-checked') : null })()`)
+  const hiPressed = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
   if (hiPressed === 'false') {
     await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
     await sleep(1200)
@@ -877,8 +861,7 @@ app.whenReady().then(async () => {
   // 第 8 组末尾把窗口关掉了,这里从列表页的右侧按钮重新打开(播放页里没有那个按钮)。
   // 先把"逐字"关掉:开着逐字时窗口的当前行显示的是**词片**(随整份载荷推来的那一行),
   // 与索引可以不同步 —— 那样量到的"行内数字"是词片那一行的,判不了译文对不对得上。
-  await openAppearance(); await sleep(400)
-  const hiNow = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-checked') : null })()`)
+  const hiNow = await run(`(() => { const b = ${hiBtn}; return b ? b.getAttribute('aria-pressed') : null })()`)
   if (hiNow === 'true') {
     await run(`(() => { const b = ${hiBtn}; if (b) b.click(); return true })()`)
     await sleep(1400)
@@ -1248,24 +1231,23 @@ app.whenReady().then(async () => {
       document.addEventListener('contextmenu', (e) => { window.__ctxCount++ })
       return true
     })()`)
-    // 判据取"菜单真的弹了":拦一次 Menu.prototype.popup 计数。
-    // 只断言"渲染端收到 contextmenu"是不够的 —— Electron 的 context-menu 事件挂在 **webContents** 上,
-    // 挂 BrowserWindow 上的写法页面照样收得到事件、但回调永不触发(踩过:菜单做了内容却打不开)
-    const _origPopup = Menu.prototype.popup
-    let menuPopups = 0
-    Menu.prototype.popup = function (...args) { menuPopups++; return _origPopup.apply(this, args) }
+    // 判据取"菜单真的开了":2026-10-01 起小窗菜单是**单独的菜单窗口**(自绘卡片,定位在宿主之外),
+    // 原生 Menu.popup 已退休。这里断言:右键之后菜单窗口出现 + 它能把自己的条目渲染出来。
     try {
       const mSize = miniWin.getSize()
       miniWin.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
       miniWin.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(mSize[0] / 2), y: 20, button: 'right', clickCount: 1 })
       await sleep(1200)
-    } finally {
-      Menu.prototype.popup = _origPopup
-    }
+    } catch (e) {}
+    const mWin = BrowserWindow.getAllWindows().find((w) => /menu\.html$/.test(String(w.webContents.getURL())))
+    const mDom = mWin && !mWin.isDestroyed()
+      ? await mWin.webContents.executeJavaScript(`(() => ({ items: document.querySelectorAll('.m-item').length }))()`, true)
+      : null
     const ctxCount = await mRun('window.__ctxCount')
-    console.log('小窗右键:页面收到', ctxCount, '次 contextmenu,菜单弹出', menuPopups, '次')
-    check('小窗:真实右键真的弹出设置菜单(挂 webContents 上才触发;上一版挂在窗口对象上所以没反应)',
-      menuPopups >= 1 && ctxCount >= 1, `contextmenu ${ctxCount} 次 / Menu.popup ${menuPopups} 次`)
+    console.log('小窗右键:页面收到', ctxCount, '次 contextmenu,菜单窗口条目', mDom ? mDom.items : '无')
+    check('小窗:真实右键真的弹出设置菜单(自绘菜单窗口:条目已渲染)',
+      ctxCount === 1 && !!mDom && mDom.items > 8, `contextmenu ${ctxCount} 次 / 菜单条目 ${mDom ? mDom.items : 0}`)
+    try { if (mWin && !mWin.isDestroyed()) mWin.hide() } catch (e) {}
 
     // 拖动:页面→主进程→setBounds 这条链要真的移动窗口,且尺寸不漂
     const dragBefore = miniWin.getPosition()
@@ -1641,27 +1623,51 @@ app.whenReady().then(async () => {
           !!seq && seq.lines > 0 && seq.single === seq.lines && seq.marquee === 0 && String(seq.text).length > 0,
           JSON.stringify({ lines: seq && seq.lines, single: seq && seq.single, marquee: seq && seq.marquee, active: seq && seq.activeLine, text: seq && seq.text }))
 
-        // 小窗右键菜单里有「空闲时淡出」勾选项(小窗设置唯一入口的约定不变)
-        let capturedMenu = null
-        const _p2 = Menu.prototype.popup
-        Menu.prototype.popup = function (...a) { capturedMenu = this; return _p2.apply(this, a) }
+        // 小窗右键菜单:自绘卡片菜单(独立小窗口,定位在宿主之外)。
+        // 判据 = 菜单窗口里的 DOM(原生 Menu 已退休),并且**不能与宿主窗口相交**。
+        const menuWin = () => BrowserWindow.getAllWindows().find((w) => /menu\.html$/.test(String(w.webContents.getURL())))
         try {
           const sz = mw4.getSize()
           mw4.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(sz[0] / 2), y: 20, button: 'right', clickCount: 1 })
           mw4.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(sz[0] / 2), y: 20, button: 'right', clickCount: 1 })
           await sleep(900)
-        } finally { Menu.prototype.popup = _p2 }
-        const idleItem = capturedMenu ? capturedMenu.items.find((i) => i.label === '空闲时淡出') : null
-        check('两态岛:小窗右键菜单有「空闲时淡出」(默认不勾)',
-          !!idleItem && idleItem.type === 'checkbox' && idleItem.checked === false,
-          idleItem ? `type=${idleItem.type} checked=${idleItem.checked}` : '菜单里没有')
-        // 菜单里切换紧凑形态 → 卡片(radio 两项;收起后应变成 320×80 的经典卡片)—— 点击放到本段末尾,
-        // 因为接下来的岛设置面要验胶囊尺寸,先保持胶囊形态
-        const formItem = capturedMenu ? capturedMenu.items.find((i) => i.label === '紧凑形态:卡片') : null
-        check('两态岛:右键菜单有「紧凑形态:胶囊/卡片」两项(radio)',
-          !!capturedMenu && capturedMenu.items.some((i) => i.label === '紧凑形态:胶囊' && i.type === 'radio') && !!formItem && formItem.type === 'radio',
-          capturedMenu ? `卡片项=${formItem ? formItem.type : '无'}` : '菜单里没有')
-        try { if (capturedMenu) capturedMenu.closePopup(mw4) } catch (e) {}
+        } catch (e) {}
+        const mwM = menuWin()
+        const menuDom = mwM && !mwM.isDestroyed()
+          ? await mwM.webContents.executeJavaScript(`(() => {
+              const rows = [...document.querySelectorAll('.m-item')]
+              const card = document.querySelector('#menu')
+              const cs = card ? getComputedStyle(card) : null
+              return {
+                labels: rows.map((r) => (r.querySelector('.m-label') || {}).textContent || ''),
+                groups: [...document.querySelectorAll('.m-group')].map((g) => (g.textContent || '').trim()),
+                radius: cs ? cs.borderRadius : '',
+                bg: cs ? cs.backgroundColor : '',
+                idleOn: rows.some((r) => ((r.querySelector('.m-label') || {}).textContent || '') === '空闲时淡出' && !r.classList.contains('on')),
+                formRow: rows.some((r) => /^紧凑形态:/.test(((r.querySelector('.m-label') || {}).textContent) || '')),
+                size: card ? [Math.round(card.getBoundingClientRect().width), Math.round(card.getBoundingClientRect().height)] : null
+              }
+            })()`, true)
+          : null
+        if (!menuDom) {
+          check('两态岛:小窗右键菜单是自绘卡片菜单(原生菜单已退休)', false, '菜单窗口没出现')
+        } else {
+          check('两态岛:小窗右键菜单条目齐(播放/播放模式/音量倍速/外观/窗口/形态/岛设置/退出)',
+            menuDom.labels.some((l) => l === '播放 / 暂停') && menuDom.labels.includes('上一曲') && menuDom.labels.includes('下一曲') &&
+            menuDom.groups.includes('播放') && menuDom.groups.includes('播放模式') && menuDom.groups.includes('窗口') &&
+            menuDom.formRow === true && menuDom.labels.includes('岛设置…') && menuDom.labels.includes('退出应用'),
+            JSON.stringify({ labels: menuDom.labels.slice(0, 12), groups: menuDom.groups }))
+          check('两态岛:菜单是卡片外观(圆角 + 深色底)',
+            /px/.test(String(menuDom.radius)) && /rgb/.test(String(menuDom.bg)), JSON.stringify({ radius: menuDom.radius, bg: menuDom.bg }))
+          check('两态岛:菜单里「空闲时淡出」有勾选态(默认不勾)',
+            menuDom.idleOn === true, JSON.stringify({ idleOn: menuDom.idleOn }))
+          const hostB = mw4.getBounds()
+          const menuB = mwM.getBounds()
+          const overlap = !(menuB.x + menuB.width <= hostB.x || menuB.x >= hostB.x + hostB.width || menuB.y + menuB.height <= hostB.y || menuB.y >= hostB.y + hostB.height)
+          check('两态岛:菜单**不遮住小窗**(定位在宿主之外,矩形不相交)',
+            overlap === false, JSON.stringify({ host: hostB, menu: menuB }))
+          // 形态切换放到本段末尾(岛设置面那段要先保持胶囊形态)
+        }
 
         // 岛设置面:「•••」打开 → 改「胶囊缩放」→ 收起后高度随之变 → 再「恢复默认」回到基线;
         // 展开态改「面板宽度」窗口即时变宽(设置写回主进程后几何即时重设)
@@ -1828,9 +1834,37 @@ app.whenReady().then(async () => {
         const stillOpen = !!findMini()
         check('两态岛:展开态内容区双击不恢复主窗(回归修复;此前 dblclick 挂在根元素上)',
           dblPanel === true && stillOpen === true, `dispatched=${dblPanel} stillOpen=${stillOpen}`)
-        // 现在把形态切到卡片(菜单项对象仍可用)→ 收起回来应是 320×80 的经典卡片
-        try { if (formItem) formItem.click(formItem) } catch (e) {}
-        await sleep(400)
+        // 现在把形态切到卡片:右键打开共用菜单窗口,点「紧凑形态:…」那一行 →
+        // 收起回来应是 320×80 的经典卡片(带诊断 + 重试一次)
+        const menuWinOf = () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && /menu\.html$/.test(String(w.webContents.getURL())))
+        const clickFormRow = async () => {
+          const mWin = menuWinOf()
+          if (!mWin) return 'no-menu-window'
+          try {
+            return await mWin.webContents.executeJavaScript(`(() => {
+              const row = [...document.querySelectorAll('.m-item')].find((r) => /^紧凑形态:/.test(((r.querySelector('.m-label') || {}).textContent) || ''))
+              if (!row) return 'no-row'
+              row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+              return 'clicked:' + ((row.querySelector('.m-label') || {}).textContent || '')
+            })()`, true)
+          } catch (e) { return 'exec-err:' + (e && e.message) }
+        }
+        let formSwitch = 'not-tried'
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const liveMini = findMini()
+          if (!liveMini || liveMini.isDestroyed()) { formSwitch = 'no-mini'; break }
+          const szc = liveMini.getSize()
+          try {
+            liveMini.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(szc[0] / 2), y: 20, button: 'right', clickCount: 1 })
+            liveMini.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(szc[0] / 2), y: 20, button: 'right', clickCount: 1 })
+          } catch (e) {}
+          let mWin = null
+          for (let i = 0; i < 8 && !mWin; i++) { await sleep(250); mWin = menuWinOf() }
+          formSwitch = await clickFormRow()
+          if (String(formSwitch).startsWith('clicked:')) break
+        }
+        console.log('切形态:', formSwitch)
+        await sleep(600)
         await mrun4(`(() => { const b=document.querySelector('.mini-collapse'); if(!b) return false; b.click(); return true })()`)
         await sleep(900)
         const mw5 = findMini()
@@ -2320,37 +2354,43 @@ app.whenReady().then(async () => {
     return true
   })()`)
   await sleep(600)
-  await openLyricPanel('来源')
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label^="歌词来源:"]'); if (b && !b.classList.contains('active')) b.click(); return true })()`)
   await sleep(450)
   const srcGroup = await run(`(() => {
-    const entries = [...document.querySelectorAll('.ls-btn--entry')].map((e) => (e.textContent || '').trim())
-    const btns = [...document.querySelectorAll('.ls-choice')]
-    return { entries, sources: btns.map((b) => (b.textContent || '').trim()), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()), stored: localStorage.getItem('soundflow_lyric_source') }
+    const icons = ['歌词颜色', '歌词翻译', '歌词对齐方式', '歌词特效', '歌词高亮方式', '歌词排版']
+      .filter((l) => document.querySelector('.ls-btn[aria-label="' + l + '"]'))
+    const srcBtn = document.querySelector('.ls-btn[aria-label^="歌词来源:"]')
+    const btns = [...document.querySelectorAll('.ls-src-row')]
+    return { icons, hasSrcBtn: !!srcBtn, sources: btns.map((b) => (b.textContent || '').trim()), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()), stored: localStorage.getItem('soundflow_lyric_source') }
   })()`)
   console.log('歌词工具栏分组:', JSON.stringify(srcGroup))
-  check('歌词工具栏:四个入口(来源/外观/颜色/排版)+「来源」面板 4 选 1 且当前项高亮',
-    !!srcGroup && ['来源', '外观', '颜色', '排版'].every((x) => srcGroup.entries.includes(x)) &&
+  check('歌词工具栏:图标按钮齐 + 「来源」收成一个图标按钮、弹层 4 选 1 且当前项高亮',
+    !!srcGroup && srcGroup.icons.length === 6 && srcGroup.hasSrcBtn === true &&
     srcGroup.sources.length === 4 && srcGroup.active.length === 1,
     JSON.stringify(srcGroup))
   await run(`(() => {
-    const b = [...document.querySelectorAll('.ls-choice')].find((x) => (x.textContent || '').trim() === '网易云')
+    const b = [...document.querySelectorAll('.ls-src-row')].find((x) => (x.textContent || '').trim() === '网易云')
     if (b) b.click()
     return !!b
   })()`)
   await sleep(1600)
+  // 选中后弹层会收起(设计如此):重开一次再看高亮
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label^="歌词来源:"]'); if (b && !b.classList.contains('active')) b.click(); return true })()`)
+  await sleep(400)
   const afterSwitch = await run(`(() => {
-    const btns = [...document.querySelectorAll('.ls-choice')]
-    return { stored: localStorage.getItem('soundflow_lyric_source'), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()) }
+    const btns = [...document.querySelectorAll('.ls-src-row')]
+    return { stored: localStorage.getItem('soundflow_lyric_source'), active: btns.filter((b) => b.classList.contains('active')).map((b) => (b.textContent || '').trim()), btnTitle: (document.querySelector('.ls-btn[aria-label^="歌词来源:"]') || {}).getAttribute ? document.querySelector('.ls-btn[aria-label^="歌词来源:"]').getAttribute('aria-label') : null }
   })()`)
   console.log('切来源后:', JSON.stringify(afterSwitch))
   check('歌词工具栏:点「网易云」立刻生效(落盘 + 高亮跟着切)',
     !!afterSwitch && afterSwitch.stored === 'netease' && afterSwitch.active.includes('网易云'),
     JSON.stringify(afterSwitch))
   // 「颜色」面板:预设色板已删,只剩取色板入口
-  await openLyricPanel('颜色')
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label="歌词颜色"]'); if (b && !b.classList.contains('active')) b.click(); return true })()`)
   await sleep(450)
   const colorPanel = await run(`(() => {
-    const panel = document.querySelector('.ls-panel')
+    // 可能同时开着来源弹层:.ls-panel 要按标题认(取色板那个)
+    const panel = [...document.querySelectorAll('.ls-panel')].find((el) => /歌词颜色/.test(((el.querySelector('.fp-title') || {}).textContent) || ''))
     const pick = panel ? panel.querySelector('.bg-color-pick') : null
     return {
       dots: panel ? panel.querySelectorAll('.color-dot').length : -1,
@@ -2362,13 +2402,13 @@ app.whenReady().then(async () => {
   check('歌词颜色:预设色板已删,只剩取色板入口(色块 + 当前 hex)',
     !!colorPanel && colorPanel.dots === 0 && colorPanel.hasPick === true && /^#[0-9a-f]{6}$/i.test(String(colorPanel.hex)),
     JSON.stringify(colorPanel))
-  await run(`(() => { const e = [...document.querySelectorAll('.ls-btn--entry')].find((b) => (b.textContent || '').trim() === '颜色'); if (e) e.click(); return true })()`)
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label="歌词颜色"]'); if (b && b.classList.contains('active')) b.click(); return true })()`)
   await sleep(300)
   // 恢复 auto:别把来源状态留给下一轮
-  await openLyricPanel('来源')
+  await run(`(() => { const b = document.querySelector('.ls-btn[aria-label^="歌词来源:"]'); if (b && !b.classList.contains('active')) b.click(); return true })()`)
   await sleep(400)
   await run(`(() => {
-    const b = [...document.querySelectorAll('.ls-choice')].find((x) => (x.textContent || '').trim() === '自动')
+    const b = [...document.querySelectorAll('.ls-src-row')].find((x) => (x.textContent || '').trim() === '自动')
     if (b) b.click()
     return true
   })()`)

@@ -40,6 +40,10 @@ const ALLOW = {
     //   (来源/外观/颜色/排版);同名样式与 .color-dot 系列随"歌词颜色改用取色板"一并退休
     '.format-panel', '.color-panel', '.color-panel-title',
     '.color-dot', '.color-dot.active', '.color-dot-custom', '.color-dot-custom::after',
+    // 2026-10-01 侧边栏"四文字入口 + 外观开关面板"那版推翻(用户要图标):相关类随之下线,
+    // 只留 .ls-panel(三块弹层共用基类)与 .ls-src-row(来源弹层的行)
+    '.ls-btn--entry', '.ls-choice', '.ls-choice:hover', '.ls-choice.active',
+    '.ls-row', '.ls-row-label', '.ls-switch', '.ls-switch.on', '.ls-switch-dot', '.ls-switch.on .ls-switch-dot',
     // .lyric-time* → 按用户要求去掉歌词行前的行时间戳(时间只保留在悬停提示里)
     '.lyric-time', '.lyric-line:hover .lyric-time', '.lyric-line.active .lyric-time',
     // 同上:.next-wrap → .hint-wrap

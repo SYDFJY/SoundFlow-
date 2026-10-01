@@ -177,7 +177,8 @@ describe('统计页与播放记录页共用同一份排行实现(2026-10-01 用�
     const s = read('src/views/StatsView.vue')
     expect(s, '统计页的歌手/专辑榜没走共享实现').toMatch(/musicStore\.rankGroups\('artist'/)
     expect(s, '统计页还留着自己的聚合函数').not.toMatch(/function aggregate\(field\)/)
-    expect(s, '统计页的歌曲排行没改成"去播放记录页"的入口').toMatch(/router\.push\('\/history'\)/)
+    expect(s, '统计页的歌曲排行没走共享实现(用户:排行要放在首页/统计页)').toMatch(/musicStore\.rankSongs\(\{ days: scopeDays\.value, limit: 10 \}\)/)
+    expect(s, '统计页的完整排行入口没了(要去播放记录页看按最近播放的口径)').toMatch(/router\.push\('\/history'\)/)
   })
   it('听歌报告不再自带期间选择器(跟随页面),也没有第二套聚合', () => {
     const s = read('src/views/StatsView.vue')
@@ -206,13 +207,19 @@ describe('颜色一律走取色板(2026-10-01 用户要求)', () => {
     expect(s, '又长回主色预设色块了').not.toMatch(/PRIMARY_SWATCHES|mini-swatch/)
     expect(s, '主色取色器又塞了预设 swatches').not.toMatch(/swatches: PRIMARY_SWATCHES/)
   })
-  it('侧边栏四个入口(来源/外观/颜色/排版)+ 面板行样式', () => {
+  it('侧边栏保持图标形态;只把「来源」收成一个图标按钮 + 弹层(2026-10-01 用户:别丢图标)', () => {
     const p = read('src/views/PlayerView.vue')
-    for (const t of ['来源', '外观', '颜色', '排版']) {
-      expect(p, `侧边栏缺「${t}」入口`).toMatch(new RegExp(`aria-label="歌词${t === '来源' ? '来源' : t}"`))
+    // 图标按钮们都在(用户:"少了一些图标总感觉少了一点韵味")
+    for (const label of ['歌词颜色', '歌词翻译', '歌词对齐方式', '歌词特效', '歌词高亮方式', '歌词排版']) {
+      expect(p, `侧边栏缺图标按钮「${label}」`).toMatch(new RegExp(`aria-label="${label}"`))
     }
-    expect(p, '四块面板没共用 ls-panel').toMatch(/class="ls-panel"/)
-    expect(p, '外观面板缺开关行').toMatch(/class="ls-switch"/)
+    // 来源收成一个图标按钮 + 弹层(4 选 1),不再平铺 4 个文字按钮
+    expect(p, '来源入口没做成图标按钮').toMatch(/aria-label="'歌词来源:' \+ currentSourceLabel"/)
+    expect(p, '来源弹层没了').toMatch(/class="ls-src-row" :class="\{ active: playerStore\.lyricSource === opt\.value \}"/)
+    expect(p, '选中来源后没收起弹层').toMatch(/function pickLyricSource\(v\) \{\s*\n\s*playerStore\.changeLyricSource\(v\)\s*\n\s*showSourcePanel\.value = false/)
+    expect(p, '旧的四文字入口残留').not.toMatch(/ls-btn--entry/)
+    // 三块面板共用同一个基类(layout 一处维护)
+    expect(p, '面板没共用 ls-panel').toMatch(/class="ls-panel"/)
   })
 })
 
