@@ -1,5 +1,8 @@
 # 发布与自动更新
 
+> 仓库:代码在 **Gitee**(https://gitee.com/SYDFJ/sound-flow-music,分支 master)与 **GitHub**
+> (https://github.com/SYDFJY/SoundFlow-,分支 main)各一份;**安装包与更新走的都是 GitHub Releases**。
+
 面向**仓库维护者**的操作说明:怎么发一个版本、应用端怎么拿到更新、发布源换了怎么办。
 
 ---
@@ -9,9 +12,10 @@
 `package.json`:
 
 ```json
-"repository": { "type": "git", "url": "https://github.com/SYDFJY/soundflow.git" },
+"repository": { "type": "git", "url": "https://github.com/SYDFJY/SoundFlow-.git" },
 "build": {
-  "publish": [{ "provider": "github", "owner": "SYDFJY", "repo": "soundflow" }]
+  // releaseType: release = 直接发成正式版(draft 的附件外部读不到,应用就查不到更新)
+  "publish": [{ "provider": "github", "owner": "SYDFJY", "repo": "SoundFlow-", "releaseType": "release" }]
 }
 ```
 

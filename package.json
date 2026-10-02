@@ -85,7 +85,8 @@
       {
         "provider": "github",
         "owner": "SYDFJY",
-        "repo": "soundflow"
+        "repo": "SoundFlow-",
+        "releaseType": "release"
       }
     ],
     "artifactName": "SoundFlow-Setup-${version}.${ext}",
@@ -93,6 +94,6 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://gitee.com/SYDFJ/sound-flow-music.git"
+    "url": "https://github.com/SYDFJY/SoundFlow-.git"
   }
 }
