@@ -32,8 +32,9 @@ const RECEIVE_CHANNELS = [
 const SEND_CHANNELS = [
   'smtc:playback-state', 'mini:toggle-play', 'mini:prev', 'mini:next', 'mini:restore',
   'mini:bg-changed', 'mini:seek', 'mini:volume', 'mini:ready',
-  // 共用自绘菜单窗口(小窗右键 / 桌面歌词右键):窗口回传点击 id、渲染后的尺寸、关闭
-  'menu:click', 'menu:size', 'menu:close',
+  // 共用自绘菜单窗口(小窗右键 / 桌面歌词右键):窗口回传点击 id、渲染后的尺寸、关闭,
+  // 以及取色板拖动中的实时取值(menu:pick,不关菜单)
+  'menu:click', 'menu:size', 'menu:close', 'menu:pick',
   // 桌面歌词窗:右键时把自己那份菜单条目 + 要执行的动作交给主进程
   'lyric:menu-open',
   // 两态岛:展开/收起(小窗按钮/播放栏按钮统一命令;托盘在主进程内直调)

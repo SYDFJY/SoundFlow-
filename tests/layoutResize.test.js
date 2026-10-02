@@ -85,7 +85,11 @@ describe('被裁的浮层', () => {
     // 此前页内没有任何滚动:底部条目被直接裁掉(「岛设置…」「重置」「关闭」都点不到)。
     const m = read('electron/main.js'), h = read('public/menu.html')
     expect(m, '窗口高度上限又写死了(应随工作区走)').not.toMatch(/Math\.min\(560, Math\.max\(60, Math\.ceil\(size\.height\)\)\)/)
-    expect(m, '高度上限没按工作区算').toMatch(/h: Math\.max\(200, wa\.height - 16\)/)
+    // 高度取"中等"(用户:菜单太长,"做中等大小之后上下滑动"):工作区的 62%,钳在 300~620。
+    // 别再放到"工作区高-16"(几乎满屏),也别缩到装不下几行。
+    expect(m, '菜单高度没取中等比例(工作区 × 0.62)').toMatch(/const APP_MENU_H_RATIO = 0\.62/)
+    expect(m, '中等高度上下限缺失').toMatch(/const APP_MENU_H_MIN = 300[\s\S]{0,80}const APP_MENU_H_MAX = 620/)
+    expect(m, '中等高度没参与计算').toMatch(/Math\.max\(APP_MENU_H_MIN, Math\.min\(APP_MENU_H_MAX, Math\.round\(wa\.height \* APP_MENU_H_RATIO\)\)\)/)
     expect(h, '菜单页没有滚动容器(超出部分会被裁掉)').toMatch(/\.m-list \{[\s\S]{0,240}overflow-y: auto;/)
     expect(h, '滚动容器没预留滚动条宽度(卡片宽会随"要不要滚"抖)').toMatch(/scrollbar-gutter: stable;/)
     expect(h, '滚轮滚到底会把滚动链传给别的窗口').toMatch(/overscroll-behavior: contain;/)
@@ -94,6 +98,19 @@ describe('被裁的浮层', () => {
     expect(h, '缺上下渐隐提示(不知道能滚)').toMatch(/#menu\.has-down::after \{/)
     expect(h, '缺键盘导航(↑/↓)').toMatch(/e\.key === 'ArrowDown'/)
     expect(h, '缺回车触发').toMatch(/e\.key === 'Enter'/)
+  })
+  it('取色板必须开在**菜单窗口**里(手势不跨窗口,歌词窗那份 input.click() 是静默失效的)', () => {
+    // 用户报"桌面歌词自定义颜色用不了":菜单搬到独立窗口后,取色入口还留在歌词窗 ——
+    // Chromium 的颜色选择器要瞬时用户手势,手势不跨窗口 → 那一按被忽略(不报错也不弹框)。
+    const h = read('public/menu.html'), l = read('public/lyric.html'), p = read('electron/preload.js')
+    expect(h, '菜单窗没引本地 vendor 的取色板').toMatch(/<script src="\.\/vendor\/pickr\.min\.js"><\/script>/)
+    expect(h, '菜单窗没引取色板样式').toMatch(/<link rel="stylesheet" href="\.\/vendor\/nano\.min\.css" \/>/)
+    expect(h, '取色条目没按 data-color 就地开板').toMatch(/if \(row\.hasAttribute\('data-color'\)\) \{ openColorPicker\(row\); return \}/)
+    expect(h, '取色板拖动中没有实时回写(menu:pick)').toMatch(/api\.send\('menu:pick', \{ id, value \}\)/)
+    expect(p, 'preload 没放行 menu:pick').toContain("'menu:pick'")
+    expect(l, '歌词窗那份失效的隐藏 input 又回来了').not.toMatch(/id="lyric-color-input"/)
+    expect(l, '颜色条目没把当前色带给取色板').toMatch(/id: 'color', label: '自定义颜色\(取色板\)…', icon: 'palette', color: lyricColor\(\)/)
+    expect(l, '歌词窗没接 {id,value} 载荷').toMatch(/const id=\(payload&&typeof payload==='object'\)\?payload\.id:payload/)
   })
   it('菜单永不遮住宿主:放不下时改贴左右两侧(小屏上也不破)', () => {
     const m = read('electron/main.js')

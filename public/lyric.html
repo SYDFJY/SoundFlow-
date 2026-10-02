@@ -53,7 +53,6 @@ html,body{height:100%;overflow:hidden;background:transparent;-webkit-app-region:
   <div id="size-handle"></div>
 </div>
 <!-- 菜单改由共用的菜单窗口渲染(定位在窗口之外,不遮歌词);这里只留一个隐藏的系统取色器 -->
-<input type="color" id="lyric-color-input" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px" aria-hidden="true" />
 <div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s)
@@ -109,7 +108,7 @@ function buildMenuItems(){
     { type: 'separator' },
     { type: 'groupTitle', label: '歌词颜色' },
     // 颜色:不再摆一排色块 —— 一个取色板入口(系统取色器)+「跟随应用侧」
-    { id: 'color', label: '自定义颜色(取色板)…', icon: 'palette' },
+    { id: 'color', label: '自定义颜色(取色板)…', icon: 'palette', color: lyricColor() },
     { id: 'color-auto', label: '跟随应用侧歌词颜色', icon: 'palette', checked: autoOn },
     { type: 'separator' },
     { type: 'groupTitle', label: '背景' },
@@ -343,21 +342,19 @@ function showToast(msg,dur=1600){
   showToast._t=setTimeout(()=>{toast.classList.remove('show');setTimeout(()=>{toast.style.display='none'},240)},dur)
 }
 
-// 系统取色器:拖动过程中连续上报会刷屏,用 change(松开/确认时一次)
-const colorInput=document.getElementById('lyric-color-input')
-if(colorInput){
-  colorInput.addEventListener('change',()=>{
-    pushSetting('color', colorInput.value)
-    showToast('颜色:'+colorInput.value)
-    menuOpen=false
-  })
-}
-// 菜单点完:主进程把动作 id 发回来,复用同一套 handleAction
-api.on('lyric:menu-action',(id)=>{ closeMenu(); if(id) handleAction(id) })
+// 菜单动作:主进程把动作发回来 —— 裸 id,或 {id,value}(取色条目带色值)。
+// 注意:取色板现在开在**菜单窗口**里:Chromium 的颜色选择器要**瞬时用户手势**,而手势**不跨窗口**,
+//    在这里 input.click() 会被静默忽略(用户报"自定义颜色用不了"就是这个)。本窗只负责落值。
+api.on('lyric:menu-action',(payload)=>{
+  const id=(payload&&typeof payload==='object')?payload.id:payload
+  const value=(payload&&typeof payload==='object')?payload.value:undefined
+  closeMenu()
+  if(id) handleAction(id,value)
+})
 /** 设置类动作一律转给**应用侧**(它是真源):窗口不自己存,改完等回推 */
 function pushSetting(key,value){ if(api&&api.lyricSetting) api.lyricSetting(key,value) }
 
-function handleAction(a){
+function handleAction(a,value){
   if(!api) return
   if(a==='close') api.lyricClose()
   else if(a==='style-dim'){ pushSetting('lineStyle','dim'); showToast('显示方式:淡色(当前行高亮)') }
@@ -374,8 +371,8 @@ function handleAction(a){
   else if(a==='bg-dark'){ pushSetting('bg','dark'); showToast('背景:深色底') }
   else if(a==='bg-light'){ pushSetting('bg','light'); showToast('背景:浅色底') }
   else if(a==='bg-none'){ pushSetting('bg','none'); showToast('背景:完全透明') }
-  // 颜色:取色板入口(系统取色器);「跟随应用侧」= 清掉窗口自有色
-  else if(a==='color'){ try{ if(colorInput){ colorInput.value = lyricColor(); colorInput.click() } }catch(e){} }
+  // 颜色:色值由菜单窗口的取色板带回来(点条目只开板、不定色;拖动时是实时值,'save' 时再定一次)
+  else if(a==='color'){ if(typeof value==='string' && /^#[0-9a-f]{6}$/i.test(value)){ pushSetting('color',value); showToast('颜色:'+value) } }
   else if(a==='color-auto'){ pushSetting('color','auto'); showToast('颜色:跟随应用侧') }
   else if(a==='alpha+') pushSetting('alpha',+0.1)
   else if(a==='alpha-') pushSetting('alpha',-0.1)

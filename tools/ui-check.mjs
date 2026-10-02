@@ -634,7 +634,15 @@ app.whenReady().then(async () => {
   }
   // 上一首/下一首要按**应用当前的队列顺序**算,而不是播种时的数组顺序:起播时队列会按
   // 列表的排序重建(夹具标题现在是 "Track N"/"曲目 N" 交替,按标题排序与播种序并不一致)。
-  const queuePaths = await run(`(() => {
+  // 队列以**主进程存储**为准(localStorage 那份可能还没被应用重建过的旧序覆盖 —— 踩过:
+  // 期望「曲目14」而卡上是「曲目16」,差两首,就是两边顺序不一致)。取不到再退回 localStorage。
+  const queuePaths = await run(`(async () => {
+    try {
+      if (window.electronAPI && window.electronAPI.storeGet) {
+        const q = await window.electronAPI.storeGet('queue')
+        if (q && Array.isArray(q.queue) && q.queue.length) return q.queue
+      }
+    } catch (e) {}
     try { const q = JSON.parse(localStorage.getItem('soundflow_queue') || '{}'); return Array.isArray(q.queue) ? q.queue : [] } catch { return [] }
   })()`)
   const titleOf = new Map(items.map((i) => [i.path, i.title]))
@@ -1087,9 +1095,11 @@ app.whenReady().then(async () => {
         JSON.stringify(scrollInfo))
       check('菜单:滚过之后顶部有"还能往上"的渐隐提示',
         !!scrollInfo && scrollInfo.hasUpHint === true, JSON.stringify(scrollInfo && { hasUpHint: scrollInfo.hasUpHint }))
+      // 高度取"中等"(工作区的 62%,钳 300~620):不是满屏(用户:菜单太长),也不能矮到装不下
       const capH = await new Promise((res) => { try { res(screen.getDisplayMatching(hb).workArea.height) } catch (e) { res(null) } })
-      check('菜单:窗口高度不超过工作区高度(不再被写死的 560 裁掉)',
-        !!capH && mb.height <= capH - 8, JSON.stringify({ menuH: mb.height, workAreaH: capH }))
+      const wantH = capH ? Math.max(300, Math.min(620, Math.round(capH * 0.62))) : null
+      check('菜单:窗口高度是"中等"档(工作区 62%,不再满屏也不写死 560)',
+        !!wantH && Math.abs(mb.height - wantH) <= 8, JSON.stringify({ menuH: mb.height, want: wantH, workAreaH: capH }))
     }
     // Esc 先关菜单、不关窗口(菜单窗口自己收 Esc 并通知主进程关)
     if (lmWin && !lmWin.isDestroyed()) {
@@ -1142,30 +1152,56 @@ app.whenReady().then(async () => {
     const colorAppBefore = await readLocal('soundflow_lyric_color')
     const appColorBefore = await run(`(() => { const el = document.querySelector('.lyric-line.active'); return el ? getComputedStyle(el).color : '' })()`)
     const winColorBefore = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
-    const picked = '#7ee787'
-    // 菜单项「自定义颜色(取色板)…」→ 窗口里的隐藏系统取色器 → 程序化塞值并派发 change
-    const clicked = await lwRun(`(() => {
-      const item = document.querySelector('.line') // 只为确认窗口活着;真正的点击走菜单窗口
-      return !!item
-    })()`) && (await clickLyricMenuItem('color')) === 'clicked'
-    await lwRun(`(() => {
-      const inp = document.getElementById('lyric-color-input')
-      if (inp) { inp.value = ${JSON.stringify('#7ee787')}; inp.dispatchEvent(new Event('change', { bubbles: true })) }
-      return !!inp
-    })()`)
-    await sleep(1900)
+    // 菜单项「自定义颜色(取色板)…」→ **在菜单窗里就地开取色板** → 真点一下色板取值。
+    // 这里不再"给 input 塞值再派发 change"(那是假绿:它绕开了"取色器到底能不能打开" ——
+    // 用户报的"自定义颜色用不了"正是被这种方式放过去的:手势不跨窗口,input.click() 静默失效)。
+    // 先滚到取色条目(菜单中等高度,它在歌词颜色组里,不滚看得见,但还是滚一下保险)
+    await clickLyricMenuItem('color')
+    await sleep(900)
+    const pickMenuWin = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && /menu\.html$/.test(String(w.webContents.getURL())))
+    let picked = null
+    if (!pickMenuWin) {
+      check('菜单:取色条目在菜单窗里打开取色板', false, '菜单窗口不在')
+    } else {
+      const pcrInfo = await pickMenuWin.webContents.executeJavaScript(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+        await wait(600)
+        const app = document.querySelector('.pcr-app')
+        if (!app) return { has: false }
+        const b = app.getBoundingClientRect()
+        const pal = app.querySelector('.pcr-color-palette')
+        const pb = pal ? pal.getBoundingClientRect() : null
+        return { has: true, inside: b.x >= -1 && b.y >= -1 && b.right <= innerWidth + 1 && b.bottom <= innerHeight + 1,
+          rect: [Math.round(b.x), Math.round(b.y), Math.round(b.width), Math.round(b.height)],
+          palette: pb ? { x: Math.round(pb.x + pb.width * 0.72), y: Math.round(pb.y + pb.height * 0.35) } : null,
+          hexNow: (app.querySelector('.pcr-result') || {}).value || '' }
+      })()`, true)
+      console.log('取色板(菜单窗):', JSON.stringify(pcrInfo))
+      check('菜单:点「自定义颜色(取色板)…」在菜单窗里真的开出取色板(且不超出窗口)',
+        !!pcrInfo && pcrInfo.has === true && pcrInfo.inside === true, JSON.stringify(pcrInfo))
+      if (pcrInfo && pcrInfo.palette) {
+        // 真实鼠标事件点色板右上区域(偏绿) —— Pickr 会派发 change → menu:pick → 歌词窗落盘
+        const ps = pickMenuWin.getSize()
+        const px = Math.min(ps[0] - 6, pcrInfo.palette.x), py = Math.min(ps[1] - 6, pcrInfo.palette.y)
+        pickMenuWin.webContents.sendInputEvent({ type: 'mouseDown', x: px, y: py, button: 'left', clickCount: 1 })
+        pickMenuWin.webContents.sendInputEvent({ type: 'mouseMove', x: px, y: py, button: 'left' })
+        pickMenuWin.webContents.sendInputEvent({ type: 'mouseUp', x: px, y: py, button: 'left', clickCount: 1 })
+        await sleep(900)
+      }
+    }
+    await sleep(1200)
     const winColorSetting = await readLocal('soundflow_lyric_win_color')
     const colorAppAfter = await readLocal('soundflow_lyric_color')
     const appColorAfter = await run(`(() => { const el = document.querySelector('.lyric-line.active'); return el ? getComputedStyle(el).color : '' })()`)
     const winColorAfter = await lwRun(`(() => { const el = document.querySelector('.line.active'); return el ? getComputedStyle(el).color : '' })()`)
-    console.log('颜色回路:', JSON.stringify({ clicked, winColorSetting, winColorBefore, winColorAfter, colorAppBefore, colorAppAfter, appColorBefore, appColorAfter }))
+    console.log('颜色回路:', JSON.stringify({ winColorSetting, winColorBefore, winColorAfter, colorAppBefore, colorAppAfter, appColorBefore, appColorAfter }))
     check('菜单:从窗口换色只写"桌面歌词颜色"(播放界面那套设置不动)',
-      clicked === true && winColorSetting === picked && colorAppAfter === colorAppBefore,
+      /^#[0-9a-f]{6}$/i.test(String(winColorSetting)) && winColorSetting !== 'auto' && colorAppAfter === colorAppBefore,
       JSON.stringify({ winColorSetting, colorAppBefore, colorAppAfter }))
     // 播放界面那侧只比**设置**(渲染值有 .4s 过渡,随手量会读到中间色 —— 不是判据);
     // 桌面窗那侧比渲染值没问题:它是 applyStyle 直接写行内样式
     check('菜单:换色后桌面窗自己变了,而播放界面的歌词颜色设置不变',
-      winColorAfter !== winColorBefore && /126, 231, 135/.test(String(winColorAfter)) && colorAppAfter === colorAppBefore,
+      winColorAfter !== winColorBefore && colorAppAfter === colorAppBefore,
       JSON.stringify({ winColorBefore, winColorAfter, colorAppBefore, colorAppAfter }))
     // 还原:改回"跟随应用侧"(同样要能改回来,免得污染后续运行)
     await clickLyricMenuItem('color-auto')
@@ -1731,8 +1767,9 @@ app.whenReady().then(async () => {
           check('两态岛:菜单**不遮住小窗**(定位在宿主之外,矩形不相交)',
             overlap === false, JSON.stringify({ host: hostB, menu: menuB }))
           const capH = (() => { try { return screen.getDisplayMatching(hostB).workArea.height } catch (e) { return null } })()
-          check('两态岛:菜单窗口高度不超过工作区高度(不被写死的 560 裁掉)',
-            !!capH && menuB.height <= capH - 8, JSON.stringify({ menuH: menuB.height, workAreaH: capH }))
+          const wantH = capH ? Math.max(300, Math.min(620, Math.round(capH * 0.62))) : null
+          check('两态岛:菜单高度是"中等"档(工作区 62%,不再满屏也不写死 560)',
+            !!wantH && Math.abs(menuB.height - wantH) <= 8, JSON.stringify({ menuH: menuB.height, want: wantH, workAreaH: capH }))
           // 「岛设置…」必须**滚到底看得见、点得到**(用户报"右键菜单也要有岛设置/上下不能滑动":
           // 它在第 26 条,菜单 28 条 ≈970px,被裁掉的那段里)
           const reach = await mwM.webContents.executeJavaScript(`(async () => {

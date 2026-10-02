@@ -415,11 +415,16 @@ function hideAppMenu() {
   try { if (appMenuWindow && !appMenuWindow.isDestroyed()) appMenuWindow.hide() } catch (_) {}
 }
 
-/** 菜单窗口的尺寸上限:按**宿主所在显示器的工作区**算(此前高度写死 560 —— 菜单 20~30 条
- *  ≈900px,超出的部分被裁掉又没滚动,底部的「岛设置…」/「关闭」等直接点不到)。 */
+// 菜单窗口的尺寸上限。高度取"**中等**"(用户:菜单太长,"做中等大小之后上下滑动"):
+// 内容比它矮就按内容显示(小菜单不留空),比它高就在菜单页里滚(滚动容器 + 上下渐隐已经做好)。
+// 注意别再写死(560 那版会把 20~30 条的菜单底部直接裁掉且滚不动)也别放到"工作区高-16"(几乎满屏)。
+const APP_MENU_H_RATIO = 0.62
+const APP_MENU_H_MIN = 300
+const APP_MENU_H_MAX = 620
 function appMenuMaxSize() {
   const wa = screen.getDisplayMatching(appMenuHostRect || { x: 0, y: 0, width: 1, height: 1 }).workArea
-  return { w: Math.max(160, Math.min(360, wa.width - 16)), h: Math.max(200, wa.height - 16) }
+  const h = Math.max(APP_MENU_H_MIN, Math.min(APP_MENU_H_MAX, Math.round(wa.height * APP_MENU_H_RATIO)))
+  return { w: Math.max(160, Math.min(360, wa.width - 16)), h }
 }
 
 /** 定位:永远在宿主之外。返回 {x,y}(已夹取到工作区、并对齐物理像素网格) */
@@ -2007,9 +2012,18 @@ function setupIPC() {
     if (!appMenuWindow || appMenuWindow.isDestroyed()) return
     if (event.sender !== appMenuWindow.webContents) return
     const id = payload && payload.id
+    const value = payload && payload.value // 取色条目带回来的色值(其它条目没有)
     const fn = appMenuPick
     hideAppMenu()
-    if (fn && id) { try { fn(id) } catch (_) {} }
+    if (fn && id) { try { fn(id, value) } catch (_) {} }
+  })
+  // 取色板拖动中的实时取值:**不关菜单**(还能接着调),回调与点击同一条
+  ipcMain.on('menu:pick', (event, payload) => {
+    if (!appMenuWindow || appMenuWindow.isDestroyed()) return
+    if (event.sender !== appMenuWindow.webContents) return
+    const id = payload && payload.id
+    const value = payload && payload.value
+    if (appMenuPick && id) { try { appMenuPick(id, value) } catch (_) {} }
   })
   ipcMain.on('menu:close', (event) => {
     if (!appMenuWindow || appMenuWindow.isDestroyed()) return
@@ -2025,8 +2039,9 @@ function setupIPC() {
     openAppMenu({
       items,
       host: lyricWindow.getBounds(),
-      onPick: (id) => {
-        try { lyricWindow.webContents.send('lyric:menu-action', id) } catch (_) {}
+      // 动作带可选 value(取色条目:色板取到的 hex);窗口侧兼容"裸 id"与 {id,value} 两种载荷
+      onPick: (id, value) => {
+        try { lyricWindow.webContents.send('lyric:menu-action', value == null ? id : { id, value }) } catch (_) {}
       }
     })
   })
