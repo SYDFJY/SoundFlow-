@@ -674,6 +674,8 @@ const updateState = ref('idle')
 const updatePercent = ref(0)
 const updateRemote = ref('')
 const updateMsg = ref('')
+// 这次结果是主源(GitHub)还是镜像源(Gitee)给的 —— 主源连不上时自动回退
+const updateSource = ref('')
 onMounted(async () => {
   try {
     if (window.electronAPI?.getAppVersion) {
@@ -685,6 +687,7 @@ onMounted(async () => {
   // 主进程的静默检查/下载事件:让按钮状态跟着走
   window.electronAPI?.on?.('update-available', (p) => {
     updateRemote.value = (p && p.version) || ''
+    updateSource.value = (p && p.source === 'mirror') ? '(镜像源)' : ''
     if (updateState.value !== 'downloading' && updateState.value !== 'downloaded') updateState.value = 'available'
   })
   window.electronAPI?.on?.('update-progress', (p) => {
@@ -703,7 +706,7 @@ onMounted(async () => {
 })
 const updateDesc = computed(() => {
   if (updateMsg.value) return updateMsg.value
-  if (updateState.value === 'available') return '发现新版本 ' + (updateRemote.value || '') + '(当前 ' + (appVersion.value || '') + ')'
+  if (updateState.value === 'available') return '发现新版本 ' + (updateRemote.value || '') + '(当前 ' + (appVersion.value || '') + ')' + updateSource.value
   if (updateState.value === 'downloading') return '正在下载新版本…'
   if (updateState.value === 'downloaded') return '下载完成,重启即可安装'
   if (!appVersion.value) return 'Check for updates'
@@ -716,8 +719,9 @@ async function checkUpdate() {
   try {
     if (!window.electronAPI || !window.electronAPI.checkUpdates) { updateMsg.value = '开发模式不可用'; return }
     const r = await window.electronAPI.checkUpdates()
+    updateSource.value = r.source === 'mirror' ? '(镜像源)' : ''
     if (r.ok && r.hasUpdate) { updateRemote.value = r.version || ''; updateState.value = 'available' }
-    else if (r.ok) updateMsg.value = '已是最新版本' + (r.version ? '(' + r.version + ')' : '')
+    else if (r.ok) updateMsg.value = '已是最新版本' + (r.version ? '(' + r.version + ')' : '') + updateSource.value
     else updateMsg.value = r.msg || '检查失败'
   } catch (e) { updateMsg.value = '检查失败' } finally { checkingUpdate.value = false }
 }

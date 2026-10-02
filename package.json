@@ -95,5 +95,10 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/SYDFJY/SoundFlow-.git"
+  },
+  "updateMirror": {
+    "provider": "generic",
+    "url": "https://gitee.com/SYDFJ/sound-flow-music/releases/download/latest/",
+    "note": "Gitee 发行版附件(固定 tag=latest,用 tools/publish-gitee.mjs 上传);主源连不上时应用自动改用它"
   }
 }

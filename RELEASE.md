@@ -79,6 +79,22 @@ git tag v1.0.1 && git push origin master --tags
 
 ---
 
+## 四点四、双源:主源 GitHub + 镜像源 Gitee(应用自动回退)
+
+`package.json`:
+
+```jsonc
+"build": { "publish": [{ "provider": "github", "owner": "SYDFJY", "repo": "SoundFlow-", "releaseType": "release" }] },
+// 备用镜像源:主源连不上(超时/被墙)时,应用自动改用它查更新并下载
+"updateMirror": { "provider": "generic", "url": "https://gitee.com/SYDFJ/sound-flow-music/releases/download/latest/" }
+```
+
+- 主源 = 打包时写进 `resources/app-update.yml` 的那份;镜像源 = 上面这条,**地址只在 package.json 里写一份**
+  (主进程读它、`tools/publish-gitee.mjs` 也按它上传、本文件与它一致由单测钉住)
+- 行为:点「检查更新」先试主源 → 失败就 `setFeedURL(镜像)` 重试一次 → 用哪条源查到的,下载也从那条走;
+  设置页会标"(镜像源)";两条都不通时提示里带"(主源与镜像都不通,检查网络/加速器)"
+- 镜像源要先在 Gitee 发一次(Gitee 直连可达,不需要加速器):见下一节
+
 ## 四点五、发到 Gitee(备用路线;**当前不用**)
 
 > **现在的选择**:安装包走 **GitHub Releases**(保留完整 ffmpeg,安装包 98MiB,不受那里的体积限制);

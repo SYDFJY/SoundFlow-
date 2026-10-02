@@ -2206,7 +2206,44 @@ function sendToMain (ch, payload) {
   try { mainWindow?.webContents.send(ch, payload) } catch (_) {}
 }
 
+// 更新**镜像源**(国内直连的备用源):主源是打包时 electron-builder 按 build.publish 写进
+// resources/app-update.yml 的那份(GitHub Releases);这份配在 package.json 的 updateMirror 里,
+// **只在主源失败时**(超时/连不上/被墙)自动顶上 —— 这台机器所在网络对 github.com 时通时不通。
+// 放 package.json 而不是写死在代码里:同一份配置也给 tools/publish-gitee.mjs 与 RELEASE.md 用。
+// 主源配置:**读包里那份 resources/app-update.yml**(electron-builder 按 build.publish 生成,
+// electron-updater 平时也用它)。⚠️ 不能读 package.json 的 build —— 打包时那个字段会被剥掉
+// (实测打包后只剩 name/version/description/main/dependencies/repository/updateMirror),
+// 于是"设回主源"会静默失效、来源标记跟着串。
+// 每次检查前都设回主源:上次走了镜像,不代表这次主源还连不上。
+function updatePrimaryConfig () {
+  try {
+    const raw = fs.readFileSync(path.join(process.resourcesPath, 'app-update.yml'), 'utf8')
+    const out = {}
+    // app-update.yml 是 electron-builder 写的极简 "key: value"(没有嵌套),逐行手拆即可 ——
+    // 不引 yaml 依赖,也不写容易踩转义坑的正则
+    for (const rawLine of raw.split('\n')) {
+      const line = rawLine.trim()
+      const at = line.indexOf(':')
+      if (at <= 0) continue
+      const key = line.slice(0, at).trim()
+      let v = line.slice(at + 1).trim()
+      if ((v.startsWith("'") && v.endsWith("'")) || (v.startsWith('"') && v.endsWith('"'))) v = v.slice(1, -1)
+      if (key === 'updaterCacheDirName') continue
+      out[key] = v
+    }
+    return typeof out.provider === 'string' ? out : null
+  } catch (_) { return null }
+}
+function updateMirrorConfig () {
+  try {
+    const meta = require(path.join(__dirname, '..', 'package.json'))
+    const m = meta && meta.updateMirror
+    if (m && typeof m.url === 'string' && /^https?:\/\//.test(m.url)) return { provider: 'generic', url: m.url }
+  } catch (_) {}
+  return null
+}
 let _updateAvailableVersion = ''
+let _lastCheckSource = 'primary' // 最近一次检查用的源(primary=app-update.yml 里那份 / mirror=updateMirror)
 function setupAutoUpdater() {
   if (!autoUpdater || !app.isPackaged) return
   try {
@@ -2227,8 +2264,9 @@ function setupAutoUpdater() {
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.on('update-available', (info) => {
       _updateAvailableVersion = (info && info.version) || ''
-      log.info('[更新] 发现新版本:', _updateAvailableVersion)
-      sendToMain('update-available', { version: _updateAvailableVersion })
+      log.info('[更新] 发现新版本:', _updateAvailableVersion, _lastCheckSource === 'mirror' ? '(镜像源)' : '')
+      // 事件里也带上来源:界面上的"(镜像源)"不该只在手动检查那条路径上出现
+      sendToMain('update-available', { version: _updateAvailableVersion, source: _lastCheckSource })
     })
     autoUpdater.on('update-not-available', (info) => {
       sendToMain('update-not-available', { version: (info && info.version) || '' })
@@ -2248,11 +2286,44 @@ function setupAutoUpdater() {
       log.warn('[更新] 出错:', (err && err.message) || err)
       sendToMain('update-error', { message: (err && err.message) || '未知错误' })
     })
-    // 启动 15 秒后静默检查一次(只提示,不下载)
-    setTimeout(() => { autoUpdater.checkForUpdates().catch((e) => log.warn('[更新] 启动检查失败:', e && e.message)) }, 15000)
+    // 启动 15 秒后静默检查一次(只提示,不下载);同样支持主源→镜像的回退
+    setTimeout(() => {
+      checkForUpdatesWithFallback()
+        .then(({ result, source }) => { if (source === 'mirror') log.info('[更新] 启动检查走的是镜像源') })
+        .catch((e) => log.warn('[更新] 启动检查失败:', (e && e.message) || e))
+    }, 15000)
   } catch (e) {
     log.error('[更新] 自动更新不可用:', e.message)
   }
+}
+
+// 检查更新:先主源(GitHub),失败(超时/连不上)自动改用镜像源(Gitee)重试一次。
+// 用哪条源查到的,下载就用哪条(electron-updater 的 provider 已经切过去了)。
+// **单飞**:启动时的静默检查与手动检查会撞在一起 —— electron-updater 遇到并发检查会把
+// 前一次的 promise 直接还给你,于是"这次走的是主源还是镜像"就串了(踩过:明明走的镜像,
+// 返回的 source 却是 primary)。这里把两条入口收敛成同一个 promise,来源标记只由真正跑的那条流程写。
+let _checkPromise = null
+function checkForUpdatesWithFallback () {
+  if (_checkPromise) return _checkPromise
+  const run = async () => {
+    const primary = updatePrimaryConfig()
+    if (primary) { try { autoUpdater.setFeedURL(primary) } catch (e) { log.warn('[更新] 主源配置无效:', e && e.message) } }
+    try {
+      const result = await autoUpdater.checkForUpdates()
+      _lastCheckSource = 'primary'
+      return { result, source: 'primary' }
+    } catch (e) {
+      const mirror = updateMirrorConfig()
+      if (!mirror) throw e
+      log.warn('[更新] 主源不可用,改用镜像:', (e && e.message) || e)
+      _lastCheckSource = 'mirror'
+      autoUpdater.setFeedURL(mirror)
+      const result = await autoUpdater.checkForUpdates()
+      return { result, source: 'mirror' }
+    }
+  }
+  _checkPromise = run().finally(() => { _checkPromise = null })
+  return _checkPromise
 }
 
 // 手动检查更新(设置页按钮触发)
@@ -2261,11 +2332,13 @@ ipcMain.handle('check-updates', async () => {
     if (!app.isPackaged || !autoUpdater) return { ok: false, msg: '开发模式不可用' }
     if (!updateFeedReady()) return { ok: false, msg: '未配置更新源(发布后自动可用)' }
     autoUpdater.autoDownload = false
-    const result = await autoUpdater.checkForUpdates()
+    const { result, source } = await checkForUpdatesWithFallback()
     const remote = result?.updateInfo?.version || ''
-    return { ok: true, version: remote, current: app.getVersion(), hasUpdate: !!remote && remote !== app.getVersion() }
+    return { ok: true, version: remote, current: app.getVersion(), hasUpdate: !!remote && remote !== app.getVersion(), source }
   } catch (e) {
-    return { ok: false, msg: e?.message || '检查失败' }
+    const mirror = updateMirrorConfig()
+    const hint = mirror ? '(主源与镜像都不通,检查网络/加速器)' : ''
+    return { ok: false, msg: ((e && e.message) || '检查失败') + hint }
   }
 })
 
@@ -2293,8 +2366,18 @@ ipcMain.handle('update:install', async () => {
   }
 })
 
-// 界面上的版本号取真实版本(以前设置页硬编码着 "版本 1.0.0")
-ipcMain.handle('app-version', async () => ({ version: app.getVersion(), packaged: app.isPackaged, feedReady: updateFeedReady() }))
+// 界面上的版本号取真实版本(以前设置页硬编码着 "版本 1.0.0");顺带把两个源的配置吐出来,便于排查
+ipcMain.handle('app-version', async () => {
+  const primary = updatePrimaryConfig()
+  const mirror = updateMirrorConfig()
+  return {
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    feedReady: updateFeedReady(),
+    primary: primary ? { provider: primary.provider, owner: primary.owner || '', repo: primary.repo || '' } : null,
+    mirror: mirror ? mirror.url : null
+  }
+})
 
 app.whenReady().then(async () => {
   log.info('[exit] app ready,启动初始化开始')
