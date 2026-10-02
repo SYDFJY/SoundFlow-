@@ -2192,27 +2192,66 @@ function handleExternalUrl(url) {
   }
 }
 
+// ===== 自动更新(electron-updater;发布源在 package.json 的 build.publish =====
+// 链路:检查 → 有新版本 → 用户点「下载并安装」→ 下载(进度)→ 「重启并安装」
+// 数据源:打包产物里的 resources/app-update.yml(electron-builder 按 build.publish 生成);
+// 没有它 = 没配发布源 → 一律走"未配置更新源"的提示,不做任何网络请求。
+function updateFeedConfigPath() {
+  return path.join(process.resourcesPath, 'app-update.yml')
+}
+function updateFeedReady() {
+  try { return fs.existsSync(updateFeedConfigPath()) } catch (_) { return false }
+}
+function sendToMain (ch, payload) {
+  try { mainWindow?.webContents.send(ch, payload) } catch (_) {}
+}
+
+let _updateAvailableVersion = ''
 function setupAutoUpdater() {
   if (!autoUpdater || !app.isPackaged) return
   try {
-    // 未配置发布源(无 app-update.yml)时直接跳过,避免启动时控制台报错
-    const updateYml = path.join(process.resourcesPath, 'app-update.yml')
-    if (!fs.existsSync(updateYml)) return
-    autoUpdater.autoDownload = false
+    if (!updateFeedReady()) {
+      log.info('[更新] 未配置发布源(无 app-update.yml),跳过自动检查')
+      return
+    }
+    // electron-log:更新失败的原因以前完全看不见。用薄包装而不是直接给 log 本体 ——
+    // updater 出错时会把整个 HTTP 响应对象(含 headers/cookie/HTML 正文)塞进 info,
+    // 直接接 log 会把 main.log 灌成几十行乱码;debug 一概丢掉。
+    autoUpdater.logger = {
+      info: (m) => log.info('[更新]', m),
+      warn: (m) => log.warn('[更新]', m),
+      error: (m) => log.error('[更新]', m),
+      debug: () => {}
+    }
+    autoUpdater.autoDownload = false // 由用户点「下载并安装」再下
     autoUpdater.autoInstallOnAppQuit = true
-    autoUpdater.on('update-available', () => {
-      try { mainWindow?.webContents.send('update-available') } catch (_) {}
+    autoUpdater.on('update-available', (info) => {
+      _updateAvailableVersion = (info && info.version) || ''
+      log.info('[更新] 发现新版本:', _updateAvailableVersion)
+      sendToMain('update-available', { version: _updateAvailableVersion })
     })
-    autoUpdater.on('update-not-available', () => {
-      try { mainWindow?.webContents.send('update-not-available') } catch (_) {}
+    autoUpdater.on('update-not-available', (info) => {
+      sendToMain('update-not-available', { version: (info && info.version) || '' })
     })
-    autoUpdater.on('error', () => {
-      try { mainWindow?.webContents.send('update-error') } catch (_) {}
+    autoUpdater.on('download-progress', (p) => {
+      sendToMain('update-progress', {
+        percent: Math.max(0, Math.min(100, Math.round((p && p.percent) || 0))),
+        bytesPerSecond: (p && p.bytesPerSecond) || 0,
+        transferred: (p && p.transferred) || 0,
+        total: (p && p.total) || 0
+      })
     })
-    // 启动 15 秒后检查,避免拖慢启动
-    setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}) }, 15000)
+    autoUpdater.on('update-downloaded', (info) => {
+      sendToMain('update-downloaded', { version: (info && info.version) || _updateAvailableVersion })
+    })
+    autoUpdater.on('error', (err) => {
+      log.warn('[更新] 出错:', (err && err.message) || err)
+      sendToMain('update-error', { message: (err && err.message) || '未知错误' })
+    })
+    // 启动 15 秒后静默检查一次(只提示,不下载)
+    setTimeout(() => { autoUpdater.checkForUpdates().catch((e) => log.warn('[更新] 启动检查失败:', e && e.message)) }, 15000)
   } catch (e) {
-    console.error('[更新] 自动更新不可用:', e.message)
+    log.error('[更新] 自动更新不可用:', e.message)
   }
 }
 
@@ -2220,16 +2259,42 @@ function setupAutoUpdater() {
 ipcMain.handle('check-updates', async () => {
   try {
     if (!app.isPackaged || !autoUpdater) return { ok: false, msg: '开发模式不可用' }
-    if (!fs.existsSync(path.join(process.resourcesPath, 'app-update.yml'))) {
-      return { ok: false, msg: '未配置更新源(发布后自动可用)' }
-    }
+    if (!updateFeedReady()) return { ok: false, msg: '未配置更新源(发布后自动可用)' }
     autoUpdater.autoDownload = false
     const result = await autoUpdater.checkForUpdates()
-    return { ok: true, hasUpdate: !!result?.updateInfo?.version && result.updateInfo.version !== app.getVersion() }
+    const remote = result?.updateInfo?.version || ''
+    return { ok: true, version: remote, current: app.getVersion(), hasUpdate: !!remote && remote !== app.getVersion() }
   } catch (e) {
     return { ok: false, msg: e?.message || '检查失败' }
   }
 })
+
+// 下载更新(设置页「下载并安装」;进度走 update-progress)
+ipcMain.handle('update:download', async () => {
+  try {
+    if (!app.isPackaged || !autoUpdater) return { ok: false, msg: '开发模式不可用' }
+    if (!updateFeedReady()) return { ok: false, msg: '未配置更新源' }
+    await autoUpdater.downloadUpdate()
+    return { ok: true }
+  } catch (e) {
+    log.warn('[更新] 下载失败:', e && e.message)
+    return { ok: false, msg: (e && e.message) || '下载失败' }
+  }
+})
+
+// 重启并安装(下载完成后才可用)
+ipcMain.handle('update:install', async () => {
+  try {
+    if (!app.isPackaged || !autoUpdater) return { ok: false, msg: '开发模式不可用' }
+    setImmediate(() => { try { autoUpdater.quitAndInstall(false, true) } catch (e) { log.warn('[更新] 安装失败:', e && e.message) } })
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, msg: (e && e.message) || '安装失败' }
+  }
+})
+
+// 界面上的版本号取真实版本(以前设置页硬编码着 "版本 1.0.0")
+ipcMain.handle('app-version', async () => ({ version: app.getVersion(), packaged: app.isPackaged, feedReady: updateFeedReady() }))
 
 app.whenReady().then(async () => {
   log.info('[exit] app ready,启动初始化开始')

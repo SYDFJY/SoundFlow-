@@ -443,9 +443,18 @@
         <div class="setting-item">
           <div class="setting-label">
             <span class="label-text">检查更新</span>
-            <span class="label-desc">Check for updates</span>
+            <span class="label-desc">{{ updateDesc }}</span>
           </div>
-          <button class="sec-btn" :class="{ 'is-loading': checkingUpdate }" :disabled="checkingUpdate" @click="checkUpdate">{{ checkingUpdate ? '检查中…' : updateMsg || '检查更新' }}</button>
+          <div class="update-actions">
+            <!-- 状态机:检查 → 有新版本(下载并安装)→ 下载中(进度条)→ 下载完(重启并安装) -->
+            <button v-if="updateState === 'downloaded'" class="sec-btn sec-btn--go" @click="installUpdate">重启并安装</button>
+            <button v-else-if="updateState === 'available'" class="sec-btn sec-btn--go" :disabled="busyUpdate" @click="downloadUpdate">下载并安装</button>
+            <button v-else class="sec-btn" :class="{ 'is-loading': checkingUpdate }" :disabled="checkingUpdate || busyUpdate" @click="checkUpdate">{{ checkingUpdate ? '检查中…' : '检查更新' }}</button>
+          </div>
+        </div>
+        <div v-if="updateState === 'downloading'" class="update-progress">
+          <div class="update-progress-bar" :style="{ width: updatePercent + '%' }"></div>
+          <span class="update-progress-text">正在下载 {{ updatePercent }}%</span>
         </div>
         <div class="about-card">
           <div class="about-logo">
@@ -453,7 +462,7 @@
           </div>
           <div class="about-info">
             <h4>SoundFlow 声流音乐</h4>
-            <span>版本 1.0.0</span>
+            <span>版本 {{ appVersion || '—' }}</span>
             <p>纯本地音乐播放器，畅享无损音质</p>
           </div>
         </div>
@@ -654,19 +663,77 @@ watch(searchQuery, scheduleSearch)
 // 语言切换会改变条目文本,重新套用当前查询(否则按旧语言匹配的结果会残留)
 watch(() => i18n.lang, () => { if (searchQuery.value) applySearch(searchQuery.value) })
 const currentLang = computed(() => i18n.lang)
-// 检查更新(自动更新骨架;未配置发布源时提示)
+// ===== 检查更新(完整闭环:检查 → 下载(进度)→ 重启安装)=====
+// 发布源在 package.json 的 build.publish;没配 → 打包产物里没有 app-update.yml,主进程直接回"未配置"
+const appVersion = ref('')
+const appPackaged = ref(true)
 const checkingUpdate = ref(false)
+const busyUpdate = ref(false)
+// idle | available | downloading | downloaded | error
+const updateState = ref('idle')
+const updatePercent = ref(0)
+const updateRemote = ref('')
 const updateMsg = ref('')
+onMounted(async () => {
+  try {
+    if (window.electronAPI?.getAppVersion) {
+      const v = await window.electronAPI.getAppVersion()
+      appVersion.value = (v && v.version) || ''
+      appPackaged.value = !!(v && v.packaged)
+    }
+  } catch {}
+  // 主进程的静默检查/下载事件:让按钮状态跟着走
+  window.electronAPI?.on?.('update-available', (p) => {
+    updateRemote.value = (p && p.version) || ''
+    if (updateState.value !== 'downloading' && updateState.value !== 'downloaded') updateState.value = 'available'
+  })
+  window.electronAPI?.on?.('update-progress', (p) => {
+    updateState.value = 'downloading'
+    updatePercent.value = Math.round((p && p.percent) || 0)
+  })
+  window.electronAPI?.on?.('update-downloaded', (p) => {
+    updateState.value = 'downloaded'
+    updatePercent.value = 100
+    updateMsg.value = '新版本已下载完成'
+    if (p && p.version) updateRemote.value = p.version
+  })
+  window.electronAPI?.on?.('update-error', (p) => {
+    if (updateState.value === 'downloading') { updateState.value = 'error'; updateMsg.value = '下载失败:' + ((p && p.message) || '未知错误') }
+  })
+})
+const updateDesc = computed(() => {
+  if (updateMsg.value) return updateMsg.value
+  if (updateState.value === 'available') return '发现新版本 ' + (updateRemote.value || '') + '(当前 ' + (appVersion.value || '') + ')'
+  if (updateState.value === 'downloading') return '正在下载新版本…'
+  if (updateState.value === 'downloaded') return '下载完成,重启即可安装'
+  if (!appVersion.value) return 'Check for updates'
+  return appPackaged.value ? '当前版本 ' + appVersion.value : '开发模式(打包后可检查更新)'
+})
 async function checkUpdate() {
   checkingUpdate.value = true
   updateMsg.value = ''
+  updateState.value = 'idle'
   try {
     if (!window.electronAPI || !window.electronAPI.checkUpdates) { updateMsg.value = '开发模式不可用'; return }
     const r = await window.electronAPI.checkUpdates()
-    if (r.ok && r.hasUpdate) updateMsg.value = '发现新版本,请到发布页下载'
-    else if (r.ok) updateMsg.value = '已是最新版本'
+    if (r.ok && r.hasUpdate) { updateRemote.value = r.version || ''; updateState.value = 'available' }
+    else if (r.ok) updateMsg.value = '已是最新版本' + (r.version ? '(' + r.version + ')' : '')
     else updateMsg.value = r.msg || '检查失败'
-  } catch { updateMsg.value = '检查失败' } finally { checkingUpdate.value = false }
+  } catch (e) { updateMsg.value = '检查失败' } finally { checkingUpdate.value = false }
+}
+async function downloadUpdate() {
+  busyUpdate.value = true
+  updateMsg.value = ''
+  updateState.value = 'downloading'
+  updatePercent.value = 0
+  try {
+    const r = await window.electronAPI.downloadUpdate()
+    if (!r || !r.ok) { updateState.value = 'error'; updateMsg.value = '下载失败:' + ((r && r.msg) || '未知错误') }
+  } catch (e) { updateState.value = 'error'; updateMsg.value = '下载失败' } finally { busyUpdate.value = false }
+}
+async function installUpdate() {
+  updateMsg.value = '正在重启安装…'
+  try { await window.electronAPI.installUpdate() } catch { updateMsg.value = '安装失败,请手动重装' }
 }
 function switchLang(l) { setLang(l); appStore.saveSettings() }
 const musicStore = useMusicStore()
@@ -1437,6 +1504,20 @@ select {
   cursor: pointer;
   transition: all 0.15s;
 }
+/* 更新:下载进度条 + 主操作按钮 */
+.update-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.sec-btn--go { background: var(--color-primary); color: #fff; border-color: transparent; }
+.sec-btn--go:hover { filter: brightness(1.08); }
+.update-progress {
+  position: relative; height: 22px; margin: 2px 0 6px; border-radius: 6px; overflow: hidden;
+  background: var(--bg-tertiary, rgba(127,127,127,0.16));
+}
+.update-progress-bar { height: 100%; background: var(--color-primary); opacity: 0.55; transition: width 0.2s ease; }
+.update-progress-text {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: var(--text-primary);
+}
+
 .sec-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .sec-btn.on { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
 .sec-btn:disabled { opacity: 0.5; cursor: not-allowed; }

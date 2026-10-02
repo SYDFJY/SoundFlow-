@@ -9,7 +9,9 @@
     "build": "vite build",
     "build:electron": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "release:local": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder",
+    "release": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder --publish always"
   },
   "dependencies": {
     "electron-log": "^5.4.4",
@@ -77,6 +79,17 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "SoundFlow 声流音乐"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SYDFJY",
+        "repo": "soundflow"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/SYDFJ/sound-flow-music.git"
   }
 }

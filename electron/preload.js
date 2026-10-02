@@ -10,7 +10,7 @@ const RECEIVE_CHANNELS = [
   'lyric:update', 'lyric:index', 'lyric:seek', 'lyric:save-done', 'lyric:through',
   // 桌面歌词窗改了设置(字号/对齐/特效/逐字/翻译/背景/锁定/置顶/显示歌名)→ 主窗口落盘并回推
   'lyric-setting',
-  'app:before-close', 'update-available', 'update-not-available', 'update-error',
+  'app:before-close', 'update-available', 'update-not-available', 'update-error', 'update-progress', 'update-downloaded',
   'external-command', 'lyric-state-sync',
   'library-folder-changed', 'system-theme', 'backup-request',
   // 非原生格式转码进度(主进程 prepare-audio 期间推送)
@@ -248,6 +248,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pushLoudnessBatch: (paths) => ipcRenderer.send('loudness-batch', paths),
   stopLoudnessBatch: () => ipcRenderer.send('loudness-stop'),
   checkUpdates: () => ipcRenderer.invoke('check-updates'),
+  // 更新闭环:下载(进度走 update-progress 事件)/ 重启安装 / 真实版本号
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  getAppVersion: () => ipcRenderer.invoke('app-version'),
   saveThemeFile: (content) => ipcRenderer.invoke('save-theme-file', content),
   openThemeFile: () => ipcRenderer.invoke('open-theme-file'),
   selectCover: () => ipcRenderer.invoke('select-cover'),

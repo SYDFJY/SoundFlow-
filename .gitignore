@@ -25,6 +25,9 @@ build/thumb/
 vk_swiftshader_icd.json
 swiftshader/
 
+# ===== 与本项目无关、别误提交(里面有宿舍系统的东西)=====
+NchuDormSystem/
+
 # ===== 编辑器/工具残留 =====
 *.tmp.*
 *.tmp
