@@ -672,10 +672,45 @@ app.whenReady().then(async () => {
   })()`)
   const titleOf = new Map(items.map((i) => [i.path, i.title]))
   const queueTitles = queuePaths.map((p) => titleOf.get(p) || '')
-  const curAt = queueTitles.indexOf(curTitle)
-  const total = queueTitles.length || items.length
-  const wantPrev = curAt > 0 ? queueTitles[curAt - 1] : queueTitles[total - 1] // playPrev 会绕回队尾
-  const wantNext = curAt >= 0 ? queueTitles[(curAt + 1) % total] : items[0].title
+  let curAt = queueTitles.indexOf(curTitle)
+  let total = queueTitles.length || items.length
+  let wantPrev = curAt > 0 ? queueTitles[curAt - 1] : queueTitles[total - 1] // playPrev 会绕回队尾
+  let wantNext = curAt >= 0 ? queueTitles[(curAt + 1) % total] : items[0].title
+  // ⭐ 更可靠的来源:应用**自己的队列面板**(播放列表)——它渲染的就是内存里的 playQueue + currentIndex。
+  // 存储里那份会与内存差一两首(探针来回播放/删歌之后),四条悬停断言因此长期时红时绿(实测多轮)。
+  const liveQueue = await run(`(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+    const back = location.hash
+    location.hash = '#/player'
+    await wait(1800)
+    const btn = document.querySelector('[data-queue-toggle]')
+    if (!btn) { location.hash = back; return { err: 'no-toggle' } }
+    if (!document.querySelector('.queue-panel')) { btn.click(); await wait(900) }
+    let rows = [...document.querySelectorAll('.queue-item')]
+    let active = rows.findIndex((r) => r.classList.contains('active'))
+    const list = document.querySelector('.queue-list')
+    for (let i = 0; i < 20 && active < 0 && list; i++) {
+      list.scrollTop += Math.max(120, (list.clientHeight || 300) - 60)
+      await wait(160)
+      rows = [...document.querySelectorAll('.queue-item')]
+      active = rows.findIndex((r) => r.classList.contains('active'))
+    }
+    const titles = rows.map((r) => ((r.querySelector('.queue-name') || {}).textContent || '').trim())
+    const closeBtn = document.querySelector('.queue-close'); if (closeBtn) closeBtn.click()
+    await wait(300)
+    location.hash = back
+    await wait(1200)
+    return { titles, active, count: titles.length }
+  })()`)
+  if (liveQueue && Array.isArray(liveQueue.titles) && liveQueue.active >= 0 && liveQueue.count >= 3) {
+    const t = liveQueue.titles, n = liveQueue.count
+    curTitle = t[liveQueue.active] || curTitle
+    wantPrev = t[(liveQueue.active - 1 + n) % n]
+    wantNext = t[(liveQueue.active + 1) % n]
+    curAt = liveQueue.active
+    total = n
+    console.log('队列以应用面板为准:', JSON.stringify({ active: liveQueue.active, prev: wantPrev, cur: curTitle, next: wantNext }))
+  }
   console.log('当前曲目:', curTitle, `(队列 ${total} 首,第 ${curAt + 1} 位)`, '→ 期望上一首/下一首:', wantPrev, '/', wantNext)
   check('悬停卡:能从应用队列里定位当前曲目(定位不到就无从判断上一首/下一首)',
     curAt >= 0, `curAt=${curAt} 队列前几首: ${JSON.stringify(queueTitles.slice(0, 6))}`)
