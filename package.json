@@ -12,7 +12,8 @@
     "test": "vitest run",
     "release:local": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder",
     "release": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder --publish always",
-    "release:gitee": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder && node tools/publish-gitee.mjs"
+    "release:gitee": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder && node tools/publish-gitee.mjs",
+    "release:all": "npm run release && npm run release:gitee"
   },
   "dependencies": {
     "electron-log": "^5.4.4",

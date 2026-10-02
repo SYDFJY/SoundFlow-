@@ -43,6 +43,10 @@ GH_TOKEN=ghp_xxx npm run release           # = vite build + ffmpeg 校验 + elec
 # 3) 提交这次版本号改动并打 tag
 git add package.json && git commit -m "chore: 发布 1.0.1"
 git tag v1.0.1 && git push origin master --tags
+
+# 4) 【发镜像源】把同样的三个文件传到 Gitee(国内直连,主源连不上时应用用它)
+GITEE_TOKEN=你的Gitee令牌 npm run release:gitee     # 令牌只要 projects 权限;--dry 可预演
+# 两边一起发(推荐):npm run release:all
 ```
 
 只想本地出包、不发布:`npm run release:local`(等价于原来的 `build:electron`)。
