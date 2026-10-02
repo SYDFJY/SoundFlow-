@@ -13,7 +13,7 @@
  *    · 打包版占着音频设备时,沙箱里拿到的频域数据全是 0 →"频谱在动"那条会假红;
  *    · 两者共用一个 userData 的单实例锁,同时跑还可能互相抢窗口状态。
  */
-import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, Tray, screen } from 'electron'
 import { createRequire } from 'node:module'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -155,9 +155,19 @@ app.whenReady().then(async () => {
     localStorage.setItem('sf_debug_audio', '1')
     localStorage.setItem('soundflow_autolocate', '1')
     localStorage.setItem('soundflow_schema_version', '1')
+    // 播放模式也钉回列表播放:悬停卡那几条断言按"队列顺序的邻居"写(曲目N 的下一首是 曲目N+2),
+    // 随机模式下邻居是随机的 → 三条连环假红(实测)。工具只按顺序播放的语义跑。
+    localStorage.setItem('soundflow_play_mode', 'list')
     // 语言必须钉成中文:沙箱跨轮共享,若上一轮(例如遍历审计)把语言切成 English,
     // 下一轮十几条按中文标签/文案定位的断言会连环假红(实测 14 条)。工具只认中文界面。
     localStorage.setItem('soundflow_language', 'zh')
+    // 两态岛的配置也得钉回出厂值:沙箱跨轮共享,上一轮(或手跑的探针)把面板改成 280×150 之类,
+    // 下一轮"展开到 360×232"那一片断言就全红(实测:小窗面板尺寸被探针改小后,音量/队列/歌词页
+    // 一整段也跟着连锁失败 —— 面板太小内容根本没挂上)
+    if (window.electronAPI && window.electronAPI.storeSet) {
+      const islandDefaults = { miniPanelW: 360, miniPanelH: 200, miniPanelScale: 1, miniCompactForm: 'capsule', miniCompactW: null, miniPos: null }
+      for (const [k, v] of Object.entries(islandDefaults)) { try { await window.electronAPI.storeSet(k, v) } catch (e) {} }
+    }
     return true
   })()`)
   await win.webContents.reload()
@@ -1051,6 +1061,35 @@ app.whenReady().then(async () => {
       const mb = lmWin.getBounds()
       const overlap = !(mb.x + mb.width <= hb.x || mb.x >= hb.x + hb.width || mb.y + mb.height <= hb.y || mb.y >= hb.y + hb.height)
       check('菜单:**不遮住歌词条**(定位在宿主之外,矩形不相交)', overlap === false, JSON.stringify({ host: hb, menu: mb }))
+      // 内容比窗口高时必须能滚到底(用户报"上下不能滑动"):24 条 ≈890px,窗口上限按工作区算
+      const scrollInfo = await lmWin.webContents.executeJavaScript(`(async () => {
+        const list = document.querySelector('.m-list')
+        if (!list) return { err: '没有滚动容器 .m-list' }
+        const before = { sh: list.scrollHeight, ch: list.clientHeight, top: list.scrollTop }
+        list.scrollTop = list.scrollHeight
+        await new Promise((r) => setTimeout(r, 250))
+        const last = [...document.querySelectorAll('.m-item')].pop()
+        const r = last.getBoundingClientRect()
+        const card = document.querySelector('#menu').getBoundingClientRect()
+        const hint = document.querySelector('#menu').classList.contains('has-up')
+        return {
+          scrollable: list.scrollHeight > list.clientHeight + 1,
+          moved: list.scrollTop > before.top + 1,
+          lastId: last.getAttribute('data-id'),
+          lastInView: r.top >= card.top - 1 && r.bottom <= card.bottom + 1 && r.height > 0,
+          hasUpHint: hint,
+          heights: { sh: before.sh, ch: before.ch }
+        }
+      })()`, true)
+      console.log('菜单滚动(歌词):', JSON.stringify(scrollInfo))
+      check('菜单:内容比窗口高时**能滚到底**,最后一个条目(关闭)滚进视野可点',
+        !!scrollInfo && scrollInfo.scrollable === true && scrollInfo.moved === true && scrollInfo.lastInView === true,
+        JSON.stringify(scrollInfo))
+      check('菜单:滚过之后顶部有"还能往上"的渐隐提示',
+        !!scrollInfo && scrollInfo.hasUpHint === true, JSON.stringify(scrollInfo && { hasUpHint: scrollInfo.hasUpHint }))
+      const capH = await new Promise((res) => { try { res(screen.getDisplayMatching(hb).workArea.height) } catch (e) { res(null) } })
+      check('菜单:窗口高度不超过工作区高度(不再被写死的 560 裁掉)',
+        !!capH && mb.height <= capH - 8, JSON.stringify({ menuH: mb.height, workAreaH: capH }))
     }
     // Esc 先关菜单、不关窗口(菜单窗口自己收 Esc 并通知主进程关)
     if (lmWin && !lmWin.isDestroyed()) {
@@ -1691,6 +1730,39 @@ app.whenReady().then(async () => {
           const overlap = !(menuB.x + menuB.width <= hostB.x || menuB.x >= hostB.x + hostB.width || menuB.y + menuB.height <= hostB.y || menuB.y >= hostB.y + hostB.height)
           check('两态岛:菜单**不遮住小窗**(定位在宿主之外,矩形不相交)',
             overlap === false, JSON.stringify({ host: hostB, menu: menuB }))
+          const capH = (() => { try { return screen.getDisplayMatching(hostB).workArea.height } catch (e) { return null } })()
+          check('两态岛:菜单窗口高度不超过工作区高度(不被写死的 560 裁掉)',
+            !!capH && menuB.height <= capH - 8, JSON.stringify({ menuH: menuB.height, workAreaH: capH }))
+          // 「岛设置…」必须**滚到底看得见、点得到**(用户报"右键菜单也要有岛设置/上下不能滑动":
+          // 它在第 26 条,菜单 28 条 ≈970px,被裁掉的那段里)
+          const reach = await mwM.webContents.executeJavaScript(`(async () => {
+            const list = document.querySelector('.m-list')
+            if (!list) return { err: '没有滚动容器 .m-list' }
+            const scrollable = list.scrollHeight > list.clientHeight + 1
+            list.scrollTop = list.scrollHeight
+            await new Promise((r) => setTimeout(r, 250))
+            const row = document.querySelector('.m-item[data-id="action:settings"]')
+            if (!row) return { err: '没有岛设置条目', scrollable }
+            const r = row.getBoundingClientRect()
+            const card = document.querySelector('#menu').getBoundingClientRect()
+            const inView = r.top >= card.top - 1 && r.bottom <= card.bottom + 1 && r.height > 0
+            return { scrollable, inView, label: (row.querySelector('.m-label') || {}).textContent || '', hasUp: document.querySelector('#menu').classList.contains('has-up') }
+          })()`, true)
+          console.log('小窗菜单滚动到「岛设置…」:', JSON.stringify(reach))
+          check('两态岛:滚到底能看到「岛设置…」(内容确实可滚、不是被裁掉)',
+            !!reach && reach.scrollable === true && reach.inView === true && reach.label === '岛设置…', JSON.stringify(reach))
+          // 真点它 → 岛设置面弹出(端到端:右键 → 滚到底 → 点「岛设置…」)
+          const clicked = await mwM.webContents.executeJavaScript(`(() => {
+            const row = document.querySelector('.m-item[data-id="action:settings"]')
+            if (!row) return false
+            row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            return true
+          })()`, true)
+          await sleep(1200)
+          const faceOpen = await mrun4(`!!document.querySelector('.mini-settings')`)
+          check('两态岛:点「岛设置…」真的打开岛设置面(右键菜单这条入口是通的)',
+            clicked === true && faceOpen === true, JSON.stringify({ clicked, faceOpen }))
+          if (faceOpen) { await mrun4(`(() => { const b = document.querySelector('.mini-settings-back'); if (b) b.click(); return true })()`); await sleep(400) }
           // 形态切换放到本段末尾(岛设置面那段要先保持胶囊形态)
         }
 

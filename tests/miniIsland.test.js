@@ -392,8 +392,12 @@ describe('紧凑形态(胶囊/卡片)与参考图式面板', () => {
   })
   it('「岛设置…」:收起/未开窗时先展开再开面(挂起意图,不靠 sleep)', () => {
     const m = main(), s = mini()
-    // 自绘菜单:条目数据里「岛设置…」在"窗口"组之后(不再强制首位,但必须可达)
+    // 自绘菜单:「岛设置…」是「窗口」组的**第一条** —— 菜单 28 条、窗口高按工作区钳,
+    // 放底部命令区时要滚才看得到(用户"右键菜单也要有岛设置"说的就是它在被裁掉的那一段里)
     expect(m, '菜单缺「岛设置…」').toMatch(/item\('action:settings', '岛设置…', 'settings'\)/)
+    // (用 [\s\S] 而不是 \n:仓库里是 CRLF,跨行正则会踩坑)
+    expect(m, '「岛设置…」又滑回底部命令区了(应在「窗口」组第一条)')
+      .toMatch(/label: '窗口' \}\)[\s\S]{0,260}items\.push\(item\('action:settings'/)
     expect(m, '收起态没挂起').toMatch(/function openMiniIslandSettings\(\)[\s\S]{0,300}miniPendingSettings = true/)
     expect(m, '展开后没补发 open-settings').toMatch(/if \(miniPendingSettings\) \{[\s\S]{0,120}send\('mini:open-settings'\)/)
     expect(s, '渲染端没有挂起兜底').toMatch(/if \(expanded\.value\) openSettings\(\)\s*\n\s*else pendingSettings\.value = true/)

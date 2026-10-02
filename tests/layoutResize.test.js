@@ -76,8 +76,28 @@ describe('被裁的浮层', () => {
   it('桌面歌词菜单不会比窗口还宽 —— 2026-10-02 起菜单改由**共用的菜单窗口**渲染', () => {
     // 旧的页内菜单 min(236px,100vw-8px) 随标记一起退休;现在的宽度钳制在主进程(最窄 140,最宽 360)
     const m = read('electron/main.js')
-    expect(m, '菜单窗口宽度没有上限钳制(窄窗口/大菜单会溢出)').toMatch(/Math\.min\(360, Math\.max\(140, Math\.ceil\(size\.width\)\)\)/)
+    expect(m, '菜单上限没按工作区算').toMatch(/function appMenuMaxSize\(\) \{[\s\S]{0,240}Math\.min\(360, wa\.width - 16\)/)
+    expect(m, '菜单窗口宽度没有上限钳制(窄窗口/大菜单会溢出)').toMatch(/Math\.min\(cap\.w, Math\.max\(140, Math\.ceil\(size\.width\)\)\)/)
     expect(read('public/lyric.html'), '歌词窗里又长回页内菜单了').not.toMatch(/id="ctx"/)
+  })
+  it('菜单比窗口高时必须能滚(用户报"看不到岛设置/上下不能滑动")', () => {
+    // 菜单 20~30 条 ≈900px,而窗口高度按工作区钳 —— 超出的部分必须在菜单页里滚得到;
+    // 此前页内没有任何滚动:底部条目被直接裁掉(「岛设置…」「重置」「关闭」都点不到)。
+    const m = read('electron/main.js'), h = read('public/menu.html')
+    expect(m, '窗口高度上限又写死了(应随工作区走)').not.toMatch(/Math\.min\(560, Math\.max\(60, Math\.ceil\(size\.height\)\)\)/)
+    expect(m, '高度上限没按工作区算').toMatch(/h: Math\.max\(200, wa\.height - 16\)/)
+    expect(h, '菜单页没有滚动容器(超出部分会被裁掉)').toMatch(/\.m-list \{[\s\S]{0,240}overflow-y: auto;/)
+    expect(h, '滚动容器没预留滚动条宽度(卡片宽会随"要不要滚"抖)').toMatch(/scrollbar-gutter: stable;/)
+    expect(h, '滚轮滚到底会把滚动链传给别的窗口').toMatch(/overscroll-behavior: contain;/)
+    // 高度必须量**内容**(scrollHeight):量卡片矩形的话,卡片被 max-height 压住,窗口永远停在旧高度
+    expect(h, '上报高度没量内容高(scrollHeight)').toMatch(/const contentH = listEl\.scrollHeight/)
+    expect(h, '缺上下渐隐提示(不知道能滚)').toMatch(/#menu\.has-down::after \{/)
+    expect(h, '缺键盘导航(↑/↓)').toMatch(/e\.key === 'ArrowDown'/)
+    expect(h, '缺回车触发').toMatch(/e\.key === 'Enter'/)
+  })
+  it('菜单永不遮住宿主:放不下时改贴左右两侧(小屏上也不破)', () => {
+    const m = read('electron/main.js')
+    expect(m, '没有"位置仍与宿主相交就改贴两侧"的兜底').toMatch(/if \(hits\(out\)\) \{[\s\S]{0,320}out = sides\.find\(\(c\) => !hits\(c\)\) \|\| out/)
   })
   it('两个固定宽弹窗补了 max-width', () => {
     expect(read('src/views/PlaylistView.vue')).toMatch(/width: 560px; max-width: 92vw;/)

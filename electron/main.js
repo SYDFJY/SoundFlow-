@@ -415,6 +415,13 @@ function hideAppMenu() {
   try { if (appMenuWindow && !appMenuWindow.isDestroyed()) appMenuWindow.hide() } catch (_) {}
 }
 
+/** 菜单窗口的尺寸上限:按**宿主所在显示器的工作区**算(此前高度写死 560 —— 菜单 20~30 条
+ *  ≈900px,超出的部分被裁掉又没滚动,底部的「岛设置…」/「关闭」等直接点不到)。 */
+function appMenuMaxSize() {
+  const wa = screen.getDisplayMatching(appMenuHostRect || { x: 0, y: 0, width: 1, height: 1 }).workArea
+  return { w: Math.max(160, Math.min(360, wa.width - 16)), h: Math.max(200, wa.height - 16) }
+}
+
 /** 定位:永远在宿主之外。返回 {x,y}(已夹取到工作区、并对齐物理像素网格) */
 function placeAppMenuOutside(host, size) {
   const wa = screen.getDisplayMatching(host).workArea
@@ -428,11 +435,24 @@ function placeAppMenuOutside(host, size) {
   ]
   const fits = (c) => c.x >= wa.x && c.y >= wa.y && c.x + size.width <= wa.x + wa.width && c.y + size.height <= wa.y + wa.height
   const hits = (c) => !(c.x + size.width <= host.x || c.x >= host.x + host.width || c.y + size.height <= host.y || c.y >= host.y + host.height)
-  const chosen = cands.find((c) => fits(c) && !hits(c)) || cands.find(fits) || cands[0]
-  return {
-    x: alignToPhysicalGrid(clamp(chosen.x, wa.x, wa.x + wa.width - size.width)),
-    y: alignToPhysicalGrid(clamp(chosen.y, wa.y, wa.y + wa.height - size.height))
+  const settle = (c) => ({
+    x: alignToPhysicalGrid(clamp(c.x, wa.x, wa.x + wa.width - size.width)),
+    y: alignToPhysicalGrid(clamp(c.y, wa.y, wa.y + wa.height - size.height))
+  })
+  // 候选先夹到工作区再判"放得下吗":菜单高时原始候选(如"正下方")本来就超出屏幕,
+  // 拿它判 fits 永远是 false → 会退回 cands[0],再夹取就压到宿主身上(见下面的兜底)
+  const settled = cands.map(settle)
+  let out = settled.find((c) => fits(c) && !hits(c)) || settled.find(fits) || settled[0]
+  // 兜底:菜单很高时"正下方/上方"都放不下,夹取后可能压到宿主 —— 宁可贴左右两侧(纵向夹到工作区),
+  // 也要保住"**永不盖住宿主**"这条硬规则(小窗/歌词条都是横向居中的,两侧总有一边放得下)
+  if (hits(out)) {
+    const sides = [
+      { x: host.x + host.width + gap, y: host.y },
+      { x: host.x - size.width - gap, y: host.y }
+    ].map(settle)
+    out = sides.find((c) => !hits(c)) || out
   }
+  return out
 }
 
 /** 打开共用菜单:items = 条目数据,onPick(id) 执行动作,host = 宿主窗口矩形 */
@@ -1196,12 +1216,14 @@ function createMiniWindow() {
     // 菜单里不再放一组预设色轮换(那正是"颜色应有取色板"要解决的问题)
     items.push(item('alpha:cycle', '不透明度:' + Math.round((miniBg.alpha || 0.05) * 100) + '%(点击循环,透明模式才有效)', 'alpha'))
     items.push({ type: 'groupTitle', label: '窗口' })
+    // 「岛设置…」放在「窗口」组第一条:菜单 28 条、窗口高按工作区算,放在底部命令区时
+    // 用户要滚才看得到(他报过"右键菜单也要有岛设置" —— 其实一直在,只是被裁在下面)
+    items.push(item('action:settings', '岛设置…', 'settings'))
     items.push(item('toggle:desktopLyric', '桌面歌词', 'lyric', !!miniMenuState.desktopLyric))
     items.push(item('toggle:onTop', '小窗置顶', 'pin', storageData.miniAlwaysOnTop !== false))
     items.push(item('toggle:idle', '空闲时淡出', 'alpha', !!storageData.miniIdleFade))
     items.push(item('toggle:form', miniCompactForm() === 'capsule' ? '紧凑形态:卡片' : '紧凑形态:胶囊', 'form'))
     items.push({ type: 'separator' })
-    items.push(item('action:settings', '岛设置…', 'settings'))
     items.push(item('action:restore', '恢复主窗口', 'restore'))
     items.push(item('action:quit', '退出应用', 'exit', false, true))
 
@@ -1964,9 +1986,17 @@ function setupIPC() {
   ipcMain.on('menu:size', (event, size) => {
     if (!appMenuWindow || appMenuWindow.isDestroyed()) return
     if (event.sender !== appMenuWindow.webContents) return
-    const w = size && Number.isFinite(size.width) ? Math.min(360, Math.max(140, Math.ceil(size.width))) : 232
-    const h = size && Number.isFinite(size.height) ? Math.min(560, Math.max(60, Math.ceil(size.height))) : 140
     if (!appMenuHostRect) return
+    // 上限按工作区算(不再写死 560):超出部分由菜单页自己滚(滚动容器 + 上下渐隐)
+    const cap = appMenuMaxSize()
+    const w = size && Number.isFinite(size.width) ? Math.min(cap.w, Math.max(140, Math.ceil(size.width))) : 232
+    const h = size && Number.isFinite(size.height) ? Math.min(cap.h, Math.max(60, Math.ceil(size.height))) : 140
+    // 尺寸没变就别重设:渲染端在 resize 时会再报一次(滚动条出现/字体就绪),
+    // 每次都 setBounds+show+focus 会多一轮抖动与抢焦点
+    try {
+      const cur = appMenuWindow.getBounds()
+      if (cur.width === w && cur.height === h && appMenuWindow.isVisible()) return
+    } catch (_) {}
     const pos = placeAppMenuOutside(appMenuHostRect, { width: w, height: h })
     try { appMenuWindow.setBounds({ x: pos.x, y: pos.y, width: w, height: h }) } catch (_) {}
     // show() 会拿焦点 —— 这样"点别处"能触发 blur 自动关;键盘 Esc 也才收得到
