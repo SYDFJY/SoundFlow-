@@ -1219,7 +1219,14 @@ function createMiniWindow() {
     items.push(item('bg:transparent', '背景:完全透明', 'alpha', miniBg.mode === 'transparent'))
     // 颜色(背景色 + 三处文字色)已搬进**岛设置面的「颜色」分组**,那里是真取色板;
     // 菜单里不再放一组预设色轮换(那正是"颜色应有取色板"要解决的问题)
-    items.push(item('alpha:cycle', '不透明度:' + Math.round((miniBg.alpha || 0.05) * 100) + '%(点击循环,透明模式才有效)', 'alpha'))
+    // 不透明度:滑杆(自由选)。曾经是"点一次换一档"(0/10/20/30/50/70/85),
+    // 用户报"透明度不能自由选择,必须一次一次点" —— 现在拖到哪就是哪,边拖边看
+    items.push({
+      id: 'alpha',
+      label: '不透明度' + (miniBg.mode === 'transparent' ? '' : '(透明模式才有效)'),
+      icon: 'alpha',
+      slider: { value: Math.round((miniBg.alpha ?? 0.05) * 100), min: 0, max: 85, step: 5, suffix: '%' }
+    })
     items.push({ type: 'groupTitle', label: '窗口' })
     // 「岛设置…」放在「窗口」组第一条:菜单 28 条、窗口高按工作区算,放在底部命令区时
     // 用户要滚才看得到(他报过"右键菜单也要有岛设置" —— 其实一直在,只是被裁在下面)
@@ -1232,13 +1239,18 @@ function createMiniWindow() {
     items.push(item('action:restore', '恢复主窗口', 'restore'))
     items.push(item('action:quit', '退出应用', 'exit', false, true))
 
-    const pick = (id) => {
+    const pick = (id, value) => {
       if (!id) return
       if (id.startsWith('cmd:')) return sendCmd(id.slice(4))
       if (id.startsWith('mode:')) return sendCmd('play-mode:' + id.slice(5))
       if (id.startsWith('rate:')) return sendCmd('rate:' + id.slice(5))
       if (id.startsWith('bg:')) return applyBg(id.slice(3))
-      if (id.startsWith('alpha:')) { const arr = [0, 0.1, 0.2, 0.3, 0.5, 0.7, 0.85]; const cur = Math.abs(miniBg.alpha || 0.05); const i = arr.findIndex((a) => Math.abs(a - cur) < 0.001); return applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, arr[(i + 1) % arr.length]) }
+      // 不透明度滑杆:取任意值(0~85%),不再按预设档循环
+      if (id === 'alpha') {
+        const v = Number(value)
+        if (!Number.isFinite(v)) return
+        return applyBg(miniBg.mode === 'transparent' ? 'transparent' : miniBg.mode, null, Math.max(0, Math.min(0.85, v / 100)))
+      }
       if (id === 'toggle:desktopLyric') return sendCmd('toggle-desktop-lyric')
       if (id === 'toggle:onTop') {
         storageData.miniAlwaysOnTop = storageData.miniAlwaysOnTop === false

@@ -634,6 +634,31 @@ app.whenReady().then(async () => {
   }
   // 上一首/下一首要按**应用当前的队列顺序**算,而不是播种时的数组顺序:起播时队列会按
   // 列表的排序重建(夹具标题现在是 "Track N"/"曲目 N" 交替,按标题排序与播种序并不一致)。
+  // 先把"当前这首"从列表里再起播一次:起播会**按列表顺序重建队列并落盘** ——
+  // 否则应用内存里的队列与存储里的那份可能差一首(夹具删过歌/换过序),三条悬停断言就会
+  // 时红时绿(实测:期望「曲目14」卡上是「曲目16」)。标题重名的(夹具里 Dup Song 有两首)跳过重建,
+  // 免得按标题点到另一首上。
+  const dupTitles = items.reduce((m, i) => m.set(i.title, (m.get(i.title) || 0) + 1), new Map())
+  if (curTitle && dupTitles.get(curTitle) === 1) {
+    // 就地起播(不走 playByTitle:它定义在这段之后,提前用会 TDZ 报错)
+    await run(`(() => { location.hash = '#/home'; return true })()`)
+    await sleep(1500)
+    const rebuilt = await run(`(async () => {
+      const body = document.querySelector('.list-body')
+      const findRow = () => [...document.querySelectorAll('.list-row')].find((r) => (r.textContent || '').includes(${JSON.stringify(curTitle)}))
+      body && (body.scrollTop = 0)
+      await new Promise((r) => setTimeout(r, 200))
+      for (let i = 0; i < 24; i++) {
+        const row = findRow()
+        if (row) { row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); return 'played' }
+        if (!body) break
+        body.scrollTop += Math.max(200, body.clientHeight - 60)
+        await new Promise((r) => setTimeout(r, 160))
+      }
+      return 'no-row'
+    })()`)
+    if (rebuilt === 'played') { await sleep(1800); curTitle = (await readTitle()) || curTitle }
+  }
   // 队列以**主进程存储**为准(localStorage 那份可能还没被应用重建过的旧序覆盖 —— 踩过:
   // 期望「曲目14」而卡上是「曲目16」,差两首,就是两边顺序不一致)。取不到再退回 localStorage。
   const queuePaths = await run(`(async () => {
@@ -1770,6 +1795,63 @@ app.whenReady().then(async () => {
           const wantH = capH ? Math.max(300, Math.min(620, Math.round(capH * 0.62))) : null
           check('两态岛:菜单高度是"中等"档(工作区 62%,不再满屏也不写死 560)',
             !!wantH && Math.abs(menuB.height - wantH) <= 8, JSON.stringify({ menuH: menuB.height, want: wantH, workAreaH: capH }))
+          // 不透明度滑杆:拖到 45%(旧预设 0/10/20/30/50/70/85 里**没有**的值 —— 自由选的判据)
+          const alphaProbe = await mwM.webContents.executeJavaScript(`(async () => {
+            const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+            const row = document.querySelector('.m-slider[data-id="alpha"]')
+            if (!row) return { err: '菜单里没有不透明度滑杆' }
+            const range = row.querySelector('.m-range')
+            const valBefore = (row.querySelector('.m-val') || {}).textContent || ''
+            row.scrollIntoView({ block: 'nearest' })
+            await wait(200)
+            const r = range.getBoundingClientRect()
+            // 45% 在轨道上的位置(min 0 / max 85)
+            const frac = 45 / 85
+            const x = Math.round(r.left + 6 + (r.width - 12) * frac), y = Math.round(r.top + r.height / 2)
+            return { valBefore, x, y, min: range.min, max: range.max }
+          })()`, true)
+          console.log('不透明度滑杆:', JSON.stringify(alphaProbe))
+          if (alphaProbe && !alphaProbe.err) {
+            const mp = mwM.webContents
+            mp.sendInputEvent({ type: 'mouseDown', x: alphaProbe.x, y: alphaProbe.y, button: 'left', clickCount: 1 })
+            mp.sendInputEvent({ type: 'mouseMove', x: alphaProbe.x, y: alphaProbe.y, button: 'left' })
+            mp.sendInputEvent({ type: 'mouseUp', x: alphaProbe.x, y: alphaProbe.y, button: 'left', clickCount: 1 })
+            await sleep(900)
+            const after = await mwM.webContents.executeJavaScript(`(() => {
+              const row = document.querySelector('.m-slider[data-id="alpha"]')
+              const range = row ? row.querySelector('.m-range') : null
+              return { value: range ? Number(range.value) : null, label: row ? (row.querySelector('.m-val') || {}).textContent : '' }
+            })()`, true)
+            const stored = await run(`(async () => { try { return await window.electronAPI.storeGet('miniBgAlpha') } catch (e) { return null } })()`)
+            const bgNow = await mrun4(`(() => { const el = document.querySelector('.mini-capsule:not(.mini-capsule--preview)') || document.querySelector('.mini-player'); if (!el) return ''; return getComputedStyle(el).backgroundColor })()`)
+            console.log('滑杆拖到 45%:', JSON.stringify({ after, stored, bgNow, menuStillOpen: !!(await mwM.webContents.isDestroyed ? false : true) }))
+            check('两态岛:小窗菜单里的不透明度是**滑杆**且能拖到任意值(45%,不在旧预设档里)',
+              !!after && after.value === 45 && Math.abs(Number(stored) - 0.45) < 0.01 && /0\.45|45%/.test(String(after.label)),
+              JSON.stringify({ after, stored, bgNow }))
+            // "拖完还能接着调"用**功能**判,别只看 isVisible(沙箱里窗口可见性会被别处的
+            // 激活状态影响,实测时红时绿):再拖一次到 60%,还落得下就说明菜单是活的
+            const again = await mwM.webContents.executeJavaScript(`(() => {
+              const row = document.querySelector('.m-slider[data-id="alpha"]')
+              const r = row && row.querySelector('.m-range')
+              return r ? { x: Math.round(r.getBoundingClientRect().left + 6 + (r.getBoundingClientRect().width - 12) * (60 / 85)), y: Math.round(r.getBoundingClientRect().top + r.getBoundingClientRect().height / 2) } : null
+            })()`, true)
+            if (again) {
+              mp.sendInputEvent({ type: 'mouseDown', x: again.x, y: again.y, button: 'left', clickCount: 1 })
+              mp.sendInputEvent({ type: 'mouseUp', x: again.x, y: again.y, button: 'left', clickCount: 1 })
+              await sleep(700)
+            }
+            const stored2 = await run(`(async () => { try { return await window.electronAPI.storeGet('miniBgAlpha') } catch (e) { return null } })()`)
+            check('两态岛:拖完透明度还能接着拖(菜单没被关掉,60% 也落得下)',
+              Math.abs(Number(stored2) - 0.6) < 0.02, JSON.stringify({ stored2, visible: !mwM.isDestroyed() && mwM.isVisible() }))
+            // 还原成 30%(沙箱里的原值),免得影响后面
+            await mwM.webContents.executeJavaScript(`(() => {
+              const row = document.querySelector('.m-slider[data-id="alpha"]')
+              const range = row && row.querySelector('.m-range')
+              if (range) { range.value = '30'; range.dispatchEvent(new Event('input', { bubbles: true })); range.dispatchEvent(new Event('change', { bubbles: true })) }
+              return true
+            })()`, true)
+            await sleep(600)
+          }
           // 「岛设置…」必须**滚到底看得见、点得到**(用户报"右键菜单也要有岛设置/上下不能滑动":
           // 它在第 26 条,菜单 28 条 ≈970px,被裁掉的那段里)
           const reach = await mwM.webContents.executeJavaScript(`(async () => {
@@ -1789,7 +1871,15 @@ app.whenReady().then(async () => {
           check('两态岛:滚到底能看到「岛设置…」(内容确实可滚、不是被裁掉)',
             !!reach && reach.scrollable === true && reach.inView === true && reach.label === '岛设置…', JSON.stringify(reach))
           // 真点它 → 岛设置面弹出(端到端:右键 → 滚到底 → 点「岛设置…」)
-          const clicked = await mwM.webContents.executeJavaScript(`(() => {
+          let mwForSettings = mwM
+          if (!mwM.isDestroyed() && !mwM.isVisible()) {
+            // 菜单被别处的激活状态收起了(沙箱噪音):重新右键开一次再点
+            const sz2 = mw4.getSize()
+            mw4.webContents.sendInputEvent({ type: 'mouseDown', x: Math.round(sz2[0] / 2), y: 20, button: 'right', clickCount: 1 })
+            mw4.webContents.sendInputEvent({ type: 'mouseUp', x: Math.round(sz2[0] / 2), y: 20, button: 'right', clickCount: 1 })
+            await sleep(1000)
+          }
+          const clicked = await mwForSettings.webContents.executeJavaScript(`(() => {
             const row = document.querySelector('.m-item[data-id="action:settings"]')
             if (!row) return false
             row.dispatchEvent(new MouseEvent('click', { bubbles: true }))

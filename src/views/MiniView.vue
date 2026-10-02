@@ -153,6 +153,20 @@
                     <span class="mini-settings-value">{{ miniBgColor }}</span>
                   </span>
                 </div>
+                <!-- 背景不透明度:滑杆(自由选)。原先在小窗右键菜单里是"点一次换一档",
+                     用户报"透明度不能自由选择,必须一次一次点";只在透明背景模式下生效 -->
+                <div class="mini-settings-row">
+                  <span class="mini-settings-label">背景不透明度</span>
+                  <span class="mini-settings-ctl">
+                    <input
+                      class="mini-range" type="range" min="0" max="85" step="5"
+                      :value="Math.round(miniBgAlpha * 100)"
+                      @input="setBgAlpha(Number($event.target.value))"
+                      aria-label="背景不透明度"
+                    />
+                    <span class="mini-settings-value">{{ miniBgMode === 'transparent' ? Math.round(miniBgAlpha * 100) + '%' : '透明模式才生效' }}</span>
+                  </span>
+                </div>
                 <div class="mini-settings-row" v-for="c in TEXT_COLOR_ROWS" :key="c.key">
                   <span class="mini-settings-label">{{ c.label }}</span>
                   <span class="mini-settings-ctl">
@@ -465,6 +479,13 @@ function setTextColor(key, v) {
   if (key === 'titleColor') miniTitleColor.value = v
   else if (key === 'artistColor') miniArtistColor.value = v
   else miniTimeColor.value = v
+  sendMiniBgColors()
+}
+// 背景不透明度(0~85%):滑杆拖到哪就是哪 —— 与菜单里那根滑杆走同一条 mini:bg-changed
+function setBgAlpha(percent) {
+  const v = Math.max(0, Math.min(0.85, Number(percent) / 100))
+  if (!Number.isFinite(v)) return
+  miniBgAlpha.value = v
   sendMiniBgColors()
 }
 // 取色器(nano)本体约 200×196。面板默认 200 高(窗口 232)放得下;缩到最小时窗口内高约 183,

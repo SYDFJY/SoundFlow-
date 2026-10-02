@@ -62,6 +62,15 @@
   .m-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   .m-check { width: 14px; height: 14px; flex-shrink: 0; opacity: 0; color: var(--accent, #4d94ff); }
   .m-item.on .m-check { opacity: 1; }
+  /* 滑杆条目(如"不透明度"):不再"点一次换一档" —— 用户要的是**自由选**
+     (他报过"透明度不能自由选择,必须一次一次点") */
+  .m-slider { cursor: default; }
+  .m-slider:hover { background: none; color: inherit; }
+  .m-range { -webkit-appearance: none; appearance: none; width: 86px; height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.20); outline: none; cursor: pointer; flex-shrink: 0; }
+  .m-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 12px; height: 12px;
+    border-radius: 50%; background: var(--accent, #4d94ff); cursor: pointer; border: none; }
+  .m-val { width: 36px; text-align: right; flex-shrink: 0; color: rgba(255,255,255,0.78); font-variant-numeric: tabular-nums; }
   .m-sep { height: 1px; margin: 5px 8px; background: rgba(255,255,255,0.08); }
   .m-sub { padding-left: 10px; border-left: 2px solid rgba(255,255,255,0.08); margin-left: 10px; }
   .m-empty { padding: 10px; color: rgba(255,255,255,0.4); }
@@ -125,6 +134,16 @@ function render(items) {
     const cls = ['m-item']
     if (it.checked) cls.push('on')
     if (it.danger) cls.push('danger')
+    // it.slider 是**数值条目**:行里嵌一个滑杆,拖到哪就是哪(不再"点一次换一档")
+    if (it.slider) {
+      const s = it.slider
+      rows.push(`<div class="m-item m-slider" data-id="${esc(it.id || '')}" data-slider="1" role="none">
+        ${icon(it.icon)}<span class="m-label">${esc(it.label)}</span>
+        <input class="m-range" type="range" min="${Number(s.min) || 0}" max="${Number(s.max) || 100}" step="${Number(s.step) || 1}" value="${Number(s.value) || 0}" data-suffix="${esc(s.suffix || '')}" aria-label="${esc(it.label)}" />
+        <span class="m-val">${Number(s.value) || 0}${esc(s.suffix || '')}</span>
+      </div>`)
+      continue
+    }
     // it.color 是**取色条目**:在这一项上就地开取色板(值随条目一起从主进程带过来)
     rows.push(`<div class="${cls.join(' ')}" data-id="${esc(it.id || '')}"${typeof it.color === 'string' ? ` data-color="${esc(it.color)}"` : ''} role="menuitem"${it.checked ? ' aria-checked="true"' : ''}>
       ${icon(it.icon)}<span class="m-label">${esc(it.label)}</span>
@@ -138,8 +157,9 @@ function render(items) {
   updateScrollHint()
   reportSize()
 }
-// 键盘导航(页内那份菜单曾有、迁到共用窗口后丢过):↑/↓ 移高亮、回车触发、Esc 关闭
-function menuItems() { return [...listEl.querySelectorAll('.m-item')] }
+// 键盘导航(页内那份菜单曾有、迁到共用窗口后丢过):↑/↓ 移高亮、回车触发、Esc 关闭。
+// 滑杆条目不是命令:不参与高亮/回车,方向键在它身上时交给滑杆自己调值。
+function menuItems() { return [...listEl.querySelectorAll('.m-item:not([data-slider])')] }
 function setActive(idx, scroll = true) {
   const items = menuItems()
   if (!items.length) return
@@ -228,10 +248,28 @@ root.addEventListener('click', (e) => {
   const row = e.target.closest && e.target.closest('.m-item')
   if (!row) return
   if (row.hasAttribute('data-color')) { openColorPicker(row); return }
+  if (row.hasAttribute('data-slider')) return // 滑杆行只是"拖",不是命令
   fire(row)
+})
+// 滑杆:拖动时实时回写(合并 ~80ms),松手补一次即时值;旁边数值跟着走
+listEl.addEventListener('input', (e) => {
+  const range = e.target.closest && e.target.closest('.m-range')
+  if (!range) return
+  const row = range.closest('.m-slider')
+  const valEl = row && row.querySelector('.m-val')
+  if (valEl) valEl.textContent = range.value + (range.getAttribute('data-suffix') || '')
+  if (row) sendPick(row.getAttribute('data-id'), Number(range.value), false)
+})
+listEl.addEventListener('change', (e) => {
+  const range = e.target.closest && e.target.closest('.m-range')
+  if (!range) return
+  const row = range.closest('.m-slider')
+  if (row) sendPick(row.getAttribute('data-id'), Number(range.value), true)
 })
 listEl.addEventListener('scroll', updateScrollHint, { passive: true })
 document.addEventListener('keydown', (e) => {
+  // 焦点在滑杆上:方向键归滑杆(别被下面的菜单导航抢走)
+  if (e.target && e.target.classList && e.target.classList.contains('m-range') && (e.key.startsWith('Arrow') || e.key === 'Home' || e.key === 'End')) return
   if (e.key === 'Escape') {
     // 取色板开着就先收取色板(第二下才收菜单)
     if (pickRow) { closeColorPicker(); return }

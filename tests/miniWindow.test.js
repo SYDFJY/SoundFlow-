@@ -33,11 +33,18 @@ describe('小窗背景:透明度能到 0', () => {
     }
   })
 
-  it('右键菜单的透明度预设里有 0%(最上一档就是完全透明)', () => {
-    const m = read('electron/main.js')
-    // 自绘菜单后不透明度改成一档循环(菜单窗口塞不下一排单选),0 必须在档位里
-    expect(m, '透明度档里没有 0%').toMatch(/const arr = \[0, 0\.1, 0\.2, 0\.3, 0\.5, 0\.7, 0\.85\]/)
-    expect(m, '菜单里没有不透明度这一项').toMatch(/'alpha:cycle'/)
+  it('不透明度是**滑杆**(自由选),不再是"点一次换一档"的循环项', () => {
+    // 用户报"透明度不能自由选择,必须一次一次点" —— 旧的 alpha:cycle 按预设档循环,
+    // 现在菜单里是滑杆(0~85%, 步长 5)+ 拖到哪就是哪
+    const m = read('electron/main.js'), h = read('public/menu.html')
+    expect(m, '预设档循环又回来了').not.toMatch(/alpha:cycle|const arr = \[0, 0\.1, 0\.2, 0\.3, 0\.5, 0\.7, 0\.85\]/)
+    expect(m, '菜单里没有不透明度滑杆条目').toMatch(/id: 'alpha',[\s\S]{0,160}slider: \{ value: Math\.round\(\(miniBg\.alpha \?\? 0\.05\) \* 100\), min: 0, max: 85, step: 5, suffix: '%' \}/)
+    expect(m, '滑杆取值没接(应取任意值并夹在 0~0.85)').toMatch(/if \(id === 'alpha'\) \{[\s\S]{0,200}Math\.max\(0, Math\.min\(0\.85, v \/ 100\)\)/)
+    expect(h, '菜单窗口没渲染滑杆行').toMatch(/if \(it\.slider\) \{/)
+    expect(h, '滑杆没接 type=range').toMatch(/class="m-range" type="range"/)
+    expect(h, '滑杆拖动没有实时回写').toMatch(/listEl\.addEventListener\('input',[\s\S]{0,460}sendPick\(row\.getAttribute\('data-id'\), Number\(range\.value\), false\)/)
+    expect(h, '滑杆被当成命令行了(点击/回车会派发动作)').toMatch(/if \(row\.hasAttribute\('data-slider'\)\) return/)
+    expect(h, '键盘导航没跳过滑杆行').toMatch(/querySelectorAll\('\.m-item:not\(\[data-slider\]\)'\)/)
   })
 
   it('窗口恒透明:背景模式只改 CSS,不再重建窗口(旧实现切"透明/不透明"要关窗重建)', () => {
@@ -146,11 +153,12 @@ describe('小窗右键菜单 = 它设置的唯一入口(与桌面歌词一个思
       expect(s, `菜单缺少分组标题「${t}」`).toContain(`{ type: 'groupTitle', label: '${t}' }`)
     }
   })
-  it('小窗外观设置也在菜单里:背景四种(单选)+ 不透明度 + 三个文字颜色', () => {
+  it('小窗外观设置也在菜单里:背景三种(单选)+ 不透明度滑杆(文字颜色已搬去岛设置面)', () => {
     const s = m()
-    for (const k of ["'bg:dark'", "'bg:white'", "'bg:transparent'", "'alpha:cycle'"]) {
+    for (const k of ["'bg:dark'", "'bg:white'", "'bg:transparent'"]) {
       expect(s, `菜单缺少 ${k}`).toContain(k)
     }
+    expect(s, '菜单缺少不透明度滑杆条目').toMatch(/id: 'alpha',/)
     expect(s, '背景模式没有勾选态').toMatch(/item\('bg:dark', '背景:深色', 'bg', miniBg\.mode === 'dark'\)/)
   })
   it('两个开关也有勾选态:桌面歌词 / 小窗置顶', () => {
