@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "release:local": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder",
-    "release": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder --publish always"
+    "release": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder --publish always",
+    "release:gitee": "vite build && node tools/fetch-ffmpeg.mjs --check && electron-builder && node tools/publish-gitee.mjs"
   },
   "dependencies": {
     "electron-log": "^5.4.4",
@@ -86,7 +87,9 @@
         "owner": "SYDFJY",
         "repo": "soundflow"
       }
-    ]
+    ],
+    "artifactName": "SoundFlow-Setup-${version}.${ext}",
+    "compression": "maximum"
   },
   "repository": {
     "type": "git",

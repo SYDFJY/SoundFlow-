@@ -75,6 +75,31 @@ git tag v1.0.1 && git push origin master --tags
 
 ---
 
+## 四点五、发到 Gitee(R 国内直连,不依赖加速器)
+
+electron-builder 的 `--publish always` 只认它内置的 provider(github 等),Gitee 不在内,所以这条走脚本:
+
+```bash
+# 1) 出包(产物名统一成 ASCII:release/SoundFlow-Setup-<版本>.exe)
+npm run release:local
+
+# 2) 传到 Gitee 发行版(固定 tag=latest,附件同名覆盖)
+GITEE_TOKEN=你的令牌 node tools/publish-gitee.mjs          # 加 --dry 只看要传什么
+```
+
+- 令牌:https://gitee.com/profile/personal_access_tokens(勾 `projects` 即可)
+- **附件用固定 tag `latest`**:electron-updater 的 generic 源是"固定 URL + 文件名",tag 跟着版本号变的话
+  每次发布都要改应用里的配置;固定 tag 下只换附件,URL 不变
+- 发完在 `package.json` 里把发布源切到 Gitee 并**重打包一次**(包内 app-update.yml 才会指向它):
+
+```jsonc
+"publish": [{ "provider": "generic", "url": "https://gitee.com/SYDFJ/sound-flow-music/releases/download/latest/" }]
+```
+
+- **体积上限**:Gitee 社区版发行版**单附件 100MB**;我们的安装包当前 **98MiB / 103MB**——
+  贴着上限(取决于平台按 MiB 还是 MB 算)。项目里 ffmpeg 那个静态构建占了 81MiB,换精简版构建
+  (如 gyan.dev essentials)能把安装包压到 ~40MB,既稳过上限、更新下载也快得多。
+
 ## 五、换发布源(比如换到 Gitee / 自建静态站)
 
 应用端**不用改任何代码**——它只认包内的 `app-update.yml`,而这个文件是打包时按 `build.publish` 生成的。三种常见选择:
