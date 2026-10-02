@@ -75,7 +75,13 @@ git tag v1.0.1 && git push origin master --tags
 
 ---
 
-## 四点五、发到 Gitee(R 国内直连,不依赖加速器)
+## 四点五、发到 Gitee(备用路线;**当前不用**)
+
+> **现在的选择**:安装包走 **GitHub Releases**(保留完整 ffmpeg,安装包 98MiB,不受那里的体积限制);
+> **Gitee 只放代码**。原因:Gitee 社区版发行版单附件 **100MB**,而我们安装包 98MiB/103MB 贴着上限。
+> 这一节留着给将来换精简版 ffmpeg / 想在国内直连下载时用 —— 脚本已经写好、可直接用。
+
+electron-builder 的 `--publish always` 只认它内置的 provider(github 等),Gitee 不在内,所以这条走脚本:
 
 electron-builder 的 `--publish always` 只认它内置的 provider(github 等),Gitee 不在内,所以这条走脚本:
 
