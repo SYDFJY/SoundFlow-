@@ -31,9 +31,23 @@ require(path.join(here, '..', 'electron', 'main.js'))
 process.on('unhandledRejection', (e) => { console.error('✗ 探针内部错误(未处理的 Promise):', (e && e.stack) || e); app.exit(1) })
 process.on('uncaughtException', (e) => { console.error('✗ 探针内部错误:', (e && e.stack) || e); app.exit(1) })
 
-/** 探针用的真实歌曲(三家音源都该有)与"肯定不存在"的对照 */
-const REAL = { title: '晴天', artist: '周杰伦', duration: 269 }
-const FAKE = { title: 'qzxwv不存在的歌名9931', artist: 'zzz不存在' }
+/** 探针用的真实歌曲(几家音源都该有)与"肯定不存在"的对照。
+ *  可用参数覆盖,便于按 case 排查(比如探"同名 Live 会不会被误配"):
+ *    --title=晴天 --artist=周杰伦 --duration=269 --source=amll|netease|lrclib|qq|kugou|auto */
+const argOf = (name, def) => {
+  const hit = process.argv.find((a) => a.startsWith(`--${name}=`))
+  return hit ? hit.slice(name.length + 3) : def
+}
+const REAL = {
+  title: argOf('title', '晴天'),
+  artist: argOf('artist', '周杰伦'),
+  duration: Number(argOf('duration', '269')) || 269
+}
+const PROBE_SOURCE = argOf('source', 'auto')
+if (PROBE_SOURCE !== 'auto' || REAL.title !== '晴天') {
+  console.log(`探针目标:${REAL.title} / ${REAL.artist} / ${REAL.duration}s,源=${PROBE_SOURCE}`)
+}
+const FAKE = { title: argOf('fake', 'qzxwv不存在的歌名9931'), artist: 'zzz不存在' }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const results = []
@@ -140,11 +154,14 @@ app.whenReady().then(async () => {
   }
 
   // 2) 取词:存在的歌 / 不存在的歌
-  const lyric = await run(`window.electronAPI.fetchOnlineLyric(${JSON.stringify({ ...REAL, source: 'auto' })})`)
+  const lyric = await run(`window.electronAPI.fetchOnlineLyric(${JSON.stringify({ ...REAL, source: PROBE_SOURCE })})`)
   const text = lyric && lyric.lyrics ? lyric.lyrics : ''
   console.log('  在线取词:', short({ source: lyric && lyric.source, error: lyric && lyric.error, len: text.length, head: text.slice(0, 60) }))
-  check('在线取词能拿到带时间戳的歌词(三家 auto 链路)',
+  check(`在线取词能拿到带时间戳的歌词(源=${PROBE_SOURCE})`,
     /\[\d{2}:\d{2}/.test(text), `来源 ${(lyric && lyric.source) || '-'} / ${text.length} 字`)
+  // 词级时间轴(逐字):增强 LRC 才有 <mm:ss.xx>;用于核对 yrc/QRC/TTML 是否真的接到了
+  const wordTags = (text.match(/<\d{2}:\d{2}\.\d{2}>/g) || []).length
+  console.log(`  · 逐字词级标签:${wordTags} 个${wordTags ? '(这条源带词级时间轴)' : '(行级/无)'}`)
 
   // 乱写的歌名必须**什么都拿不到**。
   // 这里曾实测到:查询"qzxwv不存在的歌名9931"时网易云返回 10 条噪声候选(陈奕迅《世界上不存在的歌》),

@@ -296,13 +296,16 @@ export const usePlayerStore = defineStore('player', () => {
   // ===== 歌词来源偏好 =====
   // 读取/写入只有这一份实现:此前"旧版 local 迁移成 auto + 非法值兜底"这套
   // 归一化在 loadLyrics、设置页、播放页各写了一遍,现在统一走这几个。
-  const LYRIC_SOURCES = ['auto', 'netease', 'lrclib', 'qq']
-  /** 界面用的来源清单:设置页与播放页歌词工具栏共用同一份(别再各写一套标签) */
+  const LYRIC_SOURCES = ['auto', 'netease', 'lrclib', 'qq', 'kugou', 'amll']
+  /** 界面用的来源清单:设置页与播放页歌词工具栏共用同一份(别再各写一套标签)。
+   *  与主进程的 LYRIC_SOURCES 是**手抄关系**,由 tests/lyricMatch.test.js 的一致性用例钉住。 */
   const LYRIC_SOURCE_OPTIONS = [
     { value: 'auto', label: '自动', hint: '本地优先,无本地自动在线' },
-    { value: 'netease', label: '网易云', hint: '在线优先,失败回退本地' },
-    { value: 'lrclib', label: 'LRCLIB', hint: '在线优先,失败回退本地' },
-    { value: 'qq', label: 'QQ音乐', hint: '在线优先,失败回退本地' }
+    { value: 'netease', label: '网易云', hint: '中文最全,带官方译文' },
+    { value: 'lrclib', label: 'LRCLIB', hint: '免费开放,同步歌词' },
+    { value: 'qq', label: 'QQ音乐', hint: '中文覆盖广' },
+    { value: 'kugou', label: '酷狗', hint: '中文曲库大,带时长校版' },
+    { value: 'amll', label: 'AMLL', hint: '社区词库,逐字(TTML)' }
   ]
   function lyricSourcePref() {
     try {
@@ -1384,7 +1387,8 @@ export const usePlayerStore = defineStore('player', () => {
 
   /** 来源标签:源 id → 界面上显示的中文 */
   function originLabelFor(source) {
-    return source === 'netease' ? '网易云' : (source === 'lrclib' ? 'LRCLIB' : (source === 'qq' ? 'QQ音乐' : '自动'))
+    const labels = { netease: '网易云', lrclib: 'LRCLIB', qq: 'QQ音乐', kugou: '酷狗', amll: 'AMLL' }
+    return labels[source] || '自动'
   }
 
   // 当前歌词来源(供界面显示:本地 / LRCLIB / 网易云 / 自动)

@@ -182,7 +182,7 @@
         <div class="setting-item" v-if="onlineLyric">
           <div class="setting-label">
             <span class="label-text">歌词来源</span>
-            <span class="label-desc">LRCLIB 免费开放；QQ 音乐中文覆盖广；网易云中文较全；自动 = LRCLIB 优先，失败再 QQ 音乐 → 网易云</span>
+            <span class="label-desc">自动 = LRCLIB → QQ音乐 → 酷狗 → 网易云 四家**并行**(谁先答上就用谁),全都没有再试 AMLL 兜底；手选则只用那一家。中文歌建议网易云/QQ,逐字可选 AMLL(词库带音质会差些)</span>
           </div>
           <div class="lyric-source-group">
             <button v-for="opt in lyricSources" :key="opt.value" class="chip" :class="{ active: playerStore.lyricSource === opt.value }" @click="playerStore.changeLyricSource(opt.value)">{{ opt.label }}</button>

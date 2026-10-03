@@ -19,7 +19,8 @@
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "iconv-lite": "^0.7.3",
-    "music-metadata": "^11.12.3"
+    "music-metadata": "^11.12.3",
+    "opencc-js": "^1.4.2"
   },
   "devDependencies": {
     "@lucide/vue": "^1.28.0",

@@ -2625,7 +2625,7 @@ app.whenReady().then(async () => {
   console.log('歌词工具栏分组:', JSON.stringify(srcGroup))
   check('歌词工具栏:图标按钮齐 + 「来源」收成一个图标按钮、弹层 4 选 1 且当前项高亮',
     !!srcGroup && srcGroup.icons.length === 6 && srcGroup.hasSrcBtn === true &&
-    srcGroup.sources.length === 4 && srcGroup.active.length === 1,
+    srcGroup.sources.length === 6 && srcGroup.active.length === 1,
     JSON.stringify(srcGroup))
   await run(`(() => {
     const b = [...document.querySelectorAll('.ls-src-row')].find((x) => (x.textContent || '').trim() === '网易云')

@@ -92,9 +92,15 @@ describe('失败三态:未找到 ≠ 网络故障 ≠ 音源异常', () => {
   })
 
   it('分类规则:用桩替掉三个源,逐个场景验', async () => {
-    const names = ['lrclib', 'qq', 'netease']
+    // 从模块派生(不是写死):新增源时这两处必须跟着走,否则桩不全、auto 会真发网络请求
+    const names = Object.keys(sources.LYRIC_SOURCES)
+    expect(names.length, 'auto 只覆盖了部分源').toBeGreaterThanOrEqual(3)
     const original = names.map((n) => sources.LYRIC_SOURCES[n].fetch)
-    const stub = (returns) => names.forEach((n, i) => { sources.LYRIC_SOURCES[n].fetch = async () => returns[i] })
+    // 夹具是按三源写的,源变多之后多出来的那几个**沿用最后一个**——
+    // 这样"三家全网络故障"仍是"全部网络故障","两家说没有"仍是"剩下的也说没有"
+    const stub = (returns) => names.forEach((n, i) => {
+      sources.LYRIC_SOURCES[n].fetch = async () => returns[Math.min(i, returns.length - 1)]
+    })
     const info = { title: 'x', artist: 'y', duration: 1 }
     try {
       for (const [label, returns, want] of [
@@ -123,22 +129,29 @@ describe('失败三态:未找到 ≠ 网络故障 ≠ 音源异常', () => {
   })
 
   it('三个源是并行发起的(串行会让慢源吃掉预算,快的源轮不到)', async () => {
-    const names = ['lrclib', 'qq', 'netease']
+    const names = Object.keys(sources.LYRIC_SOURCES)
     const original = names.map((n) => sources.LYRIC_SOURCES[n].fetch)
     const started = []
     try {
       const slow = (ms, ret) => () => new Promise((r) => { started.push(Date.now()); setTimeout(() => r(ret), ms) })
       // 第一家在 800ms 才答(且没命中),第二家 50ms 报错,第三家 100ms 命中 ——
-      // 串行实现下第三家要等第一家跑完才开始,并行实现下它 100ms 就返回了
-      sources.LYRIC_SOURCES.lrclib.fetch = slow(800, null)
-      sources.LYRIC_SOURCES.qq.fetch = slow(50, { error: 'source' })
-      sources.LYRIC_SOURCES.netease.fetch = slow(100, { lyrics: '[00:01.00]hi', source: 'netease' })
+      // 串行实现下第三家要等第一家跑完才开始,并行实现下它 100ms 就返回了。
+      // 按 names 的**实际顺序**布置,不写死源名(加源后自动覆盖)
+      const phase1 = sources.LYRIC_ORDER
+      const fallbackNames = sources.LYRIC_FALLBACK || []
+      let fallbackStarted = false
+      phase1.forEach((n, i) => {
+        sources.LYRIC_SOURCES[n].fetch = i === 0 ? slow(800, null) : (i === 1 ? slow(50, { error: 'source' }) : slow(100, { lyrics: '[00:01.00]hi', source: n }))
+      })
+      // 兜底源:一旦被请求就记一笔(阶段一有命中时**不该**发起)
+      fallbackNames.forEach((n) => { sources.LYRIC_SOURCES[n].fetch = async () => { fallbackStarted = true; return null } })
       const t0 = Date.now()
       const r = await sources.searchLyricAuto({ title: 'x', artist: 'y', duration: 1 })
       const cost = Date.now() - t0
-      expect(r.source, '没有采用先到的那个结果').toBe('netease')
+      expect(r.source, '没有采用先到的那个结果').toBe(names[2])
       expect(cost, `耗时 ${cost}ms:像是串行(并行应当 ≈100ms,不用等 800ms 那家)`).toBeLessThan(500)
-      expect(started.length, '不是三个源同时发起').toBe(3)
+      expect(started.length, '不是所有源同时发起').toBe(phase1.length)
+      expect(fallbackStarted, '阶段一已经命中,却还去请求兜底源').toBe(false)
     } finally {
       names.forEach((n, i) => { sources.LYRIC_SOURCES[n].fetch = original[i] })
     }

@@ -18,6 +18,10 @@
  * 会被当成歌词显示出来、写进缓存,下一次命中缓存直接返回,**本地 .lrc 的回退再也不会发生**。
  */
 const log = require('./failureLog')
+// 纯匹配工具(版别闸门 / 多路搜索词 / 繁简),见 electron/lib/lyricMatch.js
+const { acceptsEdition, searchTerms, simplifyZh } = require('./lyricMatch')
+// 词级格式转换(yrc / TTML → 渲染端统一的增强 LRC),见 electron/lib/lyricFormats.js
+const { yrcToEnhancedLrc, ttmlToLrc } = require('./lyricFormats')
 
 /** 单次请求超时(与 search.js 的 NET_TIMEOUT_MS 是两个场景:这里是歌词,那边是元数据) */
 const REQ_TIMEOUT_MS = 8000
@@ -65,12 +69,30 @@ const DURATION_TOLERANCE_S = 5
 const MIN_MATCH_SCORE = 60
 const MIN_ARTIST_LEN = 2
 
-/** 给一个候选打分。cand: {title, artist, duration}(duration 单位秒) */
+/** 时长差超过它就**直接淘汰**(秒):取 15 秒与 10% 的较大者 —— 短歌 10% 太严、长歌 15 秒太松。
+ *  与 ±5 的加分容差是两件事:那个用于"歌手命中、标题对不上"时把候选救回来(繁简/别名),
+ *  这个是挡"同名片的不同版本"(现场/加长版)——此前只加分不淘汰,同名片最容易串歌词。 */
+const DURATION_REJECT_FLOOR_S = 15
+const DURATION_REJECT_RATIO = 0.1
+
+/** 给一个候选打分。cand: {title, artist, duration}(duration 单位秒)。
+ *  返回 -1 = **不合格**(版别不同 / 时长差太远),调用方按"低于门槛"一律丢掉。 */
 function scoreCandidate (cand, info) {
   const nTitle = normText(cand && cand.title)
   const tTitle = normText(info && info.title)
   const nArtist = normText(cand && cand.artist)
   const tArtist = normText(info && info.artist)
+  // 闸门①:版别必须一致 —— "(Live)/(伴奏)/remix/翻唱/不插电/加速" 与正片不是同一份歌词。
+  // 用**原始**标题判(normText 会把括号删掉,之后再认不出限定词);Remastered 不在识别集里,照旧放行。
+  if (info && info.title && cand && cand.title && !acceptsEdition(info.title, cand.title)) return -1
+  // 闸门②:时长差 > max(15s, 10%) 直接淘汰;任一方没有时长则**不淘汰**(不少接口不给时长,
+  // 拿缺失当"差太远"会把本来能用的候选全挡掉)
+  const durA = info && Number(info.duration)
+  const durB = cand && Number(cand.duration)
+  if (durA > 0 && durB > 0) {
+    const limit = Math.max(DURATION_REJECT_FLOOR_S, durA * DURATION_REJECT_RATIO)
+    if (Math.abs(durB - durA) > limit) return -1
+  }
   let score = 0
   if (nTitle && tTitle) {
     if (nTitle === tTitle) score += SCORE_TITLE_EXACT
@@ -78,7 +100,7 @@ function scoreCandidate (cand, info) {
   }
   if (nArtist && tArtist && nArtist.length >= MIN_ARTIST_LEN && tArtist.length >= MIN_ARTIST_LEN &&
       (nArtist.includes(tArtist) || tArtist.includes(nArtist))) score += SCORE_ARTIST
-  if (info && info.duration && cand && cand.duration && Math.abs(cand.duration - info.duration) <= DURATION_TOLERANCE_S) score += SCORE_DURATION
+  if (durA > 0 && durB > 0 && Math.abs(durB - durA) <= DURATION_TOLERANCE_S) score += SCORE_DURATION
   return score
 }
 
@@ -210,22 +232,22 @@ async function fetchLRCLIB (info) {
     // 超时就不再试第二次:这家已经明显慢/不可达,再来一发 8 秒只是把"这首歌没歌词"的
     // 答案往后拖(而且它排在并行链的兜底预算里,会拖到整个 has-result 判定)
     if (exact.kind === 'timeout') return failFor(exact.kind, 'lrclib', exact.detail)
-    // 2. 模糊搜索 /api/search(精确匹配失败时,提高命中率)
-    const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
-    if (!q) return null
-    const res = await httpGetJson(`${base}/search?${new URLSearchParams({ q }).toString()}`, LRCLIB_HEADERS)
-    if (!res.ok) return failFor(res.kind, 'lrclib', res.detail)
-    const list = Array.isArray(res.data) ? res.data : []
-    // 只留有同步歌词的候选(纯文本歌词不带时间戳,当作没有)
-    const cands = list.filter((x) => x && looksLikeLRC(x.syncedLyrics))
-    if (!cands.length) return null
-    const shaped = cands.map((x) => ({ title: x.trackName, artist: x.artistName, duration: x.duration, raw: x }))
-    const { candidate, score } = pickBestCandidate(shaped, info)
-    if (!candidate) {
-      log.failureOnce('lyric.lrclib.nomatch', 'lyric.lrclib', `LRCLIB 有 ${cands.length} 条候选但都不够像(最高 ${score} 分)`, `${info?.title || ''} / ${info?.artist || ''}`)
-      return null
+    // 2. 模糊搜索 /api/search:按"歌名 歌手 → 歌名 → 简体歌名"逐条试(前一条没结果才发下一条)
+    for (const term of searchTerms(info)) {
+      const res = await httpGetJson(`${base}/search?${new URLSearchParams({ q: term }).toString()}`, LRCLIB_HEADERS)
+      if (!res.ok) return failFor(res.kind, 'lrclib', res.detail)
+      const list = Array.isArray(res.data) ? res.data : []
+      // 只留有同步歌词的候选(纯文本歌词不带时间戳,当作没有)
+      const cands = list.filter((x) => x && looksLikeLRC(x.syncedLyrics))
+      if (!cands.length) continue
+      const shaped = cands.map((x) => ({ title: x.trackName, artist: x.artistName, duration: x.duration, raw: x }))
+      // limit 3:与网易云/QQ 一致 —— 首选那首没收词就往下试(同名 Live/翻唱常排前面)
+      const ranked = rankCandidates(shaped, info, 3)
+      if (!ranked.length) continue
+      return { lyrics: ranked[0].raw.syncedLyrics, source: 'lrclib' }
     }
-    return { lyrics: candidate.raw.syncedLyrics, source: 'lrclib' }
+    log.failureOnce('lyric.lrclib.nomatch', 'lyric.lrclib', 'LRCLIB 搜到的候选都不够像(版别/时长/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
+    return null
   } catch (e) {
     log.failure('lyric.lrclib', 'LRCLIB 请求异常', e)
     return isTimeout(e) ? { error: 'timeout', source: 'lrclib', kind: 'timeout' } : { error: 'network', source: 'lrclib', kind: 'network' }
@@ -236,36 +258,42 @@ const NETEASE_HEADERS = { 'User-Agent': BROWSER_UA, 'Referer': 'https://music.16
 
 async function fetchNetEaseLyric (info) {
   try {
-    const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
-    if (!q) return null
-    const res = await httpGetJson(`https://music.163.com/api/search/get?s=${encodeURIComponent(q)}&type=1&limit=10`, NETEASE_HEADERS)
-    if (!res.ok) return failFor(res.kind, 'netease', res.detail)
-    const songs = (res.data && res.data.result && res.data.result.songs) || []
-    if (!songs.length) return null
-    // duration 单位是毫秒,统一成秒;时长是"繁简/别名对不上"时最靠得住的判据
-    const cands = songs.map((s) => ({
-      title: s.name,
-      artist: (s.artists || []).map((a) => a.name).join('/'),
-      duration: s.duration ? s.duration / 1000 : 0,
-      raw: s
-    }))
-    const ranked = rankCandidates(cands, info, 3)
-    if (!ranked.length) {
-      log.failureOnce('lyric.netease.nomatch', 'lyric.netease', `网易云有 ${songs.length} 条候选但都不够像`, `${info?.title || ''} / ${info?.artist || ''}`)
-      return null
-    }
-    for (const cand of ranked) {
-      const lr = await httpGetJson(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(cand.raw.id)}&lv=1&kv=1&tv=-1`, NETEASE_HEADERS)
-      if (!lr.ok) {
-        if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'netease', lr.detail)
-        continue // 这一首拿不到(下架/无权限),换下一首候选
+    // 多路搜索词:歌名+歌手 → 歌名 → 简体歌名(+歌手)。**逐条试**,前一条没有结果才发下一条
+    for (const term of searchTerms(info)) {
+      const res = await httpGetJson(`https://music.163.com/api/search/get?s=${encodeURIComponent(term)}&type=1&limit=10`, NETEASE_HEADERS)
+      if (!res.ok) return failFor(res.kind, 'netease', res.detail)
+      const songs = (res.data && res.data.result && res.data.result.songs) || []
+      if (!songs.length) continue
+      // duration 单位是毫秒,统一成秒;时长是"繁简/别名对不上"时最靠得住的判据
+      const cands = songs.map((s) => ({
+        title: s.name,
+        artist: (s.artists || []).map((a) => a.name).join('/'),
+        duration: s.duration ? s.duration / 1000 : 0,
+        raw: s
+      }))
+      const ranked = rankCandidates(cands, info, 3)
+      if (!ranked.length) continue
+      for (const cand of ranked) {
+        // yv=1&ytv=1:要网易云的**逐字轨 yrc**(词级时间轴)。没给就退回普通 lrc —— 老歌多数没有。
+        const lr = await httpGetJson(`https://music.163.com/api/song/lyric?id=${encodeURIComponent(cand.raw.id)}&lv=1&kv=1&tv=-1&yv=1&ytv=1`, NETEASE_HEADERS)
+        if (!lr.ok) {
+          if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'netease', lr.detail)
+          continue // 这一首拿不到(下架/无权限),换下一首候选
+        }
+        // 网易云的译文轨(tlyric,请求里的 tv=-1 就是它):此前取了却丢掉,
+        // 于是外语歌明明有官方译文也要花钱再翻一遍
+        const lrc = (lr.data && lr.data.lrc && lr.data.lrc.lyric) || ''
+        const tlyric = (lr.data && lr.data.tlyric && lr.data.tlyric.lyric) || ''
+        const yrc = (lr.data && lr.data.yrc && lr.data.yrc.lyric) || ''
+        if (yrc) {
+          // yrc → 增强 LRC:渲染端三面都认这种格式,逐字因此是真的(以前是权重估算)
+          const enhanced = yrcToEnhancedLrc(yrc)
+          if (looksLikeLRC(enhanced)) return { lyrics: enhanced, translation: tlyric, source: 'netease' }
+        }
+        if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: tlyric, source: 'netease' }
       }
-      // 网易云的译文轨(tlyric,请求里的 tv=-1 就是它):此前取了却丢掉,
-      // 于是外语歌明明有官方译文也要花钱再翻一遍
-      const lrc = (lr.data && lr.data.lrc && lr.data.lrc.lyric) || ''
-      const tlyric = (lr.data && lr.data.tlyric && lr.data.tlyric.lyric) || ''
-      if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: tlyric, source: 'netease' }
     }
+    log.failureOnce('lyric.netease.nomatch', 'lyric.netease', '网易云搜到的候选都不够像(版别/时长/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
     return null
   } catch (e) {
     log.failure('lyric.netease', '网易云请求异常', e)
@@ -276,36 +304,35 @@ async function fetchNetEaseLyric (info) {
 async function fetchQQMusicLyric (info) {
   const headers = { 'User-Agent': BROWSER_UA, 'Referer': 'https://y.qq.com/' }
   try {
-    const q = `${info?.title || ''} ${info?.artist || ''}`.trim()
-    if (!q) return null
-    const res = await httpGetJson(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(q)}&format=json&p=1&n=8`, headers)
-    if (!res.ok) return failFor(res.kind, 'qq', res.detail)
-    const songs = (res.data && res.data.data && res.data.data.song && res.data.data.song.list) || []
-    if (!songs.length) return null
-    const cands = songs.map((s) => ({
-      title: s.songname,
-      artist: (s.singer || []).map((a) => a.name).join('/'),
-      duration: s.interval || 0, // QQ 的 interval 就是秒
-      raw: s
-    }))
-    const ranked = rankCandidates(cands, info, 3)
-    if (!ranked.length) {
-      log.failureOnce('lyric.qq.nomatch', 'lyric.qq', `QQ 有 ${songs.length} 条候选但都不够像`, `${info?.title || ''} / ${info?.artist || ''}`)
-      return null
-    }
-    for (const cand of ranked) {
-      const mid = cand.raw.songmid
-      if (!mid) continue
-      const lr = await httpGetJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(mid)}&format=json&nobase64=1`, headers)
-      if (!lr.ok) {
-        if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'qq', lr.detail)
-        continue
+    // 多路搜索词(同网易云):逐条试,前一条没结果才发下一条
+    for (const term of searchTerms(info)) {
+      const res = await httpGetJson(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(term)}&format=json&p=1&n=8`, headers)
+      if (!res.ok) return failFor(res.kind, 'qq', res.detail)
+      const songs = (res.data && res.data.data && res.data.data.song && res.data.data.song.list) || []
+      if (!songs.length) continue
+      const cands = songs.map((s) => ({
+        title: s.songname,
+        artist: (s.singer || []).map((a) => a.name).join('/'),
+        duration: s.interval || 0, // QQ 的 interval 就是秒
+        raw: s
+      }))
+      const ranked = rankCandidates(cands, info, 3)
+      if (!ranked.length) continue
+      for (const cand of ranked) {
+        const mid = cand.raw.songmid
+        if (!mid) continue
+        const lr = await httpGetJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(mid)}&format=json&nobase64=1`, headers)
+        if (!lr.ok) {
+          if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'qq', lr.detail)
+          continue
+        }
+        const lrc = (lr.data && lr.data.lyric) || ''
+        // QQ 的译文轨(trans,与 lyric 各占一行、时间戳相同):同样别丢
+        const trans = (lr.data && lr.data.trans) || ''
+        if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: trans, source: 'qq' }
       }
-      const lrc = (lr.data && lr.data.lyric) || ''
-      // QQ 的译文轨(trans,与 lyric 各占一行、时间戳相同):同样别丢
-      const trans = (lr.data && lr.data.trans) || ''
-      if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: trans, source: 'qq' }
     }
+    log.failureOnce('lyric.qq.nomatch', 'lyric.qq', 'QQ 搜到的候选都不够像(版别/时长/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
     return null
   } catch (e) {
     // 归类只看 isNetworkError(此前按 AbortError 判,而 AbortSignal.timeout
@@ -317,18 +344,137 @@ async function fetchQQMusicLyric (info) {
   }
 }
 
+// 酷狗:search → download 两步,**只要明文 lrc**(不碰 KRC 加密 —— 逐字已有网易云 yrc 与 AMLL 两条来源)。
+// 它的搜索接口直接吃 duration(毫秒),比别家多一个"帮它挑对版本"的输入。
+const KUGOU_HEADERS = { 'User-Agent': BROWSER_UA, 'Referer': 'https://www.kugou.com/' }
+
+async function fetchKugouLyric (info) {
+  try {
+    const durMs = info && info.duration ? Math.round(info.duration * 1000) : 0
+    for (const term of searchTerms(info)) {
+      const res = await httpGetJson(`https://lyrics.kugou.com/search?ver=1&man=yes&client=pc&keyword=${encodeURIComponent(term)}${durMs ? `&duration=${durMs}` : ''}`, KUGOU_HEADERS)
+      if (!res.ok) return failFor(res.kind, 'kugou', res.detail)
+      const cands = (res.data && res.data.candidates) || []
+      if (!cands.length) continue
+      const shaped = cands.map((c) => ({
+        title: c.song || '',
+        artist: c.singer || '',
+        duration: c.duration ? Number(c.duration) / 1000 : 0,
+        raw: c
+      }))
+      const ranked = rankCandidates(shaped, info, 3)
+      if (!ranked.length) continue
+      for (const cand of ranked) {
+        const id = cand.raw && cand.raw.id
+        const accesskey = cand.raw && cand.raw.accesskey
+        if (!id || !accesskey) continue
+        const got = await httpGetJson(`https://lyrics.kugou.com/download?ver=1&client=pc&id=${encodeURIComponent(id)}&accesskey=${encodeURIComponent(accesskey)}&fmt=lrc&charset=utf8`, KUGOU_HEADERS)
+        if (!got.ok) {
+          if (got.kind === 'network' || got.kind === 'timeout') return failFor(got.kind, 'kugou', got.detail)
+          continue
+        }
+        // 它把歌词放在 content 里,可能是 base64(明文 lrc),也可能直接给
+        let text = (got.data && got.data.content) || ''
+        if (text && !looksLikeLRC(text)) {
+          try { const dec = Buffer.from(String(text), 'base64').toString('utf8'); if (looksLikeLRC(dec)) text = dec } catch (_) {}
+        }
+        if (looksLikeLRC(text)) return { lyrics: text, source: 'kugou' }
+      }
+    }
+    log.failureOnce('lyric.kugou.nomatch', 'lyric.kugou', '酷狗搜到的候选都不够像(版别/时长/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
+    return null
+  } catch (e) {
+    const net = isNetworkError(e)
+    if (net) return { error: isTimeout(e) ? 'timeout' : 'network', source: 'kugou', kind: isTimeout(e) ? 'timeout' : 'network' }
+    log.failure('lyric.kugou', '酷狗请求异常', e)
+    return { error: 'source', source: 'kugou', kind: 'parse' }
+  }
+}
+
+// AMLL(Apple Music-like Lyrics 社区词库):词级 TTML,【兜底源】—— 覆盖不如商业源,
+// 但它是唯一能稳定给"逐字"的外部词库之一,所以放在 auto 的第二阶段(见 searchLyricAuto)。
+// 实测(2026-10-03)直连可达:https://api.amll.dev/v1/lyrics/search?musicName=… → /get?id=…
+const AMLL_BASE = 'https://api.amll.dev/v1/lyrics'
+const AMLL_HEADERS = { 'User-Agent': 'SoundFlow-Music-Player/1.0.0 (local music player)' }
+
+async function fetchAMLL (info) {
+  try {
+    const title = String((info && info.title) || '').trim()
+    if (!title) return null
+    // 只按歌名搜(它的接口没有 artist 参数),排序仍用我们那套 scoreCandidate;它返回里**没有时长**,
+    // 按时长缺失处理(不淘汰)——所以版别闸门在这里尤其重要,否则 "(Live)" 版会被当正片。
+    for (const term of searchTerms({ title, artist: '' })) {
+      const res = await httpGetJson(`${AMLL_BASE}/search?musicName=${encodeURIComponent(term)}&pageSize=50`, AMLL_HEADERS)
+      if (!res.ok) return failFor(res.kind, 'amll', res.detail)
+      const items = (res.data && res.data.data && res.data.data.items) || []
+      if (!items.length) continue
+      const shaped = items.map((it) => ({
+        title: (it.musicNames && it.musicNames[0]) || '',
+        artist: (it.artistNames || []).join('/'),
+        duration: 0,
+        raw: it
+      }))
+      const ranked = rankCandidates(shaped, info, 3)
+      if (!ranked.length) continue
+      for (const cand of ranked) {
+        const id = cand.raw && cand.raw.id
+        if (!id) continue
+        const got = await httpGetJson(`${AMLL_BASE}/get?id=${encodeURIComponent(id)}`, AMLL_HEADERS)
+        if (!got.ok) {
+          if (got.kind === 'network' || got.kind === 'timeout') return failFor(got.kind, 'amll', got.detail)
+          continue
+        }
+        const ttml = (got.data && got.data.data && got.data.data.lyrics) || ''
+        if (!ttml) continue
+        const { lyrics, translation } = ttmlToLrc(ttml)
+        if (looksLikeLRC(lyrics)) return { lyrics, translation: translation || '', source: 'amll' }
+      }
+    }
+    log.failureOnce('lyric.amll.nomatch', 'lyric.amll', 'AMLL 搜到的候选都不够像(版别/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
+    return null
+  } catch (e) {
+    const net = isNetworkError(e)
+    if (net) return { error: isTimeout(e) ? 'timeout' : 'network', source: 'amll', kind: isTimeout(e) ? 'timeout' : 'network' }
+    log.failure('lyric.amll', 'AMLL 请求异常', e)
+    return { error: 'source', source: 'amll', kind: 'parse' }
+  }
+}
+
 // ===== 歌词源接口(插件化铺路:新增源只需在 LYRIC_SOURCES 加一项)=====
 const LYRIC_SOURCES = {
   lrclib: { label: 'LRCLIB', fetch: fetchLRCLIB },
   qq: { label: 'QQ音乐', fetch: fetchQQMusicLyric },
-  netease: { label: '网易云', fetch: fetchNetEaseLyric }
+  kugou: { label: '酷狗', fetch: fetchKugouLyric },
+  netease: { label: '网易云', fetch: fetchNetEaseLyric },
+  amll: { label: 'AMLL', fetch: fetchAMLL }
 }
-const LYRIC_ORDER = ['lrclib', 'qq', 'netease'] // auto 源回退顺序
+/** auto 第一阶段:这几家**并行**发(谁先答上就用谁)。顺序只影响注释与设置页文案。 */
+const LYRIC_ORDER = ['lrclib', 'qq', 'kugou', 'netease']
+/** auto 第二阶段:**兜底源**,第一阶段全都干净地说"没有"才轮到它(用户定的:AMLL 放最后)。 */
+const LYRIC_FALLBACK = ['amll']
 
 async function searchLyricBySource (info, source) {
   const s = LYRIC_SOURCES[source]
   if (!s) return { error: 'unknown-source' }
-  return await s.fetch(info)
+  return await fixupResult(await s.fetch(info))
+}
+
+/**
+ * 出去之前统一过一遍:**在线歌词的繁体转简体**。
+ *
+ * 为什么在文本层做而不是解析之后:我们给渲染端的一直是 LRC 文本(解析在渲染端),
+ * 而时间标签(`[00:29.34]` / `<00:01.20>`)**全是 ASCII**,opencc 不会碰 —— 所以整段转换是安全的,
+ * 且只有这一处实现(桌面歌词窗/迷你窗/分栏三面都跟着受益)。
+ *
+ * 只转在线结果:**本地 .lrc 是用户自己的文件,原样显示**(他要简体自己会存简体)。
+ * (WinIsland 是按界面语言决定转不转;我们的界面语言是渲染端的事,这里暂按"在线一律转简体"处理 ——
+ *  真要按语言开关,改这一处 + 给缓存 key 带上语言即可。)
+ */
+function fixupResult (res) {
+  if (!res || !res.lyrics) return res
+  try {
+    return { ...res, lyrics: simplifyZh(res.lyrics), translation: res.translation ? simplifyZh(res.translation) : res.translation }
+  } catch (_) { return res }
 }
 
 /**
@@ -348,6 +494,7 @@ function searchLyricAuto (info) {
     const results = []
     let pending = LYRIC_ORDER.length
     let finished = false
+    let fallbackStarted = false
     const finish = (value) => {
       if (finished) return
       finished = true
@@ -356,19 +503,48 @@ function searchLyricAuto (info) {
     }
     // 兜底:并行之后正常 1~3 秒就有结果;个别源可能要连着请求几次(网易云是"搜索 + 逐首取词"),
     // 不该把整体拖过这个数
-    const timer = setTimeout(() => finish(classify(results, pending)), AUTO_BUDGET_MS)
+    const timer = setTimeout(() => finish(classify(results, pending + (fallbackStarted ? 0 : 0))), AUTO_BUDGET_MS)
+    // 阶段二(兜底源):第一阶段全都没有才轮到这里。网络不通时不再往外发 —— 兜底源也是网络源,
+    // 只会把"网络不通"这个结论又拖十几秒。
+    const runFallback = () => {
+      if (fallbackStarted || finished) return
+      fallbackStarted = true
+      let left = LYRIC_FALLBACK.length
+      const settle = (r0) => {
+        const r = fixupResult(r0)
+        results.push(r)
+        left--
+        if (r && r.lyrics) return finish(r)
+        if (!left) finish(classify(results, 0)) // 兜底源也没拿到:按**含兜底在内**的全部结果归类
+      }
+      for (const name of LYRIC_FALLBACK) {
+        LYRIC_SOURCES[name].fetch(info).then(
+          (r) => settle(r),
+          (e) => settle({ error: isTimeout(e) ? 'timeout' : 'network', source: name, kind: 'network', detail: e })
+        )
+      }
+    }
     for (const name of LYRIC_ORDER) {
       LYRIC_SOURCES[name].fetch(info).then(
         (r) => {
+          r = fixupResult(r)
           results.push(r)
           pending--
           if (r && r.lyrics) return finish(r) // 先到的命中:等最慢的源没有意义
-          if (!pending) finish(classify(results, 0))
+          if (!pending) {
+            const verdict = classify(results, 0)
+            if (LYRIC_FALLBACK.length && verdict.error !== 'network') return runFallback() // 交给兜底源再试一轮
+            finish(verdict)
+          }
         },
         (e) => {
           results.push({ error: isTimeout(e) ? 'timeout' : 'network', source: name, kind: 'network', detail: e })
           pending--
-          if (!pending) finish(classify(results, 0))
+          if (!pending) {
+            const verdict = classify(results, 0)
+            if (LYRIC_FALLBACK.length && verdict.error !== 'network') return runFallback()
+            finish(verdict)
+          }
         }
       )
     }
@@ -409,11 +585,15 @@ module.exports = {
   fetchLRCLIB,
   fetchNetEaseLyric,
   fetchQQMusicLyric,
+  fetchKugouLyric,
+  fetchAMLL,
   LYRIC_SOURCES,
   LYRIC_ORDER,
+  LYRIC_FALLBACK,
   searchLyricBySource,
   searchLyricAuto,
   // 纯函数导出(供单测与复用)
+  fixupResult,
   normText,
   looksLikeLRC,
   scoreCandidate,
