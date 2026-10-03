@@ -166,6 +166,18 @@ describe('失败三态:未找到 ≠ 网络故障 ≠ 音源异常', () => {
     expect(src, '网络错误码表丢了').toMatch(/UND_ERR/)
   })
 
+  it('QQ 源走新接口(老搜索接口已整片 500)+ base64 解码', () => {
+    const src = read('electron/lib/lyricSources.js')
+    // 2026-10-03 实测:c.y.qq.com/soso/…/client_search_cp 全 500;搜索改 smartbox,取词改 u.y.qq.com
+    // 按"拿去请求"的形态判,别只看字符串 —— 注释里正当地提到了这个接口名
+    expect(src, '还在用已经 500 的老搜索接口').not.toMatch(/httpGetJson\(`https:\/\/c\.y\.qq\.com\/soso/)
+    expect(src, '搜索没改走 smartbox').toMatch(/smartbox_new\.fcg\?key=/)
+    expect(src, '取词没改走 u.y.qq.com 的 musicu 接口').toMatch(/u\.y\.qq\.com\/cgi-bin\/musicu\.fcg/)
+    expect(src, '没请求 GetPlayLyricInfo').toMatch(/music\.musichallSong\.PlayLyricInfo/)
+    // 新接口的 lyric/trans 是 base64(实测 'W3RpOuWtpOWLh+iAhV0K' = '[ti:孤勇者]…')
+    expect(src, '没做 base64 解码(会拿到一坨 base64 当歌词)').toMatch(/Buffer\.from\(raw, 'base64'\)/)
+  })
+
   it('LRCLIB 也必须过"像不像歌词"(三个源里只有它没有时间戳校验)', () => {
     const src = read('electron/lib/lyricSources.js')
     // /get 与 /search 两条路径都要校验

@@ -301,38 +301,65 @@ async function fetchNetEaseLyric (info) {
   }
 }
 
+// ⚠️ 2026-10-03 实测:**老搜索接口 `c.y.qq.com/soso/…/client_search_cp` 已整片 HTTP 500**(空响应体,
+// 连 `format=json` 都不给),老歌词接口 `fgc_query_lyric_new` 虽还 200,但整套链路等于断了。
+// 现在搜索改走 **smartbox 联想接口**(实测 200,返回 mid/name/singer),取词改走 **新接口 u.y.qq.com**:
+//   POST/GET https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=<musicu 信封>
+//   module=music.musichallSong.PlayLyricInfo / method=GetPlayLyricInfo → data.lyric / data.trans
+// (顺带:该接口带 `qrc:1` 时会把**加密的 QRC** 塞进 `lyric` 字段 —— 那是 QQ 自家魔改的 DES,
+// 不是标准的 3DES(OpenSSL/Node 解不开),所以逐字这条我们走网易云 yrc 与 AMLL TTML,不碰 QRC。)
+const QQ_HEADERS = { 'User-Agent': BROWSER_UA, 'Referer': 'https://y.qq.com/' }
+
+function qqLyricUrl (mid) {
+  const data = {
+    comm: { ct: 24, cv: 0 },
+    req_0: {
+      module: 'music.musichallSong.PlayLyricInfo',
+      method: 'GetPlayLyricInfo',
+      param: { songMID: mid, format: 'json', trans: 1, roma: 0 }
+    }
+  }
+  return `https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${encodeURIComponent(JSON.stringify(data))}`
+}
+
 async function fetchQQMusicLyric (info) {
-  const headers = { 'User-Agent': BROWSER_UA, 'Referer': 'https://y.qq.com/' }
   try {
     // 多路搜索词(同网易云):逐条试,前一条没结果才发下一条
     for (const term of searchTerms(info)) {
-      const res = await httpGetJson(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(term)}&format=json&p=1&n=8`, headers)
+      const res = await httpGetJson(`https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?key=${encodeURIComponent(term)}&format=json&g_tk=5381&utf8=1`, QQ_HEADERS)
       if (!res.ok) return failFor(res.kind, 'qq', res.detail)
-      const songs = (res.data && res.data.data && res.data.data.song && res.data.data.song.list) || []
+      const songs = (res.data && res.data.data && res.data.data.song && res.data.data.song.itemlist) || []
       if (!songs.length) continue
       const cands = songs.map((s) => ({
-        title: s.songname,
-        artist: (s.singer || []).map((a) => a.name).join('/'),
-        duration: s.interval || 0, // QQ 的 interval 就是秒
+        title: s.name || '',
+        artist: s.singer || '', // smartbox 的 singer 就是字符串
+        duration: 0, // 这个接口不给时长 → 时长闸门自动跳过(缺失不淘汰)
         raw: s
       }))
       const ranked = rankCandidates(cands, info, 3)
       if (!ranked.length) continue
       for (const cand of ranked) {
-        const mid = cand.raw.songmid
+        const mid = cand.raw.mid
         if (!mid) continue
-        const lr = await httpGetJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?songmid=${encodeURIComponent(mid)}&format=json&nobase64=1`, headers)
+        const lr = await httpGetJson(qqLyricUrl(mid), QQ_HEADERS)
         if (!lr.ok) {
           if (lr.kind === 'network' || lr.kind === 'timeout') return failFor(lr.kind, 'qq', lr.detail)
           continue
         }
-        const lrc = (lr.data && lr.data.lyric) || ''
-        // QQ 的译文轨(trans,与 lyric 各占一行、时间戳相同):同样别丢
-        const trans = (lr.data && lr.data.trans) || ''
-        if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: trans, source: 'qq' }
+        const d = (lr.data && lr.data.req_0 && lr.data.req_0.data) || {}
+        // 新接口把歌词/译文放在 lyric/trans 里,且是 **base64**('W3RpOuWtpOWLh+iAhV0K' = '[ti:孤勇者]…');
+        // 万一哪天改成明文,下面的 looksLikeLRC 兜住(与酷狗那条一个套路)
+        const decodeMaybe = (v) => {
+          const raw = String(v || '')
+          if (!raw || looksLikeLRC(raw)) return raw
+          try { const dec = Buffer.from(raw, 'base64').toString('utf8'); return looksLikeLRC(dec) ? dec : raw } catch (_) { return raw }
+        }
+        const lrc = decodeMaybe(d.lyric)
+        const trans = decodeMaybe(d.trans)
+        if (looksLikeLRC(lrc)) return { lyrics: lrc, translation: looksLikeLRC(trans) ? trans : '', source: 'qq' }
       }
     }
-    log.failureOnce('lyric.qq.nomatch', 'lyric.qq', 'QQ 搜到的候选都不够像(版别/时长/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
+    log.failureOnce('lyric.qq.nomatch', 'lyric.qq', 'QQ 搜到的候选都不够像(版别/歌名)', `${info?.title || ''} / ${info?.artist || ''}`)
     return null
   } catch (e) {
     // 归类只看 isNetworkError(此前按 AbortError 判,而 AbortSignal.timeout
