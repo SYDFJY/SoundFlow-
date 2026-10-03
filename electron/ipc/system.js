@@ -200,6 +200,9 @@ function register (ctx) {
 
   // 文件夹监控开关(自动刷新曲库)
   ipcMain.on('set-folder-watch', (event, enabled) => setFolderWatchEnabled(!!enabled))
+  // invoke 版:设置页要拿"监控有没有真的起来"的返回值来决定开关要不要回退
+  // (send 版留给不需要返回值的调用方,如启动时恢复)
+  ipcMain.handle('folder-watch-set', (event, enabled) => setFolderWatchEnabled(!!enabled))
   ipcMain.handle('get-folder-watch', () => !!storage().folderWatch)
 }
 

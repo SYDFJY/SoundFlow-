@@ -140,7 +140,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useMusicStore } from '@/stores/musicStore'
 import { getFailures, clearFailures as clearFailureRecords } from '@/utils/failures'
@@ -224,7 +224,16 @@ function clearFailures() {
   failures.value = []
 }
 
-onMounted(refresh)
+// 进页面取一次快照之外,停留期间每 30s 刷新一次:失败清单/切歌耗时/缓存占用都是"会变的读数",
+// 只在挂载时取一次的话,停在设置页看着的永远是旧数(用户会以为这块不工作)
+let _refreshTimer = null
+onMounted(() => {
+  refresh()
+  _refreshTimer = setInterval(refresh, 30000)
+})
+onUnmounted(() => {
+  if (_refreshTimer) { clearInterval(_refreshTimer); _refreshTimer = null }
+})
 
 defineExpose({ refresh })
 </script>

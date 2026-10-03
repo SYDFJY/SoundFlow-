@@ -649,6 +649,14 @@ function applySearch(q) {
     pairs[i][0].classList.toggle('search-hit', hit)
     if (hit) secs[pairs[i][1]].any = true
   }
+  // 区块"有命中"的判定**不能只看 .setting-item**:诊断面板的行是 `.diag-row`(还有别处用其它行类),
+  // 只看一种行类的话,搜索框里一打字(哪怕搜的是"诊断")整个诊断区就被 display:none 藏掉 ——
+  // 用户读成"诊断那里功能好像没实现"。按区块**可见文本**补一遍,行类怎么变都不会再漏。
+  if (qq) {
+    for (const s of secs) {
+      if (!s.any && (s.sec.textContent || '').toLowerCase().includes(qq)) s.any = true
+    }
+  }
   for (const s of secs) s.sec.classList.toggle('search-any', s.any)
   // 容器标记:配合 :not(.search-hit) 规则,让「过滤期间才被 v-if 渲染出来」的条目默认隐藏,
   // 而不是因为它没有内联状态就漏出来(旧实现写内联 style,无法覆盖这种情况)
@@ -810,7 +818,13 @@ function onSettingsEsc() { lyricMgrOpen.value = false }
 // 自定义主色(全局联动;预设色块已删,只走取色板)
 const primaryPickrEl = ref(null)
 let _primaryPickr = null
-function resetPrimary() { appStore.resetPrimaryColor() }
+function resetPrimary() {
+  // 没设过自定义主色时这一步本来什么都不用做 —— 但"点了完全没反应"会被读成按钮坏了,
+  // 所以两种结果都给一句话
+  const had = !!appStore.customPrimary
+  appStore.resetPrimaryColor()
+  try { window.$toast?.(had ? '已恢复默认主色' : '当前就是默认主色', 'info') } catch {}
+}
 function initPrimaryPickr() {
   if (!primaryPickrEl.value || typeof window.Pickr === 'undefined') return
   _primaryPickr = window.Pickr.create({
@@ -967,9 +981,24 @@ async function addFolder() {
 // 自动刷新曲库开关(状态以主进程持久化为准,重启后自动恢复)
 const folderWatchOn = ref(false)
 async function toggleFolderWatch() {
-  const next = !folderWatchOn.value
-  folderWatchOn.value = next
-  window.electronAPI?.setFolderWatch(next)
+  const want = !folderWatchOn.value
+  folderWatchOn.value = want
+  try {
+    // 用 invoke 版拿真实结果:主进程起 fs.watch 失败时以前完全无声(开关翻了、监控没起来),
+    // 这里以返回值判 —— 没起来就回退开关并说明原因
+    const r = await window.electronAPI?.setFolderWatchResult?.(want)
+    if (r && r.ok === false) {
+      folderWatchOn.value = r.enabled
+      window.$toast?.('无法开启自动刷新:监视目录失败(诊断区「文件夹监控」可见状态)', 'error')
+    } else if (want) {
+      window.$toast?.('已开启自动刷新曲库', 'info')
+    } else {
+      window.$toast?.('已关闭自动刷新曲库', 'info')
+    }
+  } catch {
+    folderWatchOn.value = !want
+    try { window.$toast?.('切换自动刷新失败', 'error') } catch {}
+  }
 }
 try {
   window.electronAPI?.getFolderWatch().then(v => { folderWatchOn.value = !!v }).catch(() => {})
@@ -977,7 +1006,13 @@ try {
 
 // 目录的列表与移除都在「音乐目录」页(那边移除前有确认框,还能单独重扫某个目录)
 async function addLyricFolder() {
+  // 选完目录本页看不到任何变化(歌词文件夹的列表在「音乐目录」页),以前像"点了没反应"
+  const before = musicStore.lyricFolders.length
   await musicStore.addLyricFolder()
+  const after = musicStore.lyricFolders.length
+  if (after > before) {
+    try { window.$toast?.(`已添加歌词文件夹(共 ${after} 个,列表在「音乐目录」页)`, 'success') } catch {}
+  }
 }
 
 // 在线歌词开关(localStorage,默认开启)
@@ -1100,10 +1135,13 @@ async function applyShortcuts(showScopeNote = false) {
 
 // 恢复默认快捷键
 function resetShortcuts() {
+  const already = JSON.stringify(shortcuts.value) === JSON.stringify(DEFAULT_SHORTCUTS)
   shortcuts.value = { ...DEFAULT_SHORTCUTS }
   localStorage.setItem('soundflow_shortcuts', JSON.stringify(DEFAULT_SHORTCUTS))
   // 此前重置只改了本地存储与界面,没有重新注册 —— 旧快捷键的占用会一直留在系统里
   applyShortcuts()
+  // 本来就是默认值时界面上没有任何变化(按钮会被读成"没反应"),补一句
+  try { window.$toast?.(already ? '快捷键本来就是默认值' : '快捷键已恢复默认', 'info') } catch {}
 }
 
 // 字体设置:系统字体 + 自定义导入

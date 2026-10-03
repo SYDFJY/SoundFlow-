@@ -270,6 +270,7 @@ export const usePlayerStore = defineStore('player', () => {
               onClick: () => {
                 _consecutiveErrors = 0
                 if (_failSkipTimer) { clearTimeout(_failSkipTimer); _failSkipTimer = null }
+                // 播放失败重试:明确**从头**(绕过"记住进度",免得又从上次失败的位置接着卡)
                 loadAndPlay(currentIndex.value, true)
               }
             })
@@ -960,14 +961,19 @@ export const usePlayerStore = defineStore('player', () => {
     saveEqSettings()
   }
 
-  // 设置播放队列(用户手动选择 → 从头播放,不恢复记忆)
+  // 设置播放队列(用户手动选择)。
+  // ⚠️ 这里**不能**写死 fromBeginning=true:设置项「记住每首的播放进度」的说明就是
+  // "开启后**切回**没播完的歌会从上次的位置接着播",而列表/播放记录/排行榜的双击都走这条路 ——
+  // 恰恰是"切回没播完的歌"最常用的方式。以前写死 true → 手动点歌一律从头,
+  // 用户反馈"这功能好像实现不了"(实测:播到一半切走,点回来从 0 开始)。
+  // 现在交给 loadAndPlay 按设置判断;fromBeginning 只留给"明确要求从头"的路径(见下)。
   function setPlayQueue(songs, startIndex = 0) {
     _pool.reset() // 队列结构变了,旧排列的索引不再可靠(重开一轮)
     userStartedPlay.value = true
     playQueue.value = songs.map(withQid)
     currentIndex.value = startIndex
     if (songs.length > 0 && startIndex >= 0 && startIndex < songs.length) {
-      loadAndPlay(startIndex, true)
+      loadAndPlay(startIndex, false)
     }
     saveQueueState()
   }
@@ -1135,7 +1141,8 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // 加载并播放
-  // fromBeginning=true:用户手动选择,从头播放;false:自动切歌,顺序模式恢复记忆、随机模式从头
+  // fromBeginning=true:**明确要求从头**(目前只有"播放失败重试"用它),绕过「记住每首的播放进度」;
+  // false:交给设置判断 —— 开了且有记忆就续播(**手动点歌也算**),随机模式一律从头
   // 无缝预加载:下一曲预缓冲到隐藏 Audio(本地直连 file://;repeatOne 不预取)。
   // 随机模式必须取乱序池预告的那首 —— 旧实现随机取一首,结果常常不是接下来要播的,
   // 白等一下(非原生格式尤其明显:转码是为那一首做的,没用到就得重来)
@@ -2246,9 +2253,10 @@ export const usePlayerStore = defineStore('player', () => {
     userStartedPlay.value = true
     if (index >= 0 && index < playQueue.value.length) {
       // 用户手动点歌(播放栏/队列面板):把乱序游标对齐到这首,
-      // 之后的"下一首"从这里继续,而不是回到原来那一轮的位置
+      // 之后的"下一首"从这里继续,而不是回到原来那一轮的位置。
+      // fromBeginning 传 false:续不续播交给「记住每首的播放进度」决定(与列表双击一致)
       _pool.seek(index, playQueue.value.length)
-      loadAndPlay(index, true)
+      loadAndPlay(index, false)
     }
   }
 

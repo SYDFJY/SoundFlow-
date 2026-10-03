@@ -267,6 +267,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 文件夹监控(自动刷新曲库)
   setFolderWatch: (enabled) => ipcRenderer.send('set-folder-watch', !!enabled),
+  // invoke 版:拿"监控真的起来了没"的结果(设置页据此决定开关回退与提示)
+  setFolderWatchResult: (enabled) => ipcRenderer.invoke('folder-watch-set', !!enabled),
   getFolderWatch: () => ipcRenderer.invoke('get-folder-watch'),
 
   // 事件监听

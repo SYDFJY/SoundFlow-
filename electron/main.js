@@ -810,12 +810,17 @@ function stopFolderWatch() {
   if (folderWatchDebounce) { clearTimeout(folderWatchDebounce); folderWatchDebounce = null }
 }
 
+// 返回**实际**结果:以前起监控失败是无声的 —— 开关翻了、监控没起来,用户完全不知道。
+// 现在把 watchers 数报回去(set-folder-watch 是 send 型通道,另有 folder-watch-set 的 invoke 版拿这个返回值)。
 function setFolderWatchEnabled(enabled) {
   folderWatchEnabled = !!enabled
   storageData.folderWatch = folderWatchEnabled
   saveStorage(true)
   if (folderWatchEnabled) startFolderWatch()
   else stopFolderWatch()
+  const dirs = (storageData.scanFolders || []).filter((d) => typeof d === 'string' && d)
+  const ok = !folderWatchEnabled || folderWatchers.length > 0 || dirs.length === 0
+  return { enabled: folderWatchEnabled, watchers: folderWatchers.length, dirs: dirs.length, ok }
 }
 
 // ========== 窗口创建 ==========

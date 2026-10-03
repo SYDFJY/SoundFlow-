@@ -1008,7 +1008,7 @@ app.whenReady().then(async () => {
       // 队列可能已经播完了(前面几组跑了好几分钟,夹具歌又短):回到列表点一首重新起播。
       // 这不是"频谱坏了" —— 没在播放时柱子本来就该是静止的。
       console.log('频谱:队列已播完,重新起播一首')
-      await playByTitle('Track\s+\d+')
+      await playByTitle('Track\\s+\\d+')
     }
   }
   // 柱状画布可能被"圆形"模式隐藏 → 切到柱状再量
@@ -3047,6 +3047,110 @@ app.whenReady().then(async () => {
       JSON.stringify(sweep))
     // 留痕检测:跑完这一节沙箱必须回到原状,否则下一轮从被改过的状态起步(连环假红的源头)
     if (sweep && sweep.dirty) console.log('  ⚠️ 遍历审计留下了未还原的设置(下轮可能受影响)')
+  }
+
+  // 20) 两处"点了没反应"的回归守卫(2026-10-03):
+  //     ① 搜索框一打字,某些区块被整块 display:none(诊断面板的行是 .diag-row,不在命中判定里)
+  //     ② 手动点歌不续播(设置说明写着"切回没播完的歌会接着播",实现却硬编码从头)
+  {
+    await run(`(() => { location.hash = '#/settings'; return true })()`)
+    await sleep(2200)
+    const searchProbe = await run(`(async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+      const input = document.querySelector('.settings-search input, .settings-content input[type="search"], .settings-content input')
+      if (!input) return { err: '找不到设置页搜索框' }
+      const secs = () => [...document.querySelectorAll('.settings-section')]
+      const visible = () => secs().filter((s) => getComputedStyle(s).display !== 'none').length
+      const before = { total: secs().length, shown: visible() }
+      input.value = '诊断'
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await wait(700)
+      const diag = secs().find((s) => /诊断/.test((s.querySelector('.section-title') || {}).textContent || ''))
+      const after = { shown: visible(), diagVisible: diag ? getComputedStyle(diag).display !== 'none' : null, diagRows: diag ? diag.querySelectorAll('.diag-row').length : 0 }
+      input.value = ''
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await wait(500)
+      return { before, after }
+    })()`)
+    console.log('搜索过滤探针:', JSON.stringify(searchProbe))
+    check('设置页搜索:搜「诊断」时诊断区仍在(区块命中判定不能只看 .setting-item)',
+      !!searchProbe && !searchProbe.err && searchProbe.after && searchProbe.after.diagVisible === true && searchProbe.after.diagRows > 0,
+      JSON.stringify(searchProbe))
+
+    // ② 续播:开启「记住每首的播放进度」→ 播一首**够长的**(夹具 ui40=42s,太短的歌 40% 位置与 0 只差几秒,
+    //    容差会把"没续播"也放过)→ 点进度条跳到中段 → 切下一首 → 点回这首 → 位置应保留
+    const resumeInit = await run(`(() => {
+      const btn = [...document.querySelectorAll('.settings-section .switch')].find((b) => (b.getAttribute('aria-label') || '') === '记住每首的播放进度')
+      return btn ? btn.getAttribute('aria-checked') : null
+    })()`)
+    await run(`(async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+      const btn = [...document.querySelectorAll('.settings-section .switch')].find((b) => (b.getAttribute('aria-label') || '') === '记住每首的播放进度')
+      if (btn && btn.getAttribute('aria-checked') !== 'true') { btn.click(); await wait(400) }
+      return true
+    })()`)
+    const played = await playByTitle('曲目40')
+    await sleep(2600)
+    // 进度条属于**主布局底部的播放栏**:播放页是全屏模式,连播放栏都不渲染。
+    // playByTitle 结束时停在播放页 —— 不先回主页的话 .player-bar 压根不存在,读到 null(踩过)
+    await run(`(() => { location.hash = '#/home'; return true })()`)
+    await sleep(1800)
+    const seekTo = async (frac) => run(`(() => {
+      // 进度条是 ProgressBar 组件(.pb-bar):pointerdown 拖动、pointerup 一次性提交。
+      // 别再写 .progress-bar + mousedown —— 那套选择器早没了,探针会读到 null,看着像"没续播"
+      const bar = document.querySelector('.player-bar .pb-bar')
+      if (!bar) return { err: '没有进度条' }
+      const r = bar.getBoundingClientRect()
+      const x = Math.round(r.left + r.width * ${JSON.stringify(0.55)})
+      const y = Math.round(r.top + r.height / 2)
+      for (const type of ['pointerdown', 'pointerup']) bar.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, pointerId: 1, clientX: x, clientY: y }))
+      return { ok: true }
+    })()`)
+    const readClock = () => run(`(() => {
+      const el = document.querySelector('.player-bar .pb-time')
+      const txt = el ? (el.textContent || '').trim() : ''
+      // 别用 \\d:这是模板字符串,单反斜杠会被吃掉(\d → d),到页面成了 /(d+):(d{2})/,永远不匹配
+      const m = /([0-9]+):([0-9]{2})/.exec(txt)
+      return m ? Number(m[1]) * 60 + Number(m[2]) : null
+    })()`)
+    await seekTo(0.55)
+    await sleep(900)
+    const before = await readClock()
+    // 切下一首(把这一首的进度写进历史),再点回同一首
+    await run(`(() => {
+      const bar = document.querySelector('.player-bar')
+      const btns = bar ? [...bar.querySelectorAll('button')] : []
+      const next = btns.find((b) => /下一曲|下一首/.test(b.getAttribute('aria-label') || b.getAttribute('title') || ''))
+      if (next) next.click()
+      return !!next
+    })()`)
+    await sleep(3000)
+    await playByTitle('曲目40')
+    await sleep(3200)
+    await run(`(() => { location.hash = '#/home'; return true })()`)
+    await sleep(1800)
+    const after = await readClock()
+    const resumeProbe = { played, before, after }
+    console.log('续播探针:', JSON.stringify({ ...resumeProbe, resumeInit }))
+    // 判据不能写成 |after-before|≤3:从"点回"到"读表"之间歌一直在放(点回本身要等加载、
+    // 回主页又要等路由),续播成功的话 after 一定**大于** before。要区分的是"从头播":
+    // 那样 after ≈ 点回之后流逝的秒数(个位数),而不是 23s 附近。
+    const ok = typeof before === 'number' && typeof after === 'number' &&
+      before >= 5 && after >= before + 1 && after <= before + 30
+    check('续播:开启「记住每首的播放进度」后,切走再点回来接着放(不再默默从头)',
+      ok, `跳到 ${before}s → 切走 → 点回后 ${after}s(续播应 ≈${before}s 再往后放一点;若从头则是几秒)`)
+    // 探针把开关拨到了"开";本来是关的话拨回去 —— 别给下一轮留脏设置
+    // (设置页在 KeepAlive 里,离开路由后 DOM 被摘掉,所以要回到设置页再点)
+    if (resumeInit === 'false') {
+      await run(`(() => { location.hash = '#/settings'; return true })()`)
+      await sleep(1500)
+      await run(`(() => {
+        const btn = [...document.querySelectorAll('.settings-section .switch')].find((b) => (b.getAttribute('aria-label') || '') === '记住每首的播放进度')
+        if (btn && btn.getAttribute('aria-checked') === 'true') btn.click()
+        return true
+      })()`)
+      await sleep(600)
+    }
   }
 
   const failed = results.filter((r) => !r.ok)
